@@ -1,0 +1,330 @@
+import { defineMessages } from '../message'
+
+/**
+ * What the microphone and the voice services report to the user while a conversation is running, and the
+ * errors of the microphone, the live engines and speech output. Speech recognition's are in speech-recognition.ts.
+ */
+export const voice = defineMessages({
+  micFailed: {
+    'ja-JP': 'マイクを使えません',
+    'en-US': "Can't use the microphone",
+    'fr-FR': "Impossible d'utiliser le microphone",
+    'de-DE': 'Das Mikrofon lässt sich nicht verwenden',
+    'hi-IN': 'माइक्रोफ़ोन इस्तेमाल नहीं हो सका',
+    'id-ID': 'Mikrofon tidak bisa dipakai',
+    'it-IT': 'Impossibile usare il microfono',
+    'ko-KR': '마이크를 사용할 수 없습니다',
+    'pt-BR': 'Não é possível usar o microfone',
+    'es-419': 'No se puede usar el micrófono',
+    'es-ES': 'No se puede usar el micrófono'
+  },
+  micLiveFailed: {
+    'ja-JP': 'マイクを使えません(live)',
+    'en-US': "Can't use the microphone (live)",
+    'fr-FR': "Impossible d'utiliser le microphone (live)",
+    'de-DE': 'Das Mikrofon lässt sich nicht verwenden (live)',
+    'hi-IN': 'माइक्रोफ़ोन इस्तेमाल नहीं हो सका (live)',
+    'id-ID': 'Mikrofon tidak bisa dipakai (live)',
+    'it-IT': 'Impossibile usare il microfono (live)',
+    'ko-KR': '마이크를 사용할 수 없습니다(live)',
+    'pt-BR': 'Não é possível usar o microfone (live)',
+    'es-419': 'No se puede usar el micrófono (live)',
+    'es-ES': 'No se puede usar el micrófono (live)'
+  },
+  liveFailed: {
+    'ja-JP': 'live エンジンのエラー',
+    'en-US': 'Live engine error',
+    'fr-FR': 'Erreur du moteur live',
+    'de-DE': 'Fehler der live-Engine',
+    'hi-IN': 'live इंजन की एरर',
+    'id-ID': 'Kesalahan mesin live',
+    'it-IT': 'Errore del motore live',
+    'ko-KR': 'live 엔진 오류',
+    'pt-BR': 'Erro no motor live',
+    'es-419': 'Error del motor live',
+    'es-ES': 'Error del motor live'
+  },
+  engineChanged: {
+    title: {
+      'ja-JP': '声のエンジンを変えました',
+      'en-US': 'Voice engine changed',
+      'fr-FR': 'Moteur vocal changé',
+      'de-DE': 'Sprach-Engine geändert',
+      'hi-IN': 'वॉइस इंजन बदल दिया',
+      'id-ID': 'Mesin suara diganti',
+      'it-IT': 'Motore vocale cambiato',
+      'ko-KR': '음성 엔진을 변경했습니다',
+      'pt-BR': 'Motor de voz alterado',
+      'es-419': 'Se cambió el motor de voz',
+      'es-ES': 'Has cambiado el motor de voz'
+    },
+    body: {
+      'ja-JP': 'マイクをオンにし直すと新しいエンジンで話せます。',
+      'en-US': 'Turn the microphone off and on again to speak with the new engine.',
+      'fr-FR': 'Désactivez puis réactivez le microphone pour parler avec le nouveau moteur.',
+      'de-DE': 'Schalten Sie das Mikrofon aus und wieder ein, um mit der neuen Engine zu sprechen.',
+      'hi-IN': 'नए इंजन से बात करने के लिए माइक्रोफ़ोन बंद करके फिर चालू करें।',
+      'id-ID': 'Matikan lalu nyalakan lagi mikrofon untuk berbicara dengan mesin yang baru.',
+      'it-IT': 'Disattiva e riattiva il microfono per parlare con il nuovo motore.',
+      'ko-KR': '마이크를 껐다가 다시 켜면 새 엔진으로 말할 수 있습니다.',
+      'pt-BR': 'Desative e ative o microfone para falar com o novo motor.',
+      'es-419': 'Desactiva y vuelve a activar el micrófono para hablar con el motor nuevo.',
+      'es-ES': 'Desactiva el micrófono y vuelve a activarlo para hablar con el nuevo motor.'
+    }
+  },
+  services: {
+    title: {
+      'ja-JP': '音声サービス',
+      'en-US': 'Voice services',
+      'fr-FR': 'Services vocaux',
+      'de-DE': 'Sprachdienste',
+      'hi-IN': 'वॉइस सेवाएँ',
+      'id-ID': 'Layanan suara',
+      'it-IT': 'Servizi vocali',
+      'ko-KR': '음성 서비스',
+      'pt-BR': 'Serviços de voz',
+      'es-419': 'Servicios de voz',
+      'es-ES': 'Servicios de voz'
+    },
+    recognitionBack: {
+      'ja-JP': '音声認識が戻りました',
+      'en-US': 'Speech recognition is back',
+      'fr-FR': 'La reconnaissance vocale est revenue',
+      'de-DE': 'Die Spracherkennung läuft wieder',
+      'hi-IN': 'स्पीच रिकग्निशन फिर चालू हुआ',
+      'id-ID': 'Pengenalan suara kembali jalan',
+      'it-IT': 'Il riconoscimento vocale è tornato attivo',
+      'ko-KR': '음성 인식이 돌아왔습니다',
+      'pt-BR': 'O reconhecimento de fala voltou',
+      'es-419': 'El reconocimiento de voz volvió a funcionar',
+      'es-ES': 'El reconocimiento de voz ha vuelto'
+    },
+    recognitionStopped: {
+      'ja-JP': '音声認識が止まりました',
+      'en-US': 'Speech recognition stopped',
+      'fr-FR': "La reconnaissance vocale s'est arrêtée",
+      'de-DE': 'Die Spracherkennung läuft nicht mehr',
+      'hi-IN': 'स्पीच रिकग्निशन रुक गया',
+      'id-ID': 'Pengenalan suara berhenti',
+      'it-IT': 'Il riconoscimento vocale si è fermato',
+      'ko-KR': '음성 인식이 멈췄습니다',
+      'pt-BR': 'O reconhecimento de fala parou',
+      'es-419': 'El reconocimiento de voz se detuvo',
+      'es-ES': 'El reconocimiento de voz se ha detenido'
+    },
+    speechBack: {
+      'ja-JP': '読み上げが戻りました',
+      'en-US': 'Speech is back',
+      'fr-FR': 'La synthèse vocale est revenue',
+      'de-DE': 'Die Sprachausgabe läuft wieder',
+      'hi-IN': 'स्पीच फिर चालू हुई',
+      'id-ID': 'Pembacaan kembali jalan',
+      'it-IT': 'La lettura ad alta voce è tornata attiva',
+      'ko-KR': '읽어주기가 돌아왔습니다',
+      'pt-BR': 'A leitura em voz alta voltou',
+      'es-419': 'La lectura en voz alta volvió a funcionar',
+      'es-ES': 'La lectura en voz alta ha vuelto'
+    },
+    speechStopped: {
+      'ja-JP': '読み上げが止まりました',
+      'en-US': 'Speech stopped',
+      'fr-FR': "La synthèse vocale s'est arrêtée",
+      'de-DE': 'Die Sprachausgabe läuft nicht mehr',
+      'hi-IN': 'स्पीच रुक गई',
+      'id-ID': 'Pembacaan berhenti',
+      'it-IT': 'La lettura ad alta voce si è fermata',
+      'ko-KR': '읽어주기가 멈췄습니다',
+      'pt-BR': 'A leitura em voz alta parou',
+      'es-419': 'La lectura en voz alta se detuvo',
+      'es-ES': 'La lectura en voz alta se ha detenido'
+    }
+  },
+  speech: {
+    speakersFailed: {
+      'ja-JP': '{engine} の話者を取得できませんでした(HTTP {status})。',
+      'en-US': "Couldn't get the speakers of {engine} (HTTP {status}).",
+      'fr-FR': "Impossible d'obtenir les locuteurs de {engine} (HTTP {status}).",
+      'de-DE': 'Die Sprecher von {engine} ließen sich nicht abrufen (HTTP {status}).',
+      'hi-IN': '{engine} के स्पीकर नहीं मिल सके (HTTP {status})।',
+      'id-ID': 'Tidak bisa mengambil daftar pembicara {engine} (HTTP {status}).',
+      'it-IT': 'Impossibile ottenere i parlanti di {engine} (HTTP {status}).',
+      'ko-KR': '{engine}의 화자를 가져오지 못했습니다(HTTP {status}).',
+      'pt-BR': 'Não foi possível obter os locutores de {engine} (HTTP {status}).',
+      'es-419': 'No se pudieron obtener los locutores de {engine} (HTTP {status}).',
+      'es-ES': 'No se han podido obtener los locutores de {engine} (HTTP {status}).'
+    },
+    cannotSpeak: {
+      'ja-JP': '{engine} は {language} を読み上げられません。',
+      'en-US': "{engine} can't speak {language}.",
+      'fr-FR': '{engine} ne parle pas {language}.',
+      'de-DE': '{engine} spricht kein {language}.',
+      'hi-IN': '{engine} {language} नहीं बोल सकता।',
+      'id-ID': '{engine} tidak bisa berbicara dalam {language}.',
+      'it-IT': '{engine} non parla {language}.',
+      'ko-KR': '{engine}에서는 {language} 음성을 읽어줄 수 없습니다.',
+      'pt-BR': '{engine} não fala {language}.',
+      'es-419': '{engine} no habla {language}.',
+      'es-ES': '{engine} no habla {language}.'
+    },
+    noSpeech: {
+      'ja-JP': '「読み上げなし」を選んでいるので、音声を作りません。',
+      'en-US': 'No speech is selected, so no audio is produced.',
+      'fr-FR': "« Sans synthèse vocale » est sélectionné : aucun audio n'est produit.",
+      'de-DE': '„Keine Sprachausgabe“ ist gewählt, deshalb entsteht kein Ton.',
+      'hi-IN': '"कोई स्पीच नहीं" चुना है, इसलिए कोई ऑडियो नहीं बनेगा।',
+      'id-ID': 'Karena pilihannya Tanpa pembacaan, tidak ada audio yang dibuat.',
+      'it-IT': 'È selezionato «Nessuna lettura», quindi non viene prodotto audio.',
+      'ko-KR': "'읽어주기 없음'을 선택했으므로 음성을 만들지 않습니다.",
+      'pt-BR': '“Sem leitura” está selecionado, então nenhum áudio é gerado.',
+      'es-419': 'Está elegido «Sin lectura en voz alta», así que no se genera audio.',
+      'es-ES': 'Está elegido “Sin lectura en voz alta”, así que no se genera audio.'
+    },
+    systemUnavailable: {
+      'ja-JP': 'この Mac では macOS の音声合成を使えません。設定の「声」でほかの読み上げを選んでください。',
+      'en-US': "This Mac can't use the macOS voice. Choose another speech engine on the Voice page in Settings.",
+      'fr-FR': 'Ce Mac ne peut pas utiliser la voix de macOS. Choisissez un autre moteur de synthèse vocale sur la page Voix des réglages.',
+      'de-DE': 'Dieser Mac kann die macOS-Stimme nicht verwenden. Wählen Sie auf der Seite „Stimme“ in den Einstellungen eine andere Engine für die Sprachausgabe.',
+      'hi-IN': 'इस Mac पर macOS की आवाज़ इस्तेमाल नहीं हो सकती। सेटिंग्ज़ के "आवाज़" पेज पर कोई दूसरा स्पीच इंजन चुनें।',
+      'id-ID': 'Mac ini tidak bisa memakai suara macOS. Pilih mesin pembacaan lain di halaman Suara pada Pengaturan.',
+      'it-IT': 'Questo Mac non può usare la sintesi vocale di macOS. Scegli un altro motore per la lettura nella pagina «Voce» delle impostazioni.',
+      'ko-KR': "이 Mac에서는 macOS 음성 합성을 사용할 수 없습니다. 설정의 '음성'에서 다른 읽어주기를 선택하십시오.",
+      'pt-BR': 'Este Mac não pode usar a voz do macOS. Escolha outro motor de leitura na página Voz dos ajustes.',
+      'es-419': 'Esta Mac no puede usar la voz de macOS. Elige otro motor de lectura en voz alta en la página Voz de Configuración.',
+      'es-ES': 'Este Mac no puede usar la voz de macOS. Elige otro motor de lectura en la página “Voz” de Ajustes.'
+    }
+  },
+  live: {
+    notLiveEngine: {
+      'ja-JP': '声のエンジンが live ではありません。設定の「声」で live のエンジンを選んでください。',
+      'en-US': 'The voice engine is not a live engine. Choose one on the Voice page in Settings.',
+      'fr-FR': "Le moteur vocal n'est pas un moteur live. Choisissez-en un sur la page Voix des réglages.",
+      'de-DE': 'Die Sprach-Engine ist keine live-Engine. Wählen Sie auf der Seite „Stimme“ in den Einstellungen eine aus.',
+      'hi-IN': 'वॉइस इंजन live नहीं है। सेटिंग्ज़ के "आवाज़" पेज पर कोई live इंजन चुनें।',
+      'id-ID': 'Mesin suaranya bukan mesin live. Pilih mesin live di halaman Suara pada Pengaturan.',
+      'it-IT': 'Il motore vocale non è un motore live. Scegline uno nella pagina «Voce» delle impostazioni.',
+      'ko-KR': "음성 엔진이 live가 아닙니다. 설정의 '음성'에서 live 엔진을 선택하십시오.",
+      'pt-BR': 'O motor de voz não é um motor live. Escolha um na página Voz dos ajustes.',
+      'es-419': 'El motor de voz no es un motor live. Elige uno en la página Voz de Configuración.',
+      'es-ES': 'El motor de voz no es un motor live. Elige uno en la página “Voz” de Ajustes.'
+    },
+    notRunning: {
+      'ja-JP': 'live エンジンが動いていません。マイクをオンにしてください。',
+      'en-US': 'The live engine is not running. Turn the microphone on.',
+      'fr-FR': 'Le moteur live ne tourne pas. Activez le microphone.',
+      'de-DE': 'Die live-Engine läuft nicht. Schalten Sie das Mikrofon ein.',
+      'hi-IN': 'live इंजन नहीं चल रहा। माइक्रोफ़ोन चालू करें।',
+      'id-ID': 'Mesin live tidak berjalan. Nyalakan mikrofonnya.',
+      'it-IT': 'Il motore live non è in funzione. Attiva il microfono.',
+      'ko-KR': 'live 엔진이 동작하지 않습니다. 마이크를 켜십시오.',
+      'pt-BR': 'O motor live não está em execução. Ative o microfone.',
+      'es-419': 'El motor live no está en ejecución. Activa el micrófono.',
+      'es-ES': 'El motor live no está en marcha. Activa el micrófono.'
+    },
+    openTimeout: {
+      'ja-JP': '{engine} のセッションが時間内に開きませんでした。',
+      'en-US': 'The {engine} session did not open in time.',
+      'fr-FR': "La session {engine} ne s'est pas ouverte à temps.",
+      'de-DE': 'Die Sitzung von {engine} hat sich nicht rechtzeitig geöffnet.',
+      'hi-IN': '{engine} का सेशन समय पर नहीं खुला।',
+      'id-ID': 'Sesi {engine} tidak terbuka tepat waktu.',
+      'it-IT': 'La sessione di {engine} non si è aperta in tempo.',
+      'ko-KR': '{engine} 세션이 제한 시간 안에 열리지 않았습니다.',
+      'pt-BR': 'A sessão do {engine} não abriu a tempo.',
+      'es-419': 'La sesión de {engine} no se abrió a tiempo.',
+      'es-ES': 'La sesión de {engine} no se ha abierto a tiempo.'
+    },
+    closed: {
+      'ja-JP': '{engine} の接続が閉じました({reason})',
+      'en-US': 'The {engine} connection closed ({reason})',
+      'fr-FR': "La connexion à {engine} s'est fermée ({reason})",
+      'de-DE': 'Die Verbindung zu {engine} wurde geschlossen ({reason})',
+      'hi-IN': '{engine} का कनेक्शन बंद हो गया ({reason})',
+      'id-ID': 'Koneksi {engine} tertutup ({reason})',
+      'it-IT': 'La connessione con {engine} si è chiusa ({reason})',
+      'ko-KR': '{engine} 연결이 닫혔습니다({reason})',
+      'pt-BR': 'A conexão do {engine} fechou ({reason})',
+      'es-419': 'La conexión con {engine} se cerró ({reason})',
+      'es-ES': 'La conexión de {engine} se ha cerrado ({reason})'
+    },
+    connectionError: {
+      'ja-JP': '{engine} の接続でエラーが起きました',
+      'en-US': 'The {engine} connection failed',
+      'fr-FR': 'La connexion à {engine} a échoué',
+      'de-DE': 'Die Verbindung zu {engine} ist fehlgeschlagen',
+      'hi-IN': '{engine} का कनेक्शन विफल रहा',
+      'id-ID': 'Koneksi {engine} gagal',
+      'it-IT': 'La connessione con {engine} non è riuscita',
+      'ko-KR': '{engine} 연결에서 오류가 일어났습니다',
+      'pt-BR': 'A conexão do {engine} falhou',
+      'es-419': 'Falló la conexión con {engine}',
+      'es-ES': 'La conexión de {engine} ha fallado'
+    },
+    connectFailed: {
+      'ja-JP': '接続できませんでした({detail})',
+      'en-US': "Couldn't connect ({detail})",
+      'fr-FR': 'Connexion impossible ({detail})',
+      'de-DE': 'Die Verbindung kam nicht zustande ({detail})',
+      'hi-IN': 'कनेक्ट नहीं हो सका ({detail})',
+      'id-ID': 'Tidak bisa menyambung ({detail})',
+      'it-IT': 'Impossibile connettersi ({detail})',
+      'ko-KR': '연결하지 못했습니다({detail})',
+      'pt-BR': 'Não foi possível conectar ({detail})',
+      'es-419': 'No se pudo conectar ({detail})',
+      'es-ES': 'No se ha podido conectar ({detail})'
+    },
+    startFailed: {
+      'ja-JP': 'live エンジンを起動できませんでした。',
+      'en-US': "Couldn't start the live engine.",
+      'fr-FR': 'Impossible de démarrer le moteur live.',
+      'de-DE': 'Die live-Engine konnte nicht gestartet werden.',
+      'hi-IN': 'live इंजन शुरू नहीं हो सका।',
+      'id-ID': 'Tidak bisa menjalankan mesin live.',
+      'it-IT': 'Impossibile avviare il motore live.',
+      'ko-KR': 'live 엔진을 시작하지 못했습니다.',
+      'pt-BR': 'Não foi possível iniciar o motor live.',
+      'es-419': 'No se pudo iniciar el motor live.',
+      'es-ES': 'No se ha podido iniciar el motor live.'
+    }
+  },
+  mic: {
+    notPermitted: {
+      'ja-JP': 'マイクを使えませんでした。システム設定で ASIST にマイクを許可してください。',
+      'en-US': "Couldn't use the microphone. Allow ASIST to use it in System Settings.",
+      'fr-FR': "Impossible d'utiliser le microphone. Autorisez ASIST à s'en servir dans Réglages Système.",
+      'de-DE': 'Das Mikrofon konnte nicht verwendet werden. Erlauben Sie ASIST in den Systemeinstellungen den Zugriff darauf.',
+      'hi-IN': 'माइक्रोफ़ोन इस्तेमाल नहीं हो सका। सिस्टम सेटिंग्ज़ में ASIST को माइक्रोफ़ोन की इजाज़त दें।',
+      'id-ID': 'Mikrofon tidak bisa dipakai. Izinkan ASIST memakainya di Pengaturan Sistem.',
+      'it-IT': "Impossibile usare il microfono. Consenti l'accesso ad ASIST in Impostazioni di Sistema.",
+      'ko-KR': '마이크를 사용하지 못했습니다. 시스템 설정에서 ASIST에 마이크 사용을 허용하십시오.',
+      'pt-BR': 'Não foi possível usar o microfone. Permita o acesso do ASIST nos Ajustes do Sistema.',
+      'es-419': 'No se pudo usar el micrófono. Permite que ASIST lo use en Configuración del Sistema.',
+      'es-ES': 'No se ha podido usar el micrófono. Permite que ASIST lo use en Ajustes del Sistema.'
+    },
+    unsupported: {
+      'ja-JP': 'この Mac ではマイクを使えません。',
+      'en-US': "This Mac can't use a microphone.",
+      'fr-FR': 'Ce Mac ne peut pas utiliser de microphone.',
+      'de-DE': 'Dieser Mac kann kein Mikrofon verwenden.',
+      'hi-IN': 'इस Mac पर माइक्रोफ़ोन इस्तेमाल नहीं हो सकता।',
+      'id-ID': 'Mac ini tidak bisa memakai mikrofon.',
+      'it-IT': 'Questo Mac non può usare un microfono.',
+      'ko-KR': '이 Mac에서는 마이크를 사용할 수 없습니다.',
+      'pt-BR': 'Este Mac não pode usar um microfone.',
+      'es-419': 'Esta Mac no puede usar un micrófono.',
+      'es-ES': 'Este Mac no puede usar un micrófono.'
+    },
+    noAudioTrack: {
+      'ja-JP': 'マイクから音を受け取れませんでした。入力機器を確かめてください。',
+      'en-US': "Couldn't capture audio from the microphone. Check the input device.",
+      'fr-FR': "Impossible de capter le son du microphone. Vérifiez le périphérique d'entrée.",
+      'de-DE': 'Vom Mikrofon kam kein Ton an. Prüfen Sie das Eingabegerät.',
+      'hi-IN': 'माइक्रोफ़ोन से आवाज़ नहीं मिली। इनपुट डिवाइस देखें।',
+      'id-ID': 'Tidak bisa menangkap suara dari mikrofon. Periksa perangkat masukannya.',
+      'it-IT': "Impossibile acquisire l'audio dal microfono. Controlla il dispositivo di ingresso.",
+      'ko-KR': '마이크에서 소리를 받지 못했습니다. 입력 기기를 확인하십시오.',
+      'pt-BR': 'Não foi possível captar o áudio do microfone. Verifique o dispositivo de entrada.',
+      'es-419': 'No se pudo captar el audio del micrófono. Revisa el dispositivo de entrada.',
+      'es-ES': 'No se ha podido captar el sonido del micrófono. Comprueba el dispositivo de entrada.'
+    }
+  }
+})

@@ -1,0 +1,93 @@
+/* Job log rows, monospaced, with a leading marker and a color per kind. The font size is decided by
+   where the rows sit, a card or a full screen. */
+.jl-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-holo-dim);
+}
+.jl-time {
+  flex: none;
+  font-size: 0.85em;
+  color: color-mix(in srgb, var(--color-holo-dim) 60%, transparent);
+  user-select: none;
+}
+.jl-mark {
+  flex: none;
+  width: 1ch;
+  text-align: center;
+  opacity: 0.8;
+}
+.jl-text {
+  white-space: pre-wrap;
+}
+.jl-row[data-kind='assistant'] {
+  color: color-mix(in srgb, var(--color-holo-text) 85%, transparent);
+}
+.jl-row[data-kind='assistant'] + .jl-row[data-kind='assistant'] {
+  margin-top: 2px;
+}
+.jl-row[data-kind='stderr'] {
+  color: var(--color-holo-dim);
+}
+.jl-row[data-kind='tool'] {
+  color: color-mix(in srgb, var(--color-holo-cyan) 85%, transparent);
+}
+.jl-name {
+  flex: none;
+}
+.jl-name em {
+  font-style: normal;
+  color: var(--color-holo-muted);
+}
+.jl-detail {
+  min-width: 0;
+  color: var(--color-holo-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jl-row[data-kind='command'] {
+  color: color-mix(in srgb, var(--color-holo-cyan) 85%, transparent);
+}
+.jl-command {
+  min-width: 0;
+  white-space: pre-wrap;
+}
+.jl-row[data-kind='command'][data-status='error'] {
+  color: var(--color-holo-red);
+}
+.jl-exit {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--color-holo-red) 45%, transparent);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+.jl-dot {
+  flex: none;
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-holo-peach);
+  box-shadow: 0 0 8px var(--color-holo-peach);
+  animation: holo-pulse 1.4s ease-in-out infinite;
+}
+.jl-row[data-kind='file'] {
+  color: var(--color-holo-mint);
+}
+.jl-files {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 10px;
+  min-width: 0;
+}
+.jl-row[data-kind='result'] {
+  color: var(--color-holo-mint);
+}
+.jl-row[data-kind='result'][data-status='error'] {
+  color: var(--color-holo-red);
+}

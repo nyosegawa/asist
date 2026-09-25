@@ -1,0 +1,218 @@
+import { defineMessages } from '../message'
+
+/** The conversation screen: the feed in the middle, its input, and what a turn reports when it cannot run. */
+export const conversation = defineMessages({
+  start: {
+    'ja-JP': 'マイクをオンにして話しかけてください',
+    'en-US': 'Turn the microphone on and start talking',
+    'fr-FR': 'Activez le microphone et parlez',
+    'de-DE': 'Schalten Sie das Mikrofon ein und sprechen Sie',
+    'hi-IN': 'माइक्रोफ़ोन चालू करें और बोलना शुरू करें',
+    'id-ID': 'Nyalakan mikrofon lalu mulai bicara',
+    'it-IT': 'Attiva il microfono e inizia a parlare',
+    'ko-KR': '마이크를 켜고 말을 걸어 보십시오',
+    'pt-BR': 'Ative o microfone e comece a falar',
+    'es-419': 'Activa el micrófono y empieza a hablar',
+    'es-ES': 'Activa el micrófono y empieza a hablar'
+  },
+  error: {
+    'ja-JP': 'エラー: {message}',
+    'en-US': 'Error: {message}',
+    'fr-FR': 'Erreur : {message}',
+    'de-DE': 'Fehler: {message}',
+    'hi-IN': 'एरर: {message}',
+    'id-ID': 'Kesalahan: {message}',
+    'it-IT': 'Errore: {message}',
+    'ko-KR': '오류: {message}',
+    'pt-BR': 'Erro: {message}',
+    'es-419': 'Error: {message}',
+    'es-ES': 'Error: {message}'
+  },
+  recognizing: {
+    'ja-JP': '認識中',
+    'en-US': 'Recognizing',
+    'fr-FR': 'Reconnaissance',
+    'de-DE': 'Wird erkannt',
+    'hi-IN': 'पहचान रहा है',
+    'id-ID': 'Mengenali',
+    'it-IT': 'Riconoscimento in corso',
+    'ko-KR': '인식 중',
+    'pt-BR': 'Reconhecendo',
+    'es-419': 'Reconociendo',
+    'es-ES': 'Reconociendo'
+  },
+  inputWhileListening: {
+    'ja-JP': '話しかけるか、ここに入力',
+    'en-US': 'Speak or type here',
+    'fr-FR': 'Parlez ou écrivez ici',
+    'de-DE': 'Sprechen oder hier tippen',
+    'hi-IN': 'बोलें या यहाँ लिखें',
+    'id-ID': 'Bicara atau ketik di sini',
+    'it-IT': 'Parla oppure scrivi qui',
+    'ko-KR': '말하거나 여기에 입력',
+    'pt-BR': 'Fale ou digite aqui',
+    'es-419': 'Habla o escribe aquí',
+    'es-ES': 'Habla o escribe aquí'
+  },
+  input: {
+    'ja-JP': 'メッセージを入力',
+    'en-US': 'Type a message',
+    'fr-FR': 'Écrire un message',
+    'de-DE': 'Nachricht eingeben',
+    'hi-IN': 'मैसेज लिखें',
+    'id-ID': 'Ketik pesan',
+    'it-IT': 'Scrivi un messaggio',
+    'ko-KR': '메시지 입력',
+    'pt-BR': 'Digite uma mensagem',
+    'es-419': 'Escribe un mensaje',
+    'es-ES': 'Escribe un mensaje'
+  },
+  replyStartFailed: {
+    'ja-JP': '応答を始められませんでした',
+    'en-US': "Couldn't start the reply",
+    'fr-FR': 'Impossible de commencer la réponse',
+    'de-DE': 'Die Antwort konnte nicht begonnen werden',
+    'hi-IN': 'जवाब शुरू नहीं हो सका',
+    'id-ID': 'Tidak bisa memulai jawaban',
+    'it-IT': 'Impossibile iniziare la risposta',
+    'ko-KR': '응답을 시작하지 못했습니다',
+    'pt-BR': 'Não foi possível iniciar a resposta',
+    'es-419': 'No se pudo iniciar la respuesta',
+    'es-ES': 'No se ha podido empezar la respuesta'
+  },
+  replyFailed: {
+    'ja-JP': '応答できませんでした',
+    'en-US': "Couldn't reply",
+    'fr-FR': 'Impossible de répondre',
+    'de-DE': 'Es konnte nicht geantwortet werden',
+    'hi-IN': 'जवाब नहीं दिया जा सका',
+    'id-ID': 'Tidak bisa menjawab',
+    'it-IT': 'Impossibile rispondere',
+    'ko-KR': '응답하지 못했습니다',
+    'pt-BR': 'Não foi possível responder',
+    'es-419': 'No se pudo responder',
+    'es-ES': 'No se ha podido responder'
+  },
+  sendFailed: {
+    'ja-JP': '送れませんでした',
+    'en-US': "Couldn't send the message",
+    'fr-FR': "Impossible d'envoyer le message",
+    'de-DE': 'Die Nachricht konnte nicht gesendet werden',
+    'hi-IN': 'मैसेज नहीं भेजा जा सका',
+    'id-ID': 'Tidak bisa mengirim pesan',
+    'it-IT': 'Impossibile inviare il messaggio',
+    'ko-KR': '보내지 못했습니다',
+    'pt-BR': 'Não foi possível enviar a mensagem',
+    'es-419': 'No se pudo enviar el mensaje',
+    'es-ES': 'No se ha podido enviar el mensaje'
+  },
+  job: {
+    done: {
+      'ja-JP': 'ジョブが終わりました',
+      'en-US': 'Job finished',
+      'fr-FR': 'Job terminé',
+      'de-DE': 'Job abgeschlossen',
+      'hi-IN': 'जॉब पूरी हुई',
+      'id-ID': 'Pekerjaan selesai',
+      'it-IT': 'Incarico terminato',
+      'ko-KR': '작업이 끝났습니다',
+      'pt-BR': 'Job concluído',
+      'es-419': 'El trabajo terminó',
+      'es-ES': 'El trabajo ha terminado'
+    },
+    error: {
+      'ja-JP': 'ジョブが失敗しました',
+      'en-US': 'Job failed',
+      'fr-FR': 'Le job a échoué',
+      'de-DE': 'Job fehlgeschlagen',
+      'hi-IN': 'जॉब पूरी नहीं हो सकी',
+      'id-ID': 'Pekerjaan gagal',
+      'it-IT': 'Incarico non riuscito',
+      'ko-KR': '작업이 실패했습니다',
+      'pt-BR': 'Job falhou',
+      'es-419': 'El trabajo falló',
+      'es-ES': 'El trabajo ha fallado'
+    },
+    cancelled: {
+      'ja-JP': 'ジョブを中止しました',
+      'en-US': 'Job stopped',
+      'fr-FR': 'Job arrêté',
+      'de-DE': 'Job gestoppt',
+      'hi-IN': 'जॉब रोक दी',
+      'id-ID': 'Pekerjaan dihentikan',
+      'it-IT': 'Incarico interrotto',
+      'ko-KR': '작업을 중지했습니다',
+      'pt-BR': 'Job parado',
+      'es-419': 'El trabajo se detuvo',
+      'es-ES': 'Se ha detenido el trabajo'
+    }
+  },
+  /** What the assistant says out loud when the conversation model cannot answer. */
+  reply: {
+    overloaded: {
+      'ja-JP': 'モデルのサーバーが混み合っています。少し待ってから、もう一度話しかけてください。',
+      'en-US': "The model's servers are busy. Wait a moment and speak to me again.",
+      'fr-FR': 'Les serveurs du modèle sont saturés. Attendez un instant et reparlez-moi.',
+      'de-DE': 'Die Server des Modells sind ausgelastet. Warten Sie einen Moment und sprechen Sie mich noch einmal an.',
+      'hi-IN': 'मॉडल के सर्वर व्यस्त हैं। थोड़ी देर रुककर फिर बोलें।',
+      'id-ID': 'Server modelnya sedang sibuk. Tunggu sebentar lalu bicaralah lagi pada saya.',
+      'it-IT': 'I server del modello sono occupati. Aspetta un momento e parlami di nuovo.',
+      'ko-KR': '모델의 서버가 붐비고 있습니다. 잠시 기다렸다가 다시 말을 걸어 주십시오.',
+      'pt-BR': 'Os servidores do modelo estão ocupados. Espere um momento e fale comigo de novo.',
+      'es-419': 'Los servidores del modelo están saturados. Espera un momento y vuelve a hablarme.',
+      'es-ES': 'Los servidores del modelo están saturados. Espera un momento y vuelve a hablarme.'
+    },
+    rateLimit: {
+      'ja-JP': 'API の利用上限に達しました。少し時間をおいてから、もう一度話しかけてください。',
+      'en-US': 'The API rate limit was reached. Wait a little and speak to me again.',
+      'fr-FR': "La limite d'utilisation de l'API est atteinte. Attendez un peu et reparlez-moi.",
+      'de-DE': 'Das Nutzungslimit der API ist erreicht. Warten Sie etwas und sprechen Sie mich noch einmal an.',
+      'hi-IN': 'API की सीमा पूरी हो गई। थोड़ी देर रुककर फिर बोलें।',
+      'id-ID': 'Batas pemakaian API sudah tercapai. Tunggu sebentar lalu bicaralah lagi pada saya.',
+      'it-IT': "È stato raggiunto il limite di utilizzo dell'API. Aspetta un po' e parlami di nuovo.",
+      'ko-KR': 'API 사용 한도에 도달했습니다. 잠시 뒤에 다시 말을 걸어 주십시오.',
+      'pt-BR': 'O limite de uso da API foi atingido. Espere um pouco e fale comigo de novo.',
+      'es-419': 'Se alcanzó el límite de uso de la API. Espera un poco y vuelve a hablarme.',
+      'es-ES': 'Se ha alcanzado el límite de uso de la API. Espera un poco y vuelve a hablarme.'
+    },
+    authentication: {
+      'ja-JP': 'API キーを認証できませんでした。設定の「連携」でキーを確かめてください。',
+      'en-US': "Couldn't authenticate the API key. Check it on the Integrations page in Settings.",
+      'fr-FR': "Impossible d'authentifier la clé API. Vérifiez-la sur la page Intégrations des réglages.",
+      'de-DE': 'Der API-Schlüssel ließ sich nicht authentifizieren. Prüfen Sie ihn auf der Seite „Integrationen“ in den Einstellungen.',
+      'hi-IN': 'API कुंजी की पुष्टि नहीं हो सकी। इसे सेटिंग्ज़ के "इंटीग्रेशन" पेज पर देखें।',
+      'id-ID': 'Tidak bisa mengautentikasi kunci API. Periksa kuncinya di halaman Integrasi pada Pengaturan.',
+      'it-IT': 'Impossibile autenticare la chiave API. Controllala nella pagina «Integrazioni» delle impostazioni.',
+      'ko-KR': "API 키를 인증하지 못했습니다. 설정의 '연동'에서 키를 확인하십시오.",
+      'pt-BR': 'Não foi possível autenticar a chave de API. Confira na página Integrações dos ajustes.',
+      'es-419': 'No se pudo autenticar la clave de API. Revísala en la página Integraciones de Configuración.',
+      'es-ES': 'No se ha podido autenticar la clave de API. Compruébala en la página “Integraciones” de Ajustes.'
+    },
+    network: {
+      'ja-JP': 'ネットワークにつながりませんでした。接続を確かめて、もう一度話しかけてください。',
+      'en-US': "Couldn't reach the network. Check your connection and speak to me again.",
+      'fr-FR': "Impossible d'atteindre le réseau. Vérifiez votre connexion et reparlez-moi.",
+      'de-DE': 'Das Netzwerk war nicht erreichbar. Prüfen Sie Ihre Verbindung und sprechen Sie mich noch einmal an.',
+      'hi-IN': 'नेटवर्क तक नहीं पहुँच सके। अपना कनेक्शन देखकर फिर बोलें।',
+      'id-ID': 'Tidak bisa menjangkau jaringan. Periksa koneksi Anda lalu bicaralah lagi pada saya.',
+      'it-IT': 'Non è stato possibile raggiungere la rete. Controlla la connessione e parlami di nuovo.',
+      'ko-KR': '네트워크에 연결하지 못했습니다. 연결을 확인하고 다시 말을 걸어 주십시오.',
+      'pt-BR': 'Não foi possível alcançar a rede. Confira a conexão e fale comigo de novo.',
+      'es-419': 'No se pudo llegar a la red. Revisa tu conexión y vuelve a hablarme.',
+      'es-ES': 'No se ha podido conectar con la red. Comprueba la conexión y vuelve a hablarme.'
+    },
+    failed: {
+      'ja-JP': '返事を作れませんでした。もう一度話しかけてください。',
+      'en-US': "Couldn't write a reply. Speak to me again.",
+      'fr-FR': "Impossible d'écrire une réponse. Reparlez-moi.",
+      'de-DE': 'Ich konnte keine Antwort verfassen. Sprechen Sie mich noch einmal an.',
+      'hi-IN': 'जवाब नहीं बन सका। फिर बोलें।',
+      'id-ID': 'Tidak bisa menyusun jawaban. Bicaralah lagi pada saya.',
+      'it-IT': 'Non è stato possibile scrivere una risposta. Parlami di nuovo.',
+      'ko-KR': '대답을 만들지 못했습니다. 다시 말을 걸어 주십시오.',
+      'pt-BR': 'Não foi possível escrever uma resposta. Fale comigo de novo.',
+      'es-419': 'No se pudo escribir una respuesta. Vuelve a hablarme.',
+      'es-ES': 'No se ha podido escribir una respuesta. Vuelve a hablarme.'
+    }
+  }
+})

@@ -1,0 +1,488 @@
+import { useEffect, useRef, useState } from 'react'
+import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
+import type { SetupProgress, SetupStatus } from '@shared/ipc'
+import type { AsrModel } from '@shared/asr-models'
+import { errorText } from '@shared/i18n/error-text'
+import { defaultRegion, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
+import { UI_LOCALE_NAMES } from '@shared/i18n'
+import { useSettingsStore, useStatusStore } from '@/state/stores'
+import { voiceController } from '@/voice/VoiceController'
+import { speechPlayer } from '@/voice/SpeechPlayer'
+import { microphoneCaptureErrorMessage, verifyMicrophoneCapture } from '@/voice/microphone-access'
+import { Btn } from './settings/primitives'
+import { useExtraModels } from './setup/extras'
+import { LanguageStep } from './setup/language'
+import { ExtrasStep, ListeningStep, MicStep, ModelStep, SpeakingStep, SummaryStep, TtsStep, type ListeningChoice, type MicState, type SpeakingMode } from './setup/steps'
+import { displayError } from '@/display-error'
+import { useT } from '@/i18n'
+import type { MessageKey } from '@shared/i18n'
+
+/**
+ * The first-run setup. It completes only once every requirement has actually been verified, and it
+ * skips the screens that the chosen way of talking does not need. The box keeps a fixed size so that
+ * the heading and the buttons stay in place when the screen changes.
+ */
+
+const STEPS = ['language', 'model', 'speaking', 'listening', 'tts', 'mic', 'extras', 'summary'] as const
+type StepId = (typeof STEPS)[number]
+
+/** The way of talking is named in the same words on its own screen and in the summary. */
+const SPEAKING_TITLE = {
+  voice: 'setup.speaking.voice.title',
+  'type-and-listen': 'setup.speaking.typeAndListen.title',
+  'text-only': 'setup.speaking.textOnly.title'
+} as const satisfies Record<SpeakingMode, MessageKey>
+
+
+export function SetupWizard(): React.JSX.Element | null {
+  const t = useT()
+  const settings = useSettingsStore((state) => state.settings)
+  const saveSettings = useSettingsStore((state) => state.save)
+  const applyStatus = useStatusStore((state) => state.apply)
+  const [step, setStep] = useState<StepId>('language')
+  const [setup, setSetup] = useState<SetupStatus | null>(null)
+  const [provider, setProvider] = useState<LlmProvider>('anthropic')
+  const [apiKey, setApiKey] = useState('')
+  const [apiBusy, setApiBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [mode, setMode] = useState<SpeakingMode | null>(null)
+  const [listening, setListening] = useState<ListeningChoice | null>(null)
+  const [localReady, setLocalReady] = useState(false)
+  const [localProgress, setLocalProgress] = useState<number | null>(null)
+  const [download, setDownload] = useState<SetupProgress | null>(null)
+  const [downloadBusy, setDownloadBusy] = useState(false)
+  const [downloadMessage, setDownloadMessage] = useState('')
+  const [mic, setMic] = useState<MicState>('unknown')
+  const [autoMic, setAutoMic] = useState(false)
+  const [finishing, setFinishing] = useState(false)
+  const [ttsChecking, setTtsChecking] = useState(false)
+  const [ttsDownload, setTtsDownload] = useState<SetupProgress | null>(null)
+  const refreshGeneration = useRef(0)
+  // There is a single progress channel, and the extra preparations report on it too, so progress is
+  // accepted only while the listening step is on screen.
+  const stepRef = useRef<StepId>('language')
+  stepRef.current = step
+  const locale = settings?.conversationLocale ?? 'ja-JP'
+  const extras = useExtraModels(step === 'extras', mode, locale)
+
+  const refresh = async (): Promise<SetupStatus | null> => {
+    const generation = ++refreshGeneration.current
+    let next: SetupStatus
+    try {
+      next = await window.api.getSetupStatus()
+    } catch (err) {
+      // A failure from an older check must not roll a later success back into an error.
+      if (generation !== refreshGeneration.current) return null
+      throw err
+    }
+    if (generation !== refreshGeneration.current) return null
+    setSetup(next)
+    applyStatus(next.services)
+    return next
+  }
+  useEffect(() => {
+    if (!settings || settings.onboardingVersion >= 1) return
+    setAutoMic(settings.micAutoStart)
+    setProvider(settings.conversationModel.provider)
+    void refresh()
+      .then((current) => {
+        if (current?.services.asr) setListening('server')
+        else if (settings.localAsrEnabled) setListening('local')
+      })
+      .catch((err: unknown) => setError(displayError(err)))
+    return window.api.onSetupProgress((progress) => {
+      if (stepRef.current === 'tts') setTtsDownload(progress.status === 'downloading' ? progress : null)
+      if (stepRef.current !== 'listening') return
+      if (progress.status === 'downloading') {
+        setDownloadBusy(true)
+        setDownload(progress)
+      } else {
+        setDownloadBusy(false)
+        setDownload(null)
+      }
+      if (progress.message) setDownloadMessage(progress.message)
+    })
+    // The initialization runs on the first render only, so a later settings update does not roll
+    // the choices back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings?.onboardingVersion])
+
+  if (!settings || settings.onboardingVersion >= 1) return null
+
+  const defaults = defaultModelsFor(provider)
+  const modelsMatch = sameModel(settings.conversationModel, defaults.conversationModel) && sameModel(settings.bridgeModel, defaults.bridgeModel)
+  const modelReady = setup?.services.llm === true && modelsMatch
+  const keyConfigured = (setup?.services.llmKeys[provider] ?? 'missing') !== 'missing'
+  const serverReady = setup?.services.asr === true
+  const listeningReady = (listening === 'server' && serverReady) || (listening === 'local' && localReady)
+  const ttsReady = setup?.services.tts === true
+
+  const needed = (id: StepId): boolean => {
+    // Before the way of talking is chosen, every screen counts as needed.
+    if (id === 'listening') return mode === null || mode === 'voice'
+    if (id === 'tts') return mode !== 'text-only'
+    if (id === 'mic') return mode === null || mode === 'voice'
+    return true
+  }
+  const ready: Record<StepId, boolean> = {
+    // A fresh installation already carries the language of the system, so this screen opens on an answer.
+    language: true,
+    model: modelReady,
+    speaking: mode !== null,
+    listening: listeningReady,
+    tts: ttsReady,
+    mic: mic === 'granted',
+    extras: extras.settled,
+    summary: true
+  }
+  const index = STEPS.indexOf(step)
+  const move = (direction: 1 | -1): void => {
+    setError('')
+    for (let i = index + direction; i >= 0 && i < STEPS.length; i += direction) {
+      if (needed(STEPS[i])) {
+        setStep(STEPS[i])
+        return
+      }
+    }
+  }
+
+  /**
+   * Saves the one language choice: the interface, the conversation and the region move together, and
+   * the speech engine moves with them when the chosen one cannot read the new language aloud.
+   */
+  const chooseLocale = (next: ConversationLocale): void => {
+    setError('')
+    const engine = ttsEngineSpeaks(next, settings.ttsEngine) ? {} : { ttsEngine: 'system' as const }
+    void saveSettings({ uiLocale: next, conversationLocale: next, region: defaultRegion(next), ...engine })
+      .then(() => refresh())
+      .catch((err: unknown) => setError(displayError(err)))
+  }
+
+  /** Verifies and saves the key, and sets the conversation model and the bridge phrase model to the provider's default pair. */
+  const verifyKey = async (useSavedKey: boolean): Promise<void> => {
+    if (apiBusy || (!useSavedKey && !apiKey.trim())) return
+    setApiBusy(true)
+    setError('')
+    try {
+      if (!useSavedKey) applyStatus(await window.api.saveApiKey(provider, apiKey))
+      // Before it saves, main checks that this pair can really be fetched with the provider's key.
+      if (!modelsMatch) await saveSettings(defaults)
+      setApiKey('')
+      await refresh()
+    } catch (err) {
+      setError(displayError(err))
+    } finally {
+      setApiBusy(false)
+    }
+  }
+
+  const prepareServer = async (): Promise<void> => {
+    if (downloadBusy) return
+    setError('')
+    setDownloadMessage('')
+    setDownloadBusy(true)
+    setDownload({ status: 'downloading', pct: 0, downloadedMb: 0, totalMb: 0 })
+    try {
+      const result = await window.api.prepareAsrModel(settings.asrModel)
+      setDownloadMessage(result.message)
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const current = await refresh()
+        if (current?.services.asr || !result.ok) break
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+    } catch (err) {
+      setError(displayError(err))
+    } finally {
+      setDownloadBusy(false)
+      setDownload(null)
+    }
+  }
+
+  const prepareLocal = async (): Promise<void> => {
+    setError('')
+    setLocalProgress(0)
+    try {
+      await voiceController.prepareLocalAsr(({ progress }) => setLocalProgress(progress))
+      setLocalReady(true)
+      setLocalProgress(100)
+      await saveSettings({ localAsrEnabled: true })
+    } catch (err) {
+      setLocalReady(false)
+      setLocalProgress(null)
+      setError(displayError(err))
+    }
+  }
+
+  const checkMic = async (): Promise<void> => {
+    if (mic === 'checking') return
+    setError('')
+    setMic('checking')
+    try {
+      if (!(await window.api.requestMicPermission())) {
+        setMic('denied')
+        return
+      }
+      // The TCC result from Electron main does not prove that capture really works, so setup may
+      // finish only after a verification stream has been opened and all of its tracks stopped.
+      await verifyMicrophoneCapture()
+      setMic('granted')
+    } catch (err) {
+      setMic('denied')
+      setError(microphoneCaptureErrorMessage(err))
+    }
+  }
+
+  /** Checks whether the installed VOICEVOX or AivisSpeech can be reached, and shows the reason when it cannot. */
+  const verifyTts = async (): Promise<void> => {
+    if (ttsChecking) return
+    setTtsChecking(true)
+    setError('')
+    try {
+      const status = await window.api.ttsVerify()
+      await refresh()
+      if (!status.tts) setError(t('setup.tts.connectFailed', { engine: status.ttsLabel }))
+    } catch (err) {
+      setError(displayError(err))
+    } finally {
+      setTtsChecking(false)
+    }
+  }
+
+  /** Downloads the Qwen3-TTS model and starts it, which also installs the MLX runtime when the speech recognition has not. */
+  const prepareTts = async (): Promise<void> => {
+    if (ttsChecking) return
+    setTtsChecking(true)
+    setError('')
+    try {
+      const result = await window.api.prepareTtsModel()
+      await refresh()
+      if (!result.ok) setError(result.message)
+    } catch (err) {
+      setError(displayError(err))
+    } finally {
+      setTtsChecking(false)
+      setTtsDownload(null)
+    }
+  }
+
+  const finish = async (): Promise<void> => {
+    if (finishing || !mode) return
+    setFinishing(true)
+    setError('')
+    try {
+      const voiceMode = mode === 'voice' && listening ? listening : 'text'
+      // Text-only use turns the TTS engine off, so a reply is neither synthesized nor played and
+      // appears as text alone.
+      if (mode === 'text-only' && settings.ttsEngine !== 'none') await saveSettings({ ttsEngine: 'none' })
+      if (mode === 'voice') await verifyMicrophoneCapture()
+      if (voiceMode === 'local') {
+        await voiceController.prepareLocalAsr(({ progress }) => setLocalProgress(progress))
+        setLocalReady(true)
+        setLocalProgress(100)
+      }
+      const systemTtsVerified =
+        mode === 'text-only' ||
+        settings.ttsEngine !== 'system' ||
+        (typeof window.speechSynthesis?.speak === 'function' && typeof window.SpeechSynthesisUtterance === 'function')
+      if (!systemTtsVerified) throw new Error(errorText('voice.speech.systemUnavailable'))
+
+      const completed = await window.api.completeSetup({
+        voiceMode,
+        micAutoStart: autoMic,
+        microphoneVerified: true,
+        localAsrVerified: true,
+        systemTtsVerified
+      })
+      useSettingsStore.setState({ settings: completed })
+      if (mode === 'voice' && autoMic) void voiceController.enable()
+    } catch (err) {
+      setError(displayError(err))
+      await refresh().catch(() => null)
+    } finally {
+      setFinishing(false)
+    }
+  }
+
+  const services = setup?.services
+  /** What the user has to do in order to move on, shown as a single line to the left of the buttons. */
+  const nextAction = ((): string => {
+    if (step === 'language') return t('setup.guide.language.chosen', { language: UI_LOCALE_NAMES[locale] })
+    if (step === 'model') {
+      if (modelReady) return t('setup.guide.model.verified')
+      if (apiBusy) return t('setup.guide.model.verifying')
+      return apiKey.trim() ? t('setup.guide.model.pressVerify') : t('setup.guide.model.enterKey', { provider: LLM_PROVIDER_INFO[provider].label })
+    }
+    if (step === 'speaking') return mode ? t('setup.guide.speaking.chosen') : t('setup.guide.speaking.choose')
+    if (step === 'listening') {
+      if (listeningReady) return t('setup.guide.listening.ready')
+      if (!listening) return t('setup.guide.listening.choose')
+      return downloadBusy || localProgress !== null ? t('setup.guide.wait') : t('setup.guide.listening.prepare')
+    }
+    if (step === 'tts') {
+      if (ttsReady) return t('setup.guide.tts.ready')
+      if (settings.ttsEngine === 'qwen3tts') return ttsChecking ? ttsDownload?.message || t('common.preparing') : t('setup.guide.tts.prepareOrSystem')
+      return ttsChecking ? t('setup.guide.tts.verifying') : t('setup.guide.tts.notConnected', { engine: services?.ttsLabel ?? t('setup.steps.tts.title') })
+    }
+    if (step === 'mic') {
+      if (mic === 'granted') return t('setup.guide.mic.ready')
+      if (mic === 'checking') return t('setup.guide.mic.checking')
+      if (mic === 'denied') return t('setup.guide.mic.denied')
+      return t('setup.guide.mic.check')
+    }
+    if (step === 'extras') {
+      if (extras.settled) return t('setup.guide.extras.done')
+      return extras.models.some((model) => model.state === 'failed') ? t('setup.guide.extras.failed') : t('setup.guide.wait')
+    }
+    return t('setup.guide.summary')
+  })()
+
+  return (
+    <div className="su-backdrop">
+      <section className="glass su-dialog" aria-labelledby="su-title">
+        <header className="su-head">
+          <div className="su-kicker">{t('setup.kicker')}</div>
+          <ol className="su-steps">
+            {STEPS.map((id, i) => (
+              <li key={id} data-state={!needed(id) ? 'skipped' : id === step ? 'current' : i < index ? 'done' : 'todo'}>
+                <span>{i + 1}</span>
+                {t(`setup.steps.${id}.label`)}
+              </li>
+            ))}
+          </ol>
+          <h1 id="su-title">{t(`setup.steps.${step}.title`)}</h1>
+          <p>{t(`setup.steps.${step}.lead`)}</p>
+        </header>
+
+        <div className="su-body" data-step={step}>
+          {step === 'language' && <LanguageStep locale={locale} onLocale={chooseLocale} />}
+          {step === 'model' && (
+            <ModelStep
+              provider={provider}
+              onProvider={(next) => {
+                setProvider(next)
+                setApiKey('')
+                setError('')
+              }}
+              verified={modelReady}
+              keyConfigured={keyConfigured}
+              apiKey={apiKey}
+              onApiKey={setApiKey}
+              busy={apiBusy}
+              onVerify={() => void verifyKey(false)}
+              onRecheck={() => void verifyKey(true)}
+            />
+          )}
+          {step === 'speaking' && <SpeakingStep mode={mode} onMode={setMode} />}
+          {step === 'listening' && (
+            <ListeningStep
+              choice={listening}
+              onChoice={setListening}
+              setup={setup}
+              asrModel={settings.asrModel}
+              onAsrModel={(asrModel: AsrModel) => {
+                setDownloadMessage('')
+                void saveSettings({ asrModel })
+                  .then(() => refresh())
+                  .catch((err: unknown) => setError(displayError(err)))
+              }}
+              download={download}
+              downloadBusy={downloadBusy}
+              downloadMessage={downloadMessage}
+              onPrepareServer={() => void prepareServer()}
+              onCancelServer={() => void window.api.cancelAsrPreparation()}
+              localReady={localReady}
+              localProgress={localProgress}
+              onPrepareLocal={() => void prepareLocal()}
+              onCancelLocal={() => voiceController.cancelLocalAsrPreparation()}
+            />
+          )}
+          {step === 'tts' && (
+            <TtsStep
+              locale={locale}
+              ttsReady={ttsReady}
+              ttsEngine={settings.ttsEngine}
+              onTtsEngine={(ttsEngine) => {
+                setError('')
+                void saveSettings({ ttsEngine })
+                  .then(() => refresh())
+                  .catch((err: unknown) => setError(displayError(err)))
+              }}
+              ttsChecking={ttsChecking}
+              ttsDownload={ttsDownload}
+              qwenTtsOffered={setup?.qwenTts.recommended === true}
+              onRecheckTts={() => void verifyTts()}
+              onPrepareTts={() => void prepareTts()}
+              onCancelPrepareTts={() => void window.api.cancelTtsPreparation()}
+              onTestTts={() => void window.api.ttsTest().then((segment) => speechPlayer.playClip(segment.audio, segment.text, { role: 'preview' }))}
+            />
+          )}
+          {step === 'mic' && (
+            <MicStep
+              mic={mic}
+              onCheckMic={() => void checkMic()}
+              onOpenMicSettings={() => void window.api.micOpenPrivacy()}
+              onSwitchToTyping={() => {
+                setMode('type-and-listen')
+                setError('')
+                // The mic screen is no longer needed, so the wizard moves on to the next one that is.
+                setStep('extras')
+              }}
+              autoMic={autoMic}
+              onAutoMic={setAutoMic}
+            />
+          )}
+          {step === 'extras' && <ExtrasStep extras={extras.models} onRetry={extras.retry} onSkip={extras.skip} />}
+          {step === 'summary' && mode && (
+            <SummaryStep
+              rows={[
+                { label: t('setup.summary.language'), value: UI_LOCALE_NAMES[locale] },
+                { label: t('setup.summary.conversationModel'), value: modelLabel(settings.conversationModel) },
+                { label: t('setup.summary.bridgeModel'), value: modelLabel(settings.bridgeModel) },
+                { label: t('setup.summary.speaking'), value: t(SPEAKING_TITLE[mode]) },
+                ...(mode === 'voice'
+                  ? [{ label: t('setup.summary.listening'), value: listening === 'local' ? t('setup.listening.local.title') : (setup?.asr.label ?? '') }]
+                  : []),
+                { label: t('setup.summary.tts'), value: mode === 'text-only' ? t('setup.summary.ttsUnused') : (services?.ttsLabel ?? '') },
+                ...(mode === 'voice' ? [{ label: t('setup.summary.mic'), value: autoMic ? t('setup.summary.micAtLaunch') : t('setup.summary.micManual') }] : [])
+              ]}
+              optional={[
+                {
+                  label: t('setup.summary.agent'),
+                  value: services?.agent
+                    ? t('setup.summary.agentAvailable', { engine: services.agentEngine })
+                    : t('setup.summary.agentMissing', { engine: services?.agentEngine ?? '' }),
+                  where: t('setup.summary.agentWhere')
+                },
+                { label: t('setup.summary.calendar'), value: t('setup.summary.calendarValue'), where: t('setup.summary.integrationsWhere') },
+                { label: t('setup.summary.mail'), value: t('setup.summary.mailValue'), where: t('setup.summary.integrationsWhere') }
+              ]}
+            />
+          )}
+          {error && (
+            <div className="su-error" role="alert">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <footer className="su-foot">
+          <Btn tone="quiet" disabled={index === 0 || finishing} onClick={() => move(-1)}>
+            {t('setup.back')}
+          </Btn>
+          <p className="su-next" aria-live="polite">
+            {nextAction}
+          </p>
+          {step === 'summary' ? (
+            <Btn tone="primary" disabled={finishing} onClick={() => void finish()}>
+              {finishing ? t('common.saving') : t('setup.start')}
+            </Btn>
+          ) : (
+            <Btn tone="primary" disabled={!ready[step]} onClick={() => move(1)}>
+              {t('setup.next')}
+            </Btn>
+          )}
+        </footer>
+      </section>
+    </div>
+  )
+}

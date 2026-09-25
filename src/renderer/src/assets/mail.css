@@ -1,0 +1,707 @@
+/*
+ * The mail workspace: mailboxes and accounts on the left, the message list in the middle, and either the
+ * reading pane or the compose pane on the right. Its sizes and colors follow the calendar workspace
+ * (calendar.css). Accounts are told apart by the letters of their name rather than by color.
+ */
+.ml-focus {
+  gap: 14px;
+}
+.ml-root {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ml-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px;
+}
+.ml-search {
+  display: flex;
+  flex: 1;
+  max-width: 520px;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgb(from var(--color-holo-line) r g b / calc(alpha * 1.75));
+  border-radius: var(--ui-box-radius);
+  background: var(--ui-field);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ml-search:focus-within {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  box-shadow: 0 0 0 3px rgb(from var(--color-holo-cyan) r g b / 0.12);
+}
+.ml-search > svg {
+  flex-shrink: 0;
+  color: var(--color-holo-cyan);
+}
+.ml-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  color: var(--color-holo-text);
+}
+.ml-search input::placeholder {
+  color: var(--color-holo-dim);
+}
+.ml-search input:focus {
+  outline: none;
+}
+.ml-search button {
+  display: flex;
+  color: var(--color-holo-dim);
+}
+.ml-count {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+  font-variant-numeric: tabular-nums;
+  /* The count reads as one word, and in English it is wide enough to wrap when the toolbar is tight. */
+  white-space: nowrap;
+}
+.ml-read-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.ml-read-all:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.ml-trouble {
+  padding: 4px 10px;
+  border: 1px solid rgb(from var(--color-holo-peach) r g b / 0.33);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--ui-tone-peach-text);
+}
+.ml-sync {
+  display: inline-flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.ml-sync:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+@keyframes ml-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.is-spinning {
+  animation: ml-spin 1s linear infinite;
+}
+
+.ml-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  gap: 16px;
+}
+.ml-side {
+  display: flex;
+  width: 196px;
+  flex-shrink: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  padding: 2px 4px 8px 2px;
+  scrollbar-width: none;
+}
+.ml-compose:disabled {
+  cursor: default;
+  opacity: 0.5;
+  transform: none;
+}
+.ml-views {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ml-view {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--ui-control-radius);
+  font-size: 13.5px;
+  color: var(--color-holo-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.ml-view svg {
+  color: var(--color-holo-dim);
+}
+.ml-view:hover {
+  background: rgb(from var(--color-holo-text) r g b / 0.05);
+  color: var(--color-holo-text);
+}
+.ml-view[aria-pressed='true'] {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.12);
+  color: var(--color-holo-cyan);
+}
+.ml-view[aria-pressed='true'] svg {
+  color: var(--color-holo-cyan);
+}
+.ml-view b,
+.ml-account b {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgb(from var(--color-holo-cyan) r g b / 0.14);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--color-holo-cyan);
+  font-variant-numeric: tabular-nums;
+}
+.ml-account {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--color-holo-text);
+  transition: background 0.15s;
+}
+.ml-account:hover {
+  background: rgb(from var(--color-holo-text) r g b / 0.05);
+}
+.ml-account[aria-pressed='true'] {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.12);
+}
+.ml-account[data-state='error'] .ml-account-label {
+  color: var(--ui-tone-red-text);
+}
+.ml-account-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ml-account small {
+  font-size: 10px;
+  color: var(--color-holo-dim);
+  white-space: nowrap;
+}
+.ml-account.is-all {
+  color: var(--color-holo-muted);
+  font-size: 12px;
+}
+
+.ml-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.ml-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px 12px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.ml-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ml-group {
+  padding: 12px 10px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-holo-dim);
+}
+.ml-group:first-child {
+  padding-top: 2px;
+}
+.ml-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 2px;
+  border-radius: var(--ui-control-radius);
+  transition: background 0.15s;
+}
+.ml-row:hover {
+  background: rgb(from var(--color-holo-text) r g b / 0.05);
+}
+.ml-row[data-selected] {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+}
+.ml-star {
+  display: flex;
+  flex-shrink: 0;
+  width: 30px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  color: rgb(from var(--color-holo-muted) r g b / 0.45);
+  transition: color 0.15s;
+}
+.ml-star:hover {
+  color: var(--ui-tone-gold);
+}
+.ml-star[aria-pressed='true'] {
+  color: var(--ui-tone-gold);
+}
+.ml-star[aria-pressed='true'] svg {
+  fill: var(--ui-tone-gold);
+}
+.ml-row-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: 168px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.ml-row-from {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--ui-text-soft);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ml-row-text {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ml-row-subject {
+  color: var(--color-holo-text);
+}
+.ml-row-snippet {
+  color: var(--color-holo-dim);
+}
+.ml-row-aside {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ml-row-account {
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.ml-row[data-unread] .ml-row-from,
+.ml-row[data-unread] .ml-row-subject {
+  color: var(--ui-text-strong);
+  font-weight: 600;
+}
+.ml-row[data-unread] .ml-row-aside time {
+  color: var(--color-holo-cyan);
+}
+/* When the reading pane is open and the list is narrow, the sender and the subject move onto two rows
+   and the excerpt is dropped. */
+@container (max-width: 640px) {
+  .ml-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 2px;
+  }
+  .ml-row-from {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .ml-row-aside {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .ml-row-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .ml-row-snippet {
+    display: none;
+  }
+}
+.ml-more {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px dashed rgb(from var(--color-holo-line) r g b / calc(alpha * 1.25));
+  border-radius: var(--ui-control-radius);
+  font-size: 12px;
+  color: var(--color-holo-muted);
+}
+.ml-more:hover {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.5);
+  color: var(--color-holo-text);
+}
+.ml-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}
+.ml-notice small {
+  font-size: 12px;
+  color: var(--color-holo-dim);
+}
+.ml-notice p {
+  margin: 0;
+}
+
+.ml-reader {
+  display: flex;
+  width: 46%;
+  min-width: 380px;
+  flex-shrink: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  border: 1px solid var(--ui-sheet-border);
+  border-radius: var(--card-radius);
+  background: var(--ui-sheet);
+  box-shadow: var(--ui-sheet-shadow);
+  animation: cal-pop-in 0.14s ease-out;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.ml-reader-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ml-reader-head h2 {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--color-holo-text);
+  overflow-wrap: anywhere;
+}
+.ml-reader-account {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border: 1px solid rgb(from var(--color-holo-line) r g b / calc(alpha * 1.25));
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--color-holo-muted);
+}
+.ml-reader-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.ml-icon {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-holo-muted);
+}
+.ml-icon:hover {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+  color: var(--color-holo-cyan);
+}
+.ml-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ml-message {
+  border: 1px solid rgb(from var(--color-holo-line) r g b / calc(alpha * 0.75));
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.4);
+}
+.ml-message[data-open] {
+  border-color: rgb(from var(--color-holo-line) r g b / calc(alpha * 1.75));
+}
+.ml-message-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  text-align: left;
+  color: var(--color-holo-muted);
+}
+.ml-message-from {
+  display: flex;
+  min-width: 0;
+  flex-shrink: 0;
+  flex-direction: column;
+}
+.ml-message-from b {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-holo-text);
+}
+.ml-message-from small {
+  font-size: 10.5px;
+  color: var(--color-holo-dim);
+}
+.ml-message[data-unread] .ml-message-from b {
+  color: var(--ui-text-strong);
+  font-weight: 600;
+}
+.ml-message-snippet {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--color-holo-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ml-message-meta {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--color-holo-dim);
+  white-space: nowrap;
+}
+.ml-message-meta svg.is-on {
+  color: var(--ui-tone-gold);
+  fill: var(--ui-tone-gold);
+}
+.ml-message-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+.ml-recipients {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--color-holo-dim);
+}
+.ml-recipients div {
+  display: flex;
+  gap: 8px;
+}
+.ml-recipients dt {
+  flex-shrink: 0;
+  width: 32px;
+}
+.ml-recipients dd {
+  margin: 0;
+  color: var(--color-holo-muted);
+  overflow-wrap: anywhere;
+}
+.ml-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ml-attachments li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid rgb(from var(--color-holo-line) r g b / calc(alpha * 1.25));
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--color-holo-text);
+}
+.ml-attachments small {
+  color: var(--color-holo-dim);
+}
+.ml-text {
+  margin: 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ui-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.ml-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ui-divider);
+}
+.ml-actions .cal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-holo-muted);
+}
+.ml-actions .cal-btn:hover {
+  color: var(--color-holo-cyan);
+}
+.ml-actions .cal-btn.is-danger:hover {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.6);
+  background: rgb(from var(--color-holo-red) r g b / 0.08);
+  color: var(--ui-tone-red-text);
+}
+.ml-reply,
+.ml-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ml-reply-to {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-holo-muted);
+}
+.ml-reply textarea,
+.ml-compose-body {
+  min-height: 140px;
+  padding: 10px 12px;
+  border: 1px solid rgb(from var(--color-holo-line) r g b / calc(alpha * 1.375));
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-field);
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--color-holo-text);
+  resize: vertical;
+}
+.ml-compose-body {
+  min-height: 220px;
+  flex: 1;
+}
+.ml-reply textarea:focus,
+.ml-compose-body:focus {
+  outline: none;
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+}
+.ml-field {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--color-holo-dim);
+}
+.ml-field .cal-field {
+  width: 100%;
+}
+
+.ml-static {
+  font-size: 12.5px;
+  color: var(--color-holo-text);
+}
+.ml-form-error {
+  font-size: 12px;
+  color: var(--ui-tone-red-text);
+}
+.ml-draft-mark {
+  color: rgb(from var(--color-holo-peach) r g b / 0.7);
+}
+
+.ml-account-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ml-account-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+}
+.ml-account-form.is-add,
+.ml-account-form.is-folders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.ml-account-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.ml-account-form label.st-check {
+  flex-direction: row;
+  align-items: center;
+}
+.ml-account-form .st-input,
+.ml-account-form .st-select {
+  width: 100%;
+}
+.ml-endpoint {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 48px minmax(0, 1fr) 80px auto;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.ml-account-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ml-probe {
+  font-size: 11.5px;
+  color: var(--color-holo-mint);
+}
+.ml-probe.is-error {
+  color: var(--ui-tone-red-text);
+}

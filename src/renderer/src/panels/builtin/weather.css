@@ -1,0 +1,357 @@
+/* Weather card. l and focus are the reference layout and m and s fold it down. Measured heights: l about
+   690px, m about 590px, s about 490px, within the limits in shell/card.ts. */
+.wx-card {
+  --card-hue: #74c8ff;
+  --card-focus-width: 590px;
+}
+.wx {
+  color: var(--ui-text);
+  font-size: 12px;
+}
+
+.wx-scene {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 340px;
+  overflow: hidden;
+  background: #112b43;
+}
+.wx-scene img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.wx-scene .wx-land {
+  top: 55px;
+  height: 285px;
+  object-position: center bottom;
+}
+.wx-sky {
+  opacity: 0.85;
+}
+/* Only the prefectures of Japan have a landscape painted for them. A place elsewhere closes the sky with
+   a plain horizon in the card's own colours, which sits where the landscape would and needs no image. */
+.wx-horizon {
+  position: absolute;
+  inset: auto 0 0;
+  height: 150px;
+  background:
+    linear-gradient(0deg, var(--card-background) 18%, color-mix(in oklab, var(--card-background) 70%, #1d4a72) 55%, transparent),
+    radial-gradient(ellipse 130% 90% at 50% 100%, #1d4a72 0, transparent 72%);
+}
+.wx-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #071728aa, transparent 90%),
+    linear-gradient(0deg, var(--card-background), transparent 35%);
+}
+
+/* Clear sky: the sky image has a dusk tint and its small sun falls outside the frame, so on its own clear
+   weather looks the same as cloudy or night. The sky is pushed toward a daytime blue, a sun glow (.wx-sun) is
+   placed at the top right, and the shadow is weakened, which puts the sun below the heading and right of the
+   temperature. The other conditions keep the dusk tint. */
+.wx-scene[data-weather='clear'] {
+  background: linear-gradient(180deg, #3b86d6 0%, #2361a6 45%, #143a63 100%);
+}
+.wx-scene[data-weather='clear'] .wx-sky {
+  /* With the screen blend mode the image's navy dissolves into the blue underneath and only the bright cirrus remains. */
+  opacity: 0.95;
+  mix-blend-mode: screen;
+  filter: brightness(1.35) saturate(1.1);
+}
+.wx-scene[data-weather='clear'] .wx-land {
+  filter: brightness(1.5) saturate(1.05);
+}
+.wx-sun {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle 170px at 80% 29%, #fffdf2 0, #fff4c8 13px, #ffe39a 19px, rgb(from var(--ui-tone-gold) r g b / 0.8) 26px, #ffc46a55 58px, #ffb35a1c 115px, transparent 170px),
+    radial-gradient(ellipse 300px 220px at 80% 29%, #ffd9a03a, transparent 70%);
+}
+.wx-scene[data-weather='clear'] .wx-shade {
+  background:
+    linear-gradient(90deg, #0b264490, transparent 75%),
+    linear-gradient(0deg, var(--card-background), transparent 28%);
+}
+.wx-scene[data-size='focus'] {
+  height: 355px;
+}
+.wx-scene[data-size='focus'] .wx-land {
+  top: 25px;
+  height: 330px;
+}
+.wx-scene[data-size='m'] {
+  height: 300px;
+}
+.wx-scene[data-size='m'] .wx-land {
+  top: 40px;
+  height: 260px;
+}
+.wx-scene[data-size='s'] {
+  height: 265px;
+}
+.wx-scene[data-size='s'] .wx-land {
+  top: 30px;
+  height: 235px;
+}
+
+.wx-issued {
+  font-size: 9px;
+  color: var(--ui-text-soft);
+}
+
+.wx-hero {
+  position: relative;
+  padding: 14px 5px 12px;
+  text-align: var(--card-hero-align);
+}
+.wx-hero h3 {
+  margin: 6px 0 8px;
+  font-family: var(--card-title-font);
+  font-size: calc(25px * var(--card-title-scale));
+  line-height: 1.25;
+  font-weight: var(--card-title-weight);
+  text-shadow: 0 2px 15px var(--ui-glow);
+}
+.wx-hero p {
+  font-size: 12px;
+  color: var(--ui-text-soft);
+}
+.wx-current {
+  display: flex;
+  min-height: 79px;
+  align-items: center;
+  justify-content: var(--card-hero-align);
+  gap: 14px;
+  margin: 8px 0 10px;
+}
+.wx-current strong {
+  font-family: var(--card-number-font);
+  font-size: calc(79px * var(--card-number-scale));
+  line-height: 1;
+  font-weight: var(--card-number-weight);
+  letter-spacing: -5px;
+  color: var(--ui-heading);
+  font-variant-numeric: tabular-nums;
+}
+.wx-current sup {
+  position: relative;
+  top: 5px;
+  font-size: 43px;
+  vertical-align: top;
+  letter-spacing: 0;
+}
+.wx-icons {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+.wx-icons > span {
+  display: inline-flex;
+  align-items: center;
+}
+.wx-icons img {
+  width: 31px;
+  height: 31px;
+  object-fit: contain;
+}
+.wx-icons:has(> span:nth-child(2)) img {
+  width: 22px;
+  height: 27px;
+}
+.wx-current .wx-icons img {
+  width: 52px;
+  height: 52px;
+}
+.wx-current .wx-icons:has(> span:nth-child(2)) img {
+  width: 34px;
+  height: 43px;
+}
+.wx-details {
+  display: flex;
+  justify-content: var(--card-hero-align);
+  gap: 13px;
+  font-size: 12px;
+}
+.wx-hero .wx-observation {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--ui-text-soft);
+}
+.wx[data-size='focus'] .wx-hero {
+  min-height: 275px;
+  padding-top: 20px;
+}
+
+.wx[data-size='m'] .wx-hero {
+  padding: 10px 5px 10px;
+}
+.wx[data-size='m'] .wx-hero h3 {
+  margin: 4px 0 6px;
+  font-size: calc(22px * var(--card-title-scale));
+}
+.wx[data-size='m'] .wx-current {
+  min-height: 62px;
+  margin: 6px 0 8px;
+}
+.wx[data-size='m'] .wx-current strong {
+  font-size: calc(62px * var(--card-number-scale));
+  letter-spacing: -4px;
+}
+.wx[data-size='m'] .wx-current sup {
+  top: 4px;
+  font-size: 34px;
+}
+.wx[data-size='m'] .wx-current .wx-icons img {
+  width: 44px;
+  height: 44px;
+}
+.wx[data-size='m'] .wx-current .wx-icons:has(> span:nth-child(2)) img {
+  width: 29px;
+  height: 37px;
+}
+.wx[data-size='m'] .wx-hero .wx-observation {
+  margin-top: 8px;
+}
+
+.wx[data-size='s'] .wx-hero {
+  padding: 6px 5px 8px;
+}
+.wx[data-size='s'] .wx-hero h3 {
+  margin: 2px 0 4px;
+  font-size: calc(20px * var(--card-title-scale));
+}
+.wx[data-size='s'] .wx-current {
+  min-height: 52px;
+  margin: 4px 0 6px;
+}
+.wx[data-size='s'] .wx-current strong {
+  font-size: calc(52px * var(--card-number-scale));
+  letter-spacing: -3px;
+}
+.wx[data-size='s'] .wx-current sup {
+  top: 3px;
+  font-size: 28px;
+}
+.wx[data-size='s'] .wx-current .wx-icons img {
+  width: 38px;
+  height: 38px;
+}
+.wx[data-size='s'] .wx-current .wx-icons:has(> span:nth-child(2)) img {
+  width: 25px;
+  height: 32px;
+}
+.wx[data-size='s'] .wx-hero .wx-observation {
+  margin-top: 6px;
+}
+
+.wx-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.wx-hours {
+  display: grid;
+  grid-template-columns: repeat(var(--wx-columns), minmax(43px, 1fr));
+  padding: 10px 7px 6px;
+  row-gap: 9px;
+}
+.wx-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.wx-hour time {
+  font-size: 10px;
+  color: var(--ui-text-soft);
+}
+.wx-hour b {
+  font-weight: 400;
+}
+.wx-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 4px;
+  padding: 5px 0 0;
+  border-top: 1px solid var(--ui-divider);
+  text-align: center;
+  font-size: 10px;
+  color: var(--ui-heading);
+}
+.wx-pop span {
+  font-size: 9px;
+  color: var(--ui-text-muted);
+}
+.wx-pop b {
+  font-weight: 400;
+}
+.wx-area {
+  margin: 4px 10px 8px;
+  font-size: 9px;
+  color: var(--ui-text-muted);
+}
+.wx-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(39px, 1fr));
+  gap: 2px;
+  padding: 10px 5px;
+}
+.wx-week > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.wx-week time {
+  text-align: center;
+  font-size: 10px;
+  color: var(--ui-text-soft);
+}
+.wx-week small {
+  display: block;
+  font-size: 9px;
+  color: var(--ui-text-muted);
+}
+.wx-week b {
+  font-size: 9px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.wx-week em {
+  font-style: normal;
+  color: var(--ui-text-muted);
+}
+.wx[data-size='m'] .wx-hours,
+.wx[data-size='s'] .wx-hours {
+  padding: 8px 7px 5px;
+  row-gap: 8px;
+}
+.wx[data-size='m'] .wx-week {
+  padding: 8px 5px;
+}
+
+.wx-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 8px;
+  padding: 8px 3px 0;
+  font-size: 9px;
+  color: var(--ui-text-muted);
+}
+.wx-footer a:hover {
+  color: var(--ui-link);
+}
+.wx-footer small {
+  font-size: inherit;
+  color: var(--ui-text-muted);
+}

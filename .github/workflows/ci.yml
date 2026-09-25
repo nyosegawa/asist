@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # The dependency audit depends on advisories published after a commit, so it also runs on its own.
+  schedule:
+    - cron: '0 21 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    if: github.event_name != 'schedule'
+    # Apple Silicon, the only platform the app is built for.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      # git is compiled from source and uv is fetched, both pinned in these scripts, so the scripts are the key.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            resources/git
+            resources/uv
+          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-git.sh', 'scripts/fetch-uv.sh') }}
+      # The Electron zips the tests and electron-builder download, for the version in the lockfile.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run i18n -- check
+      - run: npm test
+      # Whether the text of every card and screen still fits in each of the eleven languages and every theme, in Chrome.
+      - run: npm run demo:fit
+      # demo:fit captures what did not fit into fit-shots/; the pictures are kept with the failed run.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fit-shots
+          path: fit-shots/
+          if-no-files-found: ignore
+      # Builds the native helpers, the bundle and an unsigned app, which also checks electron-builder.yml.
+      - run: npm run dist:mac:unsigned
+      - name: Run the git and uv inside the app
+        run: |
+          resources="dist/mac-arm64/ASIST.app/Contents/Resources"
+          "$resources/git/bin/git" --version
+          "$resources/uv/uv" --version
+
+  audit:
+    if: github.event_name != 'pull_request'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm audit --omit=dev

@@ -1,0 +1,206 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as LiveAPI from 'openai/resources/live/live'
+import type { LiveEvent, TurnEvent } from '@shared/ipc'
+import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
+
+/** These tests drive the GPT-Live engine end to end against a fake socket. */
+
+const mocks = vi.hoisted(() => ({
+  record: vi.fn(),
+  nextTurnId: 100
+}))
+
+vi.mock('../src/main/services/brain/session', () => ({
+  record: mocks.record,
+  turnScheduler: { allocateTurnId: () => mocks.nextTurnId++ }
+}))
+vi.mock('../src/main/services/tts', () => ({ synthesize: vi.fn() }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: 'ja-JP' }) }))
+
+type Handler = (...args: unknown[]) => void
+
+class FakeSocket {
+  readonly sent: LiveAPI.ClientEvent[] = []
+  readonly handlers = new Map<string, Handler[]>()
+  closed = false
+  send(event: LiveAPI.ClientEvent): void {
+    this.sent.push(event)
+  }
+  close(): void {
+    this.closed = true
+  }
+  on(event: string, listener: Handler): this {
+    this.handlers.set(event, [...(this.handlers.get(event) ?? []), listener])
+    return this
+  }
+  emit(event: LiveAPI.ServerEvent): void {
+    for (const handler of this.handlers.get('event') ?? []) handler(event)
+  }
+  started(): void {
+    this.emit({ type: 'session.started', event_id: 'e1', session: { id: 's', expires_at: 0, model: 'gpt-live-1', status: 'active' } })
+  }
+  ofType<T extends LiveAPI.ClientEvent['type']>(type: T): Array<Extract<LiveAPI.ClientEvent, { type: T }>> {
+    return this.sent.filter((event): event is Extract<LiveAPI.ClientEvent, { type: T }> => event.type === type)
+  }
+}
+
+async function setup(): Promise<{
+  engine: import('../src/main/services/live/gpt-live').GptLiveEngine
+  sockets: FakeSocket[]
+  events: LiveEvent[]
+  audio: Float32Array[]
+  beginTurn: ReturnType<typeof vi.fn>
+  turnEvents: TurnEvent[]
+}> {
+  const { GptLiveEngine } = await import('../src/main/services/live/gpt-live')
+  const sockets: FakeSocket[] = []
+  const events: LiveEvent[] = []
+  const audio: Float32Array[] = []
+  const turnEvents: TurnEvent[] = []
+  const beginTurn = vi.fn((_text: string, _typed: boolean) => ({ turnId: 42, signal: new AbortController().signal, completion: Promise.resolve() }))
+  const engine = new GptLiveEngine(LIVE_ENGINE_INFO['gpt-live'], {
+    settings: () => ({ liveIdleSeconds: 30, gptLive: { model: 'gpt-live-1', voice: 'marin' }, persona: '' }) as never,
+    client: () => ({}) as never,
+    connect: () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket
+    },
+    beginTurn,
+    onTurnEvent: () => () => {},
+    emitTurn: (event) => turnEvents.push(event),
+    instructions: () => 'INSTRUCTIONS',
+    history: () => [
+      { role: 'user', content: 'こんにちは' },
+      { role: 'assistant', content: 'こんにちは。' }
+    ]
+  })
+  engine.events.on('event', (event) => events.push(event))
+  engine.events.on('audio', (samples) => audio.push(samples))
+  await engine.start()
+  return { engine, sockets, events, audio, beginTurn, turnEvents }
+}
+
+describe('GptLiveEngine', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.resetModules()
+    mocks.record.mockClear()
+    mocks.nextTurnId = 100
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('opens on the first speech, puts voice, delegation and history in session.start, and sends the buffered audio first', async () => {
+    const { engine, sockets, events } = await setup()
+    engine.pushAudio(new Float32Array(160).fill(0.1))
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets).toHaveLength(1)
+    const start = sockets[0].ofType('session.start')[0]
+    expect(start.session).toMatchObject({
+      model: 'gpt-live-1',
+      audio: { format: { type: 'audio/pcm', rate: 24000 }, output: { voice: 'marin' } },
+      delegation: { type: 'client' },
+      instructions: 'INSTRUCTIONS'
+    })
+    expect(start.session.input).toEqual([
+      { role: 'user', content: [{ type: 'input_text', text: 'こんにちは' }] },
+      { role: 'assistant', content: [{ type: 'output_text', text: 'こんにちは。' }] }
+    ])
+    expect(sockets[0].ofType('session.input_audio.append')).toHaveLength(0)
+    sockets[0].started()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets[0].ofType('session.input_audio.append')).toHaveLength(1)
+    expect(events.map((e) => e.type === 'connection' && e.state)).toContain('connecting')
+    expect(events.at(-2)).toMatchObject({ type: 'connection', state: 'open' })
+    expect(events.at(-1)).toMatchObject({ type: 'latency', connectMs: 0 })
+    engine.pushAudio(new Float32Array(160))
+    expect(sockets[0].ofType('session.input_audio.append')).toHaveLength(2)
+    await engine.stop()
+  })
+
+  it('turns a settled input transcript into a brain turn and sends the brain text as commentary with the delegation id', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の', event_id: 'a', start_ms: 0, end_ms: 1 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    socket.emit({ type: 'session.input_transcript.delta', delta: '天気は', event_id: 'b', start_ms: 1, end_ms: 2 })
+    expect(events.filter((e) => e.type === 'userTranscript').map((e) => e.type === 'userTranscript' && e.text)).toEqual(['明日の', '明日の天気は'])
+    await vi.advanceTimersByTimeAsync(600)
+    expect(beginTurn).toHaveBeenCalledOnce()
+    expect(beginTurn.mock.calls[0][0]).toBe('明日の天気は')
+    expect(beginTurn.mock.calls[0][1]).toBe(false)
+    // The brain records an utterance it took over, so the final transcript is not recorded again here.
+    expect(mocks.record).not.toHaveBeenCalled()
+    const route = beginTurn.mock.calls[0][2] as { open: (ctx: unknown) => { push: (s: string) => void; drain: () => Promise<void> } }
+    const sink = route.open({ turnId: 42, signal: new AbortController().signal, emit: vi.fn() })
+    sink.push('晴れです。')
+    sink.push('')
+    await sink.drain()
+    expect(socket.ofType('session.commentary.append')).toEqual([{ type: 'session.commentary.append', delegation_id: 'dlg1', content: '晴れです。' }])
+    // The output transcript of what was spoken is recorded under the turn id of the brain.
+    socket.emit({ type: 'session.output_transcript.delta', delta: '明日は晴れですよ。', event_id: 'c', start_ms: 2, end_ms: 3 })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(mocks.record).toHaveBeenCalledWith({ kind: 'assistant', turnId: 42, text: '明日は晴れですよ。' })
+    expect(events.at(-1)).toMatchObject({ type: 'assistantTranscript', turnId: 42, text: '明日は晴れですよ。', final: true })
+    await engine.stop()
+  })
+
+  it('records an exchange that was not delegated from the transcripts, emits Float32 audio, and measures the response time', async () => {
+    const { engine, sockets, events, audio } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'おはよう', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(200)
+    socket.emit({ type: 'session.output_audio.delta', delta: Buffer.from([0, 64, 0, 192]).toString('base64') })
+    expect(audio).toHaveLength(1)
+    expect(audio[0][0]).toBeCloseTo(0.5, 3)
+    expect(events.find((e) => e.type === 'latency' && e.responseMs > 0)).toMatchObject({ responseMs: 200 })
+    socket.emit({ type: 'session.output_transcript.delta', delta: 'おはようございます。', event_id: 'b', start_ms: 1, end_ms: 2 })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([
+      { kind: 'user', turnId: 100, text: 'おはよう' },
+      { kind: 'assistant', turnId: 100, text: 'おはようございます。' }
+    ])
+    await engine.stop()
+  })
+
+  it('passes typed text to the voice side as context and starts the brain turn as typed', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    const sending = engine.sendText('3分タイマー')
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].started()
+    await sending
+    expect(sockets[0].ofType('session.thinking.append')[0]).toMatchObject({ delegation_id: null, content: '[ユーザーが文字で入力した] 3分タイマー' })
+    expect(beginTurn).toHaveBeenCalledWith('3分タイマー', true, expect.anything())
+    await engine.stop()
+  })
+
+  it('derives the cost from the usage, closes an idle session, and opens a new one on the next speech', async () => {
+    const { engine, sockets, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].started()
+    sockets[0].emit({ type: 'session.usage.updated', event_id: 'u', usage: { seconds: 120 } })
+    expect(events.at(-1)).toEqual({ type: 'usage', usage: { sessionSeconds: 120, costUsd: 0.1 } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(sockets[0].ofType('session.close')).toHaveLength(1)
+    expect(sockets[0].closed).toBe(true)
+    expect(engine.state).toBe('idle')
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets).toHaveLength(2)
+    sockets[1].started()
+    sockets[1].emit({ type: 'session.usage.updated', event_id: 'u2', usage: { seconds: 60 } })
+    expect(events.at(-1)).toEqual({ type: 'usage', usage: { sessionSeconds: 180, costUsd: 0.15 } })
+    await engine.stop()
+    expect(sockets[1].closed).toBe(true)
+    expect(engine.state).toBe('off')
+  })
+})

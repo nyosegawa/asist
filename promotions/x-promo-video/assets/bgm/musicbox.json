@@ -1,0 +1,25 @@
+{
+ "prompt": "Instrumental only, no vocals.\nQuiet, unobtrusive background music for a 40-second product video about a friendly voice assistant on the Mac, set in a soft pastel clay-diorama world.\nIt must stay in the background: low and even dynamics, soft attacks, no loud drums, no drops, no risers, no big climax, nothing harsh or bright.\nKey of C major, about 96 BPM, warm, calm and gently cheerful.\nThe track is exactly 40 seconds long.\n[0:00 - 0:08] very soft intro, the lead instrument alone with a warm pad.\n[0:08 - 0:29] a light, gentle groove joins: soft bass and very quiet percussion.\n[0:29 - 0:34] quieter dreamy night moment, percussion drops out.\n[0:34 - 0:40] warm, simple resolution; the final chord rings out and fades to silence by 0:40.\nInstruments: celesta and music box as the lead, soft marimba, airy string pad, gentle sub bass, almost no percussion (only a soft shaker).",
+ "mime": "audio/mpeg",
+ "usage": {
+  "total_tokens": 992,
+  "total_input_tokens": 253,
+  "input_tokens_by_modality": [
+   {
+    "modality": "text",
+    "tokens": 253
+   }
+  ],
+  "total_cached_tokens": 0,
+  "total_output_tokens": 739,
+  "total_tool_use_tokens": 0,
+  "total_thought_tokens": 0,
+  "raw_prompt_token": 8519,
+  "model_invocation_token_counts": [
+   {}
+  ],
+  "non_grounding_model_invocation_token_counts": [
+   {}
+  ]
+ }
+}

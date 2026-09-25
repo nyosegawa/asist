@@ -1,0 +1,385 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { ConversationMessage, ConversationPart } from '@shared/conversation'
+import { estimateTokens } from '@shared/token-estimate'
+import { interruptedBeforeReply, interruptedWhileSpeaking } from '@shared/turn-recovery'
+
+const INTERRUPTED_BEFORE_REPLY = interruptedBeforeReply('ja-JP')
+const INTERRUPTED_WHILE_SPEAKING = interruptedWhileSpeaking('ja-JP')
+import type { ConversationRecord } from '../src/main/services/brain/conversation-log'
+import { ConversationHistory, type HistoryCheckpoint } from '../src/main/services/brain/history'
+
+function makeHistory(opts?: {
+  stored?: ConversationRecord[]
+  summarize?: (existing: string, log: string) => Promise<string>
+  recentTurns?: number
+  compressAtTokens?: number
+  limitTokens?: number
+  hardLimitTokens?: number
+}): { history: ConversationHistory; checkpoints: HistoryCheckpoint[]; errors: string[] } {
+  const checkpoints: HistoryCheckpoint[] = []
+  const errors: string[] = []
+  const history = new ConversationHistory({
+    recentTurns: opts?.recentTurns ?? 0,
+    compressAtTokens: opts?.compressAtTokens ?? 300,
+    limitTokens: opts?.limitTokens ?? 600,
+    hardLimitTokens: opts?.hardLimitTokens ?? 1_000_000,
+    load: () => opts?.stored ?? [],
+    saveCheckpoint: (checkpoint) => checkpoints.push(structuredClone(checkpoint)),
+    summarize: opts?.summarize ?? (async () => '要約'),
+    locale: () => 'ja-JP',
+    onError: (stage, err) => errors.push(`${stage}: ${err instanceof Error ? err.message : String(err)}`)
+  })
+  return { history, checkpoints, errors }
+}
+
+const T0 = new Date(2026, 8, 8, 16, 48).getTime()
+const user = (turnId: number, text: string, t = T0 + turnId * 1000): ConversationRecord => ({ t, kind: 'user', turnId, text })
+const assistant = (
+  turnId: number,
+  text: string,
+  extra: { interrupted?: 'before-reply' | 'while-speaking'; failed?: boolean } = {}
+): ConversationRecord => ({ t: T0 + turnId * 1000 + 500, kind: 'assistant', turnId, text, ...extra })
+const tool = (turnId: number, name: string, input: string, result: string, isError = false): ConversationRecord => ({
+  t: T0 + turnId * 1000 + 200,
+  kind: 'tool',
+  turnId,
+  name,
+  input,
+  result,
+  resultLength: result.length,
+  durationMs: 10,
+  ...(isError ? { isError: true } : {})
+})
+const message = (turnId: number, role: 'user' | 'assistant', parts: ConversationPart[]): ConversationRecord => ({
+  t: T0 + turnId * 1000 + 300,
+  kind: 'message',
+  turnId,
+  role,
+  parts
+})
+
+const text = (role: 'user' | 'assistant', value: string): ConversationMessage => ({ role, parts: [{ type: 'text', text: value }] })
+const textOf = (m: ConversationMessage): string => m.parts.map((part) => (part.type === 'text' ? part.text : '')).join('')
+
+/** The records of a turn that calls one tool and then answers, in the form the API receives. */
+const toolTurn = (turnId: number, result: string): ConversationRecord[] => [
+  user(turnId, '大阪の天気'),
+  message(turnId, 'assistant', [{ type: 'tool_call', id: `t${turnId}`, name: 'show_weather', input: { location: '大阪' } }]),
+  message(turnId, 'user', [{ type: 'tool_result', callId: `t${turnId}`, name: 'show_weather', content: result }]),
+  tool(turnId, 'show_weather', '{"location":"大阪"}', result.slice(0, 200)),
+  message(turnId, 'assistant', [{ type: 'text', text: '晴天です。' }]),
+  assistant(turnId, '晴天です。')
+]
+
+const turn = (h: ConversationHistory, i: number, size = 1): void => {
+  h.apply(user(i, `u${i}`))
+  h.apply(assistant(i, `a${i}`.repeat(size)))
+}
+
+describe('ConversationHistory, derived from the conversation log', () => {
+  it('builds messages from the user and assistant records and stamps the user message with the time of the utterance', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, '明日の天気は'))
+    history.apply(assistant(1, '晴天です。'))
+    expect(history.toMessages()).toEqual([text('user', '[2026/9/8(火) 16:48] 明日の天気は'), text('assistant', '晴天です。')])
+  })
+
+  it('keeps the tool call and its result sent during a turn in place in the following turns', () => {
+    const { history } = makeHistory()
+    for (const record of toolTurn(1, JSON.stringify({ shown: true, data: { temp: 28, forecast: 'x'.repeat(500) } }))) history.apply(record)
+    history.apply(user(2, 'ありがとう'))
+    const messages = history.toMessages()
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user'])
+    expect(messages[1].parts).toEqual([{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '大阪' } }])
+    expect(JSON.stringify(messages[2].parts)).toContain('x'.repeat(500))
+    expect(messages[3]).toEqual(text('assistant', '晴天です。'))
+    // The spoken text is already in the last assistant message, so the assistant record is not sent again.
+    expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(2)
+    // The text-only history, which the model on the voice side receives, leaves the tool exchange out.
+    expect(history.toTranscript()).toEqual([
+      { role: 'user', content: '大阪の天気' },
+      { role: 'assistant', content: '晴天です。' },
+      { role: 'user', content: 'ありがとう' }
+    ])
+  })
+
+  it('carries the native provider payload together with the recorded message into the next request', () => {
+    const { history } = makeHistory()
+    const native = { provider: 'google' as const, model: 'gemini-3.8-flash', payload: { role: 'model', parts: [{ functionCall: { name: 'show_weather', args: {} }, thoughtSignature: 'sig' }] } }
+    history.apply(user(1, '大阪の天気'))
+    history.apply({ ...message(1, 'assistant', [{ type: 'tool_call', id: 't1', name: 'show_weather', input: {} }]), native } as ConversationRecord)
+    // Without it, Gemini rejects a tool call that carries no signature with a 400.
+    expect(history.toMessages()[1].native).toEqual(native)
+  })
+
+  it('appends the notes after the user text and counts the shown memory ids as recalled until they are folded into the summary', async () => {
+    const { history } = makeHistory({ compressAtTokens: 0, limitTokens: 0 })
+    history.apply({ ...user(1, 'ラーメン'), notes: '[記憶]\n- 松葉軒', memoryIds: ['m1'] })
+    history.apply({ ...tool(1, 'recall', '{"query":"猫"}', '{"hits":[{"id":"m2"}]}'), memoryIds: ['m2'] })
+    history.apply(assistant(1, '松葉軒ですね'))
+    expect(textOf(history.toMessages()[0])).toBe('[2026/9/8(火) 16:48] ラーメン\n\n[記憶]\n- 松葉軒')
+    expect([...history.shownMemoryIds()].sort()).toEqual(['m1', 'm2'])
+    turn(history, 2)
+    turn(history, 3)
+    expect(history.shownMemoryIds().has('m1')).toBe(true)
+    await history.compact('daily')
+    expect(history.toMessages().some((m) => textOf(m).includes('[記憶]'))).toBe(false)
+    expect(history.shownMemoryIds().size).toBe(0)
+  })
+
+  it('ends with the user message while the assistant reply of the turn has not arrived', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, 'a'))
+    history.apply(assistant(1, 'b'))
+    history.apply(user(2, 'c'))
+    expect(history.toMessages().map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+  })
+
+  it('marks an interruption after what was spoken, marks it alone when nothing was said, and marks a failure', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, 'a'))
+    history.apply(assistant(1, '明日は晴天で、', { interrupted: 'while-speaking' }))
+    history.apply(user(2, 'b'))
+    history.apply(assistant(2, '', { interrupted: 'before-reply' }))
+    history.apply(user(3, 'c'))
+    history.apply(assistant(3, '途中', { failed: true }))
+    const contents = history.toMessages().map(textOf)
+    expect(contents[1]).toBe(`明日は晴天で、${INTERRUPTED_WHILE_SPEAKING}`)
+    expect(contents[3]).toBe(INTERRUPTED_BEFORE_REPLY)
+    expect(contents[5]).toBe('途中(応答が途中で失敗した)')
+  })
+
+  it('appends what was not sent yet and the marker after the messages already sent when a turn is interrupted after a tool result', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, '大阪の天気'))
+    history.apply(message(1, 'assistant', [{ type: 'tool_call', id: 't1', name: 'show_weather', input: {} }]))
+    history.apply(message(1, 'user', [{ type: 'tool_result', callId: 't1', name: 'show_weather', content: '{}' }]))
+    history.apply(assistant(1, '晴天', { interrupted: 'while-speaking' }))
+    const messages = history.toMessages()
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(messages[3]).toEqual(text('assistant', `晴天${INTERRUPTED_WHILE_SPEAKING}`))
+    // When the text itself was already sent and the interruption came while speaking, only the marker is added.
+    history.apply(user(2, 'もう一度'))
+    history.apply(message(2, 'assistant', [{ type: 'text', text: '晴天です。' }]))
+    history.apply(assistant(2, '晴天です。', { interrupted: 'while-speaking' }))
+    expect(history.toMessages().at(-1)).toEqual(text('assistant', INTERRUPTED_WHILE_SPEAKING))
+  })
+
+  it('drops a system notice interrupted before the reply, because the retry of the report adds it again', () => {
+    const { history } = makeHistory()
+    history.apply({ t: T0, kind: 'notice', turnId: 1, notice: 'job-done', text: '[システム通知] 作業が終わりました' })
+    history.apply(assistant(1, '', { interrupted: 'before-reply' }))
+    history.apply({ t: T0 + 5000, kind: 'notice', turnId: 2, notice: 'job-done', text: '[システム通知] 作業が終わりました' })
+    history.apply(assistant(2, '終わりましたよ。'))
+    expect(history.toMessages()).toEqual([text('user', '[システム通知] 作業が終わりました'), text('assistant', '終わりましたよ。')])
+  })
+
+  it('turns a record that carries only an assistant reply into a standalone assistant message', () => {
+    const { history } = makeHistory()
+    history.apply(assistant(1, 'タイマーが終わりました。'))
+    expect(history.toMessages()).toEqual([text('assistant', 'タイマーが終わりました。')])
+  })
+
+  it('starts from the latest checkpoint on load and replays only the records that follow it', () => {
+    const stored: ConversationRecord[] = [
+      user(1, '古い'),
+      assistant(1, '古い返事'),
+      { t: T0 + 9000, kind: 'checkpoint', summary: '以前の話', records: [user(2, '残した'), assistant(2, '残した返事')] },
+      ...toolTurn(3, '{"temp":28}')
+    ]
+    const { history } = makeHistory({ stored })
+    history.ensureLoaded()
+    expect(history.summary).toBe('以前の話')
+    expect(history.toMessages().map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user', 'assistant'])
+    expect(textOf(history.toMessages()[0])).toContain('残した')
+    expect(history.toMessages()[3].parts).toEqual([{ type: 'tool_call', id: 't3', name: 'show_weather', input: { location: '大阪' } }])
+  })
+})
+
+describe('context length and the trigger for compaction', () => {
+  it('estimates the context from the history until a measurement arrives, then adds what came after it', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, 'あ'.repeat(40)))
+    history.apply(assistant(1, 'い'.repeat(40)))
+    expect(history.contextTokens).toBeGreaterThan(0)
+    history.noteContextTokens(10_000)
+    expect(history.contextTokens).toBe(10_000)
+    history.apply(user(2, 'う'.repeat(40)))
+    expect(history.contextTokens).toBe(10_000 + estimateTokens('う'.repeat(40)))
+    const result = JSON.stringify({ shown: true, data: 'x'.repeat(400) })
+    history.apply(message(2, 'assistant', [{ type: 'tool_call', id: 't2', name: 'show_weather', input: {} }]))
+    history.apply(message(2, 'user', [{ type: 'tool_result', callId: 't2', name: 'show_weather', content: result }]))
+    expect(history.contextTokens).toBeGreaterThan(10_000 + estimateTokens('う'.repeat(40)) + estimateTokens(result))
+  })
+
+  it('needs no compaction while no turn has been answered', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, 'u1'))
+    history.noteContextTokens(100_000)
+    expect(history.needsCompaction()).toBe('none')
+    history.apply(assistant(1, 'a1'))
+    expect(history.needsCompaction()).toBe('now')
+  })
+
+  it('reports soon past the threshold, now past the limit, and block past the hard limit', () => {
+    const { history } = makeHistory({ compressAtTokens: 300, limitTokens: 600, hardLimitTokens: 900 })
+    for (let i = 0; i < 4; i++) turn(history, i)
+    history.noteContextTokens(100)
+    expect(history.needsCompaction()).toBe('none')
+    history.noteContextTokens(300)
+    expect(history.needsCompaction()).toBe('soon')
+    history.noteContextTokens(600)
+    expect(history.needsCompaction()).toBe('now')
+    history.noteContextTokens(900)
+    expect(history.needsCompaction()).toBe('block')
+  })
+
+  it('needs no compaction when only the turns that must stay raw are left, however long the context is', () => {
+    const { history } = makeHistory({ recentTurns: 30 })
+    for (let i = 0; i < 20; i++) turn(history, i)
+    history.noteContextTokens(100_000)
+    expect(history.needsCompaction()).toBe('none')
+  })
+})
+
+describe('compact', () => {
+  it('summarizes the answered turns with their text and the tool names and inputs, and passes no tool results', async () => {
+    const summarize = vi.fn(async (_existing: string, log: string) => `要約(${log.split('\n').length}行)`)
+    const { history, checkpoints } = makeHistory({ compressAtTokens: 300, summarize })
+    for (const record of toolTurn(0, JSON.stringify({ secret: 'x'.repeat(200) }))) history.apply(record)
+    for (let i = 1; i < 4; i++) turn(history, i, 40)
+    history.noteContextTokens(5_000)
+    await history.compact('quiet')
+    expect(summarize).toHaveBeenCalledOnce()
+    const log = summarize.mock.calls[0][1]
+    expect(log).toBe(
+      ['ユーザー: 大阪の天気', '(ツール show_weather {"location":"大阪"})', 'アシスタント: 晴天です。', ...[1, 2, 3].flatMap((i) => [`ユーザー: u${i}`, `アシスタント: ${`a${i}`.repeat(40)}`])].join('\n')
+    )
+    expect(log).not.toContain('x'.repeat(200))
+    expect(history.toMessages()).toEqual([])
+    expect(history.summary).toBe('要約(9行)')
+    expect(history.contextTokens).toBeLessThan(5_000)
+    expect(checkpoints[0].stats).toMatchObject({ reason: 'quiet', summarizedTurns: 4 })
+    expect(checkpoints[0].records).toEqual([])
+  })
+
+  it('keeps the last recentTurns raw, folds only what is older, and keeps fewer when they alone exceed half of the limit', async () => {
+    const summarize = vi.fn(async () => '要約')
+    const { history } = makeHistory({ recentTurns: 2, compressAtTokens: 10, limitTokens: 100_000, summarize })
+    for (let i = 0; i < 5; i++) turn(history, i)
+    history.noteContextTokens(100)
+    await history.compact('quiet')
+    expect(summarize.mock.calls[0][1]).toBe('ユーザー: u0\nアシスタント: a0\nユーザー: u1\nアシスタント: a1\nユーザー: u2\nアシスタント: a2')
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('u3'), 'a3', expect.stringContaining('u4'), 'a4'])
+
+    // The two turns that would stay exceed half of the limit, which is 1.5 turns, so only the one turn that fits is kept.
+    const perTurn = estimateTokens('u3') + estimateTokens('a3'.repeat(20))
+    const tight = makeHistory({ recentTurns: 2, compressAtTokens: 10, limitTokens: 3 * perTurn, summarize })
+    for (let i = 0; i < 4; i++) turn(tight.history, i, 20)
+    tight.history.noteContextTokens(1_000)
+    await tight.history.compact('quiet')
+    expect(tight.history.toMessages().map((m) => m.role)).toEqual(['user', 'assistant'])
+    expect(textOf(tight.history.toMessages()[1])).toBe('a3'.repeat(20))
+  })
+
+  it('rejects a summary that is too long, keeps the previous summary and the history, and reports it', async () => {
+    const { history, errors, checkpoints } = makeHistory({
+      stored: [{ t: T0, kind: 'checkpoint', summary: '前の要約', records: [] }],
+      compressAtTokens: 10,
+      summarize: async () => 'x'.repeat(10_001)
+    })
+    history.ensureLoaded()
+    for (let i = 0; i < 3; i++) turn(history, i)
+    history.noteContextTokens(100)
+    await history.compact('quiet')
+    expect(history.summary).toBe('前の要約')
+    expect(history.toMessages()).toHaveLength(6)
+    expect(checkpoints).toEqual([])
+    expect(errors[0]).toContain('summary too long')
+  })
+
+  it('keeps the turns added while the summary was being written and leaves a turn in progress out of it', async () => {
+    let finish!: (text: string) => void
+    const summarize = vi.fn(() => new Promise<string>((resolve) => { finish = resolve }))
+    const { history, checkpoints } = makeHistory({ compressAtTokens: 10, summarize })
+    turn(history, 1)
+    turn(history, 2)
+    history.apply(user(3, 'u3'))
+    history.noteContextTokens(100)
+    const compaction = history.compact('limit')
+    expect(summarize).toHaveBeenCalledOnce()
+    expect(summarize.mock.calls[0][1]).toBe('ユーザー: u1\nアシスタント: a1\nユーザー: u2\nアシスタント: a2')
+    history.apply(assistant(3, 'a3'))
+    turn(history, 4)
+    finish('引き継ぎ')
+    await compaction
+    expect(history.summary).toBe('引き継ぎ')
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('u3'), 'a3', expect.stringContaining('u4'), 'a4'])
+    expect(checkpoints[0].records.map((r) => [r.kind, (r as { turnId?: number }).turnId])).toEqual([['user', 3], ['assistant', 3], ['user', 4], ['assistant', 4]])
+    expect(checkpoints[0].stats).toMatchObject({ reason: 'limit', summarizedTurns: 2 })
+  })
+
+  it('passes the existing summary to summarize and replaces it with the rewritten one', async () => {
+    const summarize = vi.fn(async () => '統合済み')
+    const { history } = makeHistory({
+      stored: [{ t: T0, kind: 'checkpoint', summary: '過去の要約', records: [] }],
+      compressAtTokens: 10,
+      summarize
+    })
+    history.ensureLoaded()
+    for (let i = 0; i < 4; i++) turn(history, i)
+    history.noteContextTokens(100)
+    await history.compact('quiet')
+    expect(summarize.mock.calls[0][0]).toBe('過去の要約')
+    expect(history.summary).toBe('統合済み')
+  })
+
+  it('leaves the history unchanged and reports the reason when summarizing fails', async () => {
+    const { history, errors, checkpoints } = makeHistory({
+      compressAtTokens: 10,
+      summarize: async () => {
+        throw new Error('api down')
+      }
+    })
+    for (let i = 0; i < 4; i++) turn(history, i)
+    history.noteContextTokens(100)
+    const before = history.toMessages()
+    await history.compact('quiet')
+    expect(history.toMessages()).toEqual(before)
+    expect(history.summary).toBe('')
+    expect(checkpoints).toEqual([])
+    expect(errors[0]).toContain('summarize: api down')
+    expect(history.needsCompaction()).toBe('soon')
+  })
+
+  it('folds every answered turn into the summary for daily whatever the threshold is, and lets replaceSummary swap the summary', async () => {
+    const summarize = vi.fn(async () => '一日の要約')
+    const { history, checkpoints } = makeHistory({ compressAtTokens: 100_000, summarize })
+    for (let i = 0; i < 3; i++) turn(history, i)
+    history.noteContextTokens(50)
+    await history.compact('daily')
+    expect(summarize).toHaveBeenCalledOnce()
+    expect(history.toMessages()).toEqual([])
+    expect(history.summary).toBe('一日の要約')
+    expect(history.rawWindowStart()).toBeNull()
+    history.replaceSummary('')
+    expect(history.summary).toBe('')
+    expect(checkpoints.at(-1)!.summary).toBe('')
+  })
+
+  it('runs only one compaction at a time', async () => {
+    let calls = 0
+    const { history } = makeHistory({
+      compressAtTokens: 10,
+      summarize: async () => {
+        calls++
+        await new Promise((r) => setTimeout(r, 20))
+        return '要約'
+      }
+    })
+    for (let i = 0; i < 4; i++) turn(history, i)
+    history.noteContextTokens(100)
+    await Promise.all([history.compact('quiet'), history.compact('quiet')])
+    expect(calls).toBe(1)
+  })
+})

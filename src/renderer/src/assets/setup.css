@@ -1,0 +1,507 @@
+/* The first-run setup wizard (ui/SetupWizard.tsx and ui/setup/steps.tsx). Sizes and colors follow the
+   settings screen (settings.css), and the buttons, chips and progress bars reuse its parts (st-btn /
+   st-chip / st-progress). The dialog has a fixed size so that the heading and the "next" button stay in
+   place as the steps change. */
+.su-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  /* The conversation screen behind stays visible through the backdrop, blurred just enough that its text
+     stops competing with the dialog. */
+  background: rgb(from var(--color-holo-bg) r g b / 0.55);
+  backdrop-filter: blur(10px);
+}
+.su-dialog {
+  display: flex;
+  width: min(100%, 720px);
+  height: min(100%, 700px);
+  flex-direction: column;
+  border-radius: var(--ui-panel-radius);
+  color: var(--color-holo-text);
+}
+.su-head {
+  flex-shrink: 0;
+  padding: 24px 28px 0;
+}
+.su-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--color-holo-cyan);
+}
+.su-steps {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 22px;
+  padding: 0;
+  list-style: none;
+}
+.su-steps li {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  padding-top: 9px;
+  border-top: 2px solid var(--color-holo-line);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+  white-space: nowrap;
+}
+.su-steps li span {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.su-steps li[data-state='current'] {
+  border-top-color: var(--color-holo-cyan);
+  color: var(--color-holo-text);
+}
+.su-steps li[data-state='done'] {
+  border-top-color: rgb(from var(--color-holo-mint) r g b / 0.55);
+  color: var(--color-holo-muted);
+}
+.su-steps li[data-state='skipped'] {
+  border-top-style: dashed;
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+.su-head h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+.su-head p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}
+.su-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 28px 4px;
+  scrollbar-width: thin;
+}
+.su-foot {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 28px;
+  padding: 16px 0 22px;
+  border-top: 1px solid var(--color-holo-line);
+}
+.su-foot .st-btn {
+  padding: 8px 18px;
+}
+
+.su-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.su-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.su-inline > .st-input,
+.su-grow {
+  min-width: 0;
+  flex: 1;
+}
+.su-hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--color-holo-dim);
+}
+.su-warn {
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid rgb(from var(--color-holo-peach) r g b / 0.3);
+  border-radius: var(--ui-control-radius);
+  background: rgb(from var(--color-holo-peach) r g b / 0.05);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--color-holo-peach);
+}
+/* On a step whose content is taller than the dialog, the error message sticks to the bottom edge so it
+   is always visible. */
+.su-error {
+  position: sticky;
+  bottom: 0;
+  margin-top: 12px;
+  padding: 9px 12px;
+  border: 1px solid rgb(from var(--color-holo-red) r g b / 0.35);
+  border-radius: var(--ui-control-radius);
+  background: color-mix(in srgb, var(--color-holo-red) 8%, var(--color-holo-bg));
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-holo-red);
+}
+/* Tailwind's base makes an svg a block, which put the external-link icon on a line of its own below the
+   text. As an inline flex box the icon stays beside the text, and the link wraps as one piece. */
+.su-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  margin-left: 10px;
+  font-size: 11.5px;
+  color: var(--color-holo-cyan);
+  cursor: pointer;
+}
+.su-link:hover {
+  text-decoration: underline;
+}
+.su-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Each language is named in itself and fits on one line, so the choices are a plain grid of names. */
+.su-languages {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.su-language {
+  padding: 11px 13px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+  font-size: 13.5px;
+  color: var(--color-holo-text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.su-language:hover {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.35);
+}
+.su-language[aria-checked='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  background: rgb(from var(--color-holo-cyan) r g b / 0.07);
+  color: var(--color-holo-cyan);
+}
+
+.su-providers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.su-provider {
+  display: flex;
+  min-height: 78px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.su-provider:hover:not(:disabled) {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.35);
+}
+.su-provider[aria-checked='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  background: rgb(from var(--color-holo-cyan) r g b / 0.07);
+}
+.su-provider:disabled {
+  cursor: default;
+}
+.su-provider:disabled:not([aria-checked='true']) {
+  opacity: 0.4;
+}
+.su-provider-name {
+  font-size: 13.5px;
+  color: var(--color-holo-text);
+}
+.su-provider[aria-checked='true'] .su-provider-name {
+  color: var(--color-holo-cyan);
+}
+.su-provider-models {
+  font-size: 11px;
+  color: var(--color-holo-muted);
+}
+.su-provider-note {
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.su-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.su-field label {
+  font-size: 12.5px;
+  color: var(--color-holo-text);
+}
+.su-field .st-input {
+  padding: 8px 11px;
+}
+.su-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 11px 13px;
+  border: 1px solid rgb(from var(--color-holo-mint) r g b / 0.3);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-mint) r g b / 0.05);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}
+
+.su-option {
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+  transition: border-color 0.15s, background 0.15s;
+}
+.su-option:hover {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.35);
+}
+.su-option[data-active] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  background: rgb(from var(--color-holo-cyan) r g b / 0.06);
+}
+.su-option-head {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.su-radio {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 1px solid var(--color-holo-dim);
+  border-radius: 50%;
+}
+.su-option[data-active] .su-radio {
+  border-color: var(--color-holo-cyan);
+  background: radial-gradient(circle, var(--color-holo-cyan) 0 40%, transparent 46%);
+}
+.su-option-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+.su-option-title {
+  font-size: 13.5px;
+  color: var(--color-holo-text);
+}
+.su-option-detail {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--color-holo-dim);
+}
+.su-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 14px 14px 39px;
+}
+.su-details {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 8px;
+}
+.su-details dl,
+.su-summary {
+  display: grid;
+  width: 100%;
+  margin: 0;
+  gap: 0;
+}
+.su-details dl > div,
+.su-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  border-top: 1px solid var(--ui-divider);
+  font-size: 12px;
+}
+.su-details dt,
+.su-summary dt {
+  flex-shrink: 0;
+  color: var(--color-holo-dim);
+}
+.su-details dd,
+.su-summary dd {
+  margin: 0;
+  text-align: right;
+  color: var(--color-holo-text);
+}
+
+.su-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+}
+.su-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.su-panel h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.su-panel header p {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--color-holo-dim);
+}
+.su-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-holo-muted);
+  cursor: pointer;
+}
+.su-summary {
+  padding: 2px 14px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+}
+.su-summary > div:first-child {
+  border-top: 0;
+}
+.su-summary.is-quiet {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.su-summary.is-quiet dd {
+  color: var(--color-holo-muted);
+}
+.su-summary dd small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+
+/* The next action, shown as one line between the "back" and "next" buttons. */
+.su-next {
+  min-width: 0;
+  flex: 1;
+  margin: 0 16px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--color-holo-muted);
+}
+
+.su-extras {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.su-extras li {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 13px 14px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+}
+.su-extras li[data-state='preparing'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.45);
+}
+.su-extra-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.su-extra-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.su-extra-name {
+  font-size: 13.5px;
+  color: var(--color-holo-text);
+}
+.su-extra-name small {
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.su-extra-about {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+}
+.su-extra-about > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+.su-extra-about dt {
+  color: var(--color-holo-dim);
+}
+.su-extra-about dd {
+  margin: 0;
+  color: var(--color-holo-muted);
+}
+
+.su-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.su-group > h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-holo-muted);
+}
+.su-howto {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--color-holo-muted);
+  list-style: decimal;
+}

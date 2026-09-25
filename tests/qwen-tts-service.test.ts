@@ -1,0 +1,195 @@
+import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import { PassThrough } from 'node:stream'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { qwenTtsLanguage } from '@shared/tts-models'
+
+const mocks = vi.hoisted(() => ({ spawn: vi.fn() }))
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/unused', getPath: () => '/unused', on: vi.fn() } }))
+
+const RATE = 24_000
+function fakeChild() {
+  const input: Array<Record<string, unknown>> = []
+  const child = Object.assign(new EventEmitter(), {
+    stdout: new PassThrough(), stderr: new PassThrough(), stdin: new PassThrough(),
+    killed: false, exitCode: null as number | null, kill: vi.fn(), input
+  })
+  child.kill.mockImplementation(() => { child.killed = true; return true })
+  child.stdin.on('data', (data) => {
+    for (const line of String(data).split('\n').filter(Boolean)) input.push(JSON.parse(line))
+  })
+  return child
+}
+type Child = ReturnType<typeof fakeChild>
+let children: Child[] = []
+const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+const arch = Object.getOwnPropertyDescriptor(process, 'arch')!
+let qwen: typeof import('../src/main/services/qwen-tts')
+
+const say = (child: Child, message: Record<string, unknown>): void => { child.stdout.write(`ASIST_JSON:${JSON.stringify(message)}\n`) }
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5))
+/** A piece of loud tone, which the shaper passes on at once. */
+function voiced(seconds = 0.48): string {
+  const samples = new Int16Array(Math.round(seconds * RATE))
+  for (let i = 0; i < samples.length; i++) samples[i] = Math.round(Math.sin(i / 10) * 8000)
+  return Buffer.from(samples.buffer).toString('base64')
+}
+const REQUEST = { text: 'こんにちは。', voice: 'ono_anna', language: 'japanese' } as const
+
+beforeEach(async () => {
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+  Object.defineProperty(process, 'arch', { ...arch, value: 'arm64' })
+  vi.resetModules()
+  vi.stubEnv('ASIST_MLX_PYTHON', '/unused/python')
+  vi.spyOn(fs, 'existsSync').mockReturnValue(true)
+  children = []
+  mocks.spawn.mockReset().mockImplementation(() => {
+    const child = fakeChild()
+    children.push(child)
+    // The worker reports ready as soon as something listens, as a loaded model would.
+    setTimeout(() => say(child, { type: 'ready', sampleRate: RATE, voices: ['ono_anna'], languages: ['japanese'] }), 0)
+    return child
+  })
+  qwen = await import('../src/main/services/qwen-tts')
+})
+afterEach(() => {
+  qwen.stop()
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
+  Object.defineProperty(process, 'platform', platform)
+  Object.defineProperty(process, 'arch', arch)
+  for (const child of children) {
+    child.stdout.destroy(); child.stderr.destroy(); child.stdin.destroy()
+  }
+})
+
+async function collect(stream: AsyncIterable<Float32Array>): Promise<number> {
+  let samples = 0
+  for await (const piece of stream) samples += piece.length
+  return samples
+}
+
+describe('Qwen3-TTS service', () => {
+  it('yields the pieces of a request while they arrive and ends with the worker\'s end message', async () => {
+    const stream = qwen.stream(REQUEST)
+    const first = stream.next()
+    await settle()
+    const child = children[0]
+    const request = child.input.find((message) => message.text === REQUEST.text)!
+    expect(request).toMatchObject({ voice: 'ono_anna', language: 'japanese', speed: 1 })
+    say(child, { type: 'chunk', id: request.id, seq: 0, pcm: voiced() })
+    // The first piece is delivered before the sentence is finished.
+    expect((await first).value!.length).toBeGreaterThan(0)
+    say(child, { type: 'chunk', id: request.id, seq: 1, pcm: voiced() })
+    say(child, { type: 'end', id: request.id, samples: 0 })
+    expect(await collect(stream)).toBeGreaterThan(0)
+    expect(child.input.some((message) => message.type === 'cancel')).toBe(false)
+  })
+
+  it('cancels the request in the worker as soon as the signal aborts, without waiting for the consumer', async () => {
+    const controller = new AbortController()
+    const stream = qwen.stream(REQUEST, controller.signal)
+    const first = stream.next()
+    await settle()
+    const child = children[0]
+    const id = child.input.find((message) => message.text)!.id
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    await first
+    controller.abort()
+    await settle()
+    expect(child.input).toContainEqual({ type: 'cancel', id })
+    await expect(stream.next()).rejects.toThrow()
+  })
+
+  it('cancels a request the consumer stops reading', async () => {
+    const stream = qwen.stream(REQUEST)
+    const first = stream.next()
+    await settle()
+    const child = children[0]
+    const id = child.input.find((message) => message.text)!.id
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    await first
+    await stream.return(undefined)
+    expect(child.input).toContainEqual({ type: 'cancel', id })
+  })
+
+  it('fails every waiting request when the worker dies, and starts a new worker for the next request', async () => {
+    const one = collect(qwen.stream(REQUEST))
+    const two = collect(qwen.stream({ ...REQUEST, text: '次の文。' }))
+    await settle()
+    children[0].exitCode = 1
+    children[0].emit('exit', 1)
+    await expect(one).rejects.toThrow('exited')
+    await expect(two).rejects.toThrow('exited')
+
+    const again = qwen.stream(REQUEST)
+    const first = again.next()
+    await settle()
+    expect(children).toHaveLength(2)
+    const id = children[1].input.find((message) => message.text)!.id
+    say(children[1], { type: 'chunk', id, seq: 0, pcm: voiced() })
+    expect((await first).done).toBe(false)
+  })
+
+  it('reports the worker\'s error for one request and keeps serving the others', async () => {
+    const failing = collect(qwen.stream(REQUEST))
+    const healthy = collect(qwen.stream({ ...REQUEST, text: '次の文。' }))
+    await settle()
+    const child = children[0]
+    const [a, b] = child.input.filter((message) => message.text).map((message) => message.id)
+    say(child, { type: 'error', id: a, error: 'unknown voice' })
+    say(child, { type: 'chunk', id: b, seq: 0, pcm: voiced() })
+    say(child, { type: 'end', id: b, samples: 0 })
+    await expect(failing).rejects.toThrow('unknown voice')
+    expect(await healthy).toBeGreaterThan(0)
+  })
+
+  it('generates a clip again when the model rambles, cancelling the rambling generation, and returns the first plausible one', async () => {
+    const wav = qwen.synthesizeWav({ ...REQUEST, text: 'うん。' })
+    await settle()
+    const child = children[0]
+    const requests = (): Array<Record<string, unknown>> => child.input.filter((message) => message.text)
+    // "うん。" may take 1.5 s; this generation is still going after 1.9 s.
+    for (let seq = 0; seq < 4; seq++) say(child, { type: 'chunk', id: requests()[0].id, seq, pcm: voiced() })
+    await settle()
+    expect(child.input).toContainEqual({ type: 'cancel', id: requests()[0].id })
+    expect(requests()).toHaveLength(2)
+    say(child, { type: 'chunk', id: requests()[1].id, seq: 0, pcm: voiced() })
+    say(child, { type: 'end', id: requests()[1].id, samples: 0 })
+    const result = await wav
+    expect(result.toString('ascii', 0, 4)).toBe('RIFF')
+    // Only the second generation is in the file: 0.48 s of voice and the short tail at most.
+    expect(result.readUInt32LE(40) / 2 / RATE).toBeLessThan(0.7)
+  })
+
+  it('gives up on a clip the model never reads plausibly instead of caching a bad one', async () => {
+    const wav = qwen.synthesizeWav({ ...REQUEST, text: 'うん。' })
+    const outcome = wav.then(() => 'resolved', (error: Error) => error.message)
+    const child = () => children[0]
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await settle()
+      const id = child().input.filter((message) => message.text)[attempt].id
+      say(child(), { type: 'chunk', id, seq: 0, pcm: Buffer.alloc(RATE).toString('base64') })
+      say(child(), { type: 'end', id, samples: 0 })
+    }
+    expect(await outcome).toContain('no plausible reading')
+    expect(child().input.filter((message) => message.text)).toHaveLength(6)
+  })
+
+  it('does not start a worker while the model is not installed', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith('model.safetensors'))
+    await expect(collect(qwen.stream(REQUEST))).rejects.toThrow('not installed')
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('qwenTtsLanguage', () => {
+  it('maps a locale to the model\'s language by its language subtag, and knows which locales the model cannot speak', () => {
+    expect(qwenTtsLanguage('ja-JP')).toBe('japanese')
+    expect(qwenTtsLanguage('pt-BR')).toBe('portuguese')
+    expect(qwenTtsLanguage('es-419')).toBe('spanish')
+    expect(qwenTtsLanguage('hi-IN')).toBeNull()
+    expect(qwenTtsLanguage('id-ID')).toBeNull()
+  })
+})

@@ -1,0 +1,284 @@
+// @vitest-environment happy-dom
+import React, { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AppSettings, AppStatus, SetupProgress, SetupStatus } from '@shared/ipc'
+import { createTranslator, type Translate, type UiLocale } from '@shared/i18n'
+import { SetupWizard } from '../src/renderer/src/ui/SetupWizard'
+import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stores'
+
+// The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
+vi.mock('@/voice/VoiceController', () => ({
+  voiceController: { prepareLocalAsr: vi.fn(async () => 'ok'), cancelLocalAsrPreparation: vi.fn(), enable: vi.fn() }
+}))
+vi.mock('@/voice/SpeechPlayer', () => ({ speechPlayer: { playClip: vi.fn() } }))
+vi.mock('@/voice/microphone-access', () => ({ verifyMicrophoneCapture: vi.fn(async () => {}), microphoneCaptureErrorMessage: (err: unknown) => String(err) }))
+
+/** First-run setup: the provider choice decides the pair of models, the voice mode skips steps, and what completion hands to main. */
+
+let settings: AppSettings
+let status: AppStatus
+const ja = createTranslator('ja-JP')
+const verifiedKeys = new Set<string>()
+let qwenTtsRecommended = false
+let progressListener: (progress: SetupProgress) => void = () => {}
+
+const setupStatus = (): SetupStatus =>
+  ({
+    services: status,
+    apiKeyConfigured: false,
+    asr: { selectedModel: 'auto', resolvedModel: 'qwen3-asr-1.7b-mlx', recommendedModel: 'qwen3-asr-1.7b-mlx', label: 'Qwen3-ASR', recommendationReason: '', totalMemoryGb: 32, runtimeInstalled: false, modelInstalled: false, ready: false },
+    // This Mac has too little memory for the local speech model, so the setup does not offer it.
+    qwenTts: { label: 'Qwen3-TTS', recommended: qwenTtsRecommended, runtimeInstalled: false, modelInstalled: false, ready: false }
+  }) as SetupStatus
+
+const api = {
+  getSetupStatus: vi.fn(async () => setupStatus()),
+  saveApiKey: vi.fn(async (provider: string) => {
+    verifiedKeys.add(provider)
+    status = { ...status, llmKeys: { ...status.llmKeys, [provider]: 'verified' } }
+    return status
+  }),
+  saveSettings: vi.fn(async (patch: Partial<AppSettings>) => {
+    settings = { ...settings, ...patch }
+    if (patch.conversationModel) status = { ...status, llm: verifiedKeys.has(patch.conversationModel.provider) }
+    // As in main, the macOS speech synthesis is available without any preparation, while a separate
+    // engine counts as unavailable until it answers.
+    if (patch.ttsEngine) status = { ...status, ttsEngine: patch.ttsEngine, tts: patch.ttsEngine === 'system' }
+    return settings
+  }),
+  completeSetup: vi.fn(async () => ({ ...settings, onboardingVersion: 1 })),
+  onSetupProgress: vi.fn((listener: (progress: SetupProgress) => void) => {
+    progressListener = listener
+    return () => {}
+  }),
+  prepareTtsModel: vi.fn(() => new Promise<{ ok: boolean; message: string }>(() => {})),
+  cancelTtsPreparation: vi.fn(async () => true),
+  embeddingStatus: vi.fn(async () => ({ runtimeInstalled: true, modelInstalled: true, running: false, enabled: false, embedded: 0, total: 0, model: 'multilingual-e5-small' })),
+  embeddingPrepare: vi.fn(async () => ({ ok: true, message: '' })),
+  aizuchiClassifierStatus: vi.fn(async () => ({ runtimeInstalled: true, modelInstalled: true, running: false })),
+  aizuchiClassifierPrepare: vi.fn(async () => ({ ok: true, message: '' })),
+  vapStatus: vi.fn(async () => ({ runtimeInstalled: true, modelsInstalled: true, running: false })),
+  vapPrepare: vi.fn(async () => ({ ok: true, message: '' })),
+  requestMicPermission: vi.fn(async () => true),
+  openExternal: vi.fn(async () => {})
+}
+
+let container: HTMLDivElement
+let root: Root
+
+const flush = (): Promise<void> => act(async () => new Promise((resolve) => setTimeout(resolve, 0)))
+const button = (text: string): HTMLButtonElement => {
+  const found = [...container.querySelectorAll('button')].find((el) => el.textContent?.includes(text))
+  if (!found) throw new Error(`ボタンがありません: ${text}`)
+  return found
+}
+const press = async (text: string): Promise<void> => {
+  await act(async () => button(text).click())
+  await flush()
+}
+const optionTitles = (): string[] => [...container.querySelectorAll('.su-option-title')].map((el) => el.textContent ?? '')
+const extraNames = (): string[] => [...container.querySelectorAll('.su-extra-name')].map((el) => el.firstChild?.textContent ?? '')
+/** Chooses a language on the first screen. The rest of the setup is shown and configured in it. */
+const chooseLanguage = async (locale: UiLocale): Promise<void> => {
+  await act(async () => container.querySelector<HTMLButtonElement>(`.su-language[data-locale="${locale}"]`)!.click())
+  await flush()
+}
+/** Types a key on the model screen and verifies it, which every later screen depends on. */
+const verifyKey = async (t: Translate): Promise<void> => {
+  const input = container.querySelector<HTMLInputElement>('#su-key')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-ant-test')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  api.saveApiKey.mockImplementationOnce(async (provider: string) => {
+    verifiedKeys.add(provider)
+    status = { ...status, llm: true, llmKeys: { ...status.llmKeys, anthropic: 'verified' } }
+    return status
+  })
+  await press(t('setup.model.verifyAndSave'))
+}
+const stepStates = (): Record<string, string | undefined> =>
+  Object.fromEntries([...container.querySelectorAll<HTMLElement>('.su-steps li')].map((li) => [li.textContent?.replace(/^\d/, '') ?? '', li.dataset.state]))
+
+beforeEach(async () => {
+  verifiedKeys.clear()
+  qwenTtsRecommended = false
+  settings = {
+    onboardingVersion: 0,
+    uiLocale: 'ja-JP',
+    conversationLocale: 'ja-JP',
+    region: 'JP',
+    conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' },
+    bridgeModel: { provider: 'anthropic', id: 'claude-haiku-4-5' },
+    ttsEngine: 'voicevox',
+    asrModel: 'auto',
+    micAutoStart: false,
+    localAsrEnabled: false
+  } as unknown as AppSettings
+  status = {
+    llm: false,
+    conversationModel: settings.conversationModel,
+    llmKeys: { anthropic: 'missing', openai: 'missing', google: 'missing', cerebras: 'missing' },
+    tts: false,
+    ttsEngine: 'voicevox',
+    ttsLabel: 'VOICEVOX',
+    asr: false,
+    agent: false,
+    agentEngine: 'codex',
+    voiceEngine: 'cascade',
+    live: 'off'
+  }
+  vi.stubGlobal('React', React)
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('window', Object.assign(window, { api }))
+  for (const fn of Object.values(api)) fn.mockClear()
+  useSettingsStore.setState({ settings })
+  useStatusStore.setState({ status })
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+})
+
+/** Mounts the wizard. A test that needs another starting state changes `settings` or `status` first. */
+const render = async (): Promise<void> => {
+  useSettingsStore.setState({ settings })
+  useStatusStore.setState({ status })
+  await act(async () => root.render(React.createElement(SetupWizard)))
+  await flush()
+}
+
+afterEach(async () => {
+  await act(async () => root.unmount())
+  container.remove()
+  vi.unstubAllGlobals()
+})
+
+describe('first-run setup', () => {
+  it('opens on the language screen and saves the interface language, the conversation language and the region in one choice', async () => {
+    await render()
+    expect(container.querySelector('h1')?.textContent).toBe(createTranslator('ja-JP')('setup.steps.language.title'))
+    await chooseLanguage('en-US')
+    // VOICEVOX reads Japanese only, so the speech engine moves in the same save.
+    expect(api.saveSettings).toHaveBeenCalledWith({ uiLocale: 'en-US', conversationLocale: 'en-US', region: 'US', ttsEngine: 'system' })
+    expect(container.querySelector('h1')?.textContent).toBe(createTranslator('en-US')('setup.steps.language.title'))
+
+    await chooseLanguage('ja-JP')
+    // Japanese can keep VOICEVOX, so nothing but the three language settings is written.
+    expect(api.saveSettings).toHaveBeenLastCalledWith({ uiLocale: 'ja-JP', conversationLocale: 'ja-JP', region: 'JP' })
+  })
+
+  it('offers VOICEVOX, AivisSpeech, the backchannel classifier and MaAI for a Japanese conversation', async () => {
+    status = { ...status, asr: true }
+    await render()
+    const t = createTranslator('ja-JP')
+    await press(t('setup.next'))
+    await verifyKey(t)
+    await press(t('setup.next'))
+    await press(t('setup.speaking.voice.title'))
+    await press(t('setup.next'))
+    await press(t('setup.next'))
+    expect(optionTitles()).toEqual([t('setup.tts.engines.system.title'), t('setup.tts.engines.voicevox.title'), t('setup.tts.engines.aivisspeech.title')])
+
+    // VOICEVOX is not running in this test, so the macOS voice carries the walk to the last screens.
+    await press(t('setup.tts.engines.system.title'))
+    await press(t('setup.next'))
+    await press(t('setup.mic.check'))
+    await press(t('setup.next'))
+    expect(extraNames()).toEqual([t('setup.extras.models.embedding.label'), t('setup.extras.models.modernbert.label'), t('setup.extras.models.maai.label')])
+  })
+
+  it('offers the macOS voice alone and prepares only the search model when the conversation is not in Japanese', async () => {
+    status = { ...status, asr: true }
+    await render()
+    const t = createTranslator('en-US')
+    await chooseLanguage('en-US')
+    await press(t('setup.next'))
+    await verifyKey(t)
+    await press(t('setup.next'))
+    await press(t('setup.speaking.voice.title'))
+    await press(t('setup.next'))
+    await press(t('setup.next'))
+    expect(optionTitles()).toEqual([t('setup.tts.engines.system.title')])
+
+    await press(t('setup.next'))
+    await press(t('setup.mic.check'))
+    await press(t('setup.next'))
+    expect(extraNames()).toEqual([t('setup.extras.models.embedding.label')])
+    await press(t('setup.next'))
+    expect([...container.querySelectorAll('.su-summary dd')][0]?.textContent).toBe('English')
+  })
+
+  it('derives the conversation and aizuchi models from the key of a provider other than Anthropic and enables the next step', async () => {
+    await render()
+    await press(ja('setup.next'))
+    expect(button(ja('setup.next')).disabled).toBe(true)
+    await act(async () => container.querySelector<HTMLButtonElement>('.su-provider[data-provider="openai"]')!.click())
+    const input = container.querySelector<HTMLInputElement>('#su-key')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-test')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await press(ja('setup.model.verifyAndSave'))
+
+    expect(api.saveApiKey).toHaveBeenCalledWith('openai', 'sk-test')
+    expect(api.saveSettings).toHaveBeenCalledWith({
+      conversationModel: { provider: 'openai', id: 'gpt-5.6-terra' },
+      bridgeModel: { provider: 'openai', id: 'gpt-5.6-luna' }
+    })
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('skips the listening, reading and microphone steps in text-only mode and completes with TTS turned off', async () => {
+    await render()
+    await press(ja('setup.next'))
+    const input = container.querySelector<HTMLInputElement>('#su-key')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-ant-test')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    // The pair of models already matches Anthropic, so verifying the key only refreshes the status before moving on.
+    api.saveApiKey.mockImplementationOnce(async (provider: string) => {
+      verifiedKeys.add(provider)
+      status = { ...status, llm: true, llmKeys: { ...status.llmKeys, anthropic: 'verified' } }
+      return status
+    })
+    await press(ja('setup.model.verifyAndSave'))
+    await press(ja('setup.next'))
+    await press(ja('setup.speaking.textOnly.title'))
+    expect(stepStates()).toMatchObject({ [ja('setup.steps.listening.label')]: 'skipped', [ja('setup.steps.tts.label')]: 'skipped', [ja('setup.steps.mic.label')]: 'skipped' })
+
+    await press(ja('setup.next'))
+    // The remaining setup starts by itself when the step opens and blocks the next button until it finishes; in
+    // text-only mode the only item is the semantic search over memory.
+    expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.extras.title'))
+    await flush()
+    expect(api.embeddingStatus).toHaveBeenCalled()
+    expect(container.querySelectorAll('.su-extras li')).toHaveLength(1)
+    expect(button(ja('setup.next')).disabled).toBe(false)
+
+    await press(ja('setup.next'))
+    await press(ja('setup.start'))
+    expect(api.saveSettings).toHaveBeenCalledWith({ ttsEngine: 'none' })
+    expect(api.completeSetup).toHaveBeenCalledWith(expect.objectContaining({ voiceMode: 'text', micAutoStart: false }))
+  })
+
+  it('shows how much of the Qwen3-TTS model has arrived while it is prepared on the reading step', async () => {
+    status = { ...status, asr: true }
+    qwenTtsRecommended = true
+    await render()
+    const t = createTranslator('ja-JP')
+    await press(t('setup.next'))
+    await verifyKey(t)
+    await press(t('setup.next'))
+    await press(t('setup.speaking.voice.title'))
+    await press(t('setup.next'))
+    await press(t('setup.next'))
+    await press(t('setup.tts.engines.qwen3tts.title'))
+    await press(t('setup.tts.prepareModel'))
+    await act(async () => progressListener({ status: 'downloading', pct: 29, downloadedMb: 576.3, totalMb: 1974, message: 'Qwen3-TTS' }))
+    const bar = container.querySelector('[role="progressbar"]')
+    expect(bar?.getAttribute('aria-valuenow')).toBe('29')
+    expect(container.querySelector('.st-progress-label')?.textContent).toContain('576.3 / 1974 MB')
+  })
+})

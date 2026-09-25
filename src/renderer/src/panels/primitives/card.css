@@ -1,0 +1,423 @@
+/* Shared card primitives. The look settled on for the weather and exchange rate cards (hero heading with a large
+   number, bordered box, fact list, the row that opens the focus view, and the action row) is reused at the
+   same dimensions by the other cards. A card's body root carries .card and data-size, and the m / s / focus
+   differences are absorbed here. Styling specific to one card lives in that card's own CSS. */
+.card {
+  color: var(--ui-text);
+  font-size: 12px;
+}
+
+.card-hero {
+  position: relative;
+  padding: 12px 5px 10px;
+  text-align: var(--card-hero-align);
+}
+.card-hero h3 {
+  margin: 4px 0 2px;
+  font-family: var(--card-title-font);
+  font-size: calc(22px * var(--card-title-scale));
+  line-height: 1.25;
+  font-weight: var(--card-title-weight);
+  text-shadow: 0 2px 15px var(--ui-glow);
+  overflow-wrap: anywhere;
+}
+.card-hero p {
+  font-size: 11px;
+  color: var(--ui-text-soft);
+}
+.card-hero p b {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--ui-text);
+}
+.card-big {
+  display: flex;
+  align-items: baseline;
+  justify-content: var(--card-hero-align);
+  gap: 8px;
+  margin: 12px 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+.card-big strong {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: var(--card-number-font);
+  font-size: calc(56px * var(--card-number-scale));
+  line-height: 1;
+  font-weight: var(--card-number-weight);
+  letter-spacing: -2px;
+  color: var(--ui-text-strong);
+  text-shadow: 0 2px 20px oklch(from var(--ui-glow) l c h / 0.6);
+}
+.card-big strong small {
+  margin-left: 6px;
+  font-size: 18px;
+  letter-spacing: 0;
+  color: var(--ui-heading);
+}
+.card-big > span {
+  font-size: 13px;
+  color: var(--ui-text-soft);
+}
+.card-hero .card-note {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--ui-text-soft);
+}
+.card[data-size='m'] .card-hero {
+  padding: 10px 5px 8px;
+}
+.card[data-size='m'] .card-big strong {
+  font-size: calc(50px * var(--card-number-scale));
+}
+.card[data-size='s'] .card-hero {
+  padding: 6px 5px 6px;
+}
+.card[data-size='s'] .card-hero h3 {
+  font-size: calc(20px * var(--card-title-scale));
+}
+.card[data-size='s'] .card-big {
+  margin: 8px 0 4px;
+}
+.card[data-size='s'] .card-big strong {
+  font-size: calc(44px * var(--card-number-scale));
+}
+.card[data-size='s'] .card-big strong small {
+  font-size: 15px;
+}
+.card[data-size='focus'] .card-hero {
+  padding: 24px 5px 14px;
+}
+.card[data-size='focus'] .card-big strong {
+  font-size: calc(64px * var(--card-number-scale));
+}
+
+.card-box {
+  position: relative;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-box-radius);
+  background: var(--ui-box);
+  box-shadow: inset 0 1px 0 var(--ui-box-highlight);
+}
+.card-box > h4 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--ui-divider);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-heading);
+  white-space: nowrap;
+}
+/* The note gives way, not the title: a note that is long in some language wraps under itself instead of
+   running out of the box or breaking the title in two. */
+.card-box > h4 small {
+  min-width: 0;
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--ui-text-muted);
+  text-align: right;
+  white-space: normal;
+}
+
+.card-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ui-divider);
+}
+.card-row:first-child {
+  border-top: 0;
+}
+.card-row-main {
+  min-width: 0;
+  flex: 1;
+}
+.card-row-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ui-text-strong);
+  overflow-wrap: anywhere;
+}
+.card-row-meta {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.card-row-index {
+  flex-shrink: 0;
+  min-width: 16px;
+  padding-top: 1px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: right;
+  color: var(--ui-index);
+}
+.card-row-aside {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-top: 1px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.card-row button.card-row-link {
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+  text-align: left;
+}
+.card-row button.card-row-link:hover .card-row-title,
+.card-row button.card-row-link:focus-visible .card-row-title {
+  color: var(--ui-link);
+}
+.card-icon-button {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 6px;
+  color: var(--ui-text-faint);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: color 0.2s, opacity 0.2s;
+}
+.card-row:hover .card-icon-button,
+.card-icon-button:focus-visible {
+  opacity: 1;
+}
+.card-icon-button:hover {
+  color: var(--color-holo-peach);
+}
+.card-icon-button[data-tone='danger']:hover {
+  color: var(--color-holo-red);
+}
+.card[data-size='focus'] .card-row-title {
+  -webkit-line-clamp: unset;
+}
+
+.card-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 4px 12px 10px;
+}
+.card-facts[data-columns='1'] {
+  grid-template-columns: 1fr;
+}
+.card-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* When a row is too narrow the label gives way first, wrapping between words down to its longest word, and only
+   then does the value wrap, anywhere, as a path or an address has to. With the label fixed instead, a label in a
+   language that runs long pushed the value into breaking inside a number. */
+.card-facts dt {
+  flex: 0 1000 auto;
+  min-width: min-content;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+}
+.card-facts dd {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+  text-align: right;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.card-box > .card-facts:first-child {
+  padding-top: 10px;
+}
+
+.card-missing {
+  padding: 10px 12px;
+  font-size: 10px;
+  color: var(--ui-text-soft);
+}
+.card-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ui-text-soft);
+}
+.card-empty small {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+}
+
+.card-more {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-box-radius);
+  background: var(--ui-box);
+  box-shadow: inset 0 1px 0 var(--ui-box-highlight);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-heading);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.card-more:hover,
+.card-more:focus-visible {
+  border-color: var(--ui-line-active);
+  color: var(--ui-text-strong);
+}
+.card-more span {
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ui-heading);
+}
+.card-box .card-more {
+  margin-top: 0;
+  border: 0;
+  border-top: 1px solid var(--ui-divider);
+  border-radius: 0;
+  background: var(--ui-box-foot);
+  box-shadow: none;
+}
+
+.card-actions {
+  display: flex;
+  /* Two labels that are too long for one row in some language take a row each. */
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.card-action {
+  display: inline-flex;
+  /* Each action starts from the width of its own text and the row's spare width is shared, so a long label
+     beside a short one stays on one line. */
+  flex: 1 1 auto;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-control);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ui-heading);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.card-action:hover,
+.card-action:focus-visible {
+  border-color: var(--ui-line-active);
+  color: var(--ui-text-strong);
+}
+.card-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.card-action[data-tone='primary'] {
+  border-color: rgb(from var(--color-holo-mint) r g b / 0.4);
+  background: rgb(from var(--color-holo-mint) r g b / 0.08);
+  color: var(--ui-tone-mint-text);
+}
+.card-action[data-tone='primary']:hover {
+  border-color: rgb(from var(--color-holo-mint) r g b / 0.67);
+  background: rgb(from var(--color-holo-mint) r g b / 0.14);
+}
+.card-action[data-tone='danger']:hover,
+.card-action[data-tone='danger']:focus-visible {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.47);
+  color: var(--ui-tone-red-text);
+}
+.card-action[data-tone='warm'] {
+  border-color: rgb(from var(--color-holo-peach) r g b / 0.4);
+  background: rgb(from var(--color-holo-peach) r g b / 0.07);
+  color: var(--ui-tone-peach-text);
+}
+
+.card-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--ui-heading);
+  white-space: nowrap;
+}
+.card-chip[data-tone='cyan'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.4);
+  color: var(--ui-tone-cyan-text);
+}
+.card-chip[data-tone='mint'] {
+  border-color: rgb(from var(--color-holo-mint) r g b / 0.4);
+  color: var(--ui-tone-mint-text);
+}
+.card-chip[data-tone='peach'] {
+  border-color: rgb(from var(--color-holo-peach) r g b / 0.4);
+  color: var(--ui-tone-peach-text);
+}
+.card-chip[data-tone='red'] {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.4);
+  color: var(--ui-tone-red-text);
+}
+.card-chip[data-tone='dim'] {
+  color: var(--ui-text-muted);
+}
+
+.card-input {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--ui-divider);
+}
+.card-input input {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-field);
+  font-size: 12px;
+  color: var(--ui-text-strong);
+}
+.card-input input::placeholder {
+  color: var(--ui-text-faint);
+}
+.card-input input:focus {
+  outline: none;
+  border-color: var(--ui-line-active);
+}
+.card-input .card-action {
+  flex: 0 0 auto;
+}

@@ -1,0 +1,147 @@
+import type {
+  ConversationMessage,
+  ConversationPart,
+  ConversationRequest,
+  ConversationResult,
+  ConversationStream,
+  JsonSchema,
+  SearchEvent,
+  ToolCallPart
+} from '@shared/conversation'
+import type { ConversationLocale } from '@shared/conversation-locale'
+import { errorPrefix } from '@shared/conversation-markers'
+import type { ConversationModel } from '@shared/llm-catalog'
+import type { RoundUsage } from '@shared/ipc'
+
+/**
+ * The contract every provider adapter implements. An adapter only converts between the types in
+ * shared/conversation and its own API's shape, and never lets an SDK type escape. The key arrives with
+ * each call instead of being held, because a key is also verified before it is saved.
+ */
+
+export interface JsonRequest {
+  model: ConversationModel
+  system: string
+  user: string
+  /**
+   * The top level is an object. Every property has to be required and `additionalProperties` false,
+   * because that is the intersection all providers' structured output accepts.
+   */
+  schema: JsonSchema
+  maxTokens: number
+  signal: AbortSignal
+}
+
+export interface ProviderAdapter {
+  stream(request: ConversationRequest, key: string): ConversationStream
+  /** The parsed JSON and the usage of the response, which the caller records. */
+  completeJson(request: JsonRequest, key: string): Promise<{ value: unknown; usage: RoundUsage }>
+  /** Checks that the model exists and the key may use it. A failure carries the HTTP status, where 401 means the key is rejected. */
+  retrieveModel(id: string, key: string, signal: AbortSignal): Promise<void>
+  /** Checks only that the key authenticates. */
+  listModels(key: string, signal: AbortSignal): Promise<void>
+}
+
+/** An error carrying an HTTP status, which is what the checks in shared read to tell a transient failure from a rejected key. */
+export function statusError(status: number, message: string, cause?: unknown): Error {
+  return Object.assign(new Error(message, { cause }), { status })
+}
+
+/**
+ * The base every adapter's stream builds on: it dispatches the events and keeps what is confirmed so
+ * far. Text deltas accumulate and become one text part at the next tool call or at the end of the
+ * response; text that is only whitespace is never confirmed.
+ */
+export abstract class AdapterStream implements ConversationStream {
+  private readonly textListeners: Array<(delta: string) => void> = []
+  private readonly toolCallListeners: Array<(call: ToolCallPart) => void> = []
+  private readonly searchListeners: Array<(event: SearchEvent) => void> = []
+  private readonly confirmed: ConversationPart[] = []
+  private openText = ''
+  private result: Promise<ConversationResult> | null = null
+
+  /** Defers the run by a microtask so the caller has finished attaching its on() listeners before the first event. */
+  protected start(run: () => Promise<ConversationResult>): void {
+    this.result = Promise.resolve().then(run)
+    // A stream that is dropped without final() must not raise an unhandled rejection.
+    this.result.catch(() => {})
+  }
+
+  on(event: 'text', listener: (delta: string) => void): this
+  on(event: 'toolCall', listener: (call: ToolCallPart) => void): this
+  on(event: 'search', listener: (event: SearchEvent) => void): this
+  on(event: 'text' | 'toolCall' | 'search', listener: never): this {
+    if (event === 'text') this.textListeners.push(listener)
+    else if (event === 'toolCall') this.toolCallListeners.push(listener)
+    else this.searchListeners.push(listener)
+    return this
+  }
+
+  final(): Promise<ConversationResult> {
+    if (!this.result) throw new Error('stream was not started')
+    return this.result
+  }
+
+  snapshot(): ConversationMessage | null {
+    const parts = [...this.confirmed]
+    if (this.openText.trim()) parts.push({ type: 'text', text: this.openText })
+    if (parts.length === 0) return null
+    const native = this.nativeSnapshot(this.openText.trim() ? this.openText : '')
+    return { role: 'assistant', parts, ...(native === undefined ? {} : { native }) }
+  }
+
+  /** The provider's raw output for what is confirmed so far; undefined for providers that have none. */
+  protected abstract nativeSnapshot(openText: string): ConversationMessage['native']
+
+  protected get parts(): readonly ConversationPart[] {
+    return this.confirmed
+  }
+
+  protected emitText(delta: string): void {
+    if (!delta) return
+    this.openText += delta
+    for (const listener of this.textListeners) listener(delta)
+  }
+
+  protected closeText(): void {
+    if (this.openText.trim()) this.confirmed.push({ type: 'text', text: this.openText })
+    this.openText = ''
+  }
+
+  protected emitToolCall(call: ToolCallPart): void {
+    this.closeText()
+    this.confirmed.push(call)
+    for (const listener of this.toolCallListeners) listener(call)
+  }
+
+  protected emitSearch(event: SearchEvent): void {
+    for (const listener of this.searchListeners) listener(event)
+  }
+}
+
+/** Empty arguments mean no arguments. Invalid JSON throws instead of running the tool with broken arguments. */
+export function parseToolArguments(name: string, json: string): Record<string, unknown> {
+  if (!json.trim()) return {}
+  try {
+    return JSON.parse(json) as Record<string, unknown>
+  } catch (error) {
+    throw new Error(`tool ${name} was called with arguments that are not JSON: ${json.slice(0, 200)}`, { cause: error })
+  }
+}
+
+/** For APIs whose tool results carry no error flag, a failure is reported inside the text itself. */
+export const toolResultText = (locale: ConversationLocale, part: { content: string; isError?: boolean }): string =>
+  part.isError ? `${errorPrefix(locale)} ${part.content}` : part.content
+
+export function withoutSchemaKeys(schema: JsonSchema, dropped: readonly string[]): JsonSchema {
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk)
+    if (!value || typeof value !== 'object') return value
+    const out: Record<string, unknown> = {}
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (!dropped.includes(key)) out[key] = walk(child)
+    }
+    return out
+  }
+  return walk(schema) as JsonSchema
+}

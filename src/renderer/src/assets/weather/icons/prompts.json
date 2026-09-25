@@ -1,0 +1,35 @@
+{
+  "tool": "built-in image_gen",
+  "reference": "resources/artwork/rain.png",
+  "copied": {
+    "clear": "resources/artwork/sun.png",
+    "rain": "resources/artwork/rain.png"
+  },
+  "generations": [
+    {
+      "id": "cloudy",
+      "prompt": "Use case: stylized-concept. Generate a single square weather UI icon for ASIST, matching the attached reference rain icon's glossy rounded pearlescent icy-blue 3D glass material, soft white highlights and subtle violet/cyan rim lighting. Reference is style only. Subject: One single puffy cloud, no rain drops, no sun, no snow, no lightning. Centered isolated object, about 80% canvas extent with generous transparent margin, legible at 28px. Truly transparent background with real alpha channel, no background color, no checkerboard drawn in image, no ground, no text, no frame, no watermark. Square PNG. Preserve the premium softly inflated glass appearance of reference.",
+      "accepted": true
+    },
+    {
+      "id": "snow",
+      "prompt": "Use case: stylized-concept. Generate a single square weather UI icon for ASIST, matching the attached reference rain icon's glossy rounded pearlescent icy-blue 3D glass material, soft white highlights and subtle violet/cyan rim lighting. Reference is style only. Subject: One puffy cloud with three large clearly recognizable six-branched icy snowflakes below it. No rain drops, no sun, no lightning. Centered isolated object, about 80% canvas extent with generous transparent margin, legible at 28px. Truly transparent background with real alpha channel, no background color, no checkerboard drawn in image, no ground, no text, no frame, no watermark. Square PNG. Preserve the premium softly inflated glass appearance of reference.",
+      "accepted": false
+    },
+    {
+      "id": "storm",
+      "prompt": "Use case: stylized-concept. Generate a single square weather UI icon for ASIST, matching the attached reference rain icon's glossy rounded pearlescent icy-blue 3D glass material, soft white highlights and subtle violet/cyan rim lighting. Reference is style only. Subject: One puffy blue-gray storm cloud with a bold golden lightning bolt and two small blue raindrops below it. No sun, no snow. Centered isolated object, about 80% canvas extent with generous transparent margin, legible at 28px. Truly transparent background with real alpha channel, no background color, no checkerboard drawn in image, no ground, no text, no frame, no watermark. Square PNG. Preserve the premium softly inflated glass appearance of reference.",
+      "accepted": true
+    },
+    {
+      "id": "snow",
+      "prompt": "Edit this snow weather icon. Remove the entire gray checkerboard background and replace it with REAL TRANSPARENCY (PNG alpha channel). Keep the blue pearlescent glass cloud and three snowflakes unchanged. Every pixel outside the cloud and snowflakes must have alpha 0. Do not render a checkerboard, solid color, shadow plane, or other background. This is a transparent-background cutout asset for a UI. Output transparent PNG.",
+      "accepted": false
+    },
+    {
+      "id": "snow",
+      "prompt": "Create a NEW snow weather icon as a transparent PNG, background=transparent. Use attached RAIN icon only as style reference. A glossy pearl-blue puffy cloud with three small white six-pointed snowflakes suspended underneath. All negative space is alpha transparency. Single centered object on empty transparent canvas. Match rounded 3D blue glass cloud, cyan edges and white highlights of the reference. No text or scenery. Output RGBA PNG with transparent background, NOT a visualization of transparency.",
+      "accepted": true
+    }
+  ]
+}

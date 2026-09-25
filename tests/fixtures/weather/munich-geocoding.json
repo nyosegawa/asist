@@ -1,0 +1,46 @@
+{
+ "results": [
+  {
+   "id": 5060556,
+   "name": "Munich",
+   "latitude": 48.66917,
+   "longitude": -98.83263,
+   "elevation": 487.0,
+   "feature_code": "PPL",
+   "country_code": "US",
+   "timezone": "America/Chicago",
+   "population": 202,
+   "country_id": 6252001,
+   "country": "Vereinigte Staaten",
+   "admin1": "North Dakota"
+  },
+  {
+   "id": 2867714,
+   "name": "München",
+   "latitude": 48.13743,
+   "longitude": 11.57549,
+   "elevation": 524.0,
+   "feature_code": "PPLA",
+   "country_code": "DE",
+   "timezone": "Europe/Berlin",
+   "population": 1260391,
+   "country_id": 2921044,
+   "country": "Deutschland",
+   "admin1": "Bayern"
+  },
+  {
+   "id": 3580031,
+   "name": "Munich",
+   "latitude": 12.08322,
+   "longitude": -61.64477,
+   "elevation": 231.0,
+   "feature_code": "PPL",
+   "country_code": "GD",
+   "timezone": "America/Grenada",
+   "country_id": 3580239,
+   "country": "Grenada",
+   "admin1": "Saint Andrew"
+  }
+ ],
+ "generationtime_ms": 0.72
+}

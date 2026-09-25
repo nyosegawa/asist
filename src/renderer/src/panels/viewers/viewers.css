@@ -1,0 +1,252 @@
+/* Vocabulary shared by the viewers: document (.fv-doc), frame (.fv-frame), monospace (.fv-mono) and note
+   (.fv-note). Font sizes follow the card size, and the colors are the theme's tokens (themes.css). */
+
+.fv-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-control-radius);
+  background: var(--viewer-frame);
+}
+.fv-frame[data-mode='card'] {
+  max-height: var(--fv-max, 420px);
+}
+.fv-frame[data-mode='card'][data-clipped='true']::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 36px;
+  background: linear-gradient(to bottom, transparent, var(--card-background));
+  pointer-events: none;
+}
+.fv-frame[data-mode='focus'] {
+  max-height: none;
+}
+.fv-scroll {
+  max-height: inherit;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.fv-note {
+  padding: 6px 12px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+}
+.fv-note[data-tone='error'] {
+  color: var(--ui-tone-red-text);
+}
+
+.fv-doc {
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+.fv-doc > :first-child {
+  margin-top: 0;
+}
+.fv-doc > :last-child {
+  margin-bottom: 0;
+}
+.fv-doc h1,
+.fv-doc h2,
+.fv-doc h3,
+.fv-doc h4,
+.fv-doc h5,
+.fv-doc h6 {
+  margin: 1.2em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ui-text-strong);
+}
+.fv-doc h1 {
+  font-size: 1.45em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--ui-divider);
+}
+.fv-doc h2 {
+  font-size: 1.25em;
+}
+.fv-doc h3 {
+  font-size: 1.1em;
+}
+.fv-doc h4,
+.fv-doc h5,
+.fv-doc h6 {
+  font-size: 1em;
+  color: var(--ui-heading);
+}
+.fv-doc p {
+  margin: 0.55em 0;
+}
+.fv-doc a {
+  color: var(--ui-link);
+  text-decoration: underline;
+  text-decoration-color: rgb(from var(--ui-link) r g b / 0.4);
+  cursor: pointer;
+}
+.fv-doc ul,
+.fv-doc ol {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+.fv-doc ul {
+  list-style: disc;
+}
+.fv-doc ol {
+  list-style: decimal;
+}
+.fv-doc li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.fv-doc li {
+  margin: 0.15em 0;
+}
+.fv-doc li > ul,
+.fv-doc li > ol {
+  margin: 0.1em 0;
+}
+.fv-doc input[type='checkbox'] {
+  margin-right: 6px;
+  vertical-align: -1px;
+  /* The browser draws the box itself, light unless told the theme is dark. */
+  color-scheme: var(--ui-color-scheme);
+  accent-color: var(--color-holo-cyan);
+}
+.fv-doc blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid rgb(from var(--color-holo-cyan) r g b / 0.4);
+  color: var(--ui-text-soft);
+}
+.fv-doc hr {
+  margin: 1em 0;
+  border: 0;
+  border-top: 1px solid var(--ui-divider);
+}
+.fv-doc code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--viewer-raised);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--code-property);
+}
+.fv-doc pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-field);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  line-height: 1.55;
+}
+.fv-doc pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  color: var(--ui-text-soft);
+}
+.fv-doc img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+.fv-doc del {
+  color: var(--ui-text-muted);
+}
+
+.fv-doc table,
+.fv-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+  font-variant-numeric: tabular-nums;
+}
+.fv-doc table {
+  display: block;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  width: 100%;
+}
+.fv-doc th,
+.fv-doc td,
+.fv-table th,
+.fv-table td {
+  padding: 5px 10px;
+  border: 1px solid var(--ui-divider);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.fv-doc th,
+.fv-table th {
+  position: sticky;
+  top: 0;
+  background: var(--viewer-raised);
+  font-weight: 600;
+  color: var(--ui-heading);
+}
+.fv-table td[data-numeric='true'] {
+  text-align: right;
+}
+.fv-table tbody tr:nth-child(even) td {
+  background: rgb(from var(--ui-text) r g b / 0.03);
+}
+
+.fv-mono {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ui-text-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.card[data-size='s'] .fv-doc {
+  font-size: 11px;
+  padding: 10px 12px;
+}
+.card[data-size='s'] .fv-mono {
+  font-size: 10px;
+}
+.card[data-size='focus'] .fv-doc {
+  padding: 16px 20px;
+  font-size: 13px;
+}
+.card[data-size='focus'] .fv-mono {
+  font-size: 12px;
+}
+
+.fv-image {
+  display: block;
+  width: 100%;
+  max-height: var(--fv-max, 420px);
+  object-fit: contain;
+  background: var(--color-holo-bg);
+}
+.card[data-size='focus'] .fv-image {
+  max-height: 70vh;
+}
+
+.fv-stub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 14px;
+  font-size: 12px;
+  color: var(--ui-text);
+}
+.fv-stub small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  overflow-wrap: anywhere;
+}

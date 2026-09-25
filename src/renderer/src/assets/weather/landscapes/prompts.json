@@ -1,0 +1,263 @@
+{
+  "tool": "built-in imagegen",
+  "assets": [
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Aomori prefecture, Japan: Hirosaki castle turret and broad leafy park with a distant low ridge",
+      "id": "aomori",
+      "file": "aomori.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Iwate prefecture, Japan: Morioka city rooftops and the broad unsnowed silhouette of Mount Iwate on the right",
+      "id": "iwate",
+      "file": "iwate.png"
+    },
+    {
+      "prompt": "透明背景のPNG素材を作成してください。宮城県の松島の海、松の生えた小島、遠景の山並みを写真風に描いた風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。文字なし。背景透過が必須です。",
+      "id": "miyagi",
+      "file": "miyagi.png"
+    },
+    {
+      "prompt": "透明背景のPNG素材を作成してください。Akita prefecture, Japan: Kakunodate traditional samurai street, dark wooden walls and green trees。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "id": "akita",
+      "file": "akita.png"
+    },
+    {
+      "id": "yamagata",
+      "prompt": "透明背景のPNG素材を作成してください。Yamagata prefecture, Japan: Ginzan Onsen traditional wooden inns and small river, no snow。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "yamagata.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Fukushima prefecture, Japan: Tsuruga castle white keep on right, stone walls and green park",
+      "id": "fukushima",
+      "file": "fukushima.png"
+    },
+    {
+      "prompt": "透明背景のPNG素材を作成してください。Ibaraki prefecture, Japan: Kairakuen Kobuntei traditional pavilion and green lakeside landscape。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "id": "ibaraki",
+      "file": "ibaraki.png"
+    },
+    {
+      "id": "tochigi",
+      "prompt": "透明背景のPNG素材を作成してください。Tochigi prefecture, Japan: Nikko Shinkyo vermilion bridge over a forested river on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "tochigi.png"
+    },
+    {
+      "id": "gunma",
+      "prompt": "透明背景のPNG素材を作成してください。Gunma prefecture, Japan: Kusatsu Yubatake timber hot-spring channels, traditional town buildings, subtle steam。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "gunma.png"
+    },
+    {
+      "id": "saitama",
+      "prompt": "透明背景のPNG素材を作成してください。Saitama prefecture, Japan: Kawagoe traditional warehouse street with Toki no Kane wooden bell tower on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "saitama.png"
+    },
+    {
+      "id": "chiba",
+      "prompt": "透明背景のPNG素材を作成してください。Chiba prefecture, Japan: Inubosaki white lighthouse on right above rocky Pacific coast。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "chiba.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Kanagawa prefecture, Japan: Yokohama Minato Mirai waterfront skyline with Landmark Tower and small illuminated ferris wheel on right",
+      "id": "kanagawa",
+      "file": "kanagawa.png"
+    },
+    {
+      "id": "niigata",
+      "prompt": "透明背景のPNG素材を作成してください。Niigata prefecture, Japan: Niigata Bandai Bridge spanning broad Shinano river with low city skyline。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "niigata.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Toyama prefecture, Japan: Amaharashi rocky coast and distant Tateyama mountain silhouettes with no snow",
+      "id": "toyama",
+      "file": "toyama.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Ishikawa prefecture, Japan: Kanazawa Kenrokuen pond and iconic two-legged stone lantern on right, green garden",
+      "id": "ishikawa",
+      "file": "ishikawa.png"
+    },
+    {
+      "id": "fukui",
+      "prompt": "透明背景のPNG素材を作成してください。Fukui prefecture, Japan: Tojinbo basalt coastal cliffs and quiet ocean, cliff mass on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "fukui.png"
+    },
+    {
+      "id": "yamanashi",
+      "prompt": "透明背景のPNG素材を作成してください。Yamanashi prefecture, Japan: Lake Kawaguchi and majestic Mount Fuji on right, summer bare mountain with no snow。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "yamanashi.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Nagano prefecture, Japan: Matsumoto black castle on right, moat and green trees",
+      "id": "nagano",
+      "file": "nagano.png"
+    },
+    {
+      "id": "gifu",
+      "prompt": "透明背景のPNG素材を作成してください。Gifu prefecture, Japan: Shirakawa-go gassho-zukuri thatched farmhouses and green forest hills, no snow。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "gifu.png"
+    },
+    {
+      "id": "shizuoka",
+      "prompt": "透明背景のPNG素材を作成してください。Shizuoka prefecture, Japan: Miho no Matsubara pine-lined coast with distant unsnowed Mount Fuji on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "shizuoka.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Aichi prefecture, Japan: Nagoya castle green roof and golden shachi ornaments on right, low city silhouettes",
+      "id": "aichi",
+      "file": "aichi.png"
+    },
+    {
+      "id": "mie",
+      "prompt": "透明背景のPNG素材を作成してください。Mie prefecture, Japan: Futami Meoto Iwa married rocks with sacred rope above a calm sea on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "mie.png"
+    },
+    {
+      "id": "shiga",
+      "prompt": "透明背景のPNG素材を作成してください。Shiga prefecture, Japan: Lake Biwa lakeshore with Shirahige shrine vermilion torii in water on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "shiga.png"
+    },
+    {
+      "prompt": "透明背景のPNG素材を作成してください。Osaka prefecture, Japan: Osaka castle illuminated white-and-green keep on right and modern city rooftops below。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "id": "osaka",
+      "file": "osaka.png"
+    },
+    {
+      "id": "hyogo",
+      "prompt": "透明背景のPNG素材を作成してください。Hyogo prefecture, Japan: Himeji castle white keep on right with layered roofs and green trees。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "hyogo.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Nara prefecture, Japan: Nara Todai-ji great wooden hall on right, green park and low forest ridge",
+      "id": "nara",
+      "file": "nara.png"
+    },
+    {
+      "id": "wakayama",
+      "prompt": "透明背景のPNG素材を作成してください。Wakayama prefecture, Japan: Nachi waterfall and vermilion three-story pagoda on right, green forest。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "wakayama.png"
+    },
+    {
+      "id": "tottori",
+      "prompt": "透明背景のPNG素材を作成してください。Tottori prefecture, Japan: Tottori sand dunes with sculpted dune ridge on right and quiet sea beyond。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "tottori.png"
+    },
+    {
+      "id": "shimane",
+      "prompt": "透明背景のPNG素材を作成してください。Shimane prefecture, Japan: Izumo Taisha traditional shrine roof and large sacred rope on right with forest behind。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "shimane.png"
+    },
+    {
+      "id": "okayama",
+      "prompt": "透明背景のPNG素材を作成してください。Okayama prefecture, Japan: Okayama black castle on right beside river and Korakuen green garden。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "okayama.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Yamaguchi prefecture, Japan: Kintaikyo wooden arched bridge across river, green mountains and traditional riverside",
+      "id": "yamaguchi",
+      "file": "yamaguchi.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Tokushima prefecture, Japan: Iya Kazurabashi vine suspension bridge on right above rocky forest river",
+      "id": "tokushima",
+      "file": "tokushima.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Kagawa prefecture, Japan: Ritsurin Garden pond, sculpted pine trees and pavilion on right, green hills",
+      "id": "kagawa",
+      "file": "kagawa.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Ehime prefecture, Japan: Dogo Onsen Honkan historic multi-tier wooden bathhouse on right and low town roofs",
+      "id": "ehime",
+      "file": "ehime.png"
+    },
+    {
+      "id": "kochi",
+      "prompt": "透明背景のPNG素材を作成してください。Kochi prefecture, Japan: Katsurahama curved beach, pine headland and small shrine on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "kochi.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Fukuoka prefecture, Japan: Fukuoka Tower on right and Momochi seaside city skyline",
+      "id": "fukuoka",
+      "file": "fukuoka.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Saga prefecture, Japan: Yoshinogari wooden watchtower and reconstructed thatched houses on right, green plain",
+      "id": "saga",
+      "file": "saga.png"
+    },
+    {
+      "id": "nagasaki",
+      "prompt": "透明背景のPNG素材を作成してください。Nagasaki prefecture, Japan: Nagasaki harbor with sloping city lights and Megami bridge on right。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "nagasaki.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Kumamoto prefecture, Japan: Kumamoto castle black-and-white keep and stone walls on right",
+      "id": "kumamoto",
+      "file": "kumamoto.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Oita prefecture, Japan: Beppu town with sparse hot spring steam rising from low rooftops, mountain ridge behind",
+      "id": "oita",
+      "file": "oita.png"
+    },
+    {
+      "id": "miyazaki",
+      "prompt": "透明背景のPNG素材を作成してください。Miyazaki prefecture, Japan: Aoshima coastal shrine and tropical palms on right with rock formations and ocean。写真風の風景切り抜き素材です。風景は画像の下半分、上半分は完全に透明にしてください。空を描かない。チェック柄を描かない。横長3:2、青みのある薄暮の照明。積雪なし。文字なし。背景透過が必須です。",
+      "attempt": 0,
+      "valid": true,
+      "file": "miyazaki.png"
+    },
+    {
+      "prompt": "Use case: stylized-concept. Production landscape layer for ASIST midnight navy weather card. Wide 3:2 PNG, actual TRANSPARENT alpha background. Cinematic photoreal landscape cutout matching reference style, not a toy, not a floating island. Landscape reaches entire bottom and side edges, mainly lower 45 percent. Recognizable landmark on right third. Upper 55 percent empty transparent sky, no baked sky, no clouds, no sun, no weather, no text, no watermark, no people. Neutral cool blue-hour lighting with subtle warm practical lights. No snow, no seasonal variants. Center-left stays low for text overlay. Reference is only style and layout. Scene: Kagoshima prefecture, Japan: Sakurajima volcanic silhouette on right across Kinko bay, low city foreground, no eruption",
+      "id": "kagoshima",
+      "file": "kagoshima.png"
+    }
+  ],
+  "existing": [
+    "hokkaido",
+    "tokyo",
+    "kyoto",
+    "hiroshima",
+    "okinawa"
+  ],
+  "transparency": "All 47 files passed scripts/check-weather-alpha.py. The 24 non-transparent outputs were regenerated without a reference using concise Japanese instructions."
+}

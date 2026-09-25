@@ -1,0 +1,600 @@
+import type { TurnStartOptions } from '@shared/ipc'
+import type { ConversationMessage, ConversationResult, ConversationStream } from '@shared/conversation'
+import { waitWithAbort, withTimeoutSignal } from '@shared/abort'
+import { apiErrorKey, errMessage, isTransientApiError } from '@shared/api-errors'
+import { SegmentAssembler } from '@shared/segmenter'
+import { withRetry } from '@shared/retry'
+import type { TurnHandle, TurnRunContext } from '@shared/turn-scheduler'
+import { summarizeTurnUsage } from '@shared/turn-usage'
+import { ToolRoundExecutor, buildToolResultsMessage, type ToolRoundResult } from '@shared/tool-round'
+import { buildResumeMessages } from '@shared/turn-recovery'
+import { buildMemoryInjection, memoryIdsInToolResult, type MemoryInjection } from '@shared/memory-injection'
+import { diagnoseCacheMiss, fingerprintRequest, type CacheMissReason } from '@shared/cache-diagnosis'
+import { fillPrompt, promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
+import { marker } from '@shared/conversation-markers'
+import { providerKey, streamConversation } from '../llm'
+import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { t, tConversation } from '../i18n'
+import { conversationLocale, features } from '../conversation-locale'
+import { getSettings } from '../settings'
+import * as agentRunner from '../agent'
+import { randomClip as randomAizuchiClip } from '../aizuchi'
+import * as memory from '../memory'
+import { summarizeToolInput, summarizeToolResult, type NoticeKind } from './conversation-log'
+import { openAppNote } from './mini-app-tools'
+import { buildSystemLayers, stampUserMessage } from './prompt'
+import { currentSpeechRoute, emit, history, lastRequestFingerprint, noteRequestFingerprint, record, turnScheduler } from './session'
+import type { SpeechRoute } from './speech-route'
+import {
+  executeClientTool,
+  SearchCards,
+  toolGuide,
+  toolRegistry,
+  tools,
+  type ToolContext,
+  type ToolOptions
+} from './tools'
+
+/**
+ * Turn execution for the conversation engine. It drives the stream of the configured conversation
+ * model and the tool round trips, and hands each finished sentence to the speech route: the classic
+ * setup synthesizes it and emits a segment, while GPT-Live passes it to the voice model. Differences
+ * between providers are absorbed by the adapters in llm/. The pieces around it are prompt for the
+ * system prompt, tools for the definitions and their execution, session for the events, history and
+ * conversation log, and speech-route. Interjections live in interject and the reports of finished
+ * jobs in job-reporting.
+ */
+
+const MAX_TOOL_ROUNDS = 6
+/** The waits before retrying a transient API error such as 529 Overloaded. The number of attempts is one more than the number of delays. */
+const RETRY_DELAYS_MS = [400, 1200]
+const API_ROUND_TIMEOUT_MS = 60_000
+/**
+ * The output limit of one round. It is generous because every provider counts thinking tokens against
+ * it; the length of the visible reply is held down by the prompt instead.
+ */
+const MAX_OUTPUT_TOKENS = 4000
+
+/**
+ * The note that tells the model what the user has already heard before the substance of this turn.
+ * The backchannel appears only where the conversation has backchannels at all, which is Japanese; in
+ * every other language the bridge line stands on its own.
+ */
+const ALREADY_SPOKEN: Readonly<Record<'aizuchi' | 'bridge' | 'bridgePending' | 'and' | 'note', PromptText>> = {
+  aizuchi: { ja: `相槌「{text}」`, en: `the backchannel "{text}"` },
+  bridge: { ja: `短い受け「{text}」`, en: `the short line "{text}"` },
+  bridgePending: {
+    ja: `相手の言葉を使った短い受け(「〜ですね。」の形)`,
+    en: `a short line that picks up a word the user has just said`
+  },
+  and: { ja: `と`, en: ` and ` },
+  note: {
+    ja: `[注: あなたは本題の前に{spoken}を発話済みとして扱う(すでに、またはこの直後に流れる)。その続きとして自然に話し始めること。同じ語や同じ形の受けで言い直さない。この注記には言及しない]`,
+    en: `[Note: treat {spoken} as already spoken before the substance; it is playing now, or it is about to. Start naturally from there, and do not say the same thing again in the same shape. Never mention this note.]`
+  }
+}
+
+/** Asks for the rest of a reply the output limit cut off. */
+const CONTINUE_AFTER_MAX_TOKENS: PromptText = {
+  ja: `直前の回答が上限に達した。重複せず、残りの結論だけを短く続けてください。`,
+  en: `The reply you were giving hit the output limit. Continue with the conclusion that is left, briefly, and do not repeat yourself.`
+}
+
+class TurnStopError extends Error {
+  constructor(readonly userMessage: string) {
+    super(userMessage)
+    this.name = 'TurnStopError'
+  }
+}
+
+/** The input of a turn. With `notice` set it is recorded as a notification from the app rather than as something the user said. */
+export interface TurnInput {
+  text: string
+  notice?: NoticeKind
+}
+
+/** Leaving `route` out uses the speech route registered with the session, which defaults to TTS. */
+export interface TurnRuntime {
+  route?: SpeechRoute
+}
+
+export function abortTurn(turnId: number): void {
+  turnScheduler.abort(turnId)
+}
+
+export function startTurn(text: string, options: TurnStartOptions = {}): number {
+  return beginTurn({ text }, options, 'user', false)!.turnId
+}
+
+/** Starts a turn. With onlyIfIdle it returns null instead of starting while a user turn is running, which is what job reporting relies on. */
+export function beginTurn(
+  input: TurnInput,
+  options: TurnStartOptions,
+  origin: TurnOrigin,
+  onlyIfIdle: boolean,
+  runtime: TurnRuntime = {}
+): TurnHandle | null {
+  const run = async ({ turnId, signal }: TurnRunContext): Promise<void> => {
+    emit({
+      type: 'started',
+      turnId,
+      origin,
+      requestId: options.clientRequestId
+    })
+    await runTurn(turnId, input, options, signal, runtime.route ?? currentSpeechRoute())
+  }
+  const handle = onlyIfIdle ? turnScheduler.startIfIdle(run) : turnScheduler.start(run)
+  if (!handle) return null
+  // runTurn converts errors into user-facing ones itself, but a regression that lets one escape must
+  // not become an unhandled rejection.
+  void handle.completion.catch((err) => console.error('turn scheduler failed:', errMessage(err)))
+  return handle
+}
+
+type TurnOrigin = 'user' | 'interject' | 'live'
+
+async function runTurn(
+  turnId: number,
+  input: TurnInput,
+  options: TurnStartOptions,
+  signal: AbortSignal,
+  route: SpeechRoute
+): Promise<void> {
+  const userText = input.text
+  // The conversation language is read once at the start of the turn, so that every note, the system
+  // prompt and the tool results of this turn speak the same language even if the setting changes.
+  const locale: ConversationLocale = conversationLocale()
+  // When the sentences go to a voice model, the live engine records the output transcript of what was
+  // actually spoken as the assistant utterance, and its wording differs from the brain's. Recording it
+  // here as well would store it twice.
+  const recordAssistant = (
+    text: string,
+    outcome: { interrupted?: 'before-reply' | 'while-speaking'; failed?: boolean } = {}
+  ): void => {
+    if (route.kind === 'live') return
+    record({
+      kind: 'assistant',
+      turnId,
+      text,
+      ...(outcome.interrupted ? { interrupted: outcome.interrupted } : {}),
+      ...(outcome.failed ? { failed: true } : {})
+    })
+  }
+  // The notes attached to the utterance. They are stored in the history as well, so that what the
+  // model read and what the next turn sends are the same: if the last user message changed on the next
+  // turn, the prompt cache would break from there on. They come in this order: typed input and the
+  // aizuchi note, prefetched panel data, then memories.
+  const contextNotes: string[] = []
+  // Typed input is not a transcript, so the model should not assume misrecognitions or missing punctuation.
+  if (options.typed && !input.notice) contextNotes.push(marker(locale, 'typedInputNote'))
+  // The aizuchi and bridge notes are needed only where the brain's own sentences are spoken; a voice
+  // model already knows what it said. claude-sonnet-5 does not support prefilling the assistant
+  // message, so the request to continue from there is made on the user side.
+  const aizuchiText = route.kind === 'tts' && features().aizuchi ? options.aizuchi?.trim() : undefined
+  const bridgeText = route.kind === 'tts' ? options.bridge?.trim() : undefined
+  const spoken: string[] = []
+  if (aizuchiText) spoken.push(fillPrompt(promptText(locale, ALREADY_SPOKEN.aizuchi), { text: aizuchiText }))
+  if (bridgeText) spoken.push(fillPrompt(promptText(locale, ALREADY_SPOKEN.bridge), { text: bridgeText }))
+  else if (options.bridgePending && route.kind === 'tts') spoken.push(promptText(locale, ALREADY_SPOKEN.bridgePending))
+  if (spoken.length > 0) {
+    contextNotes.push(
+      fillPrompt(promptText(locale, ALREADY_SPOKEN.note), { spoken: spoken.join(promptText(locale, ALREADY_SPOKEN.and)) })
+    )
+  }
+  // What the user has open on screen, so that "this" in the utterance can point at it.
+  const openApp = input.notice ? null : openAppNote(locale)
+  if (openApp) contextNotes.push(openApp)
+  const recordInput = (injection: MemoryInjection | null = null): ReturnType<typeof record> => input.notice
+    ? record({ kind: 'notice', turnId, notice: input.notice, text: userText })
+    : record({
+        kind: 'user', turnId, text: userText,
+        ...(contextNotes.length ? { notes: contextNotes.join('\n\n') } : {}),
+        ...(injection ? { memoryIds: injection.ids } : {})
+      })
+  let compacted = false
+  let memoryBlock: string | null = null
+  const injectionStats = { count: 0, tokens: 0, searchMs: 0 }
+  let injection: MemoryInjection | null = null
+  try {
+    history.ensureLoaded()
+    signal.throwIfAborted()
+    const need = history.needsCompaction()
+    if (need === 'block') {
+      // Only when the context is close to the API window does the turn wait for the compaction, which
+      // happens after replaying a long log with no checkpoint. An abort cancels this turn's wait, not
+      // the compaction itself, which is shared with the maintenance job.
+      await waitWithAbort(history.compact('limit'), signal)
+      compacted = true
+    } else if (need === 'now') {
+      // Above the limit the compaction starts but this turn does not wait for it and goes on with the
+      // current history. The compaction keeps the turns recent at its start and folds the older ones
+      // into the summary, so this turn and any later one stay.
+      void history.compact('limit')
+      compacted = true
+    }
+    // The note is stored on the user record so that the memories shown to the model and the next
+    // history agree. Memories already in the profile or shown in the recent history are left out.
+    memoryBlock = memory.promptBlock()
+    if (!input.notice) {
+      try {
+        const searchStartedAt = Date.now()
+        const hits = await waitWithAbort(memory.search(userText, { limit: 8, mode: 'utterance' }, signal), signal)
+        injectionStats.searchMs = Date.now() - searchStartedAt
+        injection = buildMemoryInjection(
+          hits.map((hit) => hit.record),
+          { locale, memoryBlock, excludeIds: history.shownMemoryIds() }
+        )
+        if (injection) {
+          injectionStats.count = injection.count
+          injectionStats.tokens = injection.tokens
+          contextNotes.push(injection.text)
+        }
+      } catch (err) {
+        // An aborted search must not be treated as "continue without injection": the input and the
+        // abort are recorded and the turn closes.
+        signal.throwIfAborted()
+        console.error('memory injection skipped:', errMessage(err))
+      }
+    }
+    signal.throwIfAborted()
+  } catch (err) {
+    recordInput()
+    if (signal.aborted) {
+      recordAssistant('', { interrupted: 'before-reply' })
+    } else {
+      console.error('brain preparation failed:', errMessage(err))
+      recordAssistant('', { failed: true })
+      emit({ type: 'error', turnId, message: t(apiErrorKey(err)) })
+    }
+    emit({ type: 'done', turnId, fullText: '' })
+    return
+  }
+  // The conversation log is authoritative, so the record is written once the notes are settled; on an
+  // abort the path above stores the plain input instead.
+  const userRecord = recordInput(injection)
+  // The conversation model is chosen once at the start of the turn and never changes between rounds.
+  // The provider's raw output, such as a thinking signature, can only be sent back to the same model,
+  // and the API rejects a tool round trip where it is missing.
+  const conversationModel = getSettings().conversationModel
+  const providerInfo = LLM_PROVIDER_INFO[conversationModel.provider]
+  if (!providerKey(conversationModel.provider)) {
+    emit({
+      type: 'error',
+      turnId,
+      message: t('llmModels.errors.keyMissing', { provider: providerInfo.label, envKey: providerInfo.envKey })
+    })
+    emit({ type: 'done', turnId, fullText: '' })
+    return
+  }
+  // A provider without a built-in web search must not have it listed in the tool guide either.
+  const toolOptions: ToolOptions = { webSearch: providerInfo.webSearch }
+  const ctx: ToolContext = { turnId, signal, emit }
+  const searchCards = new SearchCards(ctx)
+  const startedAt = Date.now()
+  let ttftSent = false
+  let lastTextAt = Date.now()
+  let visibleReply = ''
+  // The usage of each round. At the end of the turn the total and the context length of the last
+  // round go into the metrics.
+  const roundUsages: import('@shared/ipc').RoundUsage[] = []
+  let toolCalls = 0
+  // A stream dropped after speaking began is resumed at most once per turn.
+  let resumed = false
+  // Why the cache missed on the first round, compared against the previous request.
+  let cacheMissReason: CacheMissReason | null = null
+  const emitUsage = (): void => {
+    if (roundUsages.length === 0) return
+    const usage = summarizeTurnUsage(roundUsages)
+    // The context length the server counted goes to the history, which decides the compaction thresholds from it.
+    history.noteContextTokens(usage.contextTokens ?? 0)
+    emit({
+      type: 'metrics',
+      turnId,
+      timings: {
+        ...usage,
+        toolCalls,
+        ...(resumed ? { resumed } : {}),
+        ...(compacted ? { compacted } : {}),
+        injectedMemories: injectionStats.count,
+        injectedTokens: injectionStats.tokens,
+        memorySearchMs: injectionStats.searchMs,
+        ...(cacheMissReason ? { cacheMissReason } : {})
+      }
+    })
+  }
+
+  const synth = route.open({ turnId, signal, emit })
+  const assembler = new SegmentAssembler(conversationLocale())
+  const pushText = (delta: string): void => {
+    lastTextAt = Date.now()
+    if (!ttftSent) {
+      ttftSent = true
+      emit({ type: 'metrics', turnId, timings: { ttftMs: Date.now() - startedAt } })
+    }
+    emit({ type: 'delta', turnId, text: delta })
+    for (const sentence of assembler.push(delta)) synth.push(sentence)
+  }
+
+  // A filler that keeps the pause alive while a search or a tool takes long. It plays a pre-synthesized
+  // aizuchi clip as is, at most once per turn. With a voice model in front, that side fills the pause.
+  let fillerPlayed = route.kind === 'live'
+  const playWorkFiller = (sourceSignal: AbortSignal): void => {
+    if (fillerPlayed || sourceSignal.aborted) return
+    fillerPlayed = true
+    void randomAizuchiClip('work').then((clip) => {
+      if (clip?.audio && !sourceSignal.aborted) {
+        emit({
+          type: 'segment',
+          turnId,
+          segment: { turnId, index: 998, text: clip.text, audio: clip.audio, phonemes: null }
+        })
+      }
+    })
+  }
+
+  // The history is what stamps the time onto the user text. It gives the model the current time and a
+  // sense of how much time passed, and because past messages then never change it also keeps the
+  // prompt cache warm.
+  const stampedText = input.notice ? userText : stampUserMessage(locale, userText, new Date(userRecord.t))
+  const messages: ConversationMessage[] = history.toMessages()
+  // The messages sent to the API during the turn are written to the conversation log in the shape they
+  // were sent, because the next turn sends them the same way. An assistant message with tool calls is
+  // recorded together with the user message holding their results.
+  const recordMessages = (...sent: ConversationMessage[]): void => {
+    for (const message of sent) {
+      record({ kind: 'message', turnId, role: message.role, parts: message.parts, ...(message.native ? { native: message.native } : {}) })
+    }
+  }
+
+  // The notes are part of the user record, so the last user message built from the history already
+  // carries them. A notice record has no notes, so only then are they attached here.
+  if (input.notice && contextNotes.length > 0) {
+    messages[messages.length - 1] = { role: 'user', parts: [{ type: 'text', text: [stampedText, ...contextNotes].join('\n\n') }] }
+  }
+
+  // The system prompt is frozen when the turn starts: if it varied between rounds, no prompt cache
+  // within the turn would ever hit.
+  const system = buildSystemLayers({
+    locale,
+    persona: getSettings().persona,
+    toolGuide: toolGuide(toolOptions),
+    memoryBlock,
+    historySummary: history.summary,
+    jobContext: agentRunner.contextBlock(),
+    voiceLayer: route.kind === 'live' ? 'delegated' : 'self'
+  })
+
+  // A tool that runs longer than 2.5 seconds, such as a panel fetch, gets the filler to cover the pause.
+  let slowToolTimer: ReturnType<typeof setTimeout> | null = null
+  const logToolResult = ({ call, execution }: ToolRoundResult): void => {
+    emit({ type: 'tool', turnId, name: call.name, status: execution.isError ? 'error' : 'done' })
+    // The memory ids returned by recall count as already shown, so they are not
+    // injected again while they remain in the raw recent history.
+    const memoryIds = execution.isError ? [] : memoryIdsInToolResult(call.name, execution.content)
+    record({
+      kind: 'tool',
+      turnId,
+      name: call.name,
+      input: summarizeToolInput(call.input),
+      result: summarizeToolResult(execution.content),
+      resultLength: execution.resultLength,
+      durationMs: execution.durationMs,
+      ...(execution.isError ? { isError: true } : {}),
+      ...(execution.truncated ? { truncated: true } : {}),
+      ...(memoryIds.length > 0 ? { memoryIds } : {})
+    })
+  }
+  /**
+   * Tool execution for one round. A tool starts as soon as its call is complete and the results keep
+   * the order of the calls; read-only tools run concurrently while writing tools run one at a time.
+   */
+  const newToolRound = (): ToolRoundExecutor => {
+    const round = new ToolRoundExecutor({
+      signal,
+      locale,
+      isParallel: (name) => toolRegistry().find(name)?.parallel ?? false,
+      execute: (call, roundSignal) => executeClientTool(call.name, call.input, {
+        ...ctx,
+        signal: roundSignal,
+        emit: (event) => { if (!roundSignal.aborted) emit(event) }
+      }),
+      onStart: (call) => {
+        toolCalls++
+        slowToolTimer ??= setTimeout(() => playWorkFiller(round.signal), 2500)
+        emit({ type: 'tool', turnId, name: call.name, status: 'start' })
+      },
+      onFinish: logToolResult
+    })
+    return round
+  }
+
+  /**
+   * The stream of one round. A transient API error is retried only while nothing has been emitted
+   * yet: once speech has started or a tool has begun, a retry would speak or act twice, so the caller
+   * resumes from what was already confirmed instead.
+   */
+  let emittedThisAttempt = false
+  // The stream opened last, which is where the confirmed part is taken from when it drops mid-response.
+  let lastStream: ConversationStream | null = null
+  const streamRound = (toolRound: ToolRoundExecutor): Promise<ConversationResult> =>
+    withRetry(
+      async () => {
+        emittedThisAttempt = false
+        const stream = streamConversation({
+          model: conversationModel,
+          locale,
+          maxTokens: MAX_OUTPUT_TOKENS,
+          system,
+          tools: tools(),
+          webSearch: toolOptions.webSearch,
+          messages,
+          signal: withTimeoutSignal(signal, API_ROUND_TIMEOUT_MS)
+        }, 'conversation')
+        lastStream = stream
+        let searchActive = false
+        stream.on('text', (delta) => {
+          if (toolRound.signal.aborted) return
+          emittedThisAttempt = true
+          visibleReply += delta
+          pushText(delta)
+        })
+        // A tool call that is complete starts running without waiting for the end of the response.
+        stream.on('toolCall', (call) => {
+          if (toolRound.signal.aborted) return
+          emittedThisAttempt = true
+          toolRound.submit({ id: call.id, name: call.name, input: call.input })
+        })
+        stream.on('search', (event) => {
+          if (toolRound.signal.aborted) return
+          if (event.phase === 'start') {
+            searchActive = true
+            emit({ type: 'tool', turnId, name: 'web_search', status: 'start' })
+            return
+          }
+          if (event.phase === 'cited') {
+            searchCards.cite(event.sources)
+            return
+          }
+          searchActive = false
+          emit({ type: 'tool', turnId, name: 'web_search', status: 'done', detail: event.query })
+          searchCards.publish(event.query, event.sources, event.suggestions)
+        })
+        // When a search leaves the text silent for more than 3.5 seconds, the filler covers the pause.
+        const silenceWatch = setInterval(() => {
+          if (searchActive && Date.now() - lastTextAt > 3500) playWorkFiller(toolRound.signal)
+        }, 1000)
+        try {
+          return await stream.final()
+        } finally {
+          clearInterval(silenceWatch)
+        }
+      },
+      {
+        delays: RETRY_DELAYS_MS,
+        shouldRetry: (err) => !signal.aborted && !emittedThisAttempt && isTransientApiError(err),
+        onRetry: (err, { attempt }) =>
+          console.warn(
+            `brain: transient API error, retry ${attempt + 1}/${RETRY_DELAYS_MS.length}:`,
+            errMessage(err)
+          )
+      }
+    )
+
+  try {
+    let completed = false
+    let maxTokenContinuations = 0
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (signal.aborted) break
+      const toolRound = newToolRound()
+      try {
+        // Only the first round fingerprints what is sent and compares it with the previous request, which gives the reason for a cache miss.
+        const fingerprint = round === 0 ? fingerprintRequest({ at: Date.now(), systemLayers: system, tools: tools(), messages }) : null
+        // The clock for the text restarts each round, so time spent running tools does not count as silence during a search.
+        lastTextAt = Date.now()
+        let result: ConversationResult
+        try {
+          result = await streamRound(toolRound)
+        } catch (err) {
+          // The stream dropped after speech had started: the confirmed part is appended, the results
+          // of the tool calls that were already complete are awaited, and the model is asked to
+          // continue exactly once.
+          const recorded = (lastStream as ConversationStream | null)?.snapshot() ?? null
+          if (signal.aborted || resumed || !recorded || !isTransientApiError(err)) throw err
+          resumed = true
+          console.warn('brain: stream dropped after speaking, resuming:', errMessage(err))
+          const results = await toolRound.settle()
+          const resume = buildResumeMessages(locale, recorded, results)
+          messages.push(...resume)
+          recordMessages(...resume)
+          continue
+        }
+        roundUsages.push(result.usage)
+        if (fingerprint) {
+          cacheMissReason = diagnoseCacheMiss(lastRequestFingerprint(), fingerprint, roundUsages[0])
+          noteRequestFingerprint(fingerprint)
+        }
+
+        if (result.stop === 'end') {
+          completed = true
+          messages.push(result.message)
+          recordMessages(result.message)
+          break
+        }
+
+        if (result.stop === 'pause') {
+          // A provider-side tool ran long, so the response is appended unchanged and the same request continues.
+          messages.push(result.message)
+          recordMessages(result.message)
+          continue
+        }
+
+        if (result.stop === 'max_tokens') {
+          if (maxTokenContinuations >= 1) {
+            throw new TurnStopError(tConversation('spoken.replyTooLong'))
+          }
+          maxTokenContinuations++
+          const continuation: ConversationMessage[] = [
+            result.message,
+            { role: 'user', parts: [{ type: 'text', text: promptText(locale, CONTINUE_AFTER_MAX_TOKENS) }] }
+          ]
+          messages.push(...continuation)
+          recordMessages(...continuation)
+          continue
+        }
+
+        if (result.stop === 'refusal') {
+          throw new TurnStopError(tConversation('spoken.cannotAnswer'))
+        }
+
+        // The response with its tool calls is appended, and the results of the tools started during
+        // the stream are awaited.
+        messages.push(result.message)
+        const results = await toolRound.settle()
+        if (results.length === 0) break
+        // Failures go back to the model as results marked isError, and on the round before the limit
+        // the message also tells the model that the next round is the last.
+        const resultsMessage = buildToolResultsMessage(results, { index: round, maxRounds: MAX_TOOL_ROUNDS, allowNote: !result.pendingServerTool, locale })
+        messages.push(resultsMessage)
+        recordMessages(result.message, resultsMessage)
+      } finally {
+        if (slowToolTimer) clearTimeout(slowToolTimer)
+        slowToolTimer = null
+        await toolRound.close()
+      }
+    }
+
+    if (signal.aborted) {
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException('Turn aborted', 'AbortError')
+    }
+    if (!completed) {
+      throw new TurnStopError(tConversation('spoken.turnStopped'))
+    }
+
+    for (const sentence of assembler.flush()) synth.push(sentence)
+    await synth.drain()
+    recordAssistant(visibleReply)
+    emitUsage()
+    emit({ type: 'done', turnId, fullText: visibleReply })
+  } catch (err) {
+    if (signal.aborted) {
+      // On a barge-in, what was spoken so far is kept with a marker. Even when nothing was spoken the
+      // user's utterance stays and the marker goes on the assistant side, so that a sequence such as
+      // "明日の天気" followed by "あ、明後日で" keeps its context. A system notice interrupted before
+      // any reply is withdrawn by the history, because the retry of the report puts it back.
+      recordAssistant(visibleReply, { interrupted: visibleReply ? 'while-speaking' : 'before-reply' })
+      emit({ type: 'done', turnId, fullText: visibleReply })
+    } else {
+      // Only a TurnStopError, such as hitting the round limit, and a failure of the API itself end the turn with a prepared sentence.
+      console.error('brain error:', err)
+      const friendly = err instanceof TurnStopError ? err.userMessage : t(apiErrorKey(err))
+      recordAssistant(visibleReply, { failed: true })
+      synth.push(friendly)
+      await synth.drain()
+      emitUsage()
+      emit({ type: 'error', turnId, message: friendly })
+      emit({ type: 'done', turnId, fullText: visibleReply || friendly })
+    }
+  }
+}

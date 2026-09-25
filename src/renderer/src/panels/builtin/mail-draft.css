@@ -1,0 +1,67 @@
+/* Mail draft card. The text has not been sent yet, so the border is the warm one used for anything waiting
+   on the user, as with an agent job awaiting approval. Measured heights: l about 430px with an 8-line body,
+   m about 380px with 6 lines, s about 320px with 4 lines and Cc collapsed. */
+.md-card {
+  --card-hue: #ffb27a;
+  --card-focus-width: 640px;
+}
+.md-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+.md-field {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ui-text-soft);
+}
+.md-field input,
+.md-body {
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 9px;
+  background: var(--ui-field);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ui-text-strong);
+}
+.md-body {
+  resize: none;
+}
+.md-field input:focus,
+.md-body:focus {
+  outline: none;
+  border-color: rgb(from var(--color-holo-peach) r g b / 0.53);
+}
+.md-field input:disabled,
+.md-body:disabled {
+  opacity: 0.6;
+}
+.md-reply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 4px;
+  font-size: 12px;
+  color: var(--ui-text-strong);
+}
+.md-reply small {
+  width: 100%;
+  padding-left: 19px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+}
+.card[data-size='s'] .md-fields {
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+.card[data-size='focus'] .md-body {
+  font-size: 13px;
+}

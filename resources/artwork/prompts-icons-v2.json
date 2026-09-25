@@ -1,0 +1,35 @@
+{
+  "tool": "built-in image_gen",
+  "reference": "Approved dark matte four-icon concept from this conversation",
+  "icons": [
+    {
+      "file": "asist-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY the leftmost ASIST A-shaped rounded arch with its floating pale cyan sphere. No crossbar. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "agent-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY the friendly robot head, blue slate shell, deep navy face, two pale cyan eyes, muted lavender ears and antenna ball. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "calendar-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY the ring-bound calendar, dark slate blue top, lighter blue-gray page, 3 by 3 round date dots with one pale cyan selected dot, muted lavender rings. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "settings-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY the rounded eight-tooth slate blue settings gear with circular open center. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "tasks-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY a clipboard-like task board, dark slate blue header band, lighter blue-gray body, a muted lavender clip at the top, three rows of round check dots on the left (top two pale cyan, bottom one dark slate) with rounded dark slate bars to their right. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "mail-v2.png",
+      "prompt": "Use case: style-transfer. Reference image is the approved four-icon ASIST matte design. Generate ONE isolated icon: ONLY a closed envelope seen from the front, dark slate blue body, lighter blue-gray paper peeking from the top edge, the front flap forming a soft V with a muted lavender crease line, and one pale cyan round seal dot at the point of the V. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    },
+    {
+      "file": "notes-v2.png",
+      "reference": "The existing icons (asist, agent, calendar, settings, tasks, mail, memory) laid side by side on one dark sheet",
+      "prompt": "Use case: style-transfer. Reference image is the approved ASIST matte icon set (asist, agent, calendar, settings, tasks, mail, memory). Generate ONE isolated icon: ONLY a single note sheet seen from the front, lighter blue-gray page with the top-right corner folded down in dark slate blue, three rounded dark slate text bars of different lengths on the page, and a muted lavender pencil with a pale cyan tip lying diagonally across the lower right of the page. No clip, no rings, no check marks. Match reference silhouette, proportions, colors and velvety matte ceramic material precisely. Opaque clay-like soft rounded forms, diffuse studio shading, no metallic sheen, no gloss, no glass, no neon. Square 1024x1024 canvas, icon centered, occupy 82 percent of canvas longest axis, generous even transparent margin. GENUINELY TRANSPARENT BACKGROUND WITH ALPHA. No floor, no backdrop, no checkerboard baked in, no square tile, no white backing, no text, no other icons. Preserve transparent openings and negative spaces. Production PNG for a dark desktop dock."
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+import type { RendererApi } from '@shared/ipc'
+import { translate } from '@/i18n'
+
+/**
+ * A stale or partially loaded preload is as unsafe as a missing preload: the
+ * application must not render controls that will fail only when clicked.
+ */
+export const rendererApiMethods = [
+  'getStatus',
+  'onStatusChanged',
+  'requestMicPermission',
+  'micNativeStart',
+  'micNativeStop',
+  'onMicNativeFrame',
+  'onMicNativeStatus',
+  'vapStart',
+  'vapPush',
+  'onVapState',
+  'vapStatus',
+  'vapPrepare',
+  'vapPrepareCancel',
+  'embeddingStatus',
+  'embeddingPrepare',
+  'embeddingPrepareCancel',
+  'aizuchiClassify',
+  'aizuchiClassifierStatus',
+  'aizuchiClassifierPrepare',
+  'aizuchiClassifierPrepareCancel',
+  'transcribe',
+  'transcribeCancel',
+  'transcribePartial',
+  'turnStart',
+  'turnAbort',
+  'onTurnEvent',
+  'interject',
+  'turnPlaybackAck',
+  'liveStart',
+  'liveStop',
+  'livePush',
+  'liveActivity',
+  'liveText',
+  'onLiveAudio',
+  'onLiveEvent',
+  'panelFetch',
+  'onPanelEvent',
+  'timerList',
+  'timerCancel',
+  'onTimerEvent',
+  'aizuchiBank',
+  'bridgePlan',
+  'bridgeSynthesize',
+  'metricsLog',
+  'memoryDocuments',
+  'memoryDocumentRead',
+  'memoryDocumentWrite',
+  'memoryDocumentCreate',
+  'memoryDocumentDelete',
+  'memoryOverview',
+  'memoryCurate',
+  'tasksList',
+  'taskCreate',
+  'taskUpdate',
+  'taskMove',
+  'taskRemove',
+  'tasksClearDone',
+  'onTasksChanged',
+  'notesList',
+  'notesSearch',
+  'noteRead',
+  'noteCreate',
+  'noteWrite',
+  'noteRemove',
+  'onNotesChanged',
+  'notify',
+  'reportMiniAppView',
+  'onHotkeyMic',
+  'getSetupStatus',
+  'completeSetup',
+  'prepareAsrModel',
+  'cancelAsrPreparation',
+  'prepareTtsModel',
+  'cancelTtsPreparation',
+  'onSetupProgress',
+  'jobCancel',
+  'jobMerge',
+  'jobDiscard',
+  'jobDiff',
+  'jobList',
+  'jobLog',
+  'onJobEvent',
+  'calendarStatus',
+  'calendarRequestAccess',
+  'calendarEvents',
+  'calendarChange',
+  'calendarOpenGuide',
+  'calendarOpenPrivacy',
+  'ttsVerify',
+  'micOpenPrivacy',
+  'logsOpenFolder',
+  'folderChoose',
+  'mailStatus',
+  'mailProbe',
+  'mailAccountAdd',
+  'mailAccountUpdate',
+  'mailAccountRemove',
+  'mailList',
+  'mailThread',
+  'mailRead',
+  'mailChange',
+  'mailSyncNow',
+  'mailOpenGuide',
+  'onMailEvent',
+  'mailDraftList',
+  'mailDraftCreate',
+  'mailDraftUpdate',
+  'mailDraftRemove',
+  'mailDraftSend',
+  'onConfirmEvent',
+  'confirmResolve',
+  'getSettings',
+  'saveSettings',
+  'saveApiKey',
+  'listSpeakers',
+  'ttsTest',
+  'openExternal',
+  'revealPath',
+  'appVersion',
+  'apiUsage'
+] as const satisfies readonly (keyof RendererApi)[]
+
+// A RendererApi addition must also be added to the runtime contract above.
+const rendererApiContractIsComplete: Exclude<
+  keyof RendererApi,
+  (typeof rendererApiMethods)[number]
+> extends never
+  ? true
+  : false = true
+void rendererApiContractIsComplete
+
+export function rendererApiContractError(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return translate('boot.bridgeMissing')
+  const record = value as Record<string, unknown>
+  for (const method of rendererApiMethods) {
+    if (typeof record[method] !== 'function') {
+      return translate('boot.bridgeMethodMissing', { method })
+    }
+  }
+  return null
+}

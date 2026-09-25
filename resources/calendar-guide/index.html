@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASIST カレンダー連携ガイド（下書き）</title>
+<style>
+:root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.8; }
+body { max-width: 800px; margin: 48px auto; padding: 0 24px 64px; }
+h1 { font-size: 28px; } h2 { font-size: 21px; margin-top: 40px; }
+img { display: block; max-width: 100%; height: auto; margin: 20px auto; }
+.menu { max-width: 300px; } .note { border-left: 3px solid #888; padding-left: 16px; }
+code { overflow-wrap: anywhere; } a { color: #287bce; }
+</style>
+<main>
+<h1>GoogleカレンダーをASISTで使う</h1>
+<p class="note">下書きです。アクセス許可と対象カレンダー・保存先の選択まで、実際の画面を掲載しています。予定の追加・変更・削除とGoogle側への同期は、動作確認が残っています。</p>
+<p>ASISTは、macOSに登録されたカレンダーをEventKit経由で読み書きします。Googleへのログインと同期はmacOSが担当します。すでにMacのカレンダーにGoogleの予定が表示されている場合は、手順4から始めてください。</p>
+<h2>1. カレンダーのアカウントを追加する</h2>
+<p>Macの「カレンダー」アプリを開き、メニューバーの「カレンダー」→「アカウントを追加…」を選びます。</p>
+<img class="menu" src="images/01-add-account.png" alt="カレンダーメニューのアカウントを追加を選択した画面">
+<h2>2. Googleを選ぶ</h2>
+<p>「Google」を選択して「続ける」を押し、利用するGoogleアカウントにログインします。</p>
+<img src="images/02-select-google.png" alt="カレンダーアカウントのプロバイダでGoogleを選択した画面">
+<h2>3. macOSにカレンダーへのアクセスを許可する</h2>
+<p>「macOSがGoogleアカウントへのアクセスを求めています」と表示されたら、Googleカレンダーの権限を確認して続行します。この画面はmacOSへの許可です。ASISTへの許可は次の手順で行います。</p>
+<p>画像にはGmailと連絡先も選択されていますが、ASISTのカレンダー機能はメールと連絡先を利用しません。それらの選択はMacのメール・連絡先アプリを使うかどうかに応じて判断してください。</p>
+<img src="images/03-google-permission.png" alt="macOSがGoogleアカウントへのアクセスを求める権限確認画面">
+<p>アカウント追加後、macOSの「システム設定」→「インターネットアカウント」→追加したGoogleアカウントで「カレンダー」が有効になっていることを確認します。Macの「カレンダー」アプリに予定が表示されるまで待ちます。</p>
+<h2>4. ASISTで連携と保存先を設定する</h2>
+<p>ASISTの設定画面で「カレンダー連携を有効にする」をオンにします。macOSの確認画面で「フルアクセスを許可」を押してください。</p>
+<img class="menu" src="images/04-asist-permission.png" alt="ASISTがカレンダーへのフルアクセスを求めるmacOSの確認画面">
+<ul>
+<li>「表示するカレンダー」で、予定の表示・検索に使うものを選びます。</li>
+<li>「新規予定の保存先」で、追加する予定を保存するカレンダーを選びます。Googleに反映したい場合はGoogleアカウントのカレンダーを選んでください。</li>
+</ul>
+<p>設定は操作するたびに保存されます。既存の予定の変更・削除は、表示対象に選んだカレンダー内で行います。既存の予定を変更しても、新規予定の保存先には移しません。</p>
+<img src="images/05-asist-calendars.png" alt="ASISTでカレンダー連携を有効にし、Googleカレンダーを表示対象と新規予定の保存先に選択した設定画面">
+<p>画像のアカウント名は設定例です。ご自身が利用するカレンダーを選択してください。</p>
+<h2>5. 動作を確認する</h2>
+<p>「今日の予定を見せて」と話しかけ、Macのカレンダーと同じ予定が表示されることを確認します。次に「明日の10時から10時半まで、動作確認という予定を入れて」と依頼します。</p>
+<p>確認画面でカレンダー名、日付、時間、件名を確認して「この内容で実行」を押します。「キャンセル」を押すと保存しません。Google Calendarにも反映されることを確認してください。ASISTの「保存済み」はMac側への保存を示し、Google側の同期完了を保証するものではありません。</p>
+<p>確認後は「明日の動作確認の予定を削除して」と依頼し、削除の確認画面で承認してください。</p>
+<h2>うまく連携できない場合</h2>
+<ul>
+<li>アクセスを拒否した場合は、ASISTの「macOSのアクセス許可」から設定を開き、カレンダーのフルアクセスを許可します。ASISTに戻り「一覧を更新」を押してください。</li>
+<li>カレンダーが表示されない場合は、Macの「カレンダー」アプリに予定が表示されるか確認します。アカウントを追加し直した場合は、ASISTでも表示対象と保存先を選び直してください。</li>
+<li>共有・購読カレンダーなど、書き込み権限のないカレンダーは表示にだけ利用できます。</li>
+<li>繰り返し予定と招待付き予定は表示・検索できますが、ASISTから変更・削除はできません。Macの「カレンダー」アプリで操作してください。</li>
+<li>Googleに反映されない場合は、Macのネットワークとアカウントの同期状態を確認してください。結果が不明なときに同じ追加操作を繰り返さないでください。</li>
+</ul>
+<h2>予定データの扱い</h2>
+<p>macOSのアクセス許可はカレンダー全体に対する許可です。ASISTは、表示対象として選択したカレンダーを検索し、指定した保存先に新しい予定を作ります。連携をオフにするとASISTからの予定の読み書きを止めます。OSの許可も取り消す場合はmacOSの設定で変更してください。</p>
+<p>会話で取得した予定の情報は、返答の生成のためにAnthropic APIへ送信されます。ASISTの会話履歴や記憶の処理にも残る場合があります。Googleのログイン情報はASISTでは管理しません。</p>
+</main>
+</html>

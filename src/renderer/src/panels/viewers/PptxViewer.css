@@ -1,0 +1,76 @@
+/* PowerPoint slide box. Shapes are placed by percentage on a white 16:9 box, whose real ratio comes from the
+   file's sldSz. Font sizes use cqw, a share of the box width, so container-type is required. The box and its
+   text keep a slide's own colors in every theme, because they stand for the file, not for the viewer. */
+.fv-pptx .fv-scroll {
+  padding: 10px 12px;
+}
+.fv-pptx-figure {
+  margin: 0 0 10px;
+}
+.fv-pptx-figure:last-child {
+  margin-bottom: 0;
+}
+.fv-pptx-slide {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #1c2733;
+  container-type: inline-size;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  line-height: 1.25;
+}
+.fv-pptx-text {
+  overflow: hidden;
+  padding: 0.6cqw 1cqw;
+  overflow-wrap: anywhere;
+}
+.fv-pptx-text[data-placed='true'],
+.fv-pptx-picture[data-placed='true'] {
+  position: absolute;
+}
+.fv-pptx-text[data-placeholder='ctrTitle'] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.fv-pptx-text[data-placeholder='subTitle'] {
+  text-align: center;
+  color: #5a6b7d;
+}
+.fv-pptx-para {
+  margin: 0 0 0.35em;
+  white-space: pre-wrap;
+}
+.fv-pptx-para[data-bullet='true'] {
+  padding-left: 1.1em;
+  text-indent: -1.1em;
+}
+.fv-pptx-para[data-bullet='true']::before {
+  content: '•';
+  display: inline-block;
+  width: 1.1em;
+  text-indent: 0;
+  color: #3c6fa8;
+}
+.fv-pptx-picture {
+  display: block;
+  object-fit: contain;
+}
+.fv-pptx-number {
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  text-align: right;
+}
+.fv-pptx .fv-note {
+  padding-left: 0;
+  padding-right: 0;
+}
+.card[data-size='s'] .fv-pptx .fv-scroll {
+  padding: 8px 10px;
+}

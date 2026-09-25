@@ -1,0 +1,564 @@
+import os from 'node:os'
+import { shouldPushJobCard } from '@shared/job-cards'
+import { calendarStatus, changeCalendar, listCalendar, requestCalendarAccess } from './services/calendar'
+import { events as mailEvents, getMailService, openMailGuide } from './services/mail'
+import { confirmEvents, resolveConfirm } from './services/confirm'
+import { app, dialog, ipcMain, shell, systemPreferences, type BrowserWindow } from 'electron'
+import path from 'node:path'
+import fs from 'node:fs'
+import {
+  IpcChannel,
+  type AgentJob,
+  type AppStatus,
+  type PanelEvent,
+  type SetupStatus,
+  type TtsEngine,
+  type TurnPlaybackAckStatus,
+  type TurnStartOptions
+} from '@shared/ipc'
+import type { AsrModel } from '@shared/asr-models'
+import { QWEN_TTS_MODEL, recommendQwenTts } from '@shared/tts-models'
+import { parseSettingsPatch } from '@shared/settings'
+import { parseTurnMetricLog } from '@shared/turn-metric-log'
+import { getSettings, saveSettings } from './services/settings'
+import { features } from './services/conversation-locale'
+import * as asr from './services/asr'
+import * as tts from './services/tts'
+import * as qwenTts from './services/qwen-tts'
+import * as aizuchi from './services/aizuchi'
+import * as bridgePlan from './services/bridge-plan'
+import * as aizuchiClassifier from './services/aizuchi-classifier'
+import * as brain from './services/brain'
+import * as live from './services/live'
+import { interject } from './services/brain/interject'
+import { acknowledgePlayback } from './services/brain/job-reporting'
+import * as agent from './services/agent'
+import { usageDays } from './services/usage-ledger'
+import { available as agentAvailable } from './services/agent-process'
+import { fetchPanel } from './services/panel-fetchers'
+import {
+  apiKeyConfigured,
+  configuredModels,
+  configuredApiKeyAvailable,
+  providerKeys,
+  llmKeyStates,
+  saveProviderKey,
+  validateConfiguration,
+  validateProviderKey
+} from './services/llm'
+import { LLM_PROVIDERS, LLM_PROVIDER_INFO, sameModel } from '@shared/llm-catalog'
+import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
+import { appendJsonl } from './services/store'
+import * as watchdog from './services/watchdog'
+import * as nativeMic from './services/native-mic'
+import * as vap from './services/vap'
+import * as memory from './services/memory'
+import * as embedding from './services/embedding'
+import { curateNow, curatedThrough, lastFailure, pendingJob } from './services/memory-curation'
+import * as timers from './services/timers'
+import { events as noteEvents, getNoteService } from './services/user-notes'
+import { events as taskEvents, getTaskService } from './services/user-tasks'
+import { notifyFromRenderer, refreshHotkey, refreshTrayMenu } from './os-integration'
+import { completeSetup } from './services/setup-completion'
+import { isPathAllowed } from './services/file-preview'
+import { errorText } from '@shared/i18n/error-text'
+import { isAppPage } from '@shared/app-page'
+import { reportOpenMiniApp } from './services/mini-app-view'
+import type { ConversationLocale } from '@shared/conversation-locale'
+import { conversationLocale } from './services/conversation-locale'
+
+/**
+ * What the speech test says, in the language of the conversation. It is spoken, never shown, so it
+ * lives here rather than in the dictionary of the interface: two short sentences that let the user
+ * hear the voice, the same greeting in each language.
+ */
+const SPEECH_TEST_SENTENCE: Record<ConversationLocale, string> = {
+  'ja-JP': 'こんにちは。音声のテストです。',
+  'en-US': 'Hello. This is a speech test.',
+  'fr-FR': 'Bonjour. Ceci est un test de la voix.',
+  'de-DE': 'Hallo. Dies ist ein Sprachtest.',
+  'hi-IN': 'नमस्ते। यह आवाज़ की जाँच है।',
+  'id-ID': 'Halo. Ini tes suara.',
+  'it-IT': 'Ciao. Questa è una prova della voce.',
+  'ko-KR': '안녕하세요. 음성 테스트입니다.',
+  'pt-BR': 'Olá. Este é um teste de voz.',
+  'es-419': 'Hola. Esta es una prueba de voz.',
+  'es-ES': 'Hola. Esta es una prueba de voz.'
+}
+
+const metricOccurrenceById = new Map<string, number>()
+const MAX_TRACKED_METRIC_TURNS = 10_000
+let configurationMutationChain: Promise<unknown> = Promise.resolve()
+
+function withConfigurationMutation<T>(operation: () => Promise<T> | T): Promise<T> {
+  const result = configurationMutationChain.then(operation, operation)
+  configurationMutationChain = result.then(
+    () => undefined,
+    () => undefined
+  )
+  return result
+}
+
+export function registerIpc(window: BrowserWindow, appPage: string): void {
+  // The preload bridge is exposed to whatever page the window shows, so every handler first checks that
+  // the call comes from the window's top frame showing the app's own page.
+  const handle = (channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void => {
+    ipcMain.handle(channel, (event, ...args) => {
+      const frame = event.senderFrame
+      if (event.sender !== window.webContents || !frame || frame.parent !== null || !isAppPage(frame.url, appPage)) {
+        throw new Error(errorText('app.startup.untrustedPage', { url: frame?.url ?? '' }))
+      }
+      return listener(event, ...args)
+    })
+  }
+  const send = (channel: string, payload: unknown): void => {
+    if (!window.isDestroyed()) window.webContents.send(channel, payload)
+  }
+
+  brain.events.on('event', (event) => send(IpcChannel.TurnEvent, event))
+  agent.events.on('event', (event) => {
+    if (agent.userJob(event.type === 'update' ? event.job.id : event.id)) send(IpcChannel.JobEvent, event)
+  })
+  // A job that comes to wait for a merge or that finishes pushes its card straight away, without waiting for an LLM call.
+  const jobPhases = new Map<string, AgentJob>()
+  agent.events.on('event', (event) => {
+    if (event.type !== 'update') return
+    const previous = jobPhases.get(event.job.id)
+    jobPhases.set(event.job.id, event.job)
+    if (!shouldPushJobCard(previous, event.job)) return
+    send(IpcChannel.PanelEventPush, {
+      op: 'create', key: `job:${event.job.id}`, type: 'agent-job', slot: 'right', props: { jobId: event.job.id }, state: 'ready'
+    } satisfies PanelEvent)
+  })
+  timers.events.on('event', (event) => send(IpcChannel.TimerEvent, event))
+  noteEvents.on('changed', (notes) => send(IpcChannel.NotesChanged, notes))
+  taskEvents.on('changed', (tasks) => send(IpcChannel.TasksChanged, tasks))
+  mailEvents.on('event', (event) => send(IpcChannel.MailEvent, event))
+  confirmEvents.on('event', (event) => send(IpcChannel.ConfirmEvent, event))
+  live.events.on('audio', (samples) => send(IpcChannel.LiveAudio, samples))
+  live.events.on('event', (event) => send(IpcChannel.LiveEvent, event))
+  timers.init()
+
+  const computeStatus = async (): Promise<AppStatus> => {
+    const settings = getSettings()
+    const [ttsUp, asrUp, apiUp] = await Promise.all([
+      tts.available(),
+      asr.available(),
+      configuredApiKeyAvailable()
+    ])
+    return {
+      llm: apiUp,
+      conversationModel: settings.conversationModel,
+      llmKeys: llmKeyStates(),
+      tts: ttsUp,
+      ttsEngine: settings.ttsEngine,
+      ttsLabel: tts.engineLabel(),
+      asr: asrUp,
+      agent: agentAvailable(),
+      agentEngine: settings.agentEngine,
+      voiceEngine: settings.voiceEngine,
+      live: live.connection()
+    }
+  }
+
+  watchdog.start(() => {
+    void computeStatus().then((status) => send(IpcChannel.StatusChanged, status))
+  })
+
+  handle(IpcChannel.Status, computeStatus)
+  handle(IpcChannel.GetSetupStatus, async (): Promise<SetupStatus> => {
+    const [services, asrStatus] = await Promise.all([computeStatus(), asr.installationStatus()])
+    const qwenInstalled = qwenTts.installationStatus()
+    return {
+      services,
+      apiKeyConfigured: apiKeyConfigured(),
+      asr: asrStatus,
+      qwenTts: {
+        label: QWEN_TTS_MODEL.label,
+        recommended: recommendQwenTts(os.totalmem(), process.platform, process.arch),
+        ...qwenInstalled,
+        ready: qwenTts.available()
+      }
+    }
+  })
+
+  handle(IpcChannel.CompleteSetup, (_e, request: unknown) =>
+    withConfigurationMutation(() => completeSetup(request))
+  )
+
+  handle(IpcChannel.LogsOpenFolder, async () => {
+    const dir = app.getPath('logs')
+    fs.mkdirSync(dir, { recursive: true })
+    const error = await shell.openPath(dir)
+    if (error) throw new Error(error)
+  })
+  handle(IpcChannel.FolderChoose, async (_e, startAt: unknown) => {
+    const defaultPath = typeof startAt === 'string' && fs.existsSync(startAt) ? startAt : undefined
+    const options = { defaultPath, properties: ['openDirectory' as const, 'createDirectory' as const] }
+    // The dialog is a sheet of the app's window, so it cannot end up behind it.
+    const result = await dialog.showOpenDialog(window, options)
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+  handle(IpcChannel.MicOpenPrivacy, () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'))
+  handle(IpcChannel.AppVersion, () => app.getVersion())
+  handle(IpcChannel.ApiUsage, () => usageDays())
+
+  // Starting the engine takes seconds, around five for VOICEVOX, so the status is returned only once the
+  // engine answers.
+  handle(IpcChannel.TtsVerify, async (): Promise<AppStatus> => {
+    await tts.ensureEngine()
+    const deadline = Date.now() + 20_000
+    while (!(await tts.available()) && tts.engineStarting() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+    }
+    return computeStatus()
+  })
+
+  handle(IpcChannel.RequestMicPermission, async (): Promise<boolean> => {
+    if (process.platform !== 'darwin') return true
+    const status = systemPreferences.getMediaAccessStatus('microphone')
+    if (status === 'granted') return true
+    return systemPreferences.askForMediaAccess('microphone')
+  })
+
+  handle(IpcChannel.MicNativeStart, () =>
+    nativeMic.start(
+      (frame) => send(IpcChannel.MicNativeFrame, frame),
+      (reason) => send(IpcChannel.MicNativeStatus, { running: false, reason })
+    )
+  )
+  handle(IpcChannel.MicNativeStop, () => nativeMic.stop())
+
+  handle(IpcChannel.VapStart, () => {
+    // Outside Japanese the end of an utterance is decided by the fixed hangover alone, so the worker
+    // is never loaded.
+    if (!getSettings().vapEnabled || !features().maai) return false
+    return vap.ensureStarted((state) => send(IpcChannel.VapState, state))
+  })
+  handle(IpcChannel.VapPush, (_e, user: Float32Array, assistant: Float32Array) =>
+    vap.pushAudio(new Float32Array(user), new Float32Array(assistant))
+  )
+  handle(IpcChannel.VapStatus, () => vap.installationStatus())
+  handle(IpcChannel.VapPrepare, () =>
+    vap.prepare((progress) => send(IpcChannel.SetupProgress, progress))
+  )
+  handle(IpcChannel.VapPrepareCancel, () => vap.cancelPreparation())
+
+  handle(IpcChannel.EmbeddingStatus, () => memory.embeddingStatus())
+  handle(IpcChannel.EmbeddingPrepare, async () => {
+    const result = await embedding.prepare((progress) => send(IpcChannel.SetupProgress, progress))
+    // Preparing again while the setting is already on, such as after the model or the runtime generation
+    // changed, never toggles the setting, so the memories waiting for a vector are embedded here.
+    if (result.ok) void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
+    return result
+  })
+  handle(IpcChannel.EmbeddingPrepareCancel, () => embedding.cancelPreparation())
+
+  handle(IpcChannel.Transcribe, (_e, samples: Float32Array, rawRequestId: string) => {
+    const requestId = typeof rawRequestId === 'string' ? rawRequestId.trim() : ''
+    if (!requestId || requestId.length > 200) throw new Error('invalid transcription request id')
+    return asr.transcribe(new Float32Array(samples), requestId)
+  })
+  handle(IpcChannel.TranscribeCancel, (_e, rawRequestId: string) => {
+    const requestId = typeof rawRequestId === 'string' ? rawRequestId.trim() : ''
+    if (!requestId || requestId.length > 200) return false
+    return asr.cancelTranscription(requestId)
+  })
+  handle(IpcChannel.TranscribePartial, (_e, samples: Float32Array) =>
+    asr.transcribePartial(new Float32Array(samples))
+  )
+
+  handle(IpcChannel.TurnStart, (_e, text: string, options?: TurnStartOptions) =>
+    brain.startTurn(text, options)
+  )
+  handle(IpcChannel.TurnAbort, (_e, turnId: number) => brain.abortTurn(turnId))
+  handle(IpcChannel.TurnInterject, (_e, text: string) => interject(text))
+  handle(
+    IpcChannel.TurnPlaybackAck,
+    (_e, turnId: number, status: TurnPlaybackAckStatus) => {
+      if (!Number.isSafeInteger(turnId) || turnId < 0) throw new Error('invalid playback turn id')
+      if (status !== 'started' && status !== 'interrupted') {
+        throw new Error('invalid playback acknowledgement')
+      }
+      acknowledgePlayback(turnId, status)
+    }
+  )
+
+  handle(IpcChannel.LiveStart, () => live.start())
+  handle(IpcChannel.LiveStop, () => live.stop())
+  handle(IpcChannel.LivePush, (_e, samples: Float32Array) => {
+    live.push(samples instanceof Float32Array ? samples : new Float32Array(samples))
+  })
+  handle(IpcChannel.LiveActivity, (_e, active: boolean) => {
+    live.activity(active === true)
+  })
+  handle(IpcChannel.LiveText, (_e, text: unknown) => {
+    const value = typeof text === 'string' ? text.trim() : ''
+    if (!value || value.length > 4000) throw new Error('invalid live text')
+    return live.text(value)
+  })
+
+  handle(IpcChannel.PanelFetch, (_e, type: string, props: Record<string, unknown>) =>
+    fetchPanel(type, props)
+  )
+
+  handle(IpcChannel.TimerList, () => timers.list())
+  handle(IpcChannel.TimerCancel, (_e, id: string) => timers.cancel(String(id)))
+
+  handle(IpcChannel.AizuchiBank, () => aizuchi.getBank())
+  handle(IpcChannel.BridgePlan, (_e, input: { text: unknown; lastAssistantText: unknown }) => {
+    const text = typeof input?.text === 'string' ? input.text.trim() : ''
+    if (!text || text.length > 500) throw new Error('invalid bridge plan input')
+    const lastAssistantText =
+      typeof input.lastAssistantText === 'string' ? input.lastAssistantText.slice(-300) : ''
+    return bridgePlan.plan({ text, lastAssistantText })
+  })
+  handle(IpcChannel.BridgeClip, (_e, text: unknown) => {
+    if (typeof text !== 'string' || !text.trim() || text.length > 60) {
+      throw new Error('invalid bridge text')
+    }
+    return bridgePlan.bridge(text.trim())
+  })
+  handle(IpcChannel.AizuchiClassify, (_e, input: { prev: unknown; text: unknown }) => {
+    const text = typeof input?.text === 'string' ? input.text.trim() : ''
+    if (!text || text.length > 500) throw new Error('invalid aizuchi classify input')
+    const prev = typeof input.prev === 'string' ? input.prev.slice(-300) : ''
+    return aizuchiClassifier.classify({ prev, text })
+  })
+  handle(IpcChannel.AizuchiClassifierStatus, () => aizuchiClassifier.status())
+  handle(IpcChannel.AizuchiClassifierPrepare, () =>
+    aizuchiClassifier.prepare((progress) => send(IpcChannel.SetupProgress, progress))
+  )
+  handle(IpcChannel.AizuchiClassifierPrepareCancel, () => aizuchiClassifier.cancelPreparation())
+
+  handle(IpcChannel.MetricsLog, (_e, value: unknown) => {
+    const { occurredAt, ...metrics } = parseTurnMetricLog(value)
+    const now = Date.now()
+    if (occurredAt > now + 60_000) throw new Error('invalid metrics occurrence timestamp')
+    const knownOccurrence = metricOccurrenceById.get(metrics.id)
+    if (knownOccurrence !== undefined && knownOccurrence !== occurredAt) {
+      throw new Error('metrics occurrence timestamp mismatch')
+    }
+    metricOccurrenceById.set(metrics.id, occurredAt)
+    if (metricOccurrenceById.size > MAX_TRACKED_METRIC_TURNS) {
+      const oldest = metricOccurrenceById.keys().next().value
+      if (oldest !== undefined) metricOccurrenceById.delete(oldest)
+    }
+    // `t` is when the turn happened, so a later revision of the same turn carries the same one.
+    appendJsonl('metrics.jsonl', { t: occurredAt, ...metrics })
+  })
+
+  handle(IpcChannel.MemoryDocuments, () => memory.documents())
+  handle(IpcChannel.MemoryDocumentRead, (_e, file: string) => memory.documentRead(String(file)))
+  handle(IpcChannel.MemoryDocumentWrite, (_e, file: string, markdown: string) =>
+    withConfigurationMutation(() => memory.documentWrite(String(file), String(markdown)))
+  )
+  handle(IpcChannel.MemoryDocumentCreate, (_e, input: unknown) => withConfigurationMutation(() => memory.documentCreate(input)))
+  handle(IpcChannel.MemoryDocumentDelete, (_e, file: string) => withConfigurationMutation(() => memory.documentDelete(String(file))))
+  handle(IpcChannel.MemoryOverview, () => ({
+    ...memory.overview(),
+    curatedThrough: curatedThrough(),
+    pendingJobId: pendingJob()?.id ?? null,
+    lastFailure: lastFailure()
+  }))
+  handle(IpcChannel.MemoryCurate, () => withConfigurationMutation(async () => curateNow()))
+
+  handle(IpcChannel.TasksList, () => getTaskService().list())
+  handle(IpcChannel.TaskCreate, (_e, input: unknown) => getTaskService().create(input))
+  handle(IpcChannel.TaskUpdate, (_e, id: string, patch: unknown) => getTaskService().update(String(id), patch))
+  handle(IpcChannel.TaskMove, (_e, move: unknown) => getTaskService().move(move))
+  handle(IpcChannel.TaskRemove, (_e, id: string) => getTaskService().remove(String(id)))
+  handle(IpcChannel.TasksClearDone, () => getTaskService().clearDone())
+  handle(IpcChannel.NotesList, () => getNoteService().list())
+  handle(IpcChannel.NotesSearch, async (_e, query: string) =>
+    (await getNoteService().search(String(query))).map(({ markdown: _, ...summary }) => summary)
+  )
+  handle(IpcChannel.NoteRead, (_e, id: string) => getNoteService().read(String(id)))
+  handle(IpcChannel.NoteCreate, (_e, markdown: unknown) => getNoteService().create(markdown))
+  handle(IpcChannel.NoteWrite, (_e, id: string, markdown: unknown) => getNoteService().write(String(id), markdown))
+  handle(IpcChannel.NoteRemove, (_e, id: string) => getNoteService().remove(String(id)))
+
+  handle(IpcChannel.Notify, (_e, title: string, body: string) =>
+    notifyFromRenderer(String(title), String(body))
+  )
+  handle(IpcChannel.MiniAppView, (_e, view: unknown) => reportOpenMiniApp(view))
+
+  handle(IpcChannel.AsrPrepare, (_e, model?: AsrModel) => {
+    const selected = model ?? getSettings().asrModel
+    return asr.prepareModel(selected, (progress) => send(IpcChannel.SetupProgress, progress))
+  })
+  handle(IpcChannel.AsrPrepareCancel, () => asr.cancelPreparation())
+  handle(IpcChannel.TtsPrepare, async () => {
+    const result = await qwenTts.prepare((progress) => send(IpcChannel.SetupProgress, progress))
+    // A bank built while the model was missing holds no audio.
+    if (result.ok && getSettings().ttsEngine === 'qwen3tts') {
+      aizuchi.invalidate()
+      void aizuchi.getBank()
+    }
+    return result
+  })
+  handle(IpcChannel.TtsPrepareCancel, () => qwenTts.cancelPreparation())
+
+  handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
+  handle(IpcChannel.JobMerge, (_e, id: string, commit: string) => {
+    agent.merge(String(id), commit)
+  })
+  handle(IpcChannel.JobDiscard, (_e, id: string) => {
+    agent.discard(String(id))
+  })
+  handle(IpcChannel.JobDiff, (_e, id: string) => agent.diff(String(id)))
+  handle(IpcChannel.JobList, () => agent.userJobs())
+  handle(IpcChannel.JobLog, (_e, id: string) => agent.getLog(id))
+
+  handle(IpcChannel.CalendarStatus, () => calendarStatus())
+  handle(IpcChannel.CalendarRequestAccess, () => requestCalendarAccess())
+  handle(IpcChannel.CalendarEvents, (_e, range: unknown) => listCalendar(range))
+  // An add, edit or delete from the screen takes the same path as the agent's and is saved only after the
+  // in-app confirmation is approved.
+  handle(IpcChannel.CalendarChange, (_e, change: unknown) => changeCalendar(change, new AbortController().signal))
+  handle(IpcChannel.CalendarOpenPrivacy, () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'))
+  handle(IpcChannel.CalendarOpenGuide, async () => {
+    const guide = app.isPackaged ? path.join(process.resourcesPath, 'calendar-guide/index.html') : path.join(app.getAppPath(), 'resources/calendar-guide/index.html')
+    const error = await shell.openPath(guide)
+    if (error) throw new Error(error)
+  })
+  handle(IpcChannel.MailStatus, () => getMailService().status())
+  handle(IpcChannel.MailProbe, (_e, input: unknown) => getMailService().probe(input))
+  handle(IpcChannel.MailAccountAdd, (_e, input: unknown) => withConfigurationMutation(() => getMailService().addAccount(input)))
+  handle(IpcChannel.MailAccountUpdate, (_e, id: string, patch: unknown, password?: string) =>
+    withConfigurationMutation(() => getMailService().updateAccount(String(id), patch, password === undefined ? undefined : String(password)))
+  )
+  handle(IpcChannel.MailAccountRemove, (_e, id: string) => withConfigurationMutation(() => getMailService().removeAccount(String(id))))
+  handle(IpcChannel.MailList, (_e, query: unknown) => getMailService().list(query))
+  handle(IpcChannel.MailThread, (_e, accountId: string, threadId: string) => getMailService().thread(String(accountId), String(threadId)))
+  handle(IpcChannel.MailRead, (_e, id: string) => getMailService().read(String(id)))
+  // Sending, replying and trashing from the screen go through the same confirmation as the conversation
+  // does, while marking as read, starring and archiving are applied directly.
+  handle(IpcChannel.MailChange, (_e, change: unknown) => getMailService().change(change, new AbortController().signal, 'screen'))
+  handle(IpcChannel.MailSyncNow, () => getMailService().syncNow())
+  handle(IpcChannel.MailOpenGuide, () => openMailGuide())
+  handle(IpcChannel.MailDraftList, () => getMailService().draftList())
+  handle(IpcChannel.MailDraftCreate, (_e, input: unknown) => getMailService().draftCreate(input, 'screen'))
+  handle(IpcChannel.MailDraftUpdate, (_e, id: string, patch: unknown) => getMailService().draftUpdate(String(id), patch))
+  handle(IpcChannel.MailDraftRemove, (_e, id: string) => {
+    getMailService().draftRemove(String(id))
+  })
+  // Pressing send on a draft is itself the approval, so no confirmation appears.
+  handle(IpcChannel.MailDraftSend, (_e, id: string) => getMailService().draftSend(String(id), new AbortController().signal))
+  handle(IpcChannel.ConfirmResolve, (_e, id: string, approved: boolean) => {
+    resolveConfirm(String(id), approved === true)
+  })
+  handle(IpcChannel.GetSettings, () => getSettings())
+  handle(IpcChannel.SaveSettings, (_e, value: unknown) =>
+    withConfigurationMutation(async () => {
+      const before = getSettings()
+      const patch = parseSettingsPatch(value)
+      if (
+        Object.prototype.hasOwnProperty.call(patch, 'onboardingVersion') &&
+        patch.onboardingVersion !== before.onboardingVersion
+      ) {
+        throw new Error(errorText('settings.errors.onboardingLocked'))
+      }
+
+      const prospective = { ...before, ...patch }
+      if (
+        !sameModel(prospective.conversationModel, before.conversationModel) ||
+        !sameModel(prospective.bridgeModel, before.bridgeModel)
+      ) {
+        // The prospective values are checked against the real API first, so that saving cannot leave a
+        // broken configuration behind. A missing key for that provider is rejected here.
+        await validateConfiguration(providerKeys(), configuredModels(prospective))
+      }
+      // A live engine is only checked for the provider's key, because the Live API has no way to query a
+      // model. A failure to connect surfaces as a notification when the microphone is turned on.
+      if (isLiveEngine(prospective.voiceEngine) && prospective.voiceEngine !== before.voiceEngine) {
+        const info = LIVE_ENGINE_INFO[prospective.voiceEngine]
+        if (!providerKeys()[info.provider]) {
+          throw new Error(errorText('settings.errors.keyRequired', { target: info.label, envKey: LLM_PROVIDER_INFO[info.provider].envKey }))
+        }
+      }
+
+      const after = saveSettings(patch)
+      // Changing the engine, or a live model or voice, stops the running live engine, and the renderer
+      // stops the microphone with it.
+      if (
+        before.voiceEngine !== after.voiceEngine ||
+        JSON.stringify(before.gptLive) !== JSON.stringify(after.gptLive) ||
+        JSON.stringify(before.geminiLive) !== JSON.stringify(after.geminiLive) ||
+        before.liveIdleSeconds !== after.liveIdleSeconds
+      ) {
+        void live.stop().catch((error) => console.error('live stop failed:', error))
+      }
+      if (
+        before.ttsEngine !== after.ttsEngine ||
+        before.voicevoxSpeaker !== after.voicevoxSpeaker ||
+        before.aivisSpeaker !== after.aivisSpeaker ||
+        before.qwenTtsVoice !== after.qwenTtsVoice ||
+        // The clips exist for Japanese only, so the language decides whether there is a bank at all.
+        before.conversationLocale !== after.conversationLocale
+      ) {
+        aizuchi.invalidate()
+        void tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error))
+        void aizuchi.getBank()
+      }
+      if (before.globalHotkey !== after.globalHotkey) refreshHotkey()
+      if (before.uiLocale !== after.uiLocale) refreshTrayMenu()
+      if (before.asrModel !== after.asrModel) void asr.switchModel()
+      if (before.memoryEmbeddingEnabled !== after.memoryEmbeddingEnabled) {
+        if (after.memoryEmbeddingEnabled) {
+          void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
+        } else {
+          embedding.stop()
+        }
+      }
+      // MaAI is resident until the setting is turned off or the conversation moves to a language whose
+      // turn taking it was not trained on.
+      if ((before.vapEnabled && !after.vapEnabled) || !features().maai) vap.stop()
+      if (aizuchiClassifier.wanted(before) !== aizuchiClassifier.wanted(after)) {
+        if (aizuchiClassifier.wanted(after)) void aizuchiClassifier.ensureStarted()
+        else aizuchiClassifier.stop()
+      }
+      if (JSON.stringify(before.mail) !== JSON.stringify(after.mail)) getMailService().applySettings()
+      return after
+    })
+  )
+
+  handle(IpcChannel.SaveApiKey, (_e, rawProvider: unknown, rawKey: unknown): Promise<AppStatus> =>
+    withConfigurationMutation(async () => {
+      const provider = LLM_PROVIDERS.find((candidate) => candidate === rawProvider)
+      if (!provider) throw new Error(errorText('settings.errors.unknownProvider', { provider: String(rawProvider) }))
+      const key = String(rawKey).trim()
+      await validateProviderKey(provider, key)
+      saveProviderKey(provider, key)
+      return computeStatus()
+    })
+  )
+
+  handle(IpcChannel.ListSpeakers, (_e, engine?: TtsEngine) => tts.listSpeakers(engine))
+
+  handle(IpcChannel.TtsTest, async () => {
+    const text = SPEECH_TEST_SENTENCE[conversationLocale()]
+    // The voice is resolved here rather than inside synthesize, whose catch turns every failure into
+    // silent audio, so that an engine which cannot speak the language says so on the settings screen.
+    const voice = await tts.resolveVoice()
+    const result = await tts.synthesize(text, undefined, undefined, voice)
+    return {
+      turnId: 0,
+      index: 0,
+      text,
+      audio: result.audio,
+      phonemes: result.phonemes
+    }
+  })
+
+  handle(IpcChannel.OpenExternal, (_e, url: string) => {
+    if (/^https?:\/\//.test(url)) return shell.openExternal(url)
+    return Promise.resolve()
+  })
+
+  handle(IpcChannel.RevealPath, (_e, target: string) => {
+    if (isPathAllowed(String(target), agent.allowedFileRoots())) {
+      shell.showItemInFolder(String(target))
+    }
+  })
+}

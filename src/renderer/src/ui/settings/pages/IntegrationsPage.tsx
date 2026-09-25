@@ -1,0 +1,130 @@
+import { useState } from 'react'
+import { KeyRound } from 'lucide-react'
+import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
+import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
+import { useStatusStore, useToastStore } from '@/state/stores'
+import type { SettingsContext } from '../context'
+import { CalendarSettings } from '../CalendarSettings'
+import { MailSettings } from '../MailSettings'
+import { Btn, Chip, Group, Page } from '../primitives'
+import { displayError } from '@/display-error'
+import { useT } from '@/i18n'
+
+/** The integrations page: the macOS calendar, mail, and the API key of each provider. */
+export function IntegrationsPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
+  const t = useT()
+  return (
+    <Page title={t('settingsIntegrations.title')} lead={t('settingsIntegrations.lead')}>
+      <CalendarSettings settings={ctx.settings} />
+      <MailSettings ctx={ctx} />
+      <ApiKeys ctx={ctx} />
+    </Page>
+  )
+}
+
+/**
+ * The API key of each provider. The list shows only the state, and the input field opens just for
+ * registering a key. Before the key is saved it is checked against that provider's API, querying the
+ * conversation model itself when it belongs to that provider.
+ */
+function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
+  const { settings, status } = ctx
+  const t = useT()
+  const [opened, setOpened] = useState<LlmProvider | null>(null)
+  // The key of the provider behind a live engine is needed for that engine too, which the hint names.
+  const liveEngine = isLiveEngine(settings.voiceEngine) ? LIVE_ENGINE_INFO[settings.voiceEngine] : null
+  return (
+    <Group title={t('settingsIntegrations.apiKeys.title')} description={t('settingsIntegrations.apiKeys.description')}>
+      {LLM_PROVIDERS.map((provider) => {
+        const info = LLM_PROVIDER_INFO[provider]
+        const state = status?.llmKeys[provider] ?? 'missing'
+        const saved = state !== 'missing'
+        const verified = state === 'verified'
+        const inUse =
+          provider === settings.conversationModel.provider ||
+          provider === settings.bridgeModel.provider ||
+          liveEngine?.provider === provider
+        const engineOfProvider = provider === 'openai' ? 'GPT-Live' : provider === 'google' ? 'Gemini Live' : null
+        return (
+          <div key={provider} className="st-key" data-provider={provider}>
+            <div className="st-key-name">
+              <KeyRound size={14} style={{ color: 'var(--color-holo-dim)' }} />
+              {info.label}
+              <code>{info.envKey}</code>
+              <Chip tone={verified ? 'ok' : saved ? 'cyan' : 'dim'}>
+                {verified
+                  ? t('settingsIntegrations.apiKeys.verified')
+                  : saved
+                    ? t('settingsIntegrations.apiKeys.saved')
+                    : t('settingsIntegrations.apiKeys.notSet')}
+              </Chip>
+              {inUse && <Chip tone="cyan">{t('settingsIntegrations.apiKeys.inUse')}</Chip>}
+            </div>
+            <Btn tone={saved ? 'quiet' : undefined} onClick={() => setOpened(opened === provider ? null : provider)}>
+              {opened === provider
+                ? t('common.close')
+                : saved
+                  ? t('settingsIntegrations.apiKeys.change')
+                  : t('settingsIntegrations.apiKeys.register')}
+            </Btn>
+            <span className="st-key-hint">
+              {engineOfProvider
+                ? t('settingsIntegrations.apiKeys.hintWithLiveEngine', { engine: engineOfProvider })
+                : t('settingsIntegrations.apiKeys.hint', { provider: info.label })}
+            </span>
+            {opened === provider && <KeyForm provider={provider} onDone={() => setOpened(null)} />}
+          </div>
+        )
+      })}
+    </Group>
+  )
+}
+
+function KeyForm({ provider, onDone }: { provider: LlmProvider; onDone: () => void }): React.JSX.Element {
+  const refreshStatus = useStatusStore((s) => s.refresh)
+  const toast = useToastStore((s) => s.push)
+  const t = useT()
+  const [key, setKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const info = LLM_PROVIDER_INFO[provider]
+  const submit = (): void => {
+    setSaving(true)
+    void window.api
+      .saveApiKey(provider, key)
+      .then(() => {
+        toast({ kind: 'ok', title: t('settingsIntegrations.apiKeys.keySaved', { provider: info.label }) })
+        onDone()
+        return refreshStatus()
+      })
+      .catch((err: unknown) =>
+        toast({ kind: 'error', title: t('settingsIntegrations.apiKeys.keySaveFailed', { provider: info.label }), body: displayError(err) })
+      )
+      .finally(() => setSaving(false))
+  }
+  return (
+    <form
+      className="st-key-form"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (key.trim() && !saving) submit()
+      }}
+    >
+      <input
+        type="password"
+        autoComplete="off"
+        autoFocus
+        className="st-input is-mono"
+        aria-label={info.envKey}
+        placeholder={info.keyPlaceholder}
+        value={key}
+        onChange={(e) => setKey(e.target.value)}
+      />
+      <Btn tone="primary" type="submit" disabled={saving || !key.trim()}>
+        {saving ? t('settingsIntegrations.apiKeys.keyChecking') : t('settingsIntegrations.apiKeys.keySave')}
+      </Btn>
+      <Btn tone="quiet" onClick={() => void window.api.openExternal(info.console)}>
+        {t('settingsIntegrations.apiKeys.openConsole')}
+      </Btn>
+    </form>
+  )
+}

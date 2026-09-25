@@ -1,0 +1,221 @@
+/* The list of UI messages (/i18n in the demo). html and body are overflow hidden, so the two columns scroll on their own. */
+.i18n {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  height: 100%;
+  color: var(--color-holo-text);
+  background: var(--color-holo-bg);
+  font-size: 13px;
+  /* The app turns text selection off everywhere; this page exists to be read and quoted. */
+  user-select: text;
+}
+.i18n-side {
+  overflow: auto;
+  padding: 20px 12px 40px;
+  border-right: 1px solid #ffffff14;
+}
+.i18n-side h1 {
+  margin: 12px 8px 12px;
+  font-size: 15px;
+}
+.i18n-home {
+  margin-left: 8px;
+  color: var(--color-holo-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+.i18n-side button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.i18n-side button:hover,
+.i18n-side button.on {
+  background: #ffffff12;
+}
+.i18n-side button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.i18n-side button span {
+  color: var(--color-holo-muted);
+  font-variant-numeric: tabular-nums;
+}
+.i18n-main {
+  overflow: auto;
+  padding: 0 28px 80px;
+}
+.i18n-main header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0 12px;
+  background: var(--color-holo-bg);
+}
+.i18n-main input[type='search'] {
+  flex: 1;
+  max-width: 420px;
+  padding: 7px 10px;
+  border: 1px solid #ffffff22;
+  border-radius: 8px;
+  background: #ffffff0a;
+  color: inherit;
+  font: inherit;
+}
+.i18n-locales {
+  position: sticky;
+  top: 58px;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid #ffffff22;
+  background: var(--color-holo-bg);
+}
+.i18n-locales button {
+  padding: 3px 9px;
+  border: 1px solid #ffffff22;
+  border-radius: 999px;
+  color: var(--color-holo-muted);
+  font: 12px ui-monospace, monospace;
+  cursor: pointer;
+}
+.i18n-locales button[aria-pressed='true'] {
+  border-color: #74c8ff88;
+  background: #74c8ff1f;
+  color: #d9f1ff;
+}
+.i18n-presets {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.i18n-presets button {
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+}
+.i18n-count {
+  margin-left: auto;
+  color: var(--color-holo-muted);
+}
+.i18n-main table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.i18n-main thead th {
+  position: sticky;
+  top: 100px;
+  padding: 6px 12px 6px 0;
+  background: var(--color-holo-bg);
+  color: var(--color-holo-muted);
+  font-weight: 500;
+  text-align: left;
+  border-bottom: 1px solid #ffffff22;
+}
+.i18n-main thead th:first-child,
+.i18n-main tbody th {
+  width: 240px;
+}
+.i18n-main tbody th {
+  padding: 9px 12px 9px 0;
+  font: 12px/1.5 ui-monospace, monospace;
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+  color: #9fd0ff;
+  overflow-wrap: anywhere;
+}
+.i18n-main tbody th small {
+  display: block;
+  color: var(--color-holo-muted);
+}
+.i18n-main td {
+  padding: 9px 16px 9px 0;
+  line-height: 1.65;
+  vertical-align: top;
+}
+.i18n-main tbody tr {
+  border-bottom: 1px solid #ffffff0f;
+}
+.i18n-main td p,
+.i18n-stack dd p {
+  margin: 0;
+}
+.i18n-main td code,
+.i18n-stack dd code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: #7aa7ff2b;
+  color: #cfe0ff;
+  font: 12px ui-monospace, monospace;
+}
+.i18n-plural {
+  display: inline-block;
+  min-width: 40px;
+  margin-right: 6px;
+  color: var(--color-holo-muted);
+  font: 11px ui-monospace, monospace;
+}
+.i18n-empty {
+  color: var(--color-holo-muted);
+}
+
+.i18n-stack {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.i18n-stack > li {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 0 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ffffff14;
+}
+.i18n-stack h2 {
+  margin: 0;
+  font: 12px/1.5 ui-monospace, monospace;
+  font-weight: 400;
+  color: #9fd0ff;
+  overflow-wrap: anywhere;
+}
+.i18n-stack h2 small {
+  display: block;
+  color: var(--color-holo-muted);
+}
+.i18n-stack dl {
+  margin: 0;
+}
+.i18n-stack dl > div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  padding: 2px 0;
+  line-height: 1.6;
+}
+.i18n-stack dt {
+  padding-top: 2px;
+  color: var(--color-holo-muted);
+  font: 11px/1.6 ui-monospace, monospace;
+}
+.i18n-stack dd {
+  margin: 0;
+}
+.i18n-stack dl > div:first-child dd {
+  color: #ffffff;
+}

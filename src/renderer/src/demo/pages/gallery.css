@@ -1,0 +1,81 @@
+/* The card samples (/preview/cards in the demo). html and body are overflow hidden, so this element is
+   the one that scrolls. */
+.gallery {
+  height: 100%;
+  overflow: auto;
+  padding: 32px 40px 96px;
+  color: var(--color-holo-text);
+  background:
+    radial-gradient(900px 500px at 20% -10%, #14305a55, transparent 70%),
+    radial-gradient(800px 500px at 90% 10%, #3a2a7a33, transparent 70%),
+    var(--color-holo-bg);
+}
+.gallery-main {
+  min-width: 0;
+}
+.gallery-note {
+  max-width: 720px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}
+.gallery-group:first-of-type {
+  margin-top: 20px;
+}
+.gallery-group {
+  margin-top: 36px;
+}
+.gallery-group > h2 {
+  margin: 0 0 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-holo-line);
+  font-size: 13px;
+  font-weight: 500;
+  color: #bdd5fb;
+}
+/* These heading styles apply only to the headings of the list itself, never to an h3 inside a card. */
+.gallery-group > h2 small,
+.gallery-card > h3 small {
+  margin-left: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--color-holo-dim);
+}
+.gallery-card {
+  margin: 22px 0 34px;
+}
+.gallery-card > h3 {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: rgba(111, 231, 255, 0.75);
+}
+.gallery-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.gallery-column {
+  display: flex;
+  width: 300px;
+  flex-direction: column;
+  gap: 6px;
+}
+.gallery-column.is-focus {
+  width: auto;
+}
+.gallery-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  color: var(--color-holo-dim);
+}
+.gallery .dock {
+  border: 1px dashed #4c81ad55;
+  border-radius: 18px;
+}

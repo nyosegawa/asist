@@ -1,0 +1,288 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { messageIdOf, type MailAccount, type MailMessage } from '@shared/mail'
+import { errorText } from '@shared/i18n/error-text'
+import { createTranslator } from '@shared/i18n'
+import { MailCache } from '../src/main/services/mail-cache'
+import { MailAccountSync, bodyPartsOf, htmlToPlain, type MailSyncState } from '../src/main/services/mail-sync'
+import { FakeImap } from './helpers/fake-imap'
+
+// The sync writes its own status text in the interface language, which it reads from the settings.
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'ja-JP' }) }))
+const t = createTranslator('ja-JP')
+
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
+const NOW = Date.UTC(2026, 8, 16, 6)
+
+const account = (patch: Partial<MailAccount> = {}): MailAccount => ({
+  id: 'a1',
+  label: '仕事',
+  email: 'me@example.com',
+  name: '私',
+  provider: 'custom',
+  imap: { host: 'imap.example.com', port: 993, secure: true },
+  smtp: { host: 'smtp.example.com', port: 465, secure: true },
+  folders: { sent: 'Sent', archive: 'Archive', trash: 'Trash' },
+  ...patch
+})
+
+const tanaka = [{ name: '田中', address: 't@example.com' }]
+const me = [{ name: '', address: 'me@example.com' }]
+
+function setup(options: { gmail?: boolean; account?: Partial<MailAccount> } = {}) {
+  const imap = new FakeImap({ gmail: options.gmail })
+  imap.addFolder('Sent', { specialUse: '\\Sent' })
+  imap.addFolder('Archive', { specialUse: options.gmail ? '\\All' : '\\Archive' })
+  imap.addFolder('Trash', { specialUse: '\\Trash' })
+  const cache = new MailCache(':memory:')
+  const states: Array<[MailSyncState, string]> = []
+  const arrived: MailMessage[][] = []
+  const onChanged = vi.fn()
+  const server = imap.reconnectable()
+  const sync = new MailAccountSync({
+    account: account(options.account),
+    password: () => 'app-password',
+    cache,
+    createClient: () => server.next().asClient(),
+    syncDays: () => 30,
+    now: () => Date.now(),
+    intervals: { periodicMs: 60_000, reconnectMs: [1_000, 5_000], debounceMs: 100 },
+    onStatus: (state, error) => states.push([state, error]),
+    onChanged,
+    onArrived: (messages) => arrived.push(messages)
+  })
+  return { imap, cache, sync, states, arrived, onChanged, server }
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW })
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('MailAccountSync', () => {
+  it('lists only the messages inside the sync window on the first pass, fetches the bodies afterwards, and announces no new mail for them', async () => {
+    const { imap, cache, sync, states, arrived, onChanged } = setup()
+    imap.put('INBOX', { subject: '新しい', from: tanaka, to: me, date: new Date(NOW - HOUR), text: '本文A\r\n\r\n> 引用', messageId: '<a@x>' })
+    imap.put('INBOX', { subject: 'HTMLだけ', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), html: '<p>こんにちは<br>世界</p><img src="x">', flags: ['\\Seen'] })
+    imap.put('INBOX', { subject: '古い', from: tanaka, to: me, date: new Date(NOW - 40 * DAY), text: '古い本文' })
+    imap.put('Sent', { subject: '送った', from: me, to: tanaka, date: new Date(NOW - 3 * HOUR), text: '送った本文', attachments: [{ filename: 'a.pdf', type: 'application/pdf', size: 10 }] })
+    sync.start()
+    await sync.syncNow()
+    expect(sync.state).toBe('connected')
+    expect(sync.lastSyncAt).toBe(NOW)
+    expect(states.slice(0, 3).map(([state]) => state)).toEqual(['connecting', 'syncing', 'connected'])
+    expect(states.some(([state]) => state === 'error')).toBe(false)
+    const inbox = cache.list({ view: 'inbox' }).messages
+    expect(inbox.map((m) => m.subject)).toEqual(['新しい', 'HTMLだけ'])
+    expect(inbox[0]).toMatchObject({ unread: true, messageId: '<a@x>', threadId: 'm:<a@x>', from: { name: '田中', address: 't@example.com' }, bodyFetched: false })
+    expect(cache.list({ view: 'sent' }).messages[0]).toMatchObject({ subject: '送った', attachments: [{ filename: 'a.pdf', contentType: 'application/pdf', size: 10 }] })
+    expect(arrived).toEqual([])
+    // Bodies are queued and downloaded on a later tick, so nothing is fetched until the timers advance.
+    expect(imap.calls.some((call) => call.startsWith('download:'))).toBe(false)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(cache.body(inbox[0].id)).toBe('本文A\n\n> 引用')
+    expect(cache.get(inbox[0].id)).toMatchObject({ snippet: '本文A', bodyFetched: true })
+    expect(cache.body(inbox[1].id)).toBe('こんにちは\n世界')
+    expect(cache.body(cache.list({ view: 'sent' }).messages[0].id)).toBe('送った本文')
+    expect(onChanged).toHaveBeenCalled()
+    await sync.stop()
+    expect(imap.calls.at(-1)).toBe('logout')
+    await expect(sync.syncNow()).rejects.toThrow(errorText('mail.errors.sync.stopped'))
+  })
+
+  it('applies only the added, removed and reflagged messages on a later pass, and announces the unread that just arrived as new mail', async () => {
+    const { imap, cache, sync, arrived } = setup()
+    const first = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    const second = imap.put('INBOX', { subject: 'B', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: 'b' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    first.flags = ['\\Seen', '\\Flagged']
+    imap.folders.get('INBOX')!.messages.delete(second.uid)
+    imap.put('INBOX', { subject: '新着', from: tanaka, to: me, date: new Date(NOW - 10 * 60_000), text: 'c' })
+    imap.put('INBOX', { subject: '昔に届いた未読', from: tanaka, to: me, date: new Date(NOW - 3 * DAY), text: 'd' })
+    imap.put('INBOX', { subject: '既読で届いた', from: tanaka, to: me, date: new Date(NOW - 60_000), text: 'e', flags: ['\\Seen'] })
+    await sync.syncNow()
+    const inbox = cache.list({ view: 'inbox' }).messages
+    expect(inbox.map((m) => m.subject)).toEqual(['既読で届いた', '新着', 'A', '昔に届いた未読'])
+    expect(cache.get(messageIdOf('a1', 'inbox', first.uid))).toMatchObject({ unread: false, starred: true })
+    expect(arrived).toHaveLength(1)
+    expect(arrived[0].map((m) => m.subject)).toEqual(['新着'])
+  })
+
+  it('refetches the inbox alone, after a short wait, when mail arrives in the open inbox', async () => {
+    const { imap, cache, sync, arrived } = setup()
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const before = imap.calls.length
+    imap.arrive('INBOX', { subject: 'IDLE で来た', from: tanaka, to: me, date: new Date(NOW), text: 'x' })
+    await vi.advanceTimersByTimeAsync(50)
+    expect(cache.list({ view: 'inbox' }).total).toBe(0)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(cache.list({ view: 'inbox' }).messages[0].subject).toBe('IDLE で来た')
+    expect(arrived[0].map((m) => m.subject)).toEqual(['IDLE で来た'])
+    expect(imap.calls.slice(before).filter((call) => call.startsWith('open:'))).toEqual(['open:INBOX', 'open:INBOX'])
+  })
+
+  it('writes a flag notification carrying a uid straight into the cache, and refetches the folder when the notification has none', async () => {
+    const { imap, cache, sync, onChanged } = setup()
+    const first = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const id = messageIdOf('a1', 'inbox', first.uid)
+    const fetches = imap.calls.filter((call) => call.startsWith('fetch:')).length
+    onChanged.mockClear()
+    imap.emit('flags', { path: 'INBOX', seq: 1, uid: first.uid, flags: new Set(['\\Seen', '\\Flagged']) })
+    expect(cache.get(id)).toMatchObject({ unread: false, starred: true })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(imap.calls.filter((call) => call.startsWith('fetch:')).length).toBe(fetches)
+    // A second notification with the same flags changes nothing.
+    imap.emit('flags', { path: 'INBOX', seq: 1, uid: first.uid, flags: new Set(['\\Seen', '\\Flagged']) })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    // A notification without a uid refetches the folder.
+    first.flags = ['\\Seen']
+    imap.emit('flags', { path: 'INBOX', seq: 1, flags: new Set(['\\Seen']) })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(cache.get(id)).toMatchObject({ unread: false, starred: false })
+    expect(imap.calls.filter((call) => call.startsWith('fetch:')).length).toBe(fetches + 1)
+    // A notification for a folder that is not open is ignored.
+    imap.emit('flags', { path: 'Drafts', seq: 1, uid: 1, flags: new Set() })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(imap.calls.filter((call) => call.startsWith('fetch:')).length).toBe(fetches + 1)
+  })
+
+  it('rewrites nothing on a Gmail resync when nothing changed, and updates a message whose labels changed', async () => {
+    const { imap, cache, sync, onChanged } = setup({ gmail: true })
+    const first = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a', labels: ['\\Inbox'] })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    onChanged.mockClear()
+    await sync.syncNow()
+    expect(onChanged).not.toHaveBeenCalled()
+    first.labels = ['\\Inbox', '\\Important']
+    await sync.syncNow()
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(cache.get(messageIdOf('a1', 'inbox', first.uid))?.labels).toEqual(['\\Inbox', '\\Important'])
+  })
+
+  it('drops and refetches a folder whose UIDVALIDITY changed', async () => {
+    const { imap, cache, sync } = setup()
+    imap.put('INBOX', { uid: 5, subject: '前の世代', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(cache.list({ view: 'inbox' }).messages[0]).toMatchObject({ uid: 5, subject: '前の世代' })
+    const inbox = imap.folders.get('INBOX')!
+    inbox.uidValidity = 2n
+    inbox.messages.clear()
+    imap.put('INBOX', { uid: 5, subject: '新しい世代', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'b' })
+    await sync.syncNow()
+    expect(cache.list({ view: 'inbox' }).messages.map((m) => m.subject)).toEqual(['新しい世代'])
+    expect(cache.uidValidity('a1', 'inbox')).toBe('2')
+  })
+
+  it('uses the thread id and labels the Gmail server reports, and keeps the All Mail copy of an inbox message out of archive', async () => {
+    const { imap, cache, sync } = setup({ gmail: true })
+    imap.put('INBOX', { subject: '見積もりの相談', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: 'q', threadId: '77', labels: ['\\Inbox'], messageId: '<q@x>' })
+    imap.put('Archive', { subject: '見積もりの相談', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: 'q', threadId: '77', labels: ['\\Inbox'], messageId: '<q@x>' })
+    imap.put('Archive', { subject: '片付けた', from: tanaka, to: me, date: new Date(NOW - 5 * HOUR), text: 'z', threadId: '78', labels: ['\\Important'] })
+    imap.put('Archive', { subject: '送信の写し', from: me, to: tanaka, date: new Date(NOW - 6 * HOUR), text: 's', threadId: '77', labels: ['\\Sent'] })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(cache.list({ view: 'inbox' }).messages[0]).toMatchObject({ threadId: 'g:77', labels: ['\\Inbox'] })
+    expect(cache.list({ view: 'archive' }).messages.map((m) => m.subject)).toEqual(['片付けた'])
+    expect(cache.thread('a1', 'g:77').map((m) => m.folder)).toEqual(['inbox'])
+    expect(imap.calls.some((call) => call.startsWith('fetch:Archive'))).toBe(true)
+  })
+
+  it('reports a dropped connection as an error, reconnects after a wait and resyncs, and waits longer while it still cannot connect', async () => {
+    const { imap, cache, sync, states, server } = setup()
+    imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    imap.drop('socket hang up')
+    expect(sync.state).toBe('error')
+    expect(states.at(-1)).toEqual(['error', 'socket hang up'])
+    imap.put('INBOX', { subject: '切断中に届いた', from: tanaka, to: me, date: new Date(NOW), text: 'b' })
+    await vi.advanceTimersByTimeAsync(999)
+    expect(sync.state).toBe('error')
+    await vi.advanceTimersByTimeAsync(2)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sync.state).toBe('connected')
+    expect(cache.list({ view: 'inbox' }).messages.map((m) => m.subject)).toEqual(['切断中に届いた', 'A'])
+    // The reconnect waits 1 second for the first attempt and 5 seconds for the next one.
+    expect(server.instances).toHaveLength(2)
+    server.instances[1].drop('gone')
+    imap.failConnect = new Error('auth failed')
+    await vi.advanceTimersByTimeAsync(1_001)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toContain('auth failed')
+    const connects = () => server.instances.flatMap((client) => client.calls).filter((call) => call === 'connect').length
+    const attemptsBefore = connects()
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(connects()).toBe(attemptsBefore)
+    await vi.advanceTimersByTimeAsync(1_001)
+    expect(connects()).toBe(attemptsBefore + 1)
+    await sync.stop()
+  })
+
+  it('returns a cached body, downloads one that is missing, and throws for a message that is not there', async () => {
+    const { imap, cache, sync } = setup()
+    const mail = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await sync.syncNow()
+    const id = messageIdOf('a1', 'inbox', mail.uid)
+    expect(cache.body(id)).toBeNull()
+    await expect(sync.fetchBody('inbox', mail.uid)).resolves.toBe('a')
+    const downloads = imap.calls.filter((call) => call.startsWith('download:')).length
+    await expect(sync.fetchBody('inbox', mail.uid)).resolves.toBe('a')
+    expect(imap.calls.filter((call) => call.startsWith('download:')).length).toBe(downloads)
+    await expect(sync.fetchBody('inbox', 999)).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    await sync.stop()
+  })
+
+  it('syncs the remaining folders when one cannot be read and keeps the reason', async () => {
+    const { imap, cache, sync } = setup({ account: { folders: { sent: 'Missing', archive: null, trash: null } } })
+    imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe(t('mail.errors.sync.folderFailed', { box: t('mail.boxes.sent'), reason: 'no such mailbox: Missing' }))
+    expect(cache.list({ view: 'inbox' }).total).toBe(1)
+    await sync.stop()
+  })
+})
+
+describe('reading a bodyStructure', () => {
+  it('separates the text and html body parts from the attachments, and numbers a single part 1', () => {
+    const single = bodyPartsOf({ type: 'text/plain', size: 3 })
+    expect(single).toEqual({ parts: { textPart: '1', htmlPart: null }, attachments: [] })
+    const mixed = bodyPartsOf({
+      type: 'multipart/mixed',
+      childNodes: [
+        {
+          type: 'multipart/alternative',
+          childNodes: [
+            { part: '1.1', type: 'text/plain', size: 10 },
+            { part: '1.2', type: 'text/html', size: 20 }
+          ]
+        },
+        { part: '2', type: 'application/pdf', size: 500, disposition: 'attachment', dispositionParameters: { filename: '資料.pdf' } },
+        { part: '3', type: 'image/png', size: 40, parameters: { name: 'logo.png' }, disposition: 'inline' },
+        { part: '4', type: 'text/plain', size: 8, disposition: 'attachment', dispositionParameters: { filename: 'notes.txt' } }
+      ]
+    })
+    expect(mixed.parts).toEqual({ textPart: '1.1', htmlPart: '1.2' })
+    expect(mixed.attachments).toEqual([
+      { filename: '資料.pdf', contentType: 'application/pdf', size: 500 },
+      { filename: 'logo.png', contentType: 'image/png', size: 40 },
+      { filename: 'notes.txt', contentType: 'text/plain', size: 8 }
+    ])
+    expect(bodyPartsOf(undefined)).toEqual({ parts: { textPart: null, htmlPart: null }, attachments: [] })
+  })
+
+  it('turns HTML into plain text, dropping link targets, images and styles', () => {
+    expect(htmlToPlain('<style>p{}</style><p>こんにちは <a href="https://x.example">サイト</a></p><img src="a.png"><script>x()</script>')).toBe('こんにちは サイト')
+  })
+})

@@ -1,0 +1,239 @@
+import { errorText } from '@shared/i18n/error-text'
+import {
+  placeCardId,
+  wmoCondition,
+  zonedDate,
+  type GlobalWeatherLocation,
+  type WeatherData,
+  type WeatherDay
+} from '@shared/weather'
+import { WeatherCache } from './cache'
+
+/**
+ * The weather anywhere outside Japan, from Open-Meteo (https://open-meteo.com). It needs no key and
+ * publishes under CC BY 4.0, which the card's footer credits. It names the sky with the weather codes
+ * of WMO table 4677 and has neither a written overview nor warnings, so the card leaves those out
+ * rather than inventing them.
+ */
+
+const GEOCODING = 'https://geocoding-api.open-meteo.com/v1/search'
+const FORECAST = 'https://api.open-meteo.com/v1/forecast'
+/** How far ahead the card shows, which is the seven columns of its weekly row. */
+const DAYS = 7
+/** The step of the hourly row, which is the step the card of Japan already draws. */
+const HOURS_STEP = 3
+
+const cache = new WeatherCache()
+const json = (text: string): Record<string, unknown> => {
+  const data: unknown = JSON.parse(text)
+  if (!data || typeof data !== 'object' || Array.isArray(data))
+    throw new Error(errorText('cardsWeather.errors.badData'))
+  return data as Record<string, unknown>
+}
+
+interface GeocodedPlace {
+  name?: unknown
+  latitude?: unknown
+  longitude?: unknown
+  timezone?: unknown
+  country?: unknown
+  country_code?: unknown
+  admin1?: unknown
+}
+const text = (value: unknown): string | null => (typeof value === 'string' && value ? value : null)
+const number = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+
+/**
+ * The place a name stands for. The geocoding answers with the best match first, and a name that exists
+ * in several countries (Munich in Germany and in North Dakota) is read as the one in the user's own
+ * region when there is one there, because that is the one the user is most likely asking about.
+ */
+/** Open-Meteo writes miles per hour as "mp/h" (seen on 2026-09-22); everyone else writes mph. The other units are passed on as they are. */
+const windUnit = (unit: string | null): string | null => (unit === 'mp/h' ? 'mph' : unit)
+
+export async function geocodePlace(
+  requested: string,
+  language: string,
+  region: string,
+  signal: AbortSignal
+): Promise<GlobalWeatherLocation> {
+  const url = `${GEOCODING}?name=${encodeURIComponent(requested.trim())}&count=10&language=${encodeURIComponent(language)}&format=json`
+  const results = await cache.read(url, 24 * 3600_000, signal, (body) => {
+    const found = json(body).results
+    return Array.isArray(found) ? (found as GeocodedPlace[]) : []
+  })
+  const usable = results.filter(
+    (place) =>
+      text(place.name) !== null &&
+      number(place.latitude) !== null &&
+      number(place.longitude) !== null &&
+      text(place.timezone) !== null
+  )
+  if (usable.length === 0)
+    throw new Error(errorText('cardsWeather.errors.placeNotFound', { place: requested }))
+  const chosen = usable.find((place) => place.country_code === region) ?? usable[0]
+  return {
+    source: 'open-meteo',
+    requested,
+    cardId: placeCardId(requested),
+    timeZone: text(chosen.timezone)!,
+    name: text(chosen.name)!,
+    admin: text(chosen.admin1),
+    country: text(chosen.country),
+    countryCode: text(chosen.country_code),
+    latitude: number(chosen.latitude)!,
+    longitude: number(chosen.longitude)!
+  }
+}
+
+interface Series {
+  time: string[]
+  [field: string]: unknown
+}
+const series = (value: unknown): Series => {
+  const found = value as Series | undefined
+  if (!found || !Array.isArray(found.time)) throw new Error(errorText('cardsWeather.errors.badData'))
+  return found
+}
+const column = (from: Series, field: string): unknown[] =>
+  Array.isArray(from[field]) ? (from[field] as unknown[]) : []
+
+/** `+09:00` for the offset the forecast's own hours are written in, which its times carry no sign of. */
+function offsetTag(seconds: number): string {
+  const pad = (value: number): string => String(Math.floor(value)).padStart(2, '0')
+  return `${seconds < 0 ? '-' : '+'}${pad(Math.abs(seconds) / 3600)}:${pad((Math.abs(seconds) % 3600) / 60)}`
+}
+/** Open-Meteo writes local times without a zone (`2026-09-21T21:30`), so the offset is added here. */
+const instant = (local: string, offset: string): string =>
+  `${local}${local.length === 16 ? ':00' : ''}${offset}`
+
+export interface GlobalWeatherRequest {
+  place: string
+  date: 'today' | 'tomorrow'
+  /** The language the place is named in, which is the language of the conversation. */
+  language: string
+  /** The region the user set: it decides both which of two places of a name is meant and the units. */
+  region: string
+}
+
+export async function fetchGlobalWeather(
+  request: GlobalWeatherRequest,
+  signal: AbortSignal
+): Promise<WeatherData> {
+  const location = await geocodePlace(request.place, request.language, request.region, signal)
+  signal.throwIfAborted()
+  // Fahrenheit and miles per hour are what the United States reads; every other region takes the
+  // metric answer, which is Open-Meteo's own default.
+  const imperial = request.region === 'US'
+  const url =
+    `${FORECAST}?latitude=${location.latitude}&longitude=${location.longitude}` +
+    `&timezone=auto&forecast_days=${DAYS}` +
+    '&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m' +
+    '&hourly=temperature_2m,weather_code,precipitation_probability' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+    (imperial ? '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch' : '')
+  const now = Date.now()
+  const fetchedAt = new Date(now).toISOString()
+  const data = await cache.read(url, 5 * 60_000, signal, json)
+  signal.throwIfAborted()
+
+  const offsetSeconds = number(data.utc_offset_seconds)
+  const timeZone = text(data.timezone)
+  if (offsetSeconds === null || timeZone === null)
+    throw new Error(errorText('cardsWeather.errors.badData'))
+  const offset = offsetTag(offsetSeconds)
+  const daily = series(data.daily)
+  const today = zonedDate(now, timeZone)
+  const todayIndex = daily.time.indexOf(today)
+  const targetIndex = todayIndex + (request.date === 'tomorrow' ? 1 : 0)
+  const targetDate = daily.time[targetIndex]
+  if (todayIndex < 0 || targetDate === undefined)
+    throw new Error(errorText('cardsWeather.errors.badData'))
+
+  const dailyCodes = column(daily, 'weather_code')
+  const dailyMax = column(daily, 'temperature_2m_max')
+  const dailyMin = column(daily, 'temperature_2m_min')
+  const dailyPercent = column(daily, 'precipitation_probability_max')
+  const days: WeatherDay[] = daily.time.map((date, i) => ({
+    date,
+    condition: wmoCondition(dailyCodes[i]),
+    max: number(dailyMax[i]),
+    min: number(dailyMin[i]),
+    percent: number(dailyPercent[i])
+  }))
+
+  const hours = series(data.hourly)
+  const hourCodes = column(hours, 'weather_code')
+  const hourTemperature = column(hours, 'temperature_2m')
+  const hourPercent = column(hours, 'precipitation_probability')
+  // The card shows the target day from the hour that is still running, as the card of Japan does.
+  const kept = hours.time.flatMap((local, i) => {
+    if (local.slice(0, 10) !== targetDate) return []
+    const at = Date.parse(instant(local, offset))
+    if (at + 3600_000 <= now) return []
+    return [{ at, index: i }]
+  })
+  const hourly: WeatherData['hourly'] = []
+  const precipitationPeriods: WeatherData['precipitationPeriods'] = []
+  for (let step = 0; step < kept.length; step += HOURS_STEP) {
+    const { at, index } = kept[step]
+    const until = at + HOURS_STEP * 3600_000
+    hourly.push({
+      at: new Date(at).toISOString(),
+      until: new Date(until).toISOString(),
+      temperature: number(hourTemperature[index]),
+      condition: wmoCondition(hourCodes[index])
+    })
+    // Open-Meteo gives a probability for each single hour, so the value shown for the period is the
+    // highest of the hours it covers rather than a probability computed for the period itself.
+    const inside = kept
+      .slice(step, step + HOURS_STEP)
+      .map((hour) => number(hourPercent[hour.index]))
+      .filter((value): value is number => value !== null)
+    precipitationPeriods.push({
+      from: new Date(at).toISOString(),
+      to: new Date(until).toISOString(),
+      percent: inside.length ? Math.max(...inside) : null
+    })
+  }
+
+  const current = (data.current ?? {}) as Record<string, unknown>
+  const currentAt = text(current.time)
+  const units = (data.hourly_units ?? {}) as Record<string, unknown>
+  const currentUnits = (data.current_units ?? {}) as Record<string, unknown>
+  const day = days[targetIndex]
+  if (!day.condition && day.max === null && day.min === null && hourly.length === 0)
+    throw new Error(errorText('cardsWeather.errors.unavailable'))
+  return {
+    location,
+    date: request.date,
+    targetDate,
+    fetchedAt,
+    units: {
+      temperature: text(units.temperature_2m) ?? '°C',
+      wind: windUnit(text(currentUnits.wind_speed_10m))
+    },
+    // Tomorrow's card shows no reading of the present, the same rule the card of Japan follows.
+    observation:
+      request.date === 'today' && currentAt
+        ? {
+            at: instant(currentAt, offset),
+            // Open-Meteo models the current hour on a grid instead of reading it off a station.
+            station: null,
+            temperature: number(current.temperature_2m),
+            humidity: number(current.relative_humidity_2m),
+            wind: {
+              speed: number(current.wind_speed_10m),
+              direction: number(current.wind_direction_10m)
+            }
+          }
+        : null,
+    hourly,
+    temperaturePoint: null,
+    precipitationPeriods,
+    day,
+    daily: days,
+    sources: [{ product: 'forecast', url, fetchedAt, issuedAt: null, status: 'ready' }]
+  }
+}

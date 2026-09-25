@@ -1,0 +1,85 @@
+import { describe, expect, it } from 'vitest'
+import { CLAUDE_READONLY_TOOLS, buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
+import { errorText } from '@shared/i18n/error-text'
+
+const codex = { engine: 'codex' as const, prompt: '調べて', cwd: '/repo', readonly: true, sessionId: 'thread-1' }
+const claude = { engine: 'claude' as const, prompt: '調べて', cwd: '/repo', readonly: false, sessionId: 'sess-1' }
+
+describe('buildStartArgs', () => {
+  it('passes the cwd and the sandbox to codex exec --json, read-only for a read-only job', () => {
+    expect(buildStartArgs(codex)).toEqual([
+      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '-s', 'read-only', '調べて'
+    ])
+    expect(buildStartArgs({ ...codex, readonly: false })).toEqual([
+      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '--approve-for-me', '調べて'
+    ])
+  })
+
+  it('runs claude with stream-json, auto permissions when it may write, and plan mode with read-only tools otherwise', () => {
+    expect(buildStartArgs(claude)).toEqual(['-p', '調べて', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'auto'])
+    const readonly = buildStartArgs({ ...claude, readonly: true })
+    expect(readonly).toContain('plan')
+    expect(readonly).toContain(CLAUDE_READONLY_TOOLS)
+    expect(CLAUDE_READONLY_TOOLS).not.toMatch(/Bash|Write|Edit/)
+  })
+})
+
+describe('buildResumeArgs', () => {
+  it('resumes codex with exec resume <thread_id> <prompt> and passes the sandbox through -c', () => {
+    expect(buildResumeArgs(codex, '観点を足して')).toEqual([
+      'exec', 'resume', '--json', '--ignore-user-config', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'thread-1', '観点を足して'
+    ])
+  })
+
+  it('resumes a writing codex job with the settings behind --approve-for-me, which resume does not take', () => {
+    const args = buildResumeArgs({ ...codex, readonly: false }, '続き')
+    expect(args).not.toContain('--approve-for-me')
+    expect(args.filter((arg) => arg.includes('='))).toEqual(['sandbox_mode="workspace-write"', 'approval_policy="on-request"', 'approvals_reviewer="auto_review"'])
+    expect(args.slice(-2)).toEqual(['thread-1', '続き'])
+  })
+
+  it('resumes claude with --resume <session_id> and keeps the same permissions', () => {
+    const args = buildResumeArgs({ ...claude, readonly: true }, '観点を足して')
+    expect(args.slice(0, 4)).toEqual(['-p', '観点を足して', '--resume', 'sess-1'])
+    expect(args).toContain('plan')
+  })
+
+  it('throws when the job has no session ID', () => {
+    expect(() => buildResumeArgs({ ...codex, sessionId: undefined }, 'x')).toThrow(errorText('jobs.continue.noSession'))
+  })
+})
+
+describe('a memory curation job, which starts with nobody to confirm it', () => {
+  const curation = { memoryCuration: { through: '2026-09-22', applied: false }, readonly: false, cwd: '/memory/wt' }
+
+  it('never runs claude in auto mode: restricted, refusing what is not allowed, with the validator as the only command', () => {
+    for (const args of [buildStartArgs({ ...claude, ...curation }), buildResumeArgs({ ...claude, ...curation }, '続き')]) {
+      expect(args).not.toContain('auto')
+      expect(args).toContain('--restricted')
+      expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk')
+      const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'))
+      expect(allowed.filter((rule) => rule.startsWith('Bash'))).toEqual([
+        'Bash(node .claude/skills/memory-curation/scripts/validate.mjs *)',
+        'Bash(node /memory/wt/.claude/skills/memory-curation/scripts/validate.mjs *)'
+      ])
+      expect(allowed).not.toContain('WebFetch')
+      expect(args.slice(args.indexOf('--disallowedTools') + 1)).toContain('Edit(./.claude/skills/**)')
+    }
+  })
+
+  it('runs codex in the workspace-write sandbox with no approvals, never through the automatic review', () => {
+    for (const args of [buildStartArgs({ ...codex, ...curation }), buildResumeArgs({ ...codex, ...curation }, '続き')]) {
+      expect(args).not.toContain('--approve-for-me')
+      expect(args.filter((arg) => arg.includes('='))).toEqual(['sandbox_mode="workspace-write"', 'approval_policy="never"'])
+    }
+  })
+})
+
+describe('displayCommand', () => {
+  it('shows a different command for start and for resume, and truncates a long prompt', () => {
+    expect(displayCommand(codex)).toBe('$ codex exec -s read-only "調べて"')
+    expect(displayCommand({ ...codex, readonly: false })).toBe('$ codex exec --approve-for-me "調べて"')
+    expect(displayCommand(claude, '続き')).toBe('$ claude -p --resume sess-1 "続き"')
+    expect(displayCommand({ ...claude, prompt: 'あ'.repeat(100) })).toContain('…')
+  })
+})

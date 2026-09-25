@@ -1,0 +1,116 @@
+/* simple: daylight on a warm white wall. Translucent paper cards with soft shadows, muted colours, and a
+   centred card hero. */
+:root[data-theme='simple'] {
+  --color-holo-bg: #e6e0d8;
+  --color-holo-surface: #fbf9f6;
+  --color-holo-line: rgba(60, 48, 36, 0.14);
+  --color-holo-cyan: #2f7f95;
+  --color-holo-violet: #6b5fb5;
+  --color-holo-peach: #c0703a;
+  --color-holo-mint: #3f8f5f;
+  --color-holo-red: #c24a3f;
+  --color-holo-text: #2a2622;
+  --color-holo-muted: #6b635a;
+  --color-holo-dim: #9a9189;
+  --shadow-glass: 0 1px 2px rgba(60, 48, 36, 0.06), 0 12px 30px rgba(60, 48, 36, 0.08);
+  --ui-text: #2b2723;
+  --ui-text-strong: #16130f;
+  --ui-text-soft: #4a443d;
+  --ui-text-muted: #6e665d;
+  --ui-text-faint: #8e867c;
+  --ui-heading: #3b352e;
+  --ui-link: #2c6f86;
+  --ui-kicker: #8a7f72;
+  --ui-glow: transparent;
+  --ui-line: #3c302422;
+  --ui-divider: #3c302418;
+  --ui-line-active: #2c6f8680;
+  --ui-index: #8a7f72;
+  --ui-box: #ffffffb0;
+  --ui-box-highlight: #ffffff;
+  --ui-box-foot: #f6f3ef;
+  --ui-control: #fffdfa;
+  --ui-field: #fffdfa;
+  --ui-tone-cyan-text: #1f6b80;
+  --ui-tone-mint-text: #2e7a4c;
+  --ui-tone-peach-text: #9a5424;
+  --ui-tone-red-text: #a8382e;
+  --ui-tone-gold: #9a7314;
+  --ui-box-radius: 12px;
+  --ui-control-radius: 9px;
+  --card-radius: 14px;
+  --card-focus-radius: 20px;
+  --app-background: #e6e0d8 var(--app-picture-simple) center / cover no-repeat;
+  --ui-glass: rgba(251, 249, 246, 0.72);
+  --ui-panel: rgba(252, 250, 247, 0.9);
+  --ui-panel-border: #3c302420;
+  --ui-panel-shadow: 0 1px 2px rgba(60, 48, 36, 0.06), 0 16px 40px rgba(60, 48, 36, 0.1);
+  --ui-panel-radius: 18px;
+  --ui-focus-ring: #2c6f86;
+  --card-kicker-font: inherit;
+  --card-kicker-size: 10px;
+  --card-kicker-weight: 600;
+  --card-kicker-spacing: 0.14em;
+  --card-number-weight: 300;
+  --card-number-scale: 0.92;
+  --card-hero-align: center;
+
+  --ui-glow-strength: 0;
+  --ui-on-accent: #ffffff;
+  --ui-color-scheme: light;
+  --ui-raised: #fffdfa;
+  --ui-raised-lifted: #fffdfa;
+  --ui-raised-shadow: 0 1px 2px rgba(60, 48, 36, 0.08), 0 2px 6px rgba(60, 48, 36, 0.06);
+  --ui-raised-shadow-strong: 0 1px 2px rgba(60, 48, 36, 0.1), 0 4px 12px rgba(60, 48, 36, 0.12);
+  --ui-lifted-shadow: 0 18px 40px rgba(60, 48, 36, 0.22);
+  --cal-event-1: #2e7d93;
+  --cal-event-2: #6a5cae;
+  --cal-event-3: #377f53;
+  --cal-event-4: #b0612c;
+  --cal-event-5: #b8463c;
+  --cal-event-6: #2b7d74;
+  --cal-event-ink: #ffffff;
+  --cal-event-ring: #fffdfa;
+  --cal-now: #d2463a;
+  --cal-saturday: var(--color-holo-cyan);
+
+  --viewer-frame: #ffffffb3;
+  --viewer-bar: #faf8f5;
+  --viewer-raised: #eee8e0;
+  --viewer-page-shadow: 0 1px 3px rgba(60, 48, 36, 0.16), 0 4px 14px rgba(60, 48, 36, 0.1);
+  --viewer-wave: #a99d8e;
+  --code-comment: #857c71;
+  --code-keyword: #2a6496;
+  --code-string: #3b7d45;
+  --code-number: #a8581c;
+  --code-function: #8a6410;
+  --code-type: #1d7470;
+  --code-property: #5a4e9e;
+
+  --ui-halo: transparent;
+  --ui-scrim: rgba(60, 48, 36, 0.22);
+  --ui-shade: none;
+  --ui-brand: linear-gradient(100deg, #2b2723, #6e665d);
+  --ui-backing: transparent;
+  --ui-shadow-color: #3c3024;
+  --hud-bar-track: #3c30241a;
+  --hud-bar-1: #8fbcc6;
+  --hud-bar-2: #2f7f95;
+  --hud-bar-3: #6b5fb5;
+  --hud-bar-4: #a795d6;
+  --hud-idle-text: var(--ui-text-muted);
+  --boot-background: radial-gradient(ellipse at 50% 40%, #fbf9f6 0%, #e6e0d8 70%);
+
+  --ui-sheet: #fdfcfa;
+  --ui-sheet-border: #3c302426;
+  --ui-sheet-shadow: 0 1px 2px rgba(60, 48, 36, 0.06), 0 16px 40px rgba(60, 48, 36, 0.12);
+  --ui-tone-violet-text: #5a4f9e;
+}
+:root[data-theme='simple'] :is(.panel-card, .panel-focus) {
+  --card-accent: oklch(from var(--card-hue) 0.5 calc(c * 0.7) h);
+  --card-border: #3c302420;
+  --card-background: oklch(from var(--card-hue) 0.985 calc(c * 0.05) h / 0.86);
+  --card-shadow:
+    0 1px 2px rgba(60, 48, 36, 0.06),
+    0 12px 30px rgba(60, 48, 36, 0.08);
+}

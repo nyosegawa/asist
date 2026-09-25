@@ -1,0 +1,140 @@
+/* files card. The inner frame (.fv-frame) lives in viewers.css. Measured heights: a single markdown file
+   l about 560px / m about 470px / s about 350px, a six-image gallery l about 470px, an eight-entry list
+   l about 520px. */
+.fl-card {
+  --card-hue: #5fd2c9;
+  --card-focus-width: 900px;
+}
+.fl .card-hero h3 {
+  overflow-wrap: anywhere;
+}
+
+.fl-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+}
+.fl[data-size='m'] .fl-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+.fl[data-size='s'] .fl-grid {
+  grid-template-columns: repeat(2, 1fr);
+  padding: 8px 10px;
+}
+.fl-thumb {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+.fl-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--color-holo-bg);
+  object-fit: cover;
+  transition: border-color 0.2s;
+}
+.fl-thumb:hover img,
+.fl-thumb:focus-visible img {
+  border-color: var(--ui-line-active);
+}
+.fl-thumb span {
+  overflow: hidden;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fl-item {
+  align-items: center;
+}
+.fl-item[data-error='true'] .card-row-meta {
+  color: var(--ui-tone-red-text);
+}
+.fl-item-thumb {
+  width: 40px;
+  height: 30px;
+  flex: none;
+  border: 1px solid var(--ui-line);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.fl-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  min-width: 0;
+}
+.fl-pager-button {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  color: var(--ui-heading);
+  cursor: pointer;
+}
+.fl-pager-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.fl-pager-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fl-pager-names {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: none;
+}
+.fl-pager-names button {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fl-pager-names button[data-current='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.4);
+  color: var(--ui-text-strong);
+}
+.fl-pager-names button:hover {
+  color: var(--ui-text-strong);
+}
+
+.fv-entry {
+  align-items: center;
+}
+.fv-entry-icon {
+  /* Inline display overrides svg { display: block } in card.css so the icon stays on the name's line. */
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: -2px;
+  color: var(--ui-link);
+}
+.fv-entry .card-row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

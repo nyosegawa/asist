@@ -1,0 +1,23 @@
+/* Map card. The Google embed keeps its own colors, for the reason given in map.tsx. The height comes from
+   the map frame, and even s stays above the Embed API's 200px minimum. */
+.mp-card {
+  --card-focus-width: 900px;
+}
+
+.mp-frame {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: 12px;
+  background: var(--color-holo-surface);
+}
+.mp[data-size='m'] .mp-frame {
+  height: 340px;
+}
+.mp[data-size='s'] .mp-frame {
+  height: 260px;
+}
+.mp[data-size='focus'] .mp-frame {
+  height: 480px;
+}

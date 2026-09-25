@@ -1,0 +1,167 @@
+/* The values a theme swaps. The UI names its colours, surfaces, radii, glows, the app background and the
+   type of card headings through these tokens and never writes them itself. This file holds the values of
+   future, which every other theme starts from, and the rules shared by all themes; each other theme is one
+   file, themes/<name>/theme.css, beside its picture, with one :root[data-theme] block and one card frame
+   block. A theme sets every token itself except the card headings, which may keep future's type
+   (tests/themes.test.ts). It decides, in this order:
+   - the palette (--color-holo-*, read by Tailwind classes too), whose names are roles, not hues: cyan is the
+     main accent (links, focus, today, listening), mint success and the primary action, peach speaking and
+     warm notices, red errors, deleting and Sunday, violet thinking; then the text roles (--ui-text*,
+     heading, link);
+   - lines and surfaces: --ui-glass for bars and dialogs, --ui-panel for a mini app, --ui-sheet for a pane
+     over a list, --ui-box for a box inside a card or screen, --ui-raised for an item standing on a box, and
+     the field and control fills;
+   - radii, --ui-glow-strength (1 keeps every glow of future, 0 removes them) and --app-background;
+   - the card frame and the card headings (--card-kicker-*, title, number, hero alignment). Each card keeps
+     its own hue in every theme so it stays recognisable; a theme decides how strongly the hue shows. The
+     headings change heights, so npm run demo:fit checks every theme;
+   - the colours of one area: the calendars, code highlighting, the latency meters and the boot screen.
+   The pictures behind the weather and clock cards are night scenes in every theme, so .ui-on-scene, put on
+   what is drawn over them, keeps the text of future there. */
+@import './themes/simple/theme.css';
+@import './themes/pop/theme.css';
+@import './themes/cool/theme.css';
+
+:root,
+.ui-on-scene {
+  --ui-text: #dceaff;
+  --ui-text-strong: #eaf4ff;
+  --ui-text-soft: #bfd3eb;
+  --ui-text-muted: #94abc5;
+  --ui-text-faint: #7f9bbd;
+  --ui-heading: #b7d9f2;
+  --ui-link: #a0eaff;
+  --ui-kicker: rgba(111, 231, 255, 0.75);
+  --ui-glow: #001327;
+  --ui-line: #4c81ad55;
+  --ui-divider: #6ea1c52b;
+  --ui-line-active: #74c8ff88;
+  --ui-index: #74c8ff99;
+  --ui-box: linear-gradient(145deg, #102c4388, #071426bd);
+  --ui-box-highlight: #ace7ff18;
+  --ui-box-foot: #0a1a2c66;
+  --ui-control: #0c1f3388;
+  --ui-field: #061223aa;
+  --ui-tone-cyan-text: #8ff0ff;
+  --ui-tone-mint-text: #9dffc6;
+  --ui-tone-peach-text: #ffcda6;
+  --ui-tone-red-text: #ffb0b0;
+}
+
+:root {
+  --ui-tone-gold: #ffd27a;
+  --ui-box-radius: 13px;
+  --ui-control-radius: 10px;
+  --card-radius: 16px;
+  --card-focus-radius: 24px;
+  /* The picture of every theme, which the theme picker in the settings shows side by side. */
+  --app-picture-future: url('./holo/background.jpg');
+  --app-picture-simple: url('./themes/simple/background.webp');
+  --app-picture-pop: url('./themes/pop/background.webp');
+  --app-picture-cool: url('./themes/cool/background.webp');
+  --app-background: #030813 var(--app-picture-future) center bottom / cover no-repeat;
+  --ui-glass: linear-gradient(165deg, rgba(22, 34, 66, 0.72), rgba(8, 12, 26, 0.68));
+  --ui-panel: linear-gradient(145deg, #0f2034e8, #071323dd);
+  --ui-panel-border: #548abd66;
+  --ui-panel-shadow: inset 0 1px 0 #a8d6ff15, 0 18px 44px #0005;
+  --ui-panel-radius: 20px;
+  --ui-focus-ring: #9aeaff;
+  --card-kicker-font: var(--font-mono);
+  --card-kicker-size: 9px;
+  --card-kicker-weight: 400;
+  --card-kicker-spacing: 0.3em;
+  /* Left without a value, so the kicker falls back to --ui-kicker where it is drawn, and over a scene that is
+     future's. A var() written here would be resolved once, on <html>, in the theme's colour. */
+  --card-kicker-ink: initial;
+  --card-kicker-fill: transparent;
+  --card-kicker-padding: 0;
+  --card-title-font: inherit;
+  --card-title-weight: 600;
+  --card-title-scale: 1;
+  --card-number-font: inherit;
+  --card-number-weight: 200;
+  --card-number-scale: 1;
+  --card-hero-align: start;
+
+  /* Raised items, the text on an accent fill, the colours of the calendars, the current-time line and Saturday, which
+     cool gives a muted blue since its cyan is nearly white. */
+  --ui-glow-strength: 1;
+  --ui-on-accent: #05070f;
+  --ui-color-scheme: dark;
+  --ui-raised: linear-gradient(160deg, rgba(23, 40, 70, 0.9), rgba(10, 20, 38, 0.92));
+  --ui-raised-lifted: linear-gradient(160deg, rgba(31, 52, 88, 0.98), rgba(14, 26, 48, 0.98));
+  --ui-raised-shadow: 0 6px 16px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --ui-raised-shadow-strong: 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --ui-lifted-shadow: 0 24px 48px rgba(0, 0, 0, 0.6);
+  --cal-event-1: #6fe7ff;
+  --cal-event-2: #9d8cff;
+  --cal-event-3: #7cffb2;
+  --cal-event-4: #ffb27a;
+  --cal-event-5: #ff8a8a;
+  --cal-event-6: #54d8c8;
+  --cal-event-ink: #071019;
+  --cal-event-ring: rgba(5, 7, 15, 0.55);
+  --cal-now: #ff5a5a;
+  --cal-saturday: var(--color-holo-cyan);
+
+  /* File viewers and code highlighting. */
+  --viewer-frame: #06122266;
+  --viewer-bar: #07142a;
+  --viewer-raised: #0d2036;
+  --viewer-page-shadow: 0 1px 8px #00000080;
+  --viewer-wave: #4c81ad;
+  --code-comment: #7d93ad;
+  --code-keyword: #7fc6ff;
+  --code-string: #a8e6a1;
+  --code-number: #ffcf8a;
+  --code-function: #f2d38a;
+  --code-type: #7fe0d6;
+  --code-property: #bfe6ff;
+
+  /* The conversation shell: halos, the scrim behind a dialog, the brand, the backing behind text over a busy picture, the latency meters, the text of the microphone and state chip at rest, and the boot screen. */
+  --ui-halo: #4f86ff;
+  --ui-scrim: rgba(3, 7, 16, 0.55);
+  --ui-shade: linear-gradient(180deg, #03091422, transparent 70%, #02061055);
+  --ui-brand: linear-gradient(100deg, #9af5ff, #56dbff 55%, #b4a5ff);
+  --ui-backing: transparent;
+  --ui-shadow-color: #000000;
+  --hud-bar-track: #14345d;
+  --hud-bar-1: #8deeff;
+  --hud-bar-2: #439afa;
+  --hud-bar-3: #b660f1;
+  --hud-bar-4: #e884ff;
+  --hud-idle-text: var(--color-holo-dim);
+  --boot-background: radial-gradient(ellipse at 50% 40%, #0c1a33 0%, #05070f 70%);
+
+  /* A sheet is a pane opened over a list: the mail reading pane, the calendar popover and the task editor. */
+  --ui-sheet: linear-gradient(165deg, rgba(24, 36, 68, 0.97), rgba(9, 13, 28, 0.97));
+  --ui-sheet-border: rgba(111, 231, 255, 0.26);
+  --ui-sheet-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  --ui-tone-violet-text: #d5ccff;
+}
+
+/* color is inherited as the value worked out on the ancestor, so the scene's text has to name it again. */
+.ui-on-scene {
+  color: var(--ui-text);
+}
+
+/* The frame of every card, derived from the card's hue. The hue is set on the same element by the card's
+   class, and :where keeps this default below that class. */
+:where(.panel-card, .panel-focus) {
+  --card-hue: #538cc5;
+}
+.panel-card,
+.panel-focus {
+  --card-accent: var(--card-hue);
+  --card-border: oklch(from var(--card-hue) l c h / 0.4);
+  --card-background: oklch(from var(--card-hue) 0.2 calc(c * 0.4) h);
+  --card-shadow:
+    inset 1px 0 0 oklch(from var(--card-hue) calc(l + 0.08) c h / 0.25),
+    0 0 24px oklch(from var(--card-hue) l c h / 0.09);
+}
+
+/* The stars and the sweeping line belong to the night sky of future. */
+:root:not([data-theme='future']) .starfield,
+:root:not([data-theme='future']) .sheen::before {
+  display: none;
+}

@@ -1,0 +1,59 @@
+/* The HTML page and its source. The tabs stay at the top of the frame, and in a card the page fills the
+   rest of the frame's height, so the card is exactly as tall as with any other viewer. */
+.fv-html .fv-scroll {
+  --fv-html-tabs: 32px;
+}
+.fv-html-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 4px;
+  height: var(--fv-html-tabs);
+  margin: 0;
+  padding: 6px 10px 4px;
+  list-style: none;
+  background: var(--viewer-bar);
+}
+.fv-html-tabs button {
+  padding: 2px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fv-html-tabs button[data-current='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.4);
+  background: var(--viewer-raised);
+  color: var(--ui-text-strong);
+}
+.fv-html-tabs button:hover {
+  color: var(--ui-text-strong);
+}
+/* A page that sets no background of its own is transparent inside a frame, and its default black text
+   would sit on the card's dark background, so the frame gives it the white a browser would. */
+.fv-html-page {
+  display: block;
+  width: 100%;
+  height: calc(var(--fv-max) - var(--fv-html-tabs) - 2px);
+  border: 0;
+  background: #fff;
+}
+/* The focus overlay is at most 82vh tall, and its heading, the tabs and the Finder button take about
+   270px of that (measured at l, 1440x900, 2026-09-23), so the page and the button both stay in view. */
+.fv-frame[data-mode='focus'] .fv-html-page {
+  height: max(240px, calc(82vh - 280px));
+}
+.fv-html-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+.fv-html-blocked .fv-note {
+  padding: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}

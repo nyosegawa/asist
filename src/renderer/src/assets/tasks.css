@@ -1,0 +1,702 @@
+/*
+ * The tasks workspace: a board of three columns, a list grouped by due date, and an editor on the right.
+ * Sizes and colors follow the calendar workspace (calendar.css). The column colors are light blue for
+ * "やること" (to do), orange for "進行中" (in progress) and green for "完了" (done).
+ */
+.tk-focus {
+  gap: 14px;
+}
+.tk-root {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 2px;
+}
+.tk-add {
+  display: flex;
+  flex: 1;
+  max-width: 520px;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-field);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tk-add:focus-within {
+  border-color: var(--ui-line-active);
+  box-shadow: 0 0 0 3px rgb(from var(--color-holo-cyan) r g b / 0.12);
+}
+.tk-add > svg {
+  flex-shrink: 0;
+  color: var(--color-holo-cyan);
+}
+.tk-add input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  color: var(--color-holo-text);
+}
+.tk-add input::placeholder {
+  color: var(--color-holo-dim);
+}
+.tk-add input:focus {
+  outline: none;
+}
+.tk-add kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--ui-line);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-holo-muted);
+}
+.tk-stats {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tk-stats li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  white-space: nowrap;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-holo-muted);
+  font-variant-numeric: tabular-nums;
+}
+.tk-stats li b {
+  font-weight: 500;
+  color: var(--color-holo-text);
+}
+.tk-stats li[data-tone='peach'] {
+  border-color: rgb(from var(--color-holo-peach) r g b / 0.33);
+  color: var(--ui-tone-peach-text);
+}
+.tk-stats li[data-tone='peach'] b {
+  color: var(--ui-tone-peach-text);
+}
+.tk-stats li[data-tone='red'] {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.4);
+  color: var(--ui-tone-red-text);
+}
+.tk-stats li[data-tone='red'] b {
+  color: var(--ui-tone-red-text);
+}
+.tk-views,
+.tk-editor-status {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+}
+.tk-views {
+  margin-left: auto;
+}
+.tk-views button,
+.tk-editor-status button {
+  padding: 6px 16px;
+  white-space: nowrap;
+  border-left: 1px solid var(--ui-divider);
+  font-size: 13px;
+  color: var(--color-holo-muted);
+}
+.tk-views button:first-child,
+.tk-editor-status button:first-child {
+  border-left: 0;
+}
+.tk-views button:hover,
+.tk-editor-status button:hover {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.06);
+  color: var(--color-holo-text);
+}
+.tk-views button[aria-pressed='true'],
+.tk-editor-status button[aria-pressed='true'] {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.16);
+  color: var(--color-holo-cyan);
+}
+
+.tk-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  gap: 16px;
+}
+.tk-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.tk-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-holo-muted);
+}
+.tk-notice small {
+  font-size: 12px;
+  color: var(--color-holo-dim);
+}
+
+.tk-board {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.tk-column {
+  --tk-column: var(--color-holo-cyan);
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-box);
+  transition: border-color 0.15s, background 0.15s;
+}
+.tk-column[data-status='doing'] {
+  --tk-column: var(--color-holo-peach);
+}
+.tk-column[data-status='done'] {
+  --tk-column: var(--color-holo-mint);
+}
+.tk-column[data-over] {
+  border-color: color-mix(in srgb, var(--tk-column) 60%, transparent);
+  background:
+    linear-gradient(rgb(from var(--tk-column) r g b / 0.07), rgb(from var(--tk-column) r g b / 0.07)),
+    var(--ui-box);
+}
+.tk-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 8px;
+}
+.tk-column-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--color-holo-text);
+}
+.tk-column-head h3::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tk-column);
+  box-shadow: 0 0 8px rgb(from var(--tk-column) r g b / var(--ui-glow-strength));
+}
+.tk-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgb(from var(--color-holo-cyan) r g b / 0.08);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-holo-muted);
+}
+.tk-column-tool {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 3px 9px;
+  white-space: nowrap;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+  transition: color 0.15s, background 0.15s;
+}
+.tk-column-tool:hover {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+  color: var(--color-holo-text);
+}
+.tk-column-body {
+  display: flex;
+  min-height: 64px;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.tk-column-empty {
+  margin: auto 0;
+  padding: 18px 12px;
+  border: 1px dashed var(--ui-line);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-holo-dim);
+}
+
+.tk-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-box-radius);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-raised-shadow);
+  text-align: left;
+  cursor: grab;
+  touch-action: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.tk-card:hover {
+  border-color: var(--ui-line-active);
+}
+.tk-card:focus-visible {
+  outline: 2px solid var(--ui-focus-ring);
+  outline-offset: 2px;
+}
+.tk-card[data-selected] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.7);
+  box-shadow: 0 0 0 1px rgb(from var(--color-holo-cyan) r g b / 0.35), var(--ui-raised-shadow-strong);
+}
+/* The place a dragged card came from keeps only a dashed outline, because the copy that follows the
+   pointer is drawn separately. */
+.tk-card[data-dragging] {
+  border-style: dashed;
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.35);
+  background: rgb(from var(--color-holo-cyan) r g b / 0.04);
+  box-shadow: none;
+}
+.tk-card[data-dragging] > * {
+  opacity: 0.18;
+}
+/* The copy that follows the pointer is rendered directly under document.body, so it gets a deeper shadow
+   to look lifted and only a slight tilt. */
+.tk-card.is-overlay {
+  cursor: grabbing;
+  transform: rotate(-1deg) scale(1.02);
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  background: var(--ui-raised-lifted);
+  box-shadow: var(--ui-lifted-shadow), 0 0 0 1px rgb(from var(--color-holo-cyan) r g b / 0.35), 0 0 28px rgb(from var(--color-holo-cyan) r g b / calc(0.18 * var(--ui-glow-strength)));
+}
+/* While a card is being dragged, the grabbing cursor applies everywhere, not only over the card. */
+body:has(.tk-card.is-overlay),
+body:has(.tk-card.is-overlay) .tk-root * {
+  cursor: grabbing;
+}
+.tk-card-title {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-holo-text);
+  overflow-wrap: anywhere;
+}
+.tk-card[data-status='done'] .tk-card-title {
+  color: var(--color-holo-muted);
+  text-decoration: line-through;
+  text-decoration-color: rgb(from var(--color-holo-muted) r g b / 0.55);
+}
+.tk-card-meta {
+  display: flex;
+  min-height: 16px;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.tk-card-meta svg {
+  color: var(--color-holo-dim);
+}
+
+/* The due-date chip, shared by the board, the list and the panel card. */
+.tk-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--color-holo-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tk-due[data-state='overdue'] {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.4);
+  background: rgb(from var(--color-holo-red) r g b / 0.08);
+  color: var(--ui-tone-red-text);
+}
+.tk-due[data-state='today'] {
+  border-color: rgb(from var(--color-holo-peach) r g b / 0.4);
+  background: rgb(from var(--color-holo-peach) r g b / 0.08);
+  color: var(--ui-tone-peach-text);
+}
+.tk-due[data-state='tomorrow'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.33);
+  color: var(--ui-tone-cyan-text);
+}
+.tk-due[data-state='later'],
+.tk-due[data-state='done'] {
+  border-color: var(--ui-divider);
+  color: var(--color-holo-dim);
+}
+
+.tk-quick-add {
+  padding: 4px 10px 10px;
+}
+.tk-quick-add button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  font-size: 12px;
+  color: var(--color-holo-dim);
+  transition: background 0.15s, color 0.15s;
+}
+.tk-quick-add button:hover {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.08);
+  color: var(--color-holo-text);
+}
+.tk-quick-add input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-field);
+  font-size: 13px;
+  color: var(--color-holo-text);
+}
+.tk-quick-add input:focus {
+  outline: none;
+  border-color: var(--ui-line-active);
+}
+
+.tk-list {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 4px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.tk-section {
+  margin-bottom: 14px;
+}
+.tk-section h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ui-divider);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-holo-muted);
+}
+.tk-section h3 b {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-holo-dim);
+}
+.tk-section[data-key='overdue'] h3 {
+  color: var(--ui-tone-red-text);
+}
+.tk-section[data-key='today'] h3 {
+  color: var(--ui-tone-peach-text);
+}
+.tk-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+}
+.tk-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tk-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.tk-row:hover {
+  background: rgb(from var(--color-holo-text) r g b / 0.05);
+}
+.tk-row[data-selected] {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+}
+.tk-check {
+  position: relative;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid rgb(from var(--color-holo-cyan) r g b / 0.55);
+  border-radius: 50%;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.tk-check::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-holo-mint);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.tk-check:hover {
+  border-color: var(--color-holo-mint);
+  background: rgb(from var(--color-holo-mint) r g b / 0.14);
+}
+.tk-check:hover::after {
+  opacity: 1;
+}
+.tk-check[data-status='doing'] {
+  border-color: var(--color-holo-peach);
+  box-shadow: inset 0 0 0 3px rgb(from var(--color-holo-peach) r g b / 0.35);
+}
+.tk-check[data-status='done'] {
+  border-color: var(--color-holo-mint);
+  background: var(--color-holo-mint);
+}
+.tk-check[data-status='done']::after {
+  color: var(--ui-on-accent);
+  opacity: 1;
+}
+.tk-check[data-status='done']:hover {
+  background: rgb(from var(--color-holo-mint) r g b / 0.35);
+}
+.tk-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  text-align: left;
+  cursor: pointer;
+}
+.tk-row-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 13.5px;
+  color: var(--color-holo-text);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tk-row[data-status='done'] .tk-row-title {
+  color: var(--color-holo-muted);
+  text-decoration: line-through;
+  text-decoration-color: rgb(from var(--color-holo-muted) r g b / 0.55);
+}
+.tk-row-meta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+.tk-chip {
+  padding: 1px 7px;
+  border: 1px solid rgb(from var(--color-holo-peach) r g b / 0.33);
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--ui-tone-peach-text);
+}
+
+.tk-editor {
+  display: flex;
+  width: 340px;
+  flex-shrink: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 18px 18px;
+  overflow-y: auto;
+  border: 1px solid var(--ui-sheet-border);
+  border-radius: 16px;
+  background: var(--ui-sheet);
+  box-shadow: var(--ui-sheet-shadow);
+  animation: cal-pop-in 0.14s ease-out;
+  scrollbar-width: thin;
+}
+.tk-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tk-editor-status button {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+.tk-editor-close {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--color-holo-muted);
+}
+.tk-editor-close:hover {
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+  color: var(--color-holo-cyan);
+}
+.tk-editor-title {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: var(--color-holo-text);
+  transition: border-color 0.15s, background 0.15s;
+}
+.tk-editor-title:hover {
+  border-color: var(--ui-line);
+}
+.tk-editor-title:focus {
+  outline: none;
+  border-color: var(--ui-line-active);
+  background: var(--ui-field);
+}
+.tk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tk-field label {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--color-holo-dim);
+}
+.tk-field input,
+.tk-field textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 10px;
+  background: var(--ui-field);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-holo-text);
+  color-scheme: var(--ui-color-scheme);
+}
+.tk-field input:focus,
+.tk-field textarea:focus {
+  outline: none;
+  border-color: var(--ui-line-active);
+}
+.tk-field textarea {
+  min-height: 120px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.tk-field textarea::placeholder {
+  color: var(--color-holo-dim);
+}
+.tk-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tk-quick button {
+  padding: 4px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--color-holo-muted);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.tk-quick button:hover {
+  border-color: var(--ui-line-active);
+  color: var(--color-holo-text);
+}
+.tk-quick button[aria-pressed='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.6);
+  background: rgb(from var(--color-holo-cyan) r g b / 0.14);
+  color: var(--color-holo-cyan);
+}
+.tk-editor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-holo-dim);
+  font-variant-numeric: tabular-nums;
+}
+.tk-editor-meta div {
+  display: flex;
+  gap: 10px;
+}
+.tk-editor-meta dt {
+  /* The label keeps its own width so that a longer one, such as English "Updated", does not eat the gap. */
+  min-width: 32px;
+}
+.tk-editor-meta dd {
+  margin: 0;
+  color: var(--color-holo-muted);
+}
+.tk-editor-foot {
+  display: flex;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-divider);
+}
+.tk-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 7px 14px;
+  border: 1px solid rgb(from var(--color-holo-red) r g b / 0.35);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--ui-tone-red-text);
+  transition: background 0.15s, border-color 0.15s;
+}
+.tk-danger:hover {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.7);
+  background: rgb(from var(--color-holo-red) r g b / 0.1);
+}

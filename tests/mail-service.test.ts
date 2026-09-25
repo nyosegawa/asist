@@ -1,0 +1,416 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { messageIdOf, type MailAccount, type MailEvent, type MailSettings } from '@shared/mail'
+import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { MailCache } from '../src/main/services/mail-cache'
+import { MailDraftStore } from '../src/main/services/mail-drafts'
+import type { MailSecretStore } from '../src/main/services/mail-secrets'
+import { MailService } from '../src/main/services/mail-service'
+import type { OutgoingMail, SmtpSender } from '../src/main/services/mail-smtp'
+import { FakeImap } from './helpers/fake-imap'
+
+/**
+ * The approval gate: an agent's send or reply becomes a draft instead of leaving the machine, an agent's
+ * other operations and the screen's trash need a confirmation, and pressing send or reply on the screen
+ * is itself the approval.
+ */
+
+// The service writes the confirmation and the result of a change in the interface language, which it reads from the settings.
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'ja-JP' }) }))
+const t = createTranslator('ja-JP')
+
+const HOUR = 3_600_000
+const NOW = Date.UTC(2026, 8, 16, 6)
+const tanaka = [{ name: '田中', address: 't@example.com' }]
+const suzuki = [{ name: '鈴木', address: 's@example.com' }]
+const me = [{ name: '', address: 'me@example.com' }]
+
+const account = (patch: Partial<MailAccount> = {}): MailAccount => ({
+  id: 'a1',
+  label: '仕事',
+  email: 'me@example.com',
+  name: '私',
+  provider: 'gmail',
+  imap: { host: 'imap.gmail.com', port: 993, secure: true },
+  smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
+  folders: { sent: 'Sent', archive: 'Archive', trash: 'Trash' },
+  ...patch
+})
+
+function memorySecrets(initial: Record<string, string> = {}): MailSecretStore & { data: Map<string, string> } {
+  const data = new Map(Object.entries(initial))
+  return {
+    data,
+    get: (id) => data.get(id) ?? null,
+    set: (id, password) => void data.set(id, password),
+    remove: (id) => void data.delete(id)
+  }
+}
+
+async function setup(options: { provider?: MailAccount['provider']; enabled?: boolean } = {}) {
+  const provider = options.provider ?? 'gmail'
+  const imap = new FakeImap({ gmail: provider === 'gmail' })
+  imap.addFolder('Sent', { specialUse: '\\Sent' })
+  imap.addFolder('Archive', { specialUse: provider === 'gmail' ? '\\All' : '\\Archive' })
+  imap.addFolder('Trash', { specialUse: '\\Trash' })
+  const question = imap.put('INBOX', { subject: '見積もりの相談', from: tanaka, to: [...me, ...suzuki], cc: [{ name: '', address: 'cc@example.com' }], date: new Date(NOW - HOUR), text: '一行目\n二行目', messageId: '<q@x>' })
+  const other = imap.put('INBOX', { subject: 'ほか', from: suzuki, to: me, date: new Date(NOW - 2 * HOUR), text: 'x', flags: ['\\Seen'] })
+  const sentOne = imap.put('Sent', { subject: '送った', from: me, to: tanaka, date: new Date(NOW - 3 * HOUR), text: 's', flags: ['\\Seen'] })
+  let settings: MailSettings = { enabled: options.enabled ?? true, accounts: [account({ provider })], defaultAccountId: 'a1', syncDays: 30, notifyNewMail: true }
+  const secrets = memorySecrets({ a1: 'app-password' })
+  const smtp: SmtpSender & { send: ReturnType<typeof vi.fn> } = { send: vi.fn(async () => ({ messageId: '<sent-1@me>', raw: Buffer.from('raw message') })) }
+  const confirm = vi.fn(async () => true)
+  const events: MailEvent[] = []
+  const saveSettings = vi.fn((next: MailSettings) => {
+    settings = next
+  })
+  const cache = new MailCache(':memory:')
+  const drafts = new MailDraftStore({ filePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'asist-drafts-')), 'mail-drafts.json'), onChanged: (list) => events.push({ type: 'drafts', drafts: list }) })
+  const server = imap.reconnectable()
+  const service = new MailService({
+    settings: () => settings,
+    saveSettings,
+    secrets,
+    cache,
+    drafts,
+    createClient: () => server.next().asClient(),
+    smtp,
+    confirm,
+    emit: (event) => events.push(event),
+    now: () => Date.now(),
+    createId: () => 'new-id',
+    syncIntervals: { periodicMs: 60_000, reconnectMs: [1_000], debounceMs: 100 }
+  })
+  service.start()
+  if (settings.enabled) await service.syncNow()
+  const ids = {
+    question: messageIdOf('a1', 'inbox', question.uid),
+    other: messageIdOf('a1', 'inbox', other.uid),
+    sent: messageIdOf('a1', 'sent', sentOne.uid)
+  }
+  const signal = new AbortController()
+  const outgoing = (): OutgoingMail => smtp.send.mock.calls[0][2] as OutgoingMail
+  return { imap, cache, drafts, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: NOW })
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('the approval gate', () => {
+  it('confirms an agent operation even when it only marks a message read, and changes server and cache once approved', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'markRead', ids: [f.ids.question], read: true }, f.signal.signal, 'agent')
+    expect(f.confirm).toHaveBeenCalledOnce()
+    expect(f.confirm.mock.calls[0][0]).toContain('見積もりの相談')
+    expect(f.confirm.mock.calls[0][0]).toContain('既読にします')
+    // The button names the operation, so pressing it holds no surprise.
+    expect(f.confirm.mock.calls[0][2]).toBe(t('mail.confirm.action.markRead'))
+    expect(result).toMatchObject({ saved: true, operation: 'markRead', id: f.ids.question })
+    expect(f.imap.calls).toContain(`flags+:INBOX:${f.question.uid}:\\Seen`)
+    expect(f.cache.get(f.ids.question)?.unread).toBe(false)
+    expect(f.events.some((event) => event.type === 'changed')).toBe(true)
+    await f.service.stop()
+  })
+
+  it('runs star and archive from the screen without a confirmation and confirms trash', async () => {
+    const f = await setup()
+    await f.service.change({ operation: 'star', id: f.ids.question, starred: true }, f.signal.signal, 'screen')
+    await f.service.change({ operation: 'archive', id: f.ids.other }, f.signal.signal, 'screen')
+    expect(f.confirm).not.toHaveBeenCalled()
+    expect(f.cache.get(f.ids.question)?.starred).toBe(true)
+    expect(f.cache.get(f.ids.other)).toBeNull()
+    expect(f.imap.calls).toContain(`move:INBOX:${f.other.uid}:Archive`)
+    await f.service.change({ operation: 'trash', id: f.ids.question }, f.signal.signal, 'screen')
+    expect(f.confirm).toHaveBeenCalledOnce()
+    expect(f.confirm.mock.calls[0]?.[3]).toBe(true)
+    expect(f.imap.calls).toContain(`move:INBOX:${f.question.uid}:Trash`)
+    await f.service.stop()
+  })
+
+  it('changes nothing when the confirmation is cancelled or aborted, and stops when the settings change while it is open', async () => {
+    const f = await setup()
+    f.confirm.mockResolvedValueOnce(false)
+    await expect(f.service.change({ operation: 'trash', id: f.ids.question }, f.signal.signal, 'screen')).resolves.toEqual({ cancelled: true, saved: false })
+    f.confirm.mockImplementationOnce(async () => {
+      f.signal.abort()
+      return true
+    })
+    await expect(f.service.change({ operation: 'trash', id: f.ids.question }, f.signal.signal, 'screen')).rejects.toThrow()
+    const fresh = new AbortController()
+    f.confirm.mockImplementationOnce(async () => {
+      f.saveSettings({ ...f.settings(), syncDays: 60 })
+      return true
+    })
+    await expect(f.service.change({ operation: 'trash', id: f.ids.question }, fresh.signal, 'screen')).rejects.toThrow(errorText('mail.errors.change.settingsChanged'))
+    expect(f.imap.calls.some((call) => call.startsWith('move:'))).toBe(false)
+    expect(f.smtp.send).not.toHaveBeenCalled()
+    expect(f.cache.get(f.ids.question)).not.toBeNull()
+    await f.service.stop()
+  })
+
+  it('allows only one confirmation at a time and refuses every operation while mail is disabled', async () => {
+    const f = await setup()
+    let release!: (value: boolean) => void
+    f.confirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => (release = resolve)))
+    const first = f.service.change({ operation: 'trash', id: f.ids.question }, f.signal.signal, 'screen')
+    await vi.waitFor(() => expect(f.confirm).toHaveBeenCalled())
+    await expect(f.service.change({ operation: 'trash', id: f.ids.other }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.change.confirmBusy'))
+    release(false)
+    await first
+    f.saveSettings({ ...f.settings(), enabled: false })
+    await expect(f.service.change({ operation: 'star', id: f.ids.question, starred: true }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.disabled'))
+    await f.service.stop()
+  })
+})
+
+describe('flag changes', () => {
+  it('fails and leaves the cache untouched when the server rejects the flag change', async () => {
+    const f = await setup()
+    f.imap.folders.get('INBOX')!.messages.delete(f.question.uid)
+    await expect(f.service.change({ operation: 'star', id: f.ids.question, starred: true }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.change.rejected'))
+    expect(f.cache.get(f.ids.question)?.starred).toBe(false)
+    await f.service.stop()
+  })
+
+  it('marks the messages of one folder read in a single STORE and counts them per folder in the confirmation text', async () => {
+    const f = await setup()
+    f.imap.put('INBOX', { subject: '三つ目', from: tanaka, to: me, date: new Date(NOW - 4 * HOUR), text: 'z' })
+    await f.service.syncNow()
+    const unread = f.service.list({ view: 'inbox', unreadOnly: true }).messages.map((message) => message.id)
+    expect(unread).toHaveLength(2)
+    const result = await f.service.change({ operation: 'markRead', ids: [...unread, f.ids.sent], read: true }, f.signal.signal, 'agent')
+    expect(f.confirm.mock.calls[0][0]).toBe(
+      [
+        t('mail.confirm.markReadMany'),
+        t('mail.confirm.group', { label: '仕事', box: t('mail.boxes.inbox'), count: 2 }),
+        t('mail.confirm.group', { label: '仕事', box: t('mail.boxes.sent'), count: 1 })
+      ].join('\n')
+    )
+    expect(result).toMatchObject({ saved: true, operation: 'markRead', summary: t('mail.result.markReadCount', { count: 3 }) })
+    expect(f.imap.calls.filter((call) => call.startsWith('flags+:INBOX'))).toHaveLength(1)
+    expect(f.imap.calls.filter((call) => call.startsWith('flags+:Sent'))).toHaveLength(1)
+    expect(f.service.list({ view: 'inbox' }).unread).toBe(0)
+    await expect(f.service.change({ operation: 'markRead', ids: ['a1:inbox:999'], read: true }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    await f.service.stop()
+  })
+
+  it('queues operations that need no confirmation instead of rejecting the ones that arrive while another runs', async () => {
+    const f = await setup()
+    const results = await Promise.all([
+      f.service.change({ operation: 'star', id: f.ids.question, starred: true }, f.signal.signal, 'screen'),
+      f.service.change({ operation: 'markRead', ids: [f.ids.question], read: true }, f.signal.signal, 'screen'),
+      f.service.change({ operation: 'star', id: f.ids.other, starred: true }, f.signal.signal, 'screen')
+    ])
+    expect(results.every((result) => result.saved)).toBe(true)
+    expect(f.cache.get(f.ids.question)).toMatchObject({ starred: true, unread: false })
+    expect(f.cache.get(f.ids.other)?.starred).toBe(true)
+    await f.service.stop()
+  })
+})
+
+describe('sending and replying', () => {
+  it('sends without a confirmation from the screen, parses the recipients, and appends nothing to Sent on Gmail', async () => {
+    const f = await setup()
+    const result = await f.service.change(
+      { operation: 'send', to: ['田中 <t@example.com>', 's@example.com'], cc: ['cc@example.com'], subject: '来週の件', body: 'よろしくお願いします。' },
+      f.signal.signal,
+      'screen'
+    )
+    expect(f.confirm).not.toHaveBeenCalled()
+    expect(f.smtp.send).toHaveBeenCalledOnce()
+    expect(f.smtp.send.mock.calls[0][1]).toBe('app-password')
+    expect(f.outgoing()).toMatchObject({
+      from: { name: '私', address: 'me@example.com' },
+      to: [{ name: '田中', address: 't@example.com' }, { name: '', address: 's@example.com' }],
+      cc: [{ name: '', address: 'cc@example.com' }],
+      subject: '来週の件',
+      text: 'よろしくお願いします。'
+    })
+    expect(f.imap.calls.some((call) => call.startsWith('append:'))).toBe(false)
+    expect(result).toMatchObject({ saved: true, operation: 'send', id: '<sent-1@me>' })
+    expect((result as { summary: string }).summary).toBe(t('mail.result.send', { recipients: '田中, s@example.com' }))
+    await f.service.stop()
+  })
+
+  it('appends the raw sent message to the Sent folder on providers other than Gmail', async () => {
+    const f = await setup({ provider: 'icloud' })
+    await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
+    expect(f.imap.calls).toContain('append:Sent')
+    expect([...f.imap.folders.get('Sent')!.messages.values()].some((mail) => mail.text === 'raw message' && mail.flags.includes('\\Seen'))).toBe(true)
+    await f.service.stop()
+  })
+
+  it('replies to the sender with Re:, quotes the original body, carries the thread headers, and flags the original as answered', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'screen')
+    expect(f.confirm).not.toHaveBeenCalled()
+    expect(f.outgoing()).toMatchObject({
+      to: [{ name: '田中', address: 't@example.com' }],
+      cc: [],
+      subject: 'Re: 見積もりの相談',
+      inReplyTo: '<q@x>',
+      references: ['<q@x>']
+    })
+    expect(f.outgoing().text).toMatch(/^了解です。\n\n.*田中 <t@example.com>:\n> 一行目\n> 二行目\n$/s)
+    expect(f.imap.calls).toContain(`flags+:INBOX:${f.question.uid}:\\Answered`)
+    expect(f.cache.get(f.ids.question)?.answered).toBe(true)
+    expect(result).toMatchObject({ saved: true, operation: 'reply' })
+    await f.service.stop()
+  })
+
+  it('adds the original recipients and Cc to a reply-all, leaving out the account address itself', async () => {
+    const f = await setup()
+    await f.service.change({ operation: 'reply', id: f.ids.question, body: 'ok', replyAll: true }, f.signal.signal, 'screen')
+    expect(f.outgoing()).toMatchObject({
+      to: [{ name: '田中', address: 't@example.com' }],
+      cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }]
+    })
+    await f.service.stop()
+  })
+
+  it('names a failure that happened before sending, and asks the user to check instead of resending when the message may already be out', async () => {
+    const f = await setup()
+    f.smtp.send.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'EAUTH' }))
+    await expect(f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
+    f.smtp.send.mockRejectedValueOnce(new Error('connection reset after DATA'))
+    await expect(f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.send.sendUnknown', { reason: 'connection reset after DATA' }))
+    expect(f.smtp.send).toHaveBeenCalledTimes(2)
+    await f.service.stop()
+  })
+
+  it('archives inbox messages only, and fails before the confirmation when the account has no target folder', async () => {
+    const f = await setup()
+    await expect(f.service.change({ operation: 'archive', id: f.ids.sent }, f.signal.signal, 'agent')).rejects.toThrow(errorText('mail.errors.change.notInInbox'))
+    f.saveSettings({ ...f.settings(), accounts: [account({ folders: { sent: 'Sent', archive: null, trash: null } })] })
+    await expect(f.service.change({ operation: 'archive', id: f.ids.question }, f.signal.signal, 'agent')).rejects.toThrow(errorText('mail.errors.folder.archiveMissing'))
+    await expect(f.service.change({ operation: 'trash', id: f.ids.question }, f.signal.signal, 'agent')).rejects.toThrow(errorText('mail.errors.folder.trashMissing'))
+    expect(f.confirm).not.toHaveBeenCalled()
+    await f.service.stop()
+  })
+})
+
+describe('drafts', () => {
+  it('turns an agent send into a draft, sends it when the card asks, and then removes the draft', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'send', to: ['田中 <t@example.com>'], subject: '季節のご挨拶', body: '拝啓' }, f.signal.signal, 'agent')
+    expect(f.confirm).not.toHaveBeenCalled()
+    expect(f.smtp.send).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ drafted: true, saved: false })
+    const draftId = (result as { draftId: string }).draftId
+    expect(f.drafts.get(draftId)).toMatchObject({ accountId: 'a1', to: ['田中 <t@example.com>'], subject: '季節のご挨拶', body: '拝啓', reply: null, origin: 'agent' })
+    expect(f.events.some((event) => event.type === 'drafts' && event.drafts.length === 1)).toBe(true)
+    f.service.draftUpdate(draftId, { body: '拝啓\n時節柄ご自愛ください。' })
+    const sent = await f.service.draftSend(draftId, f.signal.signal)
+    expect(f.confirm).not.toHaveBeenCalled()
+    expect(f.outgoing()).toMatchObject({ to: [{ name: '田中', address: 't@example.com' }], subject: '季節のご挨拶', text: '拝啓\n時節柄ご自愛ください。' })
+    expect(sent).toMatchObject({ saved: true, operation: 'send' })
+    expect(f.drafts.get(draftId)).toBeNull()
+    await expect(f.service.draftSend(draftId, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.gone'))
+    await f.service.stop()
+  })
+
+  it('copies the original subject and sender onto an agent reply draft, and resolves recipients and quotation when it is sent', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。', replyAll: true }, f.signal.signal, 'agent')
+    const draftId = (result as { draftId: string }).draftId
+    expect(f.drafts.get(draftId)).toMatchObject({ reply: { id: f.ids.question, subject: '見積もりの相談', from: { name: '田中', address: 't@example.com' }, replyAll: true }, to: [], subject: '' })
+    expect(f.service.draftUpdate(draftId, { to: ['x@example.com'], subject: 'x', body: 'では。' })).toMatchObject({ to: [], subject: '', body: 'では。' })
+    await f.service.draftSend(draftId, f.signal.signal)
+    expect(f.outgoing()).toMatchObject({ subject: 'Re: 見積もりの相談', to: [{ name: '田中', address: 't@example.com' }], cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }] })
+    expect(f.outgoing().text).toMatch(/^では。\n\n.*> 一行目/s)
+    expect(f.cache.get(f.ids.question)?.answered).toBe(true)
+    await f.service.stop()
+  })
+
+  it('validates recipients and account when creating a draft, refuses to send an empty body, and keeps the draft when sending fails', async () => {
+    const f = await setup()
+    expect(() => f.service.draftCreate({ to: ['not an address'], body: 'x' }, 'screen')).toThrow(errorText('mail.errors.form.badAddress', { text: 'not an address' }))
+    expect(() => f.service.draftCreate({ accountId: 'nope', body: 'x' }, 'screen')).toThrow(errorText('mail.errors.account.notFound'))
+    const empty = f.service.draftCreate({ to: ['t@example.com'], subject: 'x' }, 'screen')
+    await expect(f.service.draftSend(empty.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.emptyBody'))
+    f.service.draftUpdate(empty.id, { body: 'y' })
+    f.smtp.send.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'EAUTH' }))
+    await expect(f.service.draftSend(empty.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
+    expect(f.drafts.get(empty.id)).not.toBeNull()
+    f.service.draftRemove(empty.id)
+    expect(f.service.draftList()).toEqual([])
+    await f.service.stop()
+  })
+})
+
+describe('reading', () => {
+  it('downloads a body once, answers the second read from the cache, and never marks the message read', async () => {
+    const f = await setup()
+    const first = await f.service.read(f.ids.question)
+    expect(first.text).toBe('一行目\n二行目')
+    expect(first.message.unread).toBe(true)
+    const downloads = f.imap.calls.filter((call) => call.startsWith('download:')).length
+    await f.service.read(f.ids.question)
+    expect(f.imap.calls.filter((call) => call.startsWith('download:')).length).toBe(downloads)
+    expect(f.imap.calls.some((call) => call.includes('\\Seen'))).toBe(false)
+    await expect(f.service.read('a1:inbox:999')).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    expect(f.service.thread('a1', f.cache.get(f.ids.question)!.threadId).map((m) => m.id)).toEqual([f.ids.question])
+    await f.service.stop()
+  })
+
+  it('reports the connection state of each account and the unread count of the inbox', async () => {
+    const f = await setup()
+    expect(f.service.status()).toMatchObject({ enabled: true, unread: 1, unreadRecent: 1, accounts: [{ id: 'a1', state: 'connected', unread: 1, error: '' }] })
+    expect(f.service.list({ view: 'inbox', unreadOnly: true }).messages.map((m) => m.subject)).toEqual(['見積もりの相談'])
+    await f.service.stop()
+    expect(f.service.status().accounts[0].state).toBe('off')
+  })
+})
+
+describe('accounts', () => {
+  it('finds the folders by their role when probing, leaves a missing one null, and reports why a connection failed', async () => {
+    const f = await setup({ provider: 'icloud' })
+    const input = { label: '個人', email: 'other@example.com', name: '', provider: 'icloud' as const, imap: account().imap, smtp: account().smtp, password: 'pw' }
+    expect(await f.service.probe(input)).toEqual({ folders: { sent: 'Sent', archive: 'Archive', trash: 'Trash' }, gmail: false, mailboxes: ['INBOX', 'Sent', 'Archive', 'Trash'] })
+    f.imap.folders.delete('Archive')
+    expect((await f.service.probe(input)).folders.archive).toBeNull()
+    f.imap.failConnect = new Error('Invalid credentials')
+    await expect(f.service.probe(input)).rejects.toThrow(errorText('mail.errors.account.connectFailed', { reason: 'Invalid credentials' }))
+    await expect(f.service.probe({ ...input, password: '' })).rejects.toThrow(errorText('mail.errors.form.password'))
+    await f.service.stop()
+  })
+
+  it('stores password and settings only after a successful connection, and removing an account deletes its settings, password and cached mail', async () => {
+    const f = await setup({ provider: 'icloud' })
+    const input = { label: '個人', email: 'other@example.com', name: '', provider: 'icloud' as const, imap: account().imap, smtp: account().smtp, password: 'pw2' }
+    const added = await f.service.addAccount(input)
+    expect(added).toMatchObject({ id: 'new-id', label: '個人', folders: { sent: 'Sent', archive: 'Archive', trash: 'Trash' } })
+    expect(f.secrets.data.get('new-id')).toBe('pw2')
+    expect(f.settings().accounts.map((a) => a.id)).toEqual(['a1', 'new-id'])
+    await expect(f.service.addAccount({ ...input, email: 'ME@example.com' })).rejects.toThrow(errorText('mail.errors.account.duplicate'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(f.service.status().accounts.map((a) => a.id)).toEqual(['a1', 'new-id'])
+    await f.service.removeAccount('a1')
+    expect(f.settings()).toMatchObject({ accounts: [{ id: 'new-id' }], defaultAccountId: 'new-id' })
+    expect(f.secrets.data.has('a1')).toBe(false)
+    expect(f.cache.counts('a1', NOW)).toEqual({ unread: 0, unreadRecent: 0 })
+    expect(f.service.list({ view: 'inbox', accountId: 'a1' }).total).toBe(0)
+    await expect(f.service.removeAccount('a1')).rejects.toThrow(errorText('mail.errors.account.notFound'))
+    await f.service.stop()
+  })
+
+  it('connects with the new password before storing it and reconnects the sync', async () => {
+    const f = await setup()
+    f.imap.failConnect = new Error('bad password')
+    await expect(f.service.updateAccount('a1', undefined, 'wrong')).rejects.toThrow(errorText('mail.errors.account.connectFailed', { reason: 'bad password' }))
+    expect(f.secrets.data.get('a1')).toBe('app-password')
+    f.imap.failConnect = null
+    const updated = await f.service.updateAccount('a1', { label: '会社' }, 'new-password')
+    expect(updated.label).toBe('会社')
+    expect(f.secrets.data.get('a1')).toBe('new-password')
+    expect(f.settings().accounts[0].label).toBe('会社')
+    await f.service.stop()
+  })
+})

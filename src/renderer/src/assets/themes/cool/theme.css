@@ -1,0 +1,112 @@
+/* cool: a dark concrete room with one blade of light. Smoked glass, thin light lines, almost no colour and
+   thin type. */
+:root[data-theme='cool'] {
+  --color-holo-bg: #08090a;
+  --color-holo-surface: #141416;
+  --color-holo-line: rgba(255, 255, 255, 0.1);
+  --color-holo-cyan: #cfd8de;
+  --color-holo-violet: #a9adb8;
+  --color-holo-peach: #d6b89a;
+  --color-holo-mint: #9fcfb4;
+  --color-holo-red: #e08a86;
+  --color-holo-text: #e8e8ea;
+  --color-holo-muted: #8d8e93;
+  --color-holo-dim: #5d5e63;
+  --shadow-glass: inset 0 1px 0 #ffffff12, 0 20px 50px #0009;
+  --ui-text: #dcdde0;
+  --ui-text-strong: #f4f4f5;
+  --ui-text-soft: #b4b6bb;
+  --ui-text-muted: #8b8d93;
+  --ui-text-faint: #6c6e74;
+  --ui-heading: #c9cbd0;
+  --ui-link: #e6eef3;
+  --ui-kicker: #8b8d93;
+  --ui-glow: #000000;
+  --ui-line: #ffffff1c;
+  --ui-divider: #ffffff12;
+  --ui-line-active: #ffffff55;
+  --ui-index: #ffffff66;
+  --ui-box: #ffffff08;
+  --ui-box-highlight: #ffffff0d;
+  --ui-box-foot: #ffffff05;
+  --ui-control: #ffffff0a;
+  --ui-field: #00000066;
+  --ui-tone-cyan-text: #d7e4ea;
+  --ui-tone-mint-text: #b3dcc4;
+  --ui-tone-peach-text: #e4c7aa;
+  --ui-tone-red-text: #eba4a0;
+  --ui-tone-gold: #d9c79a;
+  --ui-box-radius: 6px;
+  --ui-control-radius: 6px;
+  --card-radius: 8px;
+  --card-focus-radius: 12px;
+  --app-background: #08090a var(--app-picture-cool) center / cover no-repeat;
+  --ui-glass: rgba(18, 18, 20, 0.72);
+  --ui-panel: rgba(16, 16, 18, 0.82);
+  --ui-panel-border: #ffffff1a;
+  --ui-panel-shadow: inset 0 1px 0 #ffffff12, 0 24px 60px #000a;
+  --ui-panel-radius: 10px;
+  --ui-focus-ring: #ffffff;
+  --card-kicker-spacing: 0.45em;
+  --card-title-weight: 300;
+  --card-number-weight: 100;
+
+  --ui-glow-strength: 0.4;
+  --ui-on-accent: #08090a;
+  --ui-color-scheme: dark;
+  --ui-raised: rgba(38, 38, 42, 0.6);
+  --ui-raised-lifted: #222226;
+  --ui-raised-shadow: inset 0 1px 0 #ffffff0d, 0 6px 16px #0007;
+  --ui-raised-shadow-strong: inset 0 1px 0 #ffffff12, 0 8px 20px #0009;
+  --ui-lifted-shadow: 0 24px 48px #000b;
+  --cal-event-1: #c9d3da;
+  --cal-event-2: #b8b4c9;
+  --cal-event-3: #a9cbb8;
+  --cal-event-4: #d4bfa6;
+  --cal-event-5: #d9a3a0;
+  --cal-event-6: #a8c8c6;
+  --cal-event-ink: #111113;
+  --cal-event-ring: #101012;
+  --cal-now: #e08a86;
+  --cal-saturday: #8fb0cc;
+
+  --viewer-frame: #0000004d;
+  --viewer-bar: #121214;
+  --viewer-raised: #1e1e21;
+  --viewer-page-shadow: 0 2px 12px #000000b3;
+  --viewer-wave: #ffffff2e;
+  --code-comment: #75777d;
+  --code-keyword: #eef0f2;
+  --code-string: #b3dcc4;
+  --code-number: #e4c7aa;
+  --code-function: #f4f4f5;
+  --code-type: #cfd8de;
+  --code-property: #c3c6cc;
+
+  --ui-halo: #ffffff;
+  --ui-scrim: rgba(0, 0, 0, 0.6);
+  --ui-shade: linear-gradient(180deg, #00000022, transparent 70%, #00000055);
+  --ui-brand: linear-gradient(100deg, #f4f4f5, #8b8d93);
+  --ui-backing: rgba(10, 10, 12, 0.4);
+  --ui-shadow-color: #000000;
+  --hud-bar-track: #ffffff14;
+  --hud-bar-1: #f4f4f5;
+  --hud-bar-2: #c9cbd0;
+  --hud-bar-3: #9a9ca2;
+  --hud-bar-4: #6c6e74;
+  --hud-idle-text: var(--ui-text-faint);
+  --boot-background: radial-gradient(ellipse at 50% 40%, #1a1b1e 0%, #08090a 70%);
+
+  --ui-sheet: rgba(24, 24, 27, 0.96);
+  --ui-sheet-border: #ffffff24;
+  --ui-sheet-shadow: inset 0 1px 0 #ffffff12, 0 24px 60px #000a;
+  --ui-tone-violet-text: #c6c4d4;
+}
+:root[data-theme='cool'] :is(.panel-card, .panel-focus) {
+  --card-accent: oklch(from var(--card-hue) 0.85 calc(c * 0.2) h);
+  --card-border: #ffffff1a;
+  --card-background: rgba(18, 18, 20, 0.72);
+  --card-shadow:
+    inset 0 1px 0 #ffffff12,
+    0 20px 50px #0009;
+}

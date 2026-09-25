@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>競合サービスの比較</title>
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+<header>
+  <h1>競合サービスの比較</h1>
+  <p class="lead">主要 3 社の料金と同時接続数を、公開情報と体験版で確かめました(2026-09-19 時点)。</p>
+</header>
+<section>
+  <h2>月額あたりの同時接続数</h2>
+  <canvas id="seats" width="560" height="200" aria-label="月額あたりの同時接続数"></canvas>
+</section>
+<section>
+  <h2>料金と機能</h2>
+  <table>
+    <thead><tr><th>サービス</th><th>月額</th><th>同時接続</th><th>無料枠</th></tr></thead>
+    <tbody>
+      <tr><td>A</td><td>$20</td><td>5</td><td>あり</td></tr>
+      <tr><td>B</td><td>$35</td><td>20</td><td>なし</td></tr>
+      <tr><td>C</td><td>$12</td><td>2</td><td>あり</td></tr>
+    </tbody>
+  </table>
+</section>
+<section>
+  <h2>売上の推移</h2>
+  <img src="../chart-revenue.png" alt="売上の推移">
+</section>
+<p class="source">出典: <a href="https://example.com/pricing">各社の料金ページ</a></p>
+<script src="report.js"></script>
+</body>
+</html>

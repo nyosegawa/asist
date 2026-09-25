@@ -1,0 +1,206 @@
+import { describe, expect, it, vi } from 'vitest'
+import {
+  ToolError,
+  bilingual,
+  createToolRegistry,
+  executeTool,
+  formatToolResult,
+  renderToolGuide,
+  resolvePromptTexts,
+  truncateMiddle,
+  type ToolDefinition
+} from '@shared/tool-registry'
+
+type Ctx = { calls: string[] }
+
+const def = (partial: Partial<ToolDefinition<Ctx>> & Pick<ToolDefinition<Ctx>, 'name' | 'run'>): ToolDefinition<Ctx> => ({
+  description: { ja: `${partial.name} のツール`, en: `${partial.name} tool` },
+  inputSchema: { type: 'object', properties: {} },
+  parallel: true,
+  timeoutMs: 1000,
+  maxResultChars: 500,
+  ...partial
+})
+
+describe('truncateMiddle', () => {
+  it('returns the text unchanged when it fits the limit', () => {
+    expect(truncateMiddle('abc', 10, 'ja')).toEqual({ text: 'abc', truncated: false })
+  })
+
+  it('drops the middle, keeps the head and the tail, and states the original length on the first line', () => {
+    const text = 'A'.repeat(100) + 'B'.repeat(100)
+    const result = truncateMiddle(text, 80, 'ja')
+    expect(result.truncated).toBe(true)
+    expect(result.text.startsWith('[元は200文字、途中を省略]\n')).toBe(true)
+    expect(result.text).toContain('\n…\n')
+    expect(result.text.length).toBeLessThanOrEqual(80)
+    expect(result.text.endsWith('B')).toBe(true)
+    expect(result.text.split('\n')[1].startsWith('A')).toBe(true)
+  })
+})
+
+describe('formatToolResult', () => {
+  it('drops the middle of a string that exceeds the limit', () => {
+    const result = formatToolResult('x'.repeat(50), 30, 'ja')
+    expect(result.truncated).toBe(true)
+    expect(result.resultLength).toBe(50)
+    expect(result.content.length).toBeLessThanOrEqual(30)
+  })
+
+  it('serializes an object that fits the limit as plain JSON', () => {
+    const result = formatToolResult({ shown: true, items: [1, 2, 3] }, 100, 'ja')
+    expect(result).toEqual({ content: '{"shown":true,"items":[1,2,3]}', truncated: false, resultLength: 30 })
+  })
+
+  it('cuts an array by element count, states how many were dropped, and stays parseable as JSON', () => {
+    const items = Array.from({ length: 60 }, (_, i) => ({ id: i, name: `item-${i}` }))
+    const result = formatToolResult({ items }, 800, 'ja')
+    expect(result.truncated).toBe(true)
+    const [header, body] = result.content.split('\n')
+    expect(header).toContain('元は')
+    const parsed = JSON.parse(body) as { items: unknown[] }
+    expect(parsed.items.length).toBeLessThan(60)
+    expect(parsed.items.at(-1)).toMatch(/^…他\d+件を省略$/)
+    expect(parsed.items[0]).toEqual({ id: 0, name: 'item-0' })
+    expect(result.content.length).toBeLessThanOrEqual(800)
+  })
+
+  it('truncates the tail of a long string leaf and appends its original length', () => {
+    const result = formatToolResult({ summary: 'あ'.repeat(1000), title: 't' }, 300, 'ja')
+    const parsed = JSON.parse(result.content.split('\n')[1]) as { summary: string; title: string }
+    expect(parsed.title).toBe('t')
+    expect(parsed.summary).toMatch(/…\(元は1000文字\)$/)
+  })
+
+  it('throws when shrinking still does not fit, rather than returning broken JSON', () => {
+    const wide: Record<string, number> = {}
+    for (let i = 0; i < 200; i++) wide[`key-${i}`] = i
+    expect(() => formatToolResult(wide, 100, 'ja')).toThrow(ToolError)
+  })
+})
+
+describe('renderToolGuide', () => {
+  it('builds the guide section from the usage sentence registered with each tool', () => {
+    const entries = [
+      { name: 'a', usage: { ja: 'いつ使うか', en: 'when to use it' } },
+      { name: 'b', usage: { ja: 'こういうとき', en: 'in this case' } }
+    ]
+    expect(renderToolGuide(entries, 'ja')).toBe('# ツールの使い分け\n- a: いつ使うか\n- b: こういうとき')
+    expect(renderToolGuide(entries, 'en')).toBe(
+      '# Choosing between the tools\n- a: when to use it\n- b: in this case'
+    )
+  })
+})
+
+describe('createToolRegistry', () => {
+  it('rejects two definitions that share a name', () => {
+    const a = def({ name: 'a', run: () => 1 })
+    expect(() => createToolRegistry([a, a])).toThrow('duplicate')
+  })
+
+  it('builds the tool specs in the order the definitions were registered', () => {
+    const registry = createToolRegistry([def({ name: 'a', run: () => 1 }), def({ name: 'b', run: () => 2 })])
+    expect(registry.toolSpecs('ja').map((t) => t.name)).toEqual(['a', 'b'])
+    expect(registry.toolSpecs('en')[0]).toEqual({
+      name: 'a',
+      description: 'a tool',
+      inputSchema: { type: 'object', properties: {} }
+    })
+    expect(registry.toolSpecs('ja')[0].description).toBe('a のツール')
+    expect(registry.find('b')?.name).toBe('b')
+    expect(registry.find('c')).toBeUndefined()
+  })
+})
+
+describe('executeTool', () => {
+  const ctx: Ctx = { calls: [] }
+  const signal = new AbortController().signal
+
+  it('turns a successful result into a string within the limit', async () => {
+    const registry = createToolRegistry([def({ name: 'echo', run: (input) => ({ got: input.x }) })])
+    const result = await executeTool(registry, 'echo', { x: 1 }, ctx, signal, 'ja')
+    expect(result).toMatchObject({ content: '{"got":1}', isError: false, truncated: false, resultLength: 9 })
+  })
+
+  it('returns a failed result for an unregistered tool instead of throwing', async () => {
+    const registry = createToolRegistry([])
+    const result = await executeTool(registry, 'nope', {}, ctx, signal, 'ja')
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain('nope')
+  })
+
+  it('passes a ToolError message through and wraps any other exception with the failure and how to fix it', async () => {
+    const registry = createToolRegistry([
+      def({ name: 'tool-error', run: () => { throw new ToolError({ ja: '入力が不正: xを指定すること', en: 'Invalid input: give x' }) } }),
+      def({ name: 'crash', run: () => { throw new Error('ECONNREFUSED') } })
+    ])
+    const a = await executeTool(registry, 'tool-error', {}, ctx, signal, 'ja')
+    expect(a).toMatchObject({ isError: true, content: '入力が不正: xを指定すること' })
+    const b = await executeTool(registry, 'crash', {}, ctx, signal, 'ja')
+    expect(b.isError).toBe(true)
+    expect(b.content).toContain('ECONNREFUSED')
+    expect(b.content).toContain('crash')
+  })
+
+  it('returns a timeout failure past the time limit and aborts the signal it handed to the tool', async () => {
+    let seen: AbortSignal | null = null
+    const registry = createToolRegistry([
+      def({
+        name: 'slow',
+        timeoutMs: 20,
+        run: (_input, _ctx, s) =>
+          new Promise((resolve) => {
+            seen = s
+            setTimeout(() => resolve('late'), 200)
+          })
+      })
+    ])
+    const result = await executeTool(registry, 'slow', {}, ctx, signal, 'ja')
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain('時間切れ')
+    expect(result.content).toContain('slow')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(seen!.aborted).toBe(true)
+  })
+
+  it('reports the result as interrupted when the caller aborts', async () => {
+    const controller = new AbortController()
+    const registry = createToolRegistry([
+      def({
+        name: 'fetch',
+        run: (_input, _ctx, s) =>
+          new Promise((_, reject) => s.addEventListener('abort', () => reject(new Error('aborted'))))
+      })
+    ])
+    const pending = executeTool(registry, 'fetch', {}, ctx, controller.signal, 'ja')
+    controller.abort()
+    const result = await pending
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain('中断')
+  })
+
+  it('measures how long the tool took', async () => {
+    let t = 1000
+    const now = vi.fn(() => t)
+    const registry = createToolRegistry([
+      def({
+        name: 'tick',
+        run: () => {
+          t += 250
+          return 'ok'
+        }
+      })
+    ])
+    const result = await executeTool(registry, 'tick', {}, ctx, signal, 'ja', now)
+    expect(result.durationMs).toBe(250)
+  })
+
+  it('returns a failure for a result too large to shrink', async () => {
+    const wide: Record<string, number> = {}
+    for (let i = 0; i < 200; i++) wide[`key-${i}`] = i
+    const registry = createToolRegistry([def({ name: 'wide', maxResultChars: 100, run: () => wide })])
+    const result = await executeTool(registry, 'wide', {}, ctx, signal, 'ja')
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain('大きすぎて')
+  })
+})

@@ -1,0 +1,288 @@
+/**
+ * Memory search. Tokenization is script-aware, and both the token string stored in the FTS5 column and
+ * the FTS query for a search term are built here. The ranking mixes two paths with RRF:
+ * - lexical: the FTS5 index ordered by bm25, which catches rare words, names and numbers. An exact
+ *   match on a page name or an alias goes to the top regardless of its score.
+ * - dense: cosine over the multilingual-e5 embeddings, which catches paraphrases and topics.
+ * There is deliberately no morphological analyzer, no stemmer and no reranker.
+ *
+ * A memory folder holds whatever languages the user has spoken since it was created, and a query can be
+ * in a different language from the memory it should find, so the script of each run of text decides how
+ * that run is cut, never a setting.
+ */
+
+/** Normalizes for search: folds width, lowercases, and drops whitespace and symbols. */
+export function normalizeForSearch(text: string): string {
+  return text.normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '')
+}
+
+/** The bigrams of the text. A single character yields itself, and empty text yields an empty array. */
+export function bigrams(text: string): string[] {
+  const chars = Array.from(normalizeForSearch(text))
+  if (chars.length <= 1) return chars
+  const out: string[] = []
+  for (let i = 0; i < chars.length - 1; i++) out.push(chars[i] + chars[i + 1])
+  return out
+}
+
+const CJK = '\\u3005\\u3006\\u303b\\u30fc\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}'
+/**
+ * A run of text written without spaces between words. Punctuation and spaces between two such characters
+ * stay inside the run, because the bigrams of Japanese are cut from the text with everything of that kind
+ * removed, so that "明日は、晴れ" yields "は晴".
+ */
+const CJK_RUN = new RegExp(`[${CJK}](?:[\\s\\p{P}\\p{S}]*[${CJK}])*`, 'gu')
+
+/**
+ * Korean is agglutinative and writes a particle onto the word, so "서울" has to find "서울에서". Words in
+ * Hangul therefore carry their character bigrams into the index beside the word itself. Measured on
+ * 2026-09-22 against a unit that says "서울에서 회의를": indexed by word alone the query "서울 회의 언제예요"
+ * found nothing at all, and with the bigrams beside the word it found the unit at a bm25 of -2.4.
+ */
+const HANGUL = /\p{Script=Hangul}/u
+
+/**
+ * Word segmentation is left to ICU rather than to a property regex, because ICU keeps "5.6", "v1.2.3" and
+ * "example.com" whole while a regex over letters and digits cuts them at every dot. ICU's rules for a
+ * script written with spaces do not depend on the locale, and the scripts whose segmentation does depend
+ * on a dictionary are the ones this tokenizer never hands it.
+ */
+const WORDS = new Intl.Segmenter(undefined, { granularity: 'word' })
+
+const LATIN_WORD = /^[\p{Script=Latin}\p{N}\p{M}\p{P}]+$/u
+
+/**
+ * Drops the diacritics of a word written in the Latin script, so that "café" and "cafe" are one token.
+ * This is what FTS5's own unicode61 tokenizer does to the column, and doing it here keeps the tokens this
+ * file reports equal to the ones SQLite indexes. A mark in Devanagari or Hangul carries a sound rather
+ * than an accent and removing it would destroy the word, so only a Latin word is folded.
+ */
+function foldWord(word: string): string {
+  if (!LATIN_WORD.test(word)) return word
+  return word.normalize('NFD').replace(/\p{M}+/gu, '').normalize('NFC')
+}
+
+interface Piece {
+  kind: 'cjk' | 'word'
+  text: string
+}
+
+/** Cuts the text into runs written without spaces and into the words of every other script. */
+function pieces(text: string): Piece[] {
+  const folded = text.normalize('NFKC').toLowerCase()
+  const out: Piece[] = []
+  const pushWords = (slice: string): void => {
+    for (const { segment, isWordLike } of WORDS.segment(slice)) {
+      if (!isWordLike) continue
+      const word = foldWord(segment)
+      if (word) out.push({ kind: 'word', text: word })
+    }
+  }
+  let last = 0
+  for (const match of folded.matchAll(CJK_RUN)) {
+    pushWords(folded.slice(last, match.index))
+    const run = normalizeForSearch(match[0])
+    if (run) out.push({ kind: 'cjk', text: run })
+    last = match.index + match[0].length
+  }
+  pushWords(folded.slice(last))
+  return out
+}
+
+/** The tokens of the text: character bigrams inside a run written without spaces, words everywhere else. */
+export function searchTokens(text: string): string[] {
+  const out: string[] = []
+  for (const piece of pieces(text)) {
+    if (piece.kind === 'cjk') {
+      out.push(...bigrams(piece.text))
+      continue
+    }
+    out.push(piece.text)
+    if (HANGUL.test(piece.text)) for (const gram of bigrams(piece.text)) if (gram !== piece.text) out.push(gram)
+  }
+  return out
+}
+
+/** The token string stored in the FTS5 column: the tokens separated by spaces. */
+export function ftsTokens(text: string): string {
+  return searchTokens(text).join(' ')
+}
+
+/** The FTS5 MATCH expression, joining the tokens with OR, or null when there is no token. */
+export function ftsQuery(text: string): string | null {
+  const tokens = [...new Set(searchTokens(text))]
+  if (tokens.length === 0) return null
+  return tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' OR ')
+}
+
+const DEVANAGARI_MARKS = [
+  [0x0900, 0x0903],
+  [0x093a, 0x0957],
+  [0x0962, 0x0963]
+].flatMap(([from, to]) => Array.from({ length: to - from + 1 }, (_, i) => String.fromCodePoint(from + i))).join('')
+
+/**
+ * The tokenizer argument of the FTS5 table. FTS5 reads the column this file writes with its own tokenizer,
+ * and unicode61 counts only letters and digits as token characters, so every Devanagari vowel sign and the
+ * virama act as separators and "दिल्ली" is indexed as the three terms "द", "ल", "ल", which no longer tell
+ * Delhi from "बिल्ली", a cat. Naming those marks as token characters keeps a Hindi word whole. Latin
+ * diacritics need no option here because foldWord has already removed them.
+ */
+export const FTS5_TOKENIZE = `unicode61 tokenchars '${DEVANAGARI_MARKS}'`
+
+export type TokenKind = 'bigram' | 'word'
+
+/**
+ * Which kind of token the text mostly yields, which decides how strict the bm25 bar of an injection is.
+ * Hangul counts with the bigrams: a Korean word is indexed by its bigrams as well, and a query in Korean
+ * behaves like one in Japanese, where a match on a content word carries several tokens at once.
+ */
+export function dominantTokenKind(text: string): TokenKind {
+  let bigram = 0
+  let word = 0
+  for (const piece of pieces(text)) {
+    if (piece.kind === 'cjk' || HANGUL.test(piece.text)) bigram += piece.text.length
+    else word += 1
+  }
+  return bigram >= word ? 'bigram' : 'word'
+}
+
+/**
+ * The fraction from 0 to 1 of the query's bigrams that the text contains. The project index uses it to
+ * match names.
+ */
+export function matchRatio(text: string, queryGrams: readonly string[]): number {
+  if (queryGrams.length === 0) return 0
+  const set = new Set(bigrams(text))
+  let hit = 0
+  for (const gram of queryGrams) if (set.has(gram)) hit++
+  return hit / queryGrams.length
+}
+
+export interface RankableMemory {
+  id: string
+  /** The date of the source as YYYY-MM-DD. A later date ranks first, and an empty date ranks last. */
+  date: string
+}
+
+/** Orders two memories of equal score, later date first. */
+export function compareAuthority(a: RankableMemory, b: RankableMemory): number {
+  return b.date.localeCompare(a.date)
+}
+
+/**
+ * The pieces of the text joined back together, with the positions at which a name may begin or end. Every
+ * position inside a run written without spaces is such a position, because a word there has no edge to
+ * find; inside a word of a spaced script only its two ends are, so that the page "Mom" is not named by
+ * the word "momentum". A Hangul word is treated like a run written without spaces, because a Korean
+ * utterance says the name of a page with a particle written onto it.
+ */
+function searchKey(text: string): { text: string; boundary: boolean[] } {
+  let out = ''
+  const boundary: boolean[] = []
+  for (const piece of pieces(text)) {
+    const bounded = piece.kind === 'cjk' || HANGUL.test(piece.text)
+    for (let i = 0; i < piece.text.length; i++) boundary.push(bounded || i === 0)
+    out += piece.text
+  }
+  boundary.push(true)
+  return { text: out, boundary }
+}
+
+/**
+ * Whether the query contains a page name or an alias, which counts as an exact hit. A name shorter
+ * than two characters is ignored, because a single character such as "一" matches almost anything.
+ */
+export function exactNameHit(query: string, names: readonly string[]): boolean {
+  const q = searchKey(query)
+  if (!q.text) return false
+  return names.some((name) => {
+    const n = searchKey(name).text
+    if (n.length < 2) return false
+    for (let at = q.text.indexOf(n); at >= 0; at = q.text.indexOf(n, at + 1)) {
+      if (q.boundary[at] && q.boundary[at + n.length]) return true
+    }
+    return false
+  })
+}
+
+export interface LexicalHit<T> {
+  record: T
+  /** The bm25 score of FTS5. It is negative, and a smaller value is a better match. */
+  bm25: number
+  /** Whether a page name or an alias matched exactly. */
+  exact: boolean
+}
+
+export interface DenseHit<T> {
+  record: T
+  cosine: number
+}
+
+export interface HybridHit<T> {
+  record: T
+  via: 'lexical' | 'dense' | 'both'
+  exact: boolean
+  bm25?: number
+  cosine?: number
+}
+
+/**
+ * The RRF constant. 60 is the conventional value: it keeps the top few ranks apart without flattening
+ * them, and still gives the lower ranks a non-zero score.
+ */
+const RRF_K = 60
+
+export interface HybridOptions {
+  limit?: number
+  /** The lowest cosine a dense hit may have and still be kept. */
+  minCosine: number
+  /**
+   * The highest bm25 a lexical hit may have and still be kept. The value is negative, so a hit is kept
+   * when its bm25 is at or below this, that is, at least this large in magnitude. Omitting it keeps
+   * every hit, and an exact match is always kept.
+   */
+  maxBm25?: number
+}
+
+/**
+ * Merges the lexical ranking by bm25 and the dense ranking by cosine into one with RRF, with exact
+ * matches placed above everything else and ties broken by the later date. Lexical catches matches on
+ * proper nouns, dense catches paraphrases.
+ */
+export function mergeHybrid<T extends RankableMemory>(
+  lexical: ReadonlyArray<LexicalHit<T>>,
+  dense: ReadonlyArray<DenseHit<T>>,
+  options: HybridOptions
+): HybridHit<T>[] {
+  const limit = options.limit ?? 5
+  const merged = new Map<string, HybridHit<T> & { score: number }>()
+  const keptLexical = lexical
+    .filter((hit) => hit.exact || options.maxBm25 === undefined || hit.bm25 <= options.maxBm25)
+    .sort((a, b) => a.bm25 - b.bm25)
+  keptLexical.forEach((hit, index) => {
+    merged.set(hit.record.id, {
+      record: hit.record,
+      via: 'lexical',
+      exact: hit.exact,
+      bm25: hit.bm25,
+      score: 1 / (RRF_K + index + 1) + (hit.exact ? 1 : 0)
+    })
+  })
+  const keptDense = dense.filter((hit) => hit.cosine >= options.minCosine).sort((a, b) => b.cosine - a.cosine)
+  keptDense.forEach((hit, index) => {
+    const score = 1 / (RRF_K + index + 1)
+    const existing = merged.get(hit.record.id)
+    if (existing) {
+      existing.cosine = hit.cosine
+      existing.via = 'both'
+      existing.score += score
+    } else {
+      merged.set(hit.record.id, { record: hit.record, via: 'dense', exact: false, cosine: hit.cosine, score })
+    }
+  })
+  return [...merged.values()]
+    .sort((a, b) => b.score - a.score || compareAuthority(a.record, b.record))
+    .slice(0, limit)
+    .map(({ score: _score, ...hit }) => hit)
+}

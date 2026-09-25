@@ -1,0 +1,34 @@
+/* PDF viewer. Pages are drawn as white paper, the paper a PDF assumes, in every theme, and the 10px padding is the same value as PAD in PdfViewer.tsx. */
+.fv-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+.fv-pdf > .fv-note {
+  align-self: stretch;
+  padding: 0 2px;
+  line-height: 12px;
+}
+.fv-pdf-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.fv-pdf-page canvas {
+  display: block;
+  border-radius: 2px;
+  background: rgb(from var(--ui-text) r g b / 0.08);
+  box-shadow: var(--viewer-page-shadow);
+}
+.fv-pdf-page[data-rendered='true'] canvas {
+  background: #fff;
+}
+.fv-pdf-num {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text-muted);
+}

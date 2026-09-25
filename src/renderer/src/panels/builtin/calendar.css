@@ -1,0 +1,59 @@
+/* Calendar card. Measured heights with six events: l about 520px, m about 440px, s about 340px. */
+.ca-card {
+  --card-hue: #74c8ff;
+  --card-focus-width: 600px;
+}
+.ca-at {
+  font-size: 9px;
+  color: var(--ui-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.ca-time {
+  flex-shrink: 0;
+  width: var(--ca-time-width);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ui-tone-cyan-text);
+  font-variant-numeric: tabular-nums;
+}
+.ca-time small {
+  display: block;
+  font-size: 9px;
+  color: var(--ui-text-faint);
+}
+.ca-event[data-past] {
+  opacity: 0.45;
+}
+.ca-event[data-current] .ca-time {
+  color: var(--ui-tone-mint-text);
+}
+.ca-event[data-current] .card-row-title {
+  color: var(--ui-text-strong);
+}
+.ca-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 12px;
+  font-size: 9px;
+  color: var(--color-holo-peach);
+  white-space: nowrap;
+}
+.ca-now::before,
+.ca-now::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: rgb(from var(--color-holo-peach) r g b / 0.4);
+}
+.ca-day {
+  padding: 6px 12px 3px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  background: var(--ui-box-foot);
+}
+.ca[data-size='s'] .card-row {
+  padding: 7px 12px;
+}

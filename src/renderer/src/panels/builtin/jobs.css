@@ -1,0 +1,26 @@
+/* Jobs card. Measured heights with eight rows: l about 520px, m about 440px, s about 350px. */
+.jb-card {
+  --card-hue: #9d8cff;
+  --card-focus-width: 620px;
+}
+.jb-item {
+  align-items: center;
+}
+.jb-item[data-group='decision'] {
+  box-shadow: inset 2px 0 0 rgb(from var(--color-holo-mint) r g b / 0.67);
+}
+.jb-item[data-group='active'] {
+  box-shadow: inset 2px 0 0 rgb(from var(--color-holo-peach) r g b / 0.53);
+}
+.jb-dot {
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: holo-pulse 1.4s ease-in-out infinite;
+}
+.jb[data-size='s'] .card-row-meta {
+  display: none;
+}

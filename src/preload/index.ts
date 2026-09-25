@@ -1,0 +1,158 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import {
+  IpcChannel,
+  type JobEvent,
+  type LiveEvent,
+  type PanelEvent,
+  type RendererApi,
+  type TimerEvent,
+  type TurnEvent,
+  type TurnPlaybackAckStatus,
+  type TurnStartOptions,
+  type TtsEngine
+} from '@shared/ipc'
+import type { ConfirmEvent } from '@shared/confirm'
+import type { NoteSummary } from '@shared/notes'
+import type { MailEvent } from '@shared/mail'
+import type { Task } from '@shared/tasks'
+
+function subscribe<T>(channel: string) {
+  return (callback: (payload: T) => void): (() => void) => {
+    const listener = (_e: Electron.IpcRendererEvent, payload: T): void => callback(payload)
+    ipcRenderer.on(channel, listener)
+    return () => ipcRenderer.removeListener(channel, listener)
+  }
+}
+
+const api: RendererApi = {
+  getStatus: () => ipcRenderer.invoke(IpcChannel.Status),
+  onStatusChanged: subscribe(IpcChannel.StatusChanged),
+  requestMicPermission: () => ipcRenderer.invoke(IpcChannel.RequestMicPermission),
+  micNativeStart: () => ipcRenderer.invoke(IpcChannel.MicNativeStart),
+  micNativeStop: () => ipcRenderer.invoke(IpcChannel.MicNativeStop),
+  onMicNativeFrame: subscribe(IpcChannel.MicNativeFrame),
+  onMicNativeStatus: subscribe(IpcChannel.MicNativeStatus),
+  vapStart: () => ipcRenderer.invoke(IpcChannel.VapStart),
+  vapPush: (user, assistant) => ipcRenderer.invoke(IpcChannel.VapPush, user, assistant),
+  onVapState: subscribe(IpcChannel.VapState),
+  vapStatus: () => ipcRenderer.invoke(IpcChannel.VapStatus),
+  vapPrepare: () => ipcRenderer.invoke(IpcChannel.VapPrepare),
+  vapPrepareCancel: () => ipcRenderer.invoke(IpcChannel.VapPrepareCancel),
+  embeddingStatus: () => ipcRenderer.invoke(IpcChannel.EmbeddingStatus),
+  embeddingPrepare: () => ipcRenderer.invoke(IpcChannel.EmbeddingPrepare),
+  embeddingPrepareCancel: () => ipcRenderer.invoke(IpcChannel.EmbeddingPrepareCancel),
+  transcribe: (samples, requestId) => ipcRenderer.invoke(IpcChannel.Transcribe, samples, requestId),
+  transcribeCancel: (requestId) => ipcRenderer.invoke(IpcChannel.TranscribeCancel, requestId),
+  transcribePartial: (samples) => ipcRenderer.invoke(IpcChannel.TranscribePartial, samples),
+
+  turnStart: (text: string, options?: TurnStartOptions) =>
+    ipcRenderer.invoke(IpcChannel.TurnStart, text, options),
+  turnAbort: (turnId: number) => ipcRenderer.invoke(IpcChannel.TurnAbort, turnId),
+  onTurnEvent: subscribe<TurnEvent>(IpcChannel.TurnEvent),
+  interject: (text: string) => ipcRenderer.invoke(IpcChannel.TurnInterject, text),
+  turnPlaybackAck: (turnId: number, status: TurnPlaybackAckStatus) =>
+    ipcRenderer.invoke(IpcChannel.TurnPlaybackAck, turnId, status),
+  liveStart: () => ipcRenderer.invoke(IpcChannel.LiveStart),
+  liveStop: () => ipcRenderer.invoke(IpcChannel.LiveStop),
+  livePush: (samples) => ipcRenderer.invoke(IpcChannel.LivePush, samples),
+  liveActivity: (active) => ipcRenderer.invoke(IpcChannel.LiveActivity, active),
+  liveText: (text) => ipcRenderer.invoke(IpcChannel.LiveText, text),
+  onLiveAudio: subscribe<Float32Array>(IpcChannel.LiveAudio),
+  onLiveEvent: subscribe<LiveEvent>(IpcChannel.LiveEvent),
+
+  panelFetch: (type, props) => ipcRenderer.invoke(IpcChannel.PanelFetch, type, props),
+  onPanelEvent: subscribe<PanelEvent>(IpcChannel.PanelEventPush),
+
+  timerList: () => ipcRenderer.invoke(IpcChannel.TimerList),
+  timerCancel: (id) => ipcRenderer.invoke(IpcChannel.TimerCancel, id),
+  onTimerEvent: subscribe<TimerEvent>(IpcChannel.TimerEvent),
+
+  aizuchiBank: () => ipcRenderer.invoke(IpcChannel.AizuchiBank),
+  bridgePlan: (input) => ipcRenderer.invoke(IpcChannel.BridgePlan, input),
+  bridgeSynthesize: (text) => ipcRenderer.invoke(IpcChannel.BridgeClip, text),
+  aizuchiClassify: (input) => ipcRenderer.invoke(IpcChannel.AizuchiClassify, input),
+  aizuchiClassifierStatus: () => ipcRenderer.invoke(IpcChannel.AizuchiClassifierStatus),
+  aizuchiClassifierPrepare: () => ipcRenderer.invoke(IpcChannel.AizuchiClassifierPrepare),
+  aizuchiClassifierPrepareCancel: () => ipcRenderer.invoke(IpcChannel.AizuchiClassifierPrepareCancel),
+  metricsLog: (timings) => ipcRenderer.invoke(IpcChannel.MetricsLog, timings),
+  memoryDocuments: () => ipcRenderer.invoke(IpcChannel.MemoryDocuments),
+  memoryDocumentRead: (file) => ipcRenderer.invoke(IpcChannel.MemoryDocumentRead, file),
+  memoryDocumentWrite: (file, markdown) => ipcRenderer.invoke(IpcChannel.MemoryDocumentWrite, file, markdown),
+  memoryDocumentCreate: (input) => ipcRenderer.invoke(IpcChannel.MemoryDocumentCreate, input),
+  memoryDocumentDelete: (file) => ipcRenderer.invoke(IpcChannel.MemoryDocumentDelete, file),
+  memoryOverview: () => ipcRenderer.invoke(IpcChannel.MemoryOverview),
+  memoryCurate: () => ipcRenderer.invoke(IpcChannel.MemoryCurate),
+  tasksList: () => ipcRenderer.invoke(IpcChannel.TasksList),
+  taskCreate: (input) => ipcRenderer.invoke(IpcChannel.TaskCreate, input),
+  taskUpdate: (id, patch) => ipcRenderer.invoke(IpcChannel.TaskUpdate, id, patch),
+  taskMove: (move) => ipcRenderer.invoke(IpcChannel.TaskMove, move),
+  taskRemove: (id) => ipcRenderer.invoke(IpcChannel.TaskRemove, id),
+  tasksClearDone: () => ipcRenderer.invoke(IpcChannel.TasksClearDone),
+  onTasksChanged: subscribe<Task[]>(IpcChannel.TasksChanged),
+  notesList: () => ipcRenderer.invoke(IpcChannel.NotesList),
+  notesSearch: (query) => ipcRenderer.invoke(IpcChannel.NotesSearch, query),
+  noteRead: (id) => ipcRenderer.invoke(IpcChannel.NoteRead, id),
+  noteCreate: (markdown) => ipcRenderer.invoke(IpcChannel.NoteCreate, markdown),
+  noteWrite: (id, markdown) => ipcRenderer.invoke(IpcChannel.NoteWrite, id, markdown),
+  noteRemove: (id) => ipcRenderer.invoke(IpcChannel.NoteRemove, id),
+  onNotesChanged: subscribe<NoteSummary[]>(IpcChannel.NotesChanged),
+  notify: (title, body) => ipcRenderer.invoke(IpcChannel.Notify, title, body),
+  reportMiniAppView: (view) => ipcRenderer.invoke(IpcChannel.MiniAppView, view),
+  onHotkeyMic: subscribe<void>(IpcChannel.HotkeyMic),
+  getSetupStatus: () => ipcRenderer.invoke(IpcChannel.GetSetupStatus),
+  completeSetup: (request) => ipcRenderer.invoke(IpcChannel.CompleteSetup, request),
+  prepareAsrModel: (model) => ipcRenderer.invoke(IpcChannel.AsrPrepare, model),
+  cancelAsrPreparation: () => ipcRenderer.invoke(IpcChannel.AsrPrepareCancel),
+  prepareTtsModel: () => ipcRenderer.invoke(IpcChannel.TtsPrepare),
+  cancelTtsPreparation: () => ipcRenderer.invoke(IpcChannel.TtsPrepareCancel),
+  onSetupProgress: subscribe(IpcChannel.SetupProgress),
+
+  jobCancel: (id) => ipcRenderer.invoke(IpcChannel.JobCancel, id),
+  jobMerge: (id, commit) => ipcRenderer.invoke(IpcChannel.JobMerge, id, commit),
+  jobDiscard: (id) => ipcRenderer.invoke(IpcChannel.JobDiscard, id),
+  jobDiff: (id) => ipcRenderer.invoke(IpcChannel.JobDiff, id),
+  jobList: () => ipcRenderer.invoke(IpcChannel.JobList),
+  jobLog: (id) => ipcRenderer.invoke(IpcChannel.JobLog, id),
+  onJobEvent: subscribe<JobEvent>(IpcChannel.JobEvent),
+
+  calendarStatus: () => ipcRenderer.invoke(IpcChannel.CalendarStatus),
+  calendarRequestAccess: () => ipcRenderer.invoke(IpcChannel.CalendarRequestAccess),
+  calendarEvents: (range) => ipcRenderer.invoke(IpcChannel.CalendarEvents, range),
+  calendarChange: (change) => ipcRenderer.invoke(IpcChannel.CalendarChange, change),
+  calendarOpenGuide: () => ipcRenderer.invoke(IpcChannel.CalendarOpenGuide),
+  calendarOpenPrivacy: () => ipcRenderer.invoke(IpcChannel.CalendarOpenPrivacy),
+  ttsVerify: () => ipcRenderer.invoke(IpcChannel.TtsVerify),
+  micOpenPrivacy: () => ipcRenderer.invoke(IpcChannel.MicOpenPrivacy),
+  logsOpenFolder: () => ipcRenderer.invoke(IpcChannel.LogsOpenFolder),
+  folderChoose: (startAt) => ipcRenderer.invoke(IpcChannel.FolderChoose, startAt),
+  mailStatus: () => ipcRenderer.invoke(IpcChannel.MailStatus),
+  mailProbe: (input) => ipcRenderer.invoke(IpcChannel.MailProbe, input),
+  mailAccountAdd: (input) => ipcRenderer.invoke(IpcChannel.MailAccountAdd, input),
+  mailAccountUpdate: (id, patch, password) => ipcRenderer.invoke(IpcChannel.MailAccountUpdate, id, patch, password),
+  mailAccountRemove: (id) => ipcRenderer.invoke(IpcChannel.MailAccountRemove, id),
+  mailList: (query) => ipcRenderer.invoke(IpcChannel.MailList, query),
+  mailThread: (accountId, threadId) => ipcRenderer.invoke(IpcChannel.MailThread, accountId, threadId),
+  mailRead: (id) => ipcRenderer.invoke(IpcChannel.MailRead, id),
+  mailChange: (change) => ipcRenderer.invoke(IpcChannel.MailChange, change),
+  mailSyncNow: () => ipcRenderer.invoke(IpcChannel.MailSyncNow),
+  mailOpenGuide: () => ipcRenderer.invoke(IpcChannel.MailOpenGuide),
+  onMailEvent: subscribe<MailEvent>(IpcChannel.MailEvent),
+  mailDraftList: () => ipcRenderer.invoke(IpcChannel.MailDraftList),
+  mailDraftCreate: (input) => ipcRenderer.invoke(IpcChannel.MailDraftCreate, input),
+  mailDraftUpdate: (id, patch) => ipcRenderer.invoke(IpcChannel.MailDraftUpdate, id, patch),
+  mailDraftRemove: (id) => ipcRenderer.invoke(IpcChannel.MailDraftRemove, id),
+  mailDraftSend: (id) => ipcRenderer.invoke(IpcChannel.MailDraftSend, id),
+  onConfirmEvent: subscribe<ConfirmEvent>(IpcChannel.ConfirmEvent),
+  confirmResolve: (id, approved) => ipcRenderer.invoke(IpcChannel.ConfirmResolve, id, approved),
+  getSettings: () => ipcRenderer.invoke(IpcChannel.GetSettings),
+  saveSettings: (patch) => ipcRenderer.invoke(IpcChannel.SaveSettings, patch),
+  saveApiKey: (provider, key) => ipcRenderer.invoke(IpcChannel.SaveApiKey, provider, key),
+  listSpeakers: (engine?: TtsEngine) => ipcRenderer.invoke(IpcChannel.ListSpeakers, engine),
+  ttsTest: () => ipcRenderer.invoke(IpcChannel.TtsTest),
+  openExternal: (url) => ipcRenderer.invoke(IpcChannel.OpenExternal, url),
+  revealPath: (path) => ipcRenderer.invoke(IpcChannel.RevealPath, path),
+  appVersion: () => ipcRenderer.invoke(IpcChannel.AppVersion),
+  apiUsage: () => ipcRenderer.invoke(IpcChannel.ApiUsage)
+}
+
+contextBridge.exposeInMainWorld('api', api)

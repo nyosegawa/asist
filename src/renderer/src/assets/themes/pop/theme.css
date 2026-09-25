@@ -1,0 +1,122 @@
+/* pop: flat shapes in candy colours on cream. Solid white surfaces with an ink outline and a hard shadow,
+   saturated accents, an ink pill for the kicker and heavy rounded numbers. A card's outline is a box-shadow,
+   not a wider border, so no card grows. */
+:root[data-theme='pop'] {
+  --color-holo-bg: #f8f0e0;
+  --color-holo-surface: #ffffff;
+  --color-holo-line: #1b1b1f33;
+  --color-holo-cyan: #1f4fd8;
+  --color-holo-violet: #7a4cf0;
+  --color-holo-peach: #ff5a36;
+  --color-holo-mint: #16a864;
+  --color-holo-red: #e8322b;
+  --color-holo-text: #1b1b1f;
+  --color-holo-muted: #55525a;
+  --color-holo-dim: #8a8690;
+  --shadow-glass: 5px 5px 0 0 #1b1b1f;
+  --ui-text: #1b1b1f;
+  --ui-text-strong: #000000;
+  --ui-text-soft: #3a3840;
+  --ui-text-muted: #5c5962;
+  --ui-text-faint: #86828c;
+  --ui-heading: #1b1b1f;
+  --ui-link: #1f4fd8;
+  --ui-kicker: #1b1b1f;
+  --ui-glow: transparent;
+  --ui-line: #1b1b1f40;
+  --ui-divider: #1b1b1f1f;
+  --ui-line-active: #1b1b1f;
+  --ui-index: #ff5a36;
+  --ui-box: #ffffff;
+  --ui-box-highlight: #ffffff;
+  --ui-box-foot: #fff7e8;
+  --ui-control: #ffffff;
+  --ui-field: #ffffff;
+  --ui-tone-cyan-text: #1f4fd8;
+  --ui-tone-mint-text: #0e8a50;
+  --ui-tone-peach-text: #d93c1a;
+  --ui-tone-red-text: #c81e1e;
+  --ui-tone-gold: #b98a00;
+  --ui-box-radius: 16px;
+  --ui-control-radius: 12px;
+  --card-radius: 22px;
+  --card-focus-radius: 28px;
+  --app-background: #f8f0e0 var(--app-picture-pop) center / cover no-repeat;
+  --ui-glass: #fffdf7;
+  --ui-panel: #fffdf7;
+  --ui-panel-border: #1b1b1f;
+  --ui-panel-shadow: 0 0 0 1px #1b1b1f, 6px 6px 0 1px #1b1b1f;
+  --ui-panel-radius: 24px;
+  --ui-focus-ring: #1f4fd8;
+  --card-kicker-font: inherit;
+  --card-kicker-size: 10px;
+  --card-kicker-weight: 800;
+  --card-kicker-spacing: 0.08em;
+  --card-kicker-ink: #fffdf7;
+  --card-kicker-fill: #1b1b1f;
+  --card-kicker-padding: 2px 9px;
+  --card-title-font: ui-rounded, 'Hiragino Maru Gothic ProN', sans-serif;
+  --card-title-weight: 800;
+  --card-number-font: ui-rounded, 'Hiragino Maru Gothic ProN', sans-serif;
+  --card-number-weight: 700;
+  --card-number-scale: 0.86;
+
+  --ui-glow-strength: 0;
+  --ui-on-accent: #ffffff;
+  --ui-color-scheme: light;
+  --ui-raised: #ffffff;
+  --ui-raised-lifted: #ffffff;
+  --ui-raised-shadow: 2px 2px 0 #1b1b1f;
+  --ui-raised-shadow-strong: 3px 3px 0 #1b1b1f;
+  --ui-lifted-shadow: 6px 6px 0 #1b1b1f;
+  --cal-event-1: #5b8cff;
+  --cal-event-2: #a58bff;
+  --cal-event-3: #3ddc84;
+  --cal-event-4: #ffb224;
+  --cal-event-5: #ff7a66;
+  --cal-event-6: #3fd0d0;
+  --cal-event-ink: #1b1b1f;
+  --cal-event-ring: #1b1b1f;
+  --cal-now: #e8322b;
+  --cal-saturday: var(--color-holo-cyan);
+
+  --viewer-frame: #ffffff;
+  --viewer-bar: #ffffff;
+  --viewer-raised: #fff1c9;
+  --viewer-page-shadow: 0 0 0 1px #1b1b1f, 3px 3px 0 #1b1b1f;
+  --viewer-wave: #1b1b1f4d;
+  --code-comment: #6f6b75;
+  --code-keyword: #1f4fd8;
+  --code-string: #0e8a50;
+  --code-number: #d93c1a;
+  --code-function: #7a4cf0;
+  --code-type: #0b7d8c;
+  --code-property: #c0267a;
+
+  --ui-halo: transparent;
+  --ui-scrim: rgba(27, 27, 31, 0.35);
+  --ui-shade: none;
+  --ui-brand: linear-gradient(100deg, #1f4fd8, #7a4cf0 55%, #ff5a36);
+  --ui-backing: #fffdf7e6;
+  --ui-shadow-color: #1b1b1f;
+  --hud-bar-track: #1b1b1f1a;
+  --hud-bar-1: #3fb8ff;
+  --hud-bar-2: #1f4fd8;
+  --hud-bar-3: #7a4cf0;
+  --hud-bar-4: #ff5ab4;
+  --hud-idle-text: var(--ui-text-soft);
+  --boot-background: radial-gradient(ellipse at 50% 40%, #fffdf7 0%, #f8f0e0 70%);
+
+  --ui-sheet: #ffffff;
+  --ui-sheet-border: #1b1b1f;
+  --ui-sheet-shadow: 5px 5px 0 0 #1b1b1f;
+  --ui-tone-violet-text: #6a3be0;
+}
+:root[data-theme='pop'] :is(.panel-card, .panel-focus) {
+  --card-accent: oklch(from var(--card-hue) 0.55 calc(c * 1.5) h);
+  --card-border: #1b1b1f;
+  --card-background: #fffdf7;
+  --card-shadow:
+    0 0 0 1px #1b1b1f,
+    6px 6px 0 1px oklch(from var(--card-hue) 0.74 calc(c * 1.6) h);
+}

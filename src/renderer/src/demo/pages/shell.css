@@ -1,0 +1,206 @@
+/* The shell of the demo (/, /cards/…, /screens/…): the list of samples on the left and the iframe that
+   shows one on the right. */
+.demo-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  height: 100%;
+  color: var(--color-holo-text);
+  background: var(--color-holo-bg);
+}
+
+.demo-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 20px 10px 0 16px;
+  border-right: 1px solid var(--color-holo-line);
+}
+.demo-side h1 {
+  margin: 0 0 14px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  color: var(--color-holo-cyan);
+}
+.demo-filter {
+  margin: 0 6px 6px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: 8px;
+  background: #ffffff08;
+  font-size: 12px;
+  color: var(--color-holo-text);
+  outline: none;
+}
+.demo-filter:focus {
+  border-color: #74c8ff88;
+}
+.demo-side nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 24px 0;
+  scrollbar-width: thin;
+}
+.demo-side h2 {
+  margin: 16px 0 5px;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-holo-dim);
+}
+.demo-side section {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.demo-side a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-holo-muted);
+  transition: color 0.15s, background-color 0.15s;
+}
+.demo-side a small {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-holo-dim);
+}
+.demo-side a:hover {
+  background: #74c8ff12;
+  color: var(--color-holo-text);
+}
+.demo-side a[aria-current='page'] {
+  background: #74c8ff1f;
+  color: var(--color-holo-cyan);
+}
+.demo-side a[aria-current='page'] small {
+  color: #74c8ffaa;
+}
+.demo-empty {
+  margin: 16px 10px;
+  font-size: 12px;
+  color: var(--color-holo-dim);
+}
+
+.demo-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.demo-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-holo-line);
+  font-size: 12px;
+}
+.demo-bar code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-holo-muted);
+}
+.demo-bar button,
+.demo-bar > a {
+  padding: 5px 10px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: 8px;
+  color: var(--color-holo-muted);
+  white-space: nowrap;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+.demo-bar button:hover,
+.demo-bar > a:hover {
+  color: var(--color-holo-text);
+  background: #74c8ff12;
+}
+.demo-sizes {
+  display: flex;
+}
+.demo-sizes button {
+  border-radius: 0;
+  margin-left: -1px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.demo-sizes button:first-child {
+  margin-left: 0;
+  border-radius: 8px 0 0 8px;
+}
+.demo-sizes button:last-child {
+  border-radius: 0 8px 8px 0;
+}
+.demo-sizes button[aria-pressed='true'] {
+  position: relative;
+  border-color: #74c8ff88;
+  background: #74c8ff1f;
+  color: var(--color-holo-cyan);
+}
+
+.demo-stage {
+  flex: 1;
+  min-height: 0;
+}
+.demo-stage iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+/* At a fixed window size, a box of the scaled-down size is centered, and the iframe inside it is scaled
+   from its top left corner. */
+.demo-stage.is-fixed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  background: #02040a;
+}
+.demo-frame {
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--color-holo-line);
+  border-radius: 10px;
+}
+.demo-frame iframe {
+  transform-origin: top left;
+}
+.demo-scale {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-holo-dim);
+}
+
+.demo-i18n {
+  display: block;
+  margin: 0 0 10px;
+  color: var(--color-holo-cyan, #7fd6ff);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.demo-locale {
+  padding: 5px 8px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-holo-muted);
+  font: inherit;
+}

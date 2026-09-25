@@ -1,0 +1,45 @@
+/* FX card. Measured heights: l about 400px, m about 360px, s about 300px. */
+.fx-card {
+  --card-hue: #6fd6b8;
+  --card-focus-width: 540px;
+}
+.fx .card-big strong {
+  color: var(--ui-text-strong);
+}
+.fx-asof {
+  font-size: 9px;
+  color: var(--ui-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.fx-table .card-row {
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 7px 12px;
+  font-variant-numeric: tabular-nums;
+}
+.fx-from {
+  font-size: 11px;
+  color: var(--ui-text-soft);
+}
+.fx-to {
+  font-size: 13px;
+  color: var(--ui-text-strong);
+}
+.fx-table .card-row[aria-current] {
+  background: rgb(from var(--card-accent) r g b / 0.08);
+}
+.fx-table .card-row[aria-current] .fx-to {
+  color: var(--ui-tone-mint-text);
+  text-shadow: 0 0 10px rgb(from var(--color-holo-mint) r g b / 0.4);
+}
+.fx[data-size='s'] .fx-table .card-row {
+  padding: 6px 12px;
+}
+.fx-footer {
+  padding: 6px 3px 0;
+  font-size: 9px;
+  color: var(--ui-text-soft);
+}
+.fx-footer a:hover {
+  color: var(--ui-tone-mint-text);
+}

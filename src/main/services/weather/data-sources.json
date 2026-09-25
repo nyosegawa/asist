@@ -1,0 +1,30 @@
+{
+  "area.json": {
+    "url": "https://www.jma.go.jp/bosai/common/const/area.json",
+    "sha256": "b2716ef1f338f66a7080c2498f0768e3941eebbd6880af70917f67b16ec09992"
+  },
+  "forecast_area.json": {
+    "url": "https://www.jma.go.jp/bosai/forecast/const/forecast_area.json",
+    "sha256": "b0f626b709383a9637e797c9d51df7b688894ca8d8398aa7171e9270985bee8d"
+  },
+  "week_area.json": {
+    "url": "https://www.jma.go.jp/bosai/forecast/const/week_area.json",
+    "sha256": "491a2c6c8e42e7b979e35e3580bfcdbbb34eba414c2cb3cd1817208f28dbab9e"
+  },
+  "week_area05.json": {
+    "url": "https://www.jma.go.jp/bosai/forecast/const/week_area05.json",
+    "sha256": "951860223c59031aba61601e37909eb39e3acf4492434aed89dd3d37d24d5299"
+  },
+  "amedastable.json": {
+    "url": "https://www.jma.go.jp/bosai/amedas/const/amedastable.json",
+    "sha256": "319d215c6c9243ccb794e925dded2f849a0202f1b2cd74ce607b232f2bc2ddc5"
+  },
+  "muni.js": {
+    "url": "https://maps.gsi.go.jp/js/muni.js",
+    "sha256": "36fcbf9234d4a2c80004ea7a58a1dd4e5f551b2f2cf3543fb4bba6308a090b7b"
+  },
+  "forecast.html": {
+    "url": "https://www.jma.go.jp/bosai/forecast/",
+    "sha256": "2219c9b3f581d0e69857eeb4c98e1ebb8059269b73d7886f9ecc9a676b124a50"
+  }
+}

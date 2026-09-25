@@ -1,0 +1,111 @@
+/* Code view. The colors are the theme's code tokens (themes.css), and no highlight.js theme is loaded. */
+.fv-code {
+  padding: 8px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ui-text-soft);
+}
+.fv-code-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fv-code-line {
+  display: flex;
+  align-items: flex-start;
+}
+.fv-code-line:hover {
+  background: rgb(from var(--ui-text) r g b / 0.03);
+}
+.fv-code-no {
+  flex: none;
+  width: calc(var(--fv-code-gutter, 2ch) + 20px);
+  padding-right: 10px;
+  text-align: right;
+  color: var(--color-holo-dim);
+  user-select: none;
+}
+.fv-code-text {
+  flex: 1;
+  min-width: 0;
+  padding-right: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+.fv-code .fv-note {
+  padding-left: calc(var(--fv-code-gutter, 2ch) + 20px);
+}
+.card[data-size='s'] .fv-code {
+  font-size: 10px;
+}
+.card[data-size='focus'] .fv-code {
+  font-size: 12px;
+}
+
+.fv-code .hljs-comment,
+.fv-code .hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.fv-code .hljs-keyword,
+.fv-code .hljs-selector-tag,
+.fv-code .hljs-tag,
+.fv-code .hljs-name,
+.fv-code .hljs-doctag,
+.fv-code .hljs-section {
+  color: var(--code-keyword);
+}
+.fv-code .hljs-string,
+.fv-code .hljs-regexp,
+.fv-code .hljs-addition,
+.fv-code .hljs-selector-attr,
+.fv-code .hljs-selector-pseudo {
+  color: var(--code-string);
+}
+.fv-code .hljs-number,
+.fv-code .hljs-literal,
+.fv-code .hljs-symbol,
+.fv-code .hljs-bullet,
+.fv-code .hljs-link {
+  color: var(--code-number);
+}
+.fv-code .hljs-title,
+.fv-code .hljs-title.function_,
+.fv-code .hljs-function .hljs-title {
+  color: var(--code-function);
+}
+.fv-code .hljs-title.class_,
+.fv-code .hljs-type,
+.fv-code .hljs-built_in,
+.fv-code .hljs-class .hljs-title {
+  color: var(--code-type);
+}
+.fv-code .hljs-attr,
+.fv-code .hljs-attribute,
+.fv-code .hljs-property,
+.fv-code .hljs-variable,
+.fv-code .hljs-template-variable,
+.fv-code .hljs-selector-class,
+.fv-code .hljs-selector-id {
+  color: var(--code-property);
+}
+.fv-code .hljs-meta,
+.fv-code .hljs-meta .hljs-keyword {
+  color: var(--ui-text-muted);
+}
+.fv-code .hljs-deletion {
+  color: var(--ui-tone-red-text);
+}
+.fv-code .hljs-emphasis {
+  font-style: italic;
+}
+.fv-code .hljs-strong {
+  font-weight: 600;
+}
+.fv-code .hljs-subst,
+.fv-code .hljs-punctuation,
+.fv-code .hljs-operator {
+  color: var(--ui-text-soft);
+}

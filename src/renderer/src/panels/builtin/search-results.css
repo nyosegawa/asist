@@ -1,0 +1,26 @@
+/* Web search results card. Measured heights: l about 520px, m about 380px, s about 300px. */
+.sr-card {
+  --card-hue: #6fe7ff;
+  --card-focus-width: 640px;
+}
+.sr-snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin-top: 4px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ui-text-soft);
+  overflow-wrap: anywhere;
+}
+.sr[data-size='focus'] .sr-snippet {
+  -webkit-line-clamp: unset;
+}
+/* Google's Search Suggestions come with their own stylesheet inside a shadow root, so only the gap around the block is set here. */
+.sr-suggestions {
+  margin-top: 8px;
+}
+.sr .card-row.is-cited .card-row-meta {
+  color: var(--ui-link);
+}

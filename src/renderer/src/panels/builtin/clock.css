@@ -1,0 +1,114 @@
+/* World clock card. Measured heights: l about 430px, m about 400px, s about 270px. */
+.ck-card {
+  --card-hue: #9d8cff;
+  --card-focus-width: 540px;
+}
+
+.ck-scene {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 230px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0c1234, #0a0f22);
+}
+.ck-scene[data-phase='dawn'] {
+  background: linear-gradient(180deg, #23203f, #7a4d63 60%, #0a0f22);
+}
+.ck-scene[data-phase='day'] {
+  background: linear-gradient(180deg, #1a4a86, #3d84c4 55%, #0a0f22);
+}
+.ck-scene[data-phase='dusk'] {
+  background: linear-gradient(180deg, #221c48, #b25a3e 62%, #0a0f22);
+}
+.ck-orb {
+  position: absolute;
+  top: 34px;
+  right: 34px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 40%, #ffffff, #d7dcff 45%, transparent 72%);
+  box-shadow: 0 0 40px #c9d0ff66;
+  opacity: 0.85;
+}
+.ck-scene[data-phase='night'] .ck-orb {
+  /* An inset shadow laid over the disc turns the moon into a crescent. */
+  background: radial-gradient(circle at 40% 40%, #f4f1ff, #cdd3ff 50%, transparent 72%);
+  box-shadow:
+    inset -10px 4px 0 #0a0f22,
+    0 0 40px #aab3ff55;
+}
+.ck-scene[data-phase='day'] .ck-orb {
+  background: radial-gradient(circle at 45% 45%, #fff9e6, #ffe08a 45%, transparent 72%);
+  box-shadow: 0 0 60px #ffd97a99;
+}
+.ck-scene[data-phase='dawn'] .ck-orb,
+.ck-scene[data-phase='dusk'] .ck-orb {
+  top: 96px;
+  background: radial-gradient(circle at 45% 45%, #fff2d6, var(--color-holo-peach) 45%, transparent 72%);
+  box-shadow: 0 0 50px rgb(from var(--color-holo-peach) r g b / 0.6);
+}
+.ck-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, #0a0f22aa, transparent 65%),
+    linear-gradient(0deg, var(--card-background) 0%, transparent 22%);
+}
+.ck-scene[data-size='focus'] {
+  height: 280px;
+}
+.ck-scene[data-size='m'] {
+  height: 205px;
+}
+.ck-scene[data-size='s'] {
+  height: 180px;
+}
+.ck-scene[data-size='s'] .ck-orb {
+  top: 26px;
+  right: 26px;
+  width: 36px;
+  height: 36px;
+}
+
+.ck-offset {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--card-accent);
+}
+.ck .card-hero p b {
+  font-size: 10px;
+}
+.ck .card-big strong {
+  letter-spacing: -1px;
+}
+.ck .card-big strong small {
+  margin-left: 4px;
+  font-size: 20px;
+  color: var(--ui-text-soft);
+}
+.ck[data-size='s'] .card-big strong small {
+  font-size: 16px;
+}
+
+.ck-others .card-row {
+  align-items: baseline;
+  padding: 7px 12px;
+}
+.ck-other-name {
+  flex: 1;
+  font-size: 12px;
+}
+.ck-other-time {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ui-text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.ck-other-diff {
+  min-width: 64px;
+  text-align: right;
+  font-size: 10px;
+  color: var(--ui-text-soft);
+  font-variant-numeric: tabular-nums;
+}

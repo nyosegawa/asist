@@ -1,0 +1,122 @@
+/* Agent job card. Measured heights: while running l about 470px, m about 400px, s about 320px; finished with six artifacts, l about 450px. */
+.aj-card {
+  --card-hue: #9d8cff;
+  --card-focus-width: 720px;
+}
+.aj-started {
+  font-size: 9px;
+  color: var(--ui-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.aj-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.aj-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: holo-pulse 1.4s ease-in-out infinite;
+}
+
+.aj-text {
+  padding: 10px 12px 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ui-text-strong);
+}
+.aj-path {
+  padding: 4px 12px 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  overflow-wrap: anywhere;
+}
+.aj-merge {
+  border-color: rgb(from var(--color-holo-mint) r g b / 0.33);
+}
+.aj-failed {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.33);
+}
+.aj-artifact {
+  align-items: center;
+}
+.aj-diff {
+  max-height: 140px;
+  margin: 2px 12px 8px;
+  padding: 6px 8px;
+  overflow: auto;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  background: var(--ui-field);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ui-text-soft);
+}
+.aj-summary {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-text-strong);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.aj-step {
+  margin: 0 0 6px;
+  padding: 6px 10px;
+  border: 1px solid rgb(from var(--color-holo-peach) r g b / 0.27);
+  border-radius: 8px;
+  background: rgb(from var(--color-holo-peach) r g b / 0.05);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.aj-log {
+  max-height: 210px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ui-line) transparent;
+}
+.aj-waiting {
+  color: var(--ui-text-faint);
+}
+.aj[data-size='m'] .aj-log {
+  max-height: 156px;
+}
+.aj[data-size='s'] .aj-log {
+  max-height: 100px;
+}
+.aj[data-size='focus'] .aj-log {
+  max-height: 380px;
+  font-size: 11px;
+}
+.aj[data-size='focus'] .aj-diff {
+  max-height: 300px;
+}
+.aj-cost {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.aj-stop:hover,
+.aj-stop:focus-visible {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.47);
+  color: var(--ui-tone-red-text);
+}

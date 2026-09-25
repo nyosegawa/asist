@@ -1,0 +1,11 @@
+/* News card. Measured heights with two-line headlines: l about 470px, m about 410px, s about 340px. */
+.nw-card {
+  --card-hue: #ffb27a;
+  --card-focus-width: 640px;
+}
+.nw .card-row-index {
+  color: rgb(from var(--color-holo-peach) r g b / 0.6);
+}
+.nw[data-size='s'] .card-row {
+  padding: 7px 12px;
+}

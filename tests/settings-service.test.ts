@@ -1,0 +1,130 @@
+import { mkdtempSync, readFileSync } from 'node:fs'
+import fs from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultPersona } from '@shared/persona'
+
+// The details of a zod failure vary by field, so the tests check which message the error carries.
+const SETTINGS_INVALID = '[asist:settings.errors.invalid'
+const SETTINGS_FILE_INVALID = '[asist:settings.errors.fileInvalid'
+
+const mocks = vi.hoisted(() => ({
+  userData: '',
+  systemLanguages: ['ja-JP']
+}))
+
+vi.mock('electron', () => ({
+  app: { getPath: () => mocks.userData, getPreferredSystemLanguages: () => mocks.systemLanguages }
+}))
+
+// The first import of the settings service transforms its whole module graph, and the imports after vi.resetModules
+// reuse that work. It took 358 ms alone but over 5000 ms while `npm run demo:fit` kept three headless
+// Chromes busy (10-core Mac, 2026-09-24), which timed out whichever test came first. Importing once here moves
+// that cost into a hook with a timeout of its own.
+beforeAll(async () => {
+  await import('../src/main/services/settings')
+}, 30_000)
+
+beforeEach(() => {
+  vi.resetModules()
+  mocks.systemLanguages = ['ja-JP']
+  mocks.userData = mkdtempSync(path.join(tmpdir(), 'asist-settings-'))
+})
+afterEach(() => {
+  vi.restoreAllMocks()
+  fs.rmSync(mocks.userData, { recursive: true, force: true })
+})
+
+describe('settings persistence', () => {
+  it('defaults a fresh install to the auto ASR model, which follows the installed memory', async () => {
+    const settings = await import('../src/main/services/settings')
+
+    expect(settings.getSettings().asrModel).toBe('auto')
+    expect(settings.getSettings().persona).toBe(defaultPersona('ja-JP'))
+  })
+
+  it('starts a fresh install in the language of the system, for the interface, the conversation, the region and the persona', async () => {
+    mocks.systemLanguages = ['de-AT', 'en-US']
+    const settings = await import('../src/main/services/settings')
+
+    expect(settings.getSettings()).toMatchObject({ uiLocale: 'de-DE', conversationLocale: 'de-DE', region: 'DE' })
+    // A German conversation reads the English persona, the one every language but Japanese shares.
+    expect(settings.getSettings().persona).toBe(defaultPersona('en-US'))
+  })
+
+  it('leaves every other setting as it is when one is saved', async () => {
+    const settings = await import('../src/main/services/settings')
+    settings.saveSettings({ uiLocale: 'de-DE', conversationLocale: 'en-US', region: 'US', qwenTtsVoice: 'ryan', fileRoots: ['/tmp/shared'] })
+
+    expect(settings.saveSettings({ hangoverMs: 700 })).toMatchObject({
+      uiLocale: 'de-DE', conversationLocale: 'en-US', region: 'US', qwenTtsVoice: 'ryan', fileRoots: ['/tmp/shared'], hangoverMs: 700
+    })
+  })
+
+  it.each(['{broken', JSON.stringify({ persona: 'incomplete' })])('does not overwrite a broken settings file with defaults and names the file and the reason: %s', async (source) => {
+    const target = path.join(mocks.userData, 'settings.json')
+    fs.writeFileSync(target, source)
+    const settings = await import('../src/main/services/settings')
+    expect(() => settings.getSettings()).toThrow(target)
+    expect(() => settings.saveSettings({ persona: 'new' })).toThrow(SETTINGS_FILE_INVALID)
+    expect(fs.readFileSync(target, 'utf8')).toBe(source)
+  })
+
+  it('does not treat a read permission failure as a fresh install', async () => {
+    const settings = await import('../src/main/services/settings')
+    vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => {
+      throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
+    })
+    expect(() => settings.getSettings()).toThrow('permission denied')
+  })
+
+  it.each([
+    { ttsEngine: 'unknown' }, { bargeIn: 'yes' }, { hangoverMs: -1 },
+    { aizuchiRate: 1.1 }, { partialIntervalMs: 1501 }, { persona: null },
+    { asrModel: 'nope' }, { conversationLogRetentionDays: 0 }, { voicevoxSpeaker: 1.5 },
+    { dockOrder: ['jobs', 'tasks', 'memory', 'calendar'] }, { dockOrder: ['jobs', 'jobs', 'memory', 'calendar', 'settings'] }
+  ])('rejects an invalid value with the same schema whether it arrives from a save or from the file: %j', async (patch) => {
+    const settings = await import('../src/main/services/settings')
+    const saved = settings.saveSettings({ persona: 'before' })
+    const target = path.join(mocks.userData, 'settings.json')
+    const original = fs.readFileSync(target, 'utf8')
+    expect(() => settings.saveSettings(patch as never)).toThrow(SETTINGS_INVALID)
+    expect(settings.getSettings()).toEqual(saved)
+    expect(fs.readFileSync(target, 'utf8')).toBe(original)
+    fs.writeFileSync(target, JSON.stringify({ ...saved, ...patch }))
+    vi.resetModules()
+    const reloaded = await import('../src/main/services/settings')
+    expect(() => reloaded.getSettings()).toThrow(SETTINGS_INVALID)
+  })
+
+  it('trims the model name and accepts 0, which turns partial recognition off', async () => {
+    const settings = await import('../src/main/services/settings')
+    expect(settings.saveSettings({ conversationModel: { provider: 'openai', id: ' model ', effort: 'medium' }, partialIntervalMs: 0 })).toMatchObject({
+      conversationModel: { provider: 'openai', id: 'model', effort: 'medium' }, partialIntervalMs: 0
+    })
+  })
+
+  it('renames a temp file atomically and returns the settings it saved', async () => {
+    const settings = await import('../src/main/services/settings')
+
+    const saved = settings.saveSettings({ persona: 'saved' })
+
+    expect(saved.persona).toBe('saved')
+    expect(JSON.parse(readFileSync(path.join(mocks.userData, 'settings.json'), 'utf8'))).toMatchObject({
+      persona: 'saved'
+    })
+  })
+
+  it('leaves the in-process cache on the previous value when the rename fails', async () => {
+    const settings = await import('../src/main/services/settings')
+    settings.saveSettings({ persona: 'before' })
+    const rename = vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+      throw new Error('disk failure')
+    })
+
+    expect(() => settings.saveSettings({ persona: 'not-saved' })).toThrow('disk failure')
+    expect(settings.getSettings().persona).toBe('before')
+    rename.mockRestore()
+  })
+})

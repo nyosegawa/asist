@@ -1,0 +1,14 @@
+/* The notes screen. It borrows the layout of the memory screen (.my-*) and the document styles of the
+   file viewer (.fv-doc), and sets only the reading size, which the viewer keeps small for cards. */
+.nv-doc {
+  padding: 0;
+  font-size: 14.5px;
+  line-height: 1.85;
+}
+/* The header above already shows the first heading as the title. */
+.nv-doc > h1:first-child {
+  display: none;
+}
+.nv-doc > h1:first-child + * {
+  margin-top: 0;
+}

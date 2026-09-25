@@ -1,0 +1,82 @@
+/* Mail card. Measured heights: l about 707px with six messages, m about 559px with four, s about 465px with
+   four and no excerpt, measured in the demo with "メール見せて" (2026-09-16). */
+.mc-card {
+  --card-hue: #c9b8ff;
+  --card-focus-width: 600px;
+}
+.mc-item {
+  align-items: flex-start;
+}
+.mc-open {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.mc-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.mc-from {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--ui-text-soft);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mc-account {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--ui-text-faint);
+}
+.mc-time {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mc-subject {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+.mc-subject .card-row-title {
+  -webkit-line-clamp: 1;
+}
+.mc-star {
+  flex-shrink: 0;
+  color: var(--ui-tone-gold);
+  fill: var(--ui-tone-gold);
+}
+.mc-clip {
+  flex-shrink: 0;
+  color: var(--ui-text-faint);
+}
+.mc-snippet {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ui-text-faint);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mc-item[data-unread] .mc-from,
+.mc-item[data-unread] .card-row-title {
+  color: var(--ui-text-strong);
+  font-weight: 600;
+}
+.mc[data-size='s'] .card-row {
+  padding: 6px 12px;
+}
+.mc[data-size='s'] .mc-line {
+  gap: 6px;
+}

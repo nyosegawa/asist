@@ -1,0 +1,205 @@
+import { defineMessages } from '../message'
+
+/**
+ * The frame the shell draws around every card: its two buttons, and what it shows in place of a card that
+ * has no data. Under `errors`, the reasons a card cannot be filled, from the main process and the renderer.
+ */
+export const panels = defineMessages({
+  expand: {
+    'ja-JP': 'カードを拡大',
+    'en-US': 'Enlarge card',
+    'fr-FR': 'Agrandir la carte',
+    'de-DE': 'Karte vergrößern',
+    'hi-IN': 'कार्ड बड़ा करें',
+    'id-ID': 'Perbesar kartu',
+    'it-IT': 'Ingrandisci la scheda',
+    'ko-KR': '카드 확대',
+    'pt-BR': 'Ampliar cartão',
+    'es-419': 'Ampliar tarjeta',
+    'es-ES': 'Ampliar la tarjeta'
+  },
+  dismiss: {
+    'ja-JP': 'カードを閉じる',
+    'en-US': 'Close card',
+    'fr-FR': 'Fermer la carte',
+    'de-DE': 'Karte schließen',
+    'hi-IN': 'कार्ड बंद करें',
+    'id-ID': 'Tutup kartu',
+    'it-IT': 'Chiudi la scheda',
+    'ko-KR': '카드 닫기',
+    'pt-BR': 'Fechar cartão',
+    'es-419': 'Cerrar tarjeta',
+    'es-ES': 'Cerrar la tarjeta'
+  },
+  closeFocus: {
+    'ja-JP': '拡大表示を閉じる',
+    'en-US': 'Close the enlarged card',
+    'fr-FR': 'Fermer la carte agrandie',
+    'de-DE': 'Großansicht schließen',
+    'hi-IN': 'बड़ा व्यू बंद करें',
+    'id-ID': 'Tutup tampilan besar',
+    'it-IT': 'Chiudi la scheda ingrandita',
+    'ko-KR': '확대 보기 닫기',
+    'pt-BR': 'Fechar o cartão ampliado',
+    'es-419': 'Cerrar la tarjeta ampliada',
+    'es-ES': 'Cerrar la tarjeta ampliada'
+  },
+  loadFailed: {
+    'ja-JP': 'カードを読み込めませんでした',
+    'en-US': "Couldn't load this card",
+    'fr-FR': 'Impossible de charger cette carte',
+    'de-DE': 'Die Karte konnte nicht geladen werden',
+    'hi-IN': 'यह कार्ड लोड नहीं हो सका',
+    'id-ID': 'Tidak bisa memuat kartu ini',
+    'it-IT': 'Impossibile caricare questa scheda',
+    'ko-KR': '카드를 불러오지 못했습니다',
+    'pt-BR': 'Não foi possível carregar este cartão',
+    'es-419': 'No se pudo cargar esta tarjeta',
+    'es-ES': 'No se ha podido cargar la tarjeta'
+  },
+  stale: {
+    'ja-JP': 'この内容は古くなっています',
+    'en-US': 'This information is out of date',
+    'fr-FR': 'Ces informations ne sont plus à jour',
+    'de-DE': 'Dieser Stand ist nicht mehr aktuell',
+    'hi-IN': 'यह जानकारी पुरानी है',
+    'id-ID': 'Isi ini sudah tidak terbaru',
+    'it-IT': 'Queste informazioni non sono aggiornate',
+    'ko-KR': '이 내용은 오래되었습니다',
+    'pt-BR': 'Estas informações estão desatualizadas',
+    'es-419': 'Esta información está desactualizada',
+    'es-ES': 'Esta información está desactualizada'
+  },
+  renderFailed: {
+    'ja-JP': 'カードを表示できませんでした',
+    'en-US': "Couldn't show this card",
+    'fr-FR': "Impossible d'afficher cette carte",
+    'de-DE': 'Die Karte konnte nicht angezeigt werden',
+    'hi-IN': 'यह कार्ड दिखाया नहीं जा सका',
+    'id-ID': 'Tidak bisa menampilkan kartu ini',
+    'it-IT': 'Impossibile mostrare questa scheda',
+    'ko-KR': '카드를 표시하지 못했습니다',
+    'pt-BR': 'Não foi possível exibir este cartão',
+    'es-419': 'No se pudo mostrar esta tarjeta',
+    'es-ES': 'No se ha podido mostrar la tarjeta'
+  },
+  errors: {
+    placeNotFound: {
+      'ja-JP': '場所が見つかりません: {place}',
+      'en-US': 'The place was not found: {place}',
+      'fr-FR': 'Lieu introuvable : {place}',
+      'de-DE': 'Der Ort wurde nicht gefunden: {place}',
+      'hi-IN': 'जगह नहीं मिली: {place}',
+      'id-ID': 'Tempatnya tidak ditemukan: {place}',
+      'it-IT': 'Il luogo non è stato trovato: {place}',
+      'ko-KR': '장소를 찾을 수 없습니다: {place}',
+      'pt-BR': 'O local não foi encontrado: {place}',
+      'es-419': 'No se encontró el lugar: {place}',
+      'es-ES': 'No se encuentra el lugar: {place}'
+    },
+    currencyUnknown: {
+      'ja-JP': '{region} の通貨が分かりません。比較する通貨を指定してください。',
+      'en-US': "The currency of {region} is not known. Name the currency to compare with.",
+      'fr-FR': "La monnaie de {region} n'est pas connue. Indiquez la monnaie de comparaison.",
+      'de-DE': 'Die Währung von {region} ist nicht bekannt. Nennen Sie die Währung zum Vergleich.',
+      'hi-IN': '{region} की मुद्रा पता नहीं है। तुलना के लिए मुद्रा बताएँ।',
+      'id-ID': 'Mata uang {region} tidak diketahui. Sebutkan mata uang pembandingnya.',
+      'it-IT': 'La valuta di {region} non è nota. Indica la valuta con cui confrontare.',
+      'ko-KR': '{region}의 통화를 알 수 없습니다. 비교할 통화를 지정하십시오.',
+      'pt-BR': 'A moeda de {region} não é conhecida. Informe a moeda de comparação.',
+      'es-419': 'No se conoce la moneda de {region}. Indica la moneda con la que comparar.',
+      'es-ES': 'No se conoce la moneda de {region}. Indica la moneda con la que comparar.'
+    },
+    rateUnavailable: {
+      'ja-JP': '{base}/{quote} のレートを取得できませんでした。',
+      'en-US': "Couldn't get the {base}/{quote} rate.",
+      'fr-FR': "Impossible d'obtenir le taux {base}/{quote}.",
+      'de-DE': 'Der Kurs {base}/{quote} ließ sich nicht abrufen.',
+      'hi-IN': '{base}/{quote} की दर नहीं मिल सकी।',
+      'id-ID': 'Tidak bisa mengambil kurs {base}/{quote}.',
+      'it-IT': 'Impossibile ottenere il tasso {base}/{quote}.',
+      'ko-KR': '{base}/{quote} 환율을 가져오지 못했습니다.',
+      'pt-BR': 'Não foi possível obter a taxa {base}/{quote}.',
+      'es-419': 'No se pudo obtener el tipo de cambio {base}/{quote}.',
+      'es-ES': 'No se ha podido obtener el tipo de cambio {base}/{quote}.'
+    },
+    newsMissing: {
+      'ja-JP': 'ニュースが見つかりません: {topic}',
+      'en-US': 'No news was found for {topic}',
+      'fr-FR': 'Aucune actualité trouvée pour {topic}',
+      'de-DE': 'Zu {topic} wurden keine Nachrichten gefunden',
+      'hi-IN': '{topic} की कोई खबर नहीं मिली',
+      'id-ID': 'Tidak ada berita yang ditemukan untuk {topic}',
+      'it-IT': 'Nessuna notizia trovata per {topic}',
+      'ko-KR': '뉴스를 찾을 수 없습니다: {topic}',
+      'pt-BR': 'Nenhuma notícia encontrada sobre {topic}',
+      'es-419': 'No se encontraron noticias sobre {topic}',
+      'es-ES': 'No se ha encontrado ninguna noticia sobre {topic}'
+    },
+    mailOff: {
+      'ja-JP': 'メールのアカウントがありません。設定で追加してください。',
+      'en-US': 'There is no mail account. Add one in the settings.',
+      'fr-FR': "Il n'y a aucun compte de messagerie. Ajoutez-en un dans les réglages.",
+      'de-DE': 'Es gibt keinen Mail-Account. Richten Sie einen in den Einstellungen ein.',
+      'hi-IN': 'कोई मेल अकाउंट नहीं है। सेटिंग्ज़ में एक जोड़ें।',
+      'id-ID': 'Tidak ada akun email. Tambahkan satu di pengaturan.',
+      'it-IT': "Non c'è nessun account di posta. Aggiungine uno nelle impostazioni.",
+      'ko-KR': '메일 계정이 없습니다. 설정에서 추가하십시오.',
+      'pt-BR': 'Não há conta de e-mail. Adicione uma nos ajustes.',
+      'es-419': 'No hay ninguna cuenta de correo. Agrega una en la configuración.',
+      'es-ES': 'No hay ninguna cuenta de correo. Añade una en los ajustes.'
+    },
+    noPaths: {
+      'ja-JP': '表示するファイルが指定されていません。',
+      'en-US': 'No file was given to show.',
+      'fr-FR': "Aucun fichier à afficher n'a été indiqué.",
+      'de-DE': 'Es wurde keine Datei zum Anzeigen angegeben.',
+      'hi-IN': 'दिखाने के लिए कोई फ़ाइल नहीं दी गई।',
+      'id-ID': 'Tidak ada file yang disebutkan untuk ditampilkan.',
+      'it-IT': 'Non è stato indicato nessun file da mostrare.',
+      'ko-KR': '표시할 파일이 지정되지 않았습니다.',
+      'pt-BR': 'Nenhum arquivo foi indicado para exibir.',
+      'es-419': 'No se indicó ningún archivo para mostrar.',
+      'es-ES': 'No se ha indicado ningún archivo que mostrar.'
+    },
+    weatherImageMissing: {
+      'ja-JP': '天気の画像がありません({id})',
+      'en-US': 'There is no weather image ({id})',
+      'fr-FR': "Il n'y a pas d'image de météo ({id})",
+      'de-DE': 'Zum Wetter gibt es kein Bild ({id})',
+      'hi-IN': 'मौसम की इमेज नहीं है ({id})',
+      'id-ID': 'Tidak ada gambar cuaca ({id})',
+      'it-IT': "Non c'è un'immagine del tempo ({id})",
+      'ko-KR': '날씨 이미지가 없습니다({id})',
+      'pt-BR': 'Não há imagem do tempo ({id})',
+      'es-419': 'No hay imagen del clima ({id})',
+      'es-ES': 'No hay imagen del tiempo ({id})'
+    },
+    mapsKeyMissing: {
+      'ja-JP': '地図のキーがありません。.env の RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY を設定してください。',
+      'en-US': 'There is no maps key. Set RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY in .env.',
+      'fr-FR': "Il n'y a pas de clé pour les cartes. Renseignez RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY dans .env.",
+      'de-DE': 'Der Schlüssel für die Karten fehlt. Setzen Sie RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY in .env.',
+      'hi-IN': 'नक्शे की कुंजी नहीं है। .env में RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY सेट करें।',
+      'id-ID': 'Tidak ada kunci peta. Atur RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY di .env.',
+      'it-IT': 'Manca la chiave delle mappe. Imposta RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY in .env.',
+      'ko-KR': '지도 키가 없습니다. .env에 RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY를 설정하십시오.',
+      'pt-BR': 'Não há chave do mapa. Defina RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY no .env.',
+      'es-419': 'No hay clave de mapas. Define RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY en .env.',
+      'es-ES': 'No hay clave para los mapas. Define RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY en .env.'
+    },
+    mapOriginMissing: {
+      'ja-JP': '経路の出発地がありません。',
+      'en-US': 'The route has no starting point.',
+      'fr-FR': "L'itinéraire n'a pas de point de départ.",
+      'de-DE': 'Der Route fehlt der Startpunkt.',
+      'hi-IN': 'रास्ते का शुरुआती पता नहीं है।',
+      'id-ID': 'Rute ini tidak punya titik awal.',
+      'it-IT': 'Il percorso non ha un punto di partenza.',
+      'ko-KR': '경로의 출발지가 없습니다.',
+      'pt-BR': 'A rota não tem ponto de partida.',
+      'es-419': 'La ruta no tiene punto de partida.',
+      'es-ES': 'La ruta no tiene punto de partida.'
+    }
+  }
+})

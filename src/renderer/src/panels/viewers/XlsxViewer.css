@@ -1,0 +1,32 @@
+/* Excel sheet tabs. They are sticky so that they stay at the left while the table scrolls sideways. */
+.fv-xlsx-tabs {
+  position: sticky;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px 6px;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fv-xlsx-tabs button {
+  padding: 3px 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fv-xlsx-tabs button[data-current='true'] {
+  border-color: rgb(from var(--color-holo-cyan) r g b / 0.4);
+  background: var(--viewer-raised);
+  color: var(--ui-text-strong);
+}
+.fv-xlsx-tabs button:hover {
+  color: var(--ui-text-strong);
+}
+.card[data-size='s'] .fv-xlsx-tabs {
+  padding: 6px 8px 4px;
+}

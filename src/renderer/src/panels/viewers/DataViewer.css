@@ -1,0 +1,78 @@
+/* json tree. The colors match CodeViewer.css. */
+.fv-data-tree,
+.fv-data-children {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fv-data-tree {
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ui-text-soft);
+}
+.fv-data-children {
+  padding-left: 14px;
+  border-left: 1px solid var(--ui-divider);
+  margin-left: 5px;
+}
+.fv-data-node {
+  overflow-wrap: anywhere;
+}
+.fv-data-node.fv-note {
+  padding: 0;
+  font-family: var(--font-mono);
+}
+.fv-data-toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.fv-data-toggle:hover .fv-data-key {
+  text-decoration: underline;
+  text-decoration-color: rgb(from var(--ui-link) r g b / 0.4);
+}
+.fv-data-arrow {
+  display: inline-block;
+  width: 10px;
+  color: var(--color-holo-dim);
+  font-size: 9px;
+}
+.fv-data-key {
+  color: var(--code-property);
+}
+.fv-data-root {
+  color: var(--ui-text-muted);
+}
+.fv-data-colon {
+  color: var(--color-holo-dim);
+}
+.fv-data-count {
+  color: var(--color-holo-dim);
+}
+.fv-data-value[data-type='string'] {
+  color: var(--code-string);
+}
+.fv-data-value[data-type='number'] {
+  color: var(--code-number);
+}
+.fv-data-value[data-type='boolean'],
+.fv-data-value[data-type='null'] {
+  color: var(--code-keyword);
+}
+.card[data-size='s'] .fv-data-tree {
+  font-size: 10px;
+}
+.card[data-size='focus'] .fv-data-tree {
+  padding: 12px 16px;
+  font-size: 12px;
+}

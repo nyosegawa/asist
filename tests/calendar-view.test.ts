@@ -1,0 +1,148 @@
+// @vitest-environment happy-dom
+import React, { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createTranslator } from '../src/shared/i18n'
+import type { CalendarEvent } from '../src/shared/calendar'
+import type { AppSettings } from '../src/shared/settings'
+import { CalendarView } from '../src/renderer/src/ui/calendar/CalendarView'
+import { useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
+import { useViewStore } from '../src/renderer/src/state/view'
+
+const day = (d: number, h = 0, m = 0): number => new Date(2026, 8, d, h, m).getTime()
+let seq = 0
+const event = (patch: Partial<CalendarEvent>): CalendarEvent => ({
+  id: `e${++seq}`,
+  calendarId: 'work',
+  calendarTitle: '仕事',
+  title: `予定${seq}`,
+  start: day(15, 10),
+  end: day(15, 11),
+  allDay: false,
+  location: '',
+  notes: '',
+  timeZone: 'Asia/Tokyo',
+  revision: 'r',
+  recurring: false,
+  hasAttendees: false,
+  writable: true,
+  ...patch
+})
+const trip = event({ title: '箱根', allDay: true, start: day(12), end: day(14), calendarId: 'home' })
+const review = event({ title: '予約画面 レビュー', location: 'Zoom', hasAttendees: true })
+const lunch = event({ title: 'ランチ', start: day(15, 13), end: day(15, 14) })
+const events = [trip, review, lunch]
+
+const calendarEvents = vi.fn()
+const calendarChange = vi.fn()
+let container: HTMLDivElement
+let root: Root
+
+beforeEach(() => {
+  vi.useFakeTimers({ now: new Date(2026, 8, 15, 10, 24), toFake: ['Date'] })
+  vi.stubGlobal('React', React)
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe(): void {}
+      disconnect(): void {}
+    }
+  )
+  calendarEvents.mockReset().mockResolvedValue(events)
+  calendarChange.mockReset()
+  window.api = {
+    calendarStatus: async () => ({
+      authorization: 'fullAccess',
+      calendars: [
+        { id: 'work', title: '仕事', source: 'Google', writable: true },
+        { id: 'home', title: '自宅', source: 'iCloud', writable: true },
+        { id: 'other', title: '見ない', source: 'iCloud', writable: true }
+      ]
+    }),
+    calendarEvents,
+    calendarChange
+  } as unknown as typeof window.api
+  useSettingsStore.setState({
+    settings: { calendar: { enabled: true, readCalendarIds: ['work', 'home'], writeCalendarId: 'work' } } as AppSettings
+  })
+  useToastStore.setState({ toasts: [] })
+  useViewStore.getState().closeApp()
+  useViewStore.getState().openApp({ app: 'calendar' })
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+})
+afterEach(async () => {
+  await act(async () => root.unmount())
+  container.remove()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+async function render(): Promise<void> {
+  await act(async () => root.render(React.createElement(CalendarView, { open: true })))
+  await act(async () => {})
+}
+const text = (selector: string): string[] =>
+  [...container.querySelectorAll(selector)].map((el) => el.textContent?.trim() ?? '')
+const t = createTranslator('ja-JP')
+
+it('loads the events of the visible range, draws bars and a remaining count, and opens a detail card on click', async () => {
+  await render()
+  const range = calendarEvents.mock.calls[0][0]
+  expect(new Date(range.start).getTime()).toBe(new Date(2026, 7, 31).getTime())
+  expect(new Date(range.end).getTime()).toBe(new Date(2026, 9, 5).getTime())
+  expect(text('.cal-side-item')).toEqual(['仕事', '自宅'])
+  expect(text('.cal-ev.is-bar')).toEqual(['箱根'])
+  expect(container.querySelector('.cal-daynum.is-today')?.textContent).toBe('15')
+  const more = container.querySelector<HTMLButtonElement>('.cal-more')!
+  expect(more.textContent).toBe(t('common.more', { count: 2 }))
+  await act(async () => more.click())
+  expect(text('.cal-pop .cal-ev')).toEqual(['10:00予約画面 レビュー', '13:00ランチ'])
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-pop .cal-ev')!.click())
+  const card = container.querySelector('.cal-pop.is-event')!
+  expect(card.textContent).toContain('2026年9月15日火曜日・10:00～11:00')
+  expect(card.textContent).toContain('Zoom')
+  expect(card.textContent).toContain(t('calendar.event.hasAttendees'))
+  expect(card.querySelector<HTMLButtonElement>(`[aria-label="${t('common.delete')}"]`)?.disabled).toBe(true)
+})
+
+it('sends the new event to main for confirmation and reloads the range after it is saved', async () => {
+  calendarChange.mockResolvedValue({ saved: true, operation: 'create', event: event({ title: '動作確認' }), sync: 'macOSに保存しました' })
+  await render()
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-create')!.click())
+  const form = container.querySelector<HTMLFormElement>('.cal-create-form')!
+  const setValue = (input: HTMLInputElement, value: string): void => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await act(async () => setValue(form.querySelector('.cal-title-input')!, '動作確認'))
+  await act(async () => form.requestSubmit())
+  expect(calendarChange).toHaveBeenCalledWith({
+    operation: 'create',
+    event: {
+      title: '動作確認',
+      start: new Date(2026, 8, 15, 10, 0).toISOString(),
+      end: new Date(2026, 8, 15, 11, 0).toISOString(),
+      allDay: false,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      location: '',
+      notes: ''
+    }
+  })
+  expect(calendarEvents).toHaveBeenCalledTimes(2)
+  expect(useToastStore.getState().toasts[0]).toMatchObject({ kind: 'ok', title: t('calendar.saved.create') })
+  expect(container.querySelector('.cal-pop')).toBeNull()
+})
+
+it('loads no events while the calendar integration is off and points to the settings screen', async () => {
+  useSettingsStore.setState({
+    settings: { calendar: { enabled: false, readCalendarIds: [], writeCalendarId: null } } as AppSettings
+  })
+  await render()
+  expect(calendarEvents).not.toHaveBeenCalled()
+  expect(container.querySelector('.cal-notice')?.textContent).toContain(t('calendar.notice.disabled'))
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-notice button')!.click())
+  expect(useViewStore.getState().open?.app).toBe('settings')
+})

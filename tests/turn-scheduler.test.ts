@@ -1,0 +1,115 @@
+import { describe, expect, it, vi } from 'vitest'
+import { LatestTurnScheduler } from '@shared/turn-scheduler'
+
+const deferred = (): { promise: Promise<void>; resolve: () => void } => {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('LatestTurnScheduler', () => {
+  it('aborts the running turn when a new one starts and runs the new one only after the old one ends', async () => {
+    const scheduler = new LatestTurnScheduler()
+    const release = deferred()
+    const started = deferred()
+    const order: string[] = []
+
+    const first = scheduler.start(async ({ signal }) => {
+      order.push('first:start')
+      started.resolve()
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            order.push('first:abort')
+            resolve()
+          },
+          { once: true }
+        )
+      })
+      await release.promise
+      order.push('first:end')
+    })
+    await started.promise
+
+    const secondRun = vi.fn(async () => {
+      order.push('second:start')
+    })
+    const second = scheduler.start(secondRun)
+    await Promise.resolve()
+
+    expect(order).toEqual(['first:start', 'first:abort'])
+    expect(secondRun).not.toHaveBeenCalled()
+    release.resolve()
+    await Promise.all([first.completion, second.completion])
+    expect(order).toEqual(['first:start', 'first:abort', 'first:end', 'second:start'])
+  })
+
+  it('never starts a waiting turn that was replaced before it began', async () => {
+    const scheduler = new LatestTurnScheduler()
+    const release = deferred()
+    const first = scheduler.start(async ({ signal }) => {
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+      await release.promise
+    })
+    await Promise.resolve()
+
+    const skipped = vi.fn(async () => {})
+    const middle = scheduler.start(skipped)
+    const latest = vi.fn(async () => {})
+    const last = scheduler.start(latest)
+
+    release.resolve()
+    await Promise.all([first.completion, middle.completion, last.completion])
+    expect(skipped).not.toHaveBeenCalled()
+    expect(latest).toHaveBeenCalledOnce()
+  })
+
+  it('hands out increasing turn ids and lets a turn be aborted by its id', async () => {
+    const scheduler = new LatestTurnScheduler()
+    const seen: number[] = []
+    const started = deferred()
+    const handle = scheduler.start(async ({ turnId, signal }) => {
+      seen.push(turnId)
+      started.resolve()
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    })
+    expect(handle.signal.aborted).toBe(false)
+    await started.promise
+    scheduler.abort(handle.turnId)
+    expect(handle.signal.aborted).toBe(true)
+    await handle.completion
+
+    const next = scheduler.start(async ({ turnId }) => {
+      seen.push(turnId)
+    })
+    await next.completion
+    expect(seen).toEqual([1, 2])
+    expect(scheduler.activeTurnId).toBeNull()
+  })
+
+  it('does not interrupt a running turn for an idle-only interjection', async () => {
+    const scheduler = new LatestTurnScheduler()
+    const started = deferred()
+    const release = deferred()
+    const active = scheduler.start(async ({ signal }) => {
+      started.resolve()
+      await release.promise
+      expect(signal.aborted).toBe(false)
+    })
+    await started.promise
+
+    const interjection = vi.fn(async () => {})
+    expect(scheduler.startIfIdle(interjection)).toBeNull()
+    expect(interjection).not.toHaveBeenCalled()
+
+    release.resolve()
+    await active.completion
+    const accepted = scheduler.startIfIdle(interjection)
+    expect(accepted).not.toBeNull()
+    await accepted?.completion
+    expect(interjection).toHaveBeenCalledOnce()
+  })
+})

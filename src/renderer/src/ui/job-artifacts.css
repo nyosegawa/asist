@@ -1,0 +1,66 @@
+/* The artifacts of the selected job, under its log on the jobs screen. */
+.ja {
+  flex-shrink: 0;
+}
+.ja h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 2px 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ui-heading);
+}
+.ja h3 small {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-holo-dim);
+}
+.ja ul {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0 0 6px;
+  overflow-x: auto;
+  list-style: none;
+}
+.ja li {
+  flex: 0 0 176px;
+}
+.ja button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 2px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-box-radius);
+  background: var(--ui-box);
+  color: var(--ui-heading);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+.ja button:hover,
+.ja button:focus-visible {
+  border-color: var(--ui-line-active);
+  color: var(--ui-text-strong);
+}
+.ja button svg {
+  grid-row: span 2;
+  align-self: center;
+}
+.ja-name,
+.ja-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ja-name {
+  font-size: 12px;
+  color: var(--ui-text-strong);
+}
+.ja-meta {
+  font-size: 10px;
+  color: var(--color-holo-dim);
+}

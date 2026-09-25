@@ -1,0 +1,93 @@
+/* Video and audio viewers, which share the controls (.fv-media-controls). Inside a card the video height is
+   the Frame's limit minus the controls (about 34px) and the note (about 22px). */
+.fv-media-video {
+  display: block;
+  width: 100%;
+  max-height: calc(var(--fv-max, 420px) - 64px);
+  object-fit: contain;
+  background: var(--color-holo-bg);
+}
+.card[data-size='focus'] .fv-media-video {
+  /* The focus view scrolls within 82vh. Leaving about 250px for the heading, the controls and the note keeps the controls visible from the start. */
+  max-height: 50vh;
+}
+
+.fv-media-wave {
+  display: block;
+  width: 100%;
+  height: 72px;
+  background: var(--color-holo-bg);
+  cursor: pointer;
+}
+.fv-media-wave[data-state='loading'] {
+  opacity: 0.5;
+}
+.card[data-size='s'] .fv-media-wave {
+  height: 56px;
+}
+.card[data-size='focus'] .fv-media-wave {
+  height: 120px;
+}
+
+.fv-media-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--ui-line);
+}
+.fv-media-button {
+  display: inline-flex;
+  flex: none;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 8px;
+  color: var(--ui-heading);
+  cursor: pointer;
+}
+.fv-media-button:hover:not(:disabled),
+.fv-media-button:focus-visible {
+  color: var(--ui-text-strong);
+  border-color: var(--ui-line-active);
+}
+.fv-media-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.fv-media-button[aria-pressed='true'] {
+  color: var(--color-holo-peach);
+}
+.fv-media-time {
+  flex: none;
+  min-width: 3ch;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.fv-media-seek {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--color-holo-cyan) var(--fv-media-progress, 0%),
+    var(--ui-line) var(--fv-media-progress, 0%)
+  );
+  cursor: pointer;
+}
+.fv-media-seek:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.fv-media-seek::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  appearance: none;
+  border: 1px solid var(--color-holo-cyan);
+  border-radius: 50%;
+  background: var(--color-holo-surface);
+}

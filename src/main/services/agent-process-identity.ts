@@ -1,0 +1,112 @@
+import { execFileSync } from 'node:child_process'
+import type { AgentProcessIdentity } from '@shared/ipc'
+import { errorText } from '@shared/i18n/error-text'
+import type { AgentProcess } from './agent-process-lifetime'
+import { childEnv } from './child-env'
+
+/** Carried across the exec and inherited by descendants. It identifies this one launch and is not a credential. */
+export const AGENT_PROCESS_TOKEN = 'ASIST_AGENT_EXECUTION_ID'
+
+interface GroupMember { pid: number; pgid: number; state: string; startedAt: string }
+
+function processTable(): GroupMember[] {
+  const output = execFileSync('/bin/ps', ['-axo', 'pid=,pgid=,stat=,lstart='], {
+    encoding: 'utf8', timeout: 2_000, maxBuffer: 4 * 1024 * 1024,
+    env: childEnv({ LC_ALL: 'C' })
+  })
+  const lines = output.split('\n').filter((line) => line.trim())
+  if (lines.length === 0) throw new Error(errorText('jobs.process.tableUnreadable'))
+  return lines.map((line) => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/)
+    if (!match) throw new Error(errorText('jobs.process.tableUnparsable'))
+    return { pid: Number(match[1]), pgid: Number(match[2]), state: match[3], startedAt: match[4] }
+  })
+}
+
+export function captureProcessIdentity(pid: number, token: string): AgentProcessIdentity {
+  const member = processTable().find((row) => row.pid === pid)
+  if (!member || member.pgid !== pid) throw new Error(errorText('jobs.process.groupUnconfirmed'))
+  return { pid, startedAt: member.startedAt, token }
+}
+
+/**
+ * A PID alone never stops another process. Every remaining member is checked, even once the leader is gone.
+ * 'unreadable' means a member's environment could not be read on this pass, so it is neither ours nor foreign yet.
+ */
+export function inspectProcessIdentity(identity: AgentProcessIdentity): 'gone' | 'owned' | 'unreadable' {
+  const members = processTable().filter((row) => row.pgid === identity.pid && !row.state.startsWith('Z'))
+  if (members.length === 0) return 'gone'
+  const leader = members.find((row) => row.pid === identity.pid)
+  if (leader && leader.startedAt !== identity.startedAt) {
+    throw new Error(errorText('jobs.process.pidReused'))
+  }
+  for (const member of members) {
+    // The environment ps prints can contain secrets, so it is only matched against and neither the raw
+    // output nor the underlying error leaves this function.
+    let environment: string
+    try {
+      environment = execFileSync('/bin/ps', ['eww', '-p', String(member.pid), '-o', 'command='], {
+        encoding: 'utf8', timeout: 2_000, maxBuffer: 4 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'], env: childEnv()
+      })
+    } catch (error) {
+      // ps exits with 1 when the member ended after the table was read.
+      if ((error as { status?: number | null }).status === 1) return 'unreadable'
+      throw new Error(errorText('jobs.process.tokenUnreadable'))
+    }
+    const token = identity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`(?:^|\\s)${AGENT_PROCESS_TOKEN}=${token}(?:\\s|$)`).test(environment)) continue
+    // A process that is exiting stays in the table as "Ss", "Rs" or "?Es" for a few milliseconds after the
+    // kernel has released its arguments, and ps then prints "(node)" or "<defunct>" with no environment.
+    // Measured on macOS 26.2 on 2026-09-22: 22 of 1431 reads of a Node process around its exit. Another
+    // user's process prints the same form, so it proves nothing about ownership either way.
+    if (/^(?:\(.*\)|<defunct>)$/.test(environment.trim())) return 'unreadable'
+    throw new Error(errorText('jobs.process.tokenMismatch'))
+  }
+  return 'owned'
+}
+
+/** Stops only an agent whose parent link a restart broke, and settles its output once it can no longer write. */
+export function recoverAgentProcess(identity: AgentProcessIdentity, onStopped: () => void): AgentProcess {
+  let running = false
+  let resolve!: () => void
+  let reject!: (error: Error) => void
+  const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail })
+  void completion.catch(() => {})
+  const stop = (): void => {
+    if (running) return
+    running = true
+    const started = Date.now()
+    let termSent = false
+    let killSent = false
+    const check = (): void => {
+      try {
+        const state = inspectProcessIdentity(identity)
+        if (state === 'gone') {
+          onStopped()
+          resolve()
+          return
+        }
+        const elapsed = Date.now() - started
+        if (elapsed >= 5_000) {
+          throw new Error(errorText(state === 'owned' ? 'jobs.process.staleRunning' : 'jobs.process.tokenUnreadable'))
+        }
+        // An unconfirmed group receives no signal; the next pass sees an exiting member as a zombie or gone.
+        const signal = state !== 'owned' ? null : !termSent ? 'SIGTERM' : elapsed >= 2_000 && !killSent ? 'SIGKILL' : null
+        if (signal) {
+          try { process.kill(-identity.pid, signal) } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw new Error(errorText('jobs.process.staleSignalFailed'))
+          }
+          if (signal === 'SIGTERM') termSent = true
+          else killSent = true
+        }
+        setTimeout(check, 100)
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(errorText('jobs.process.exitUnconfirmed')))
+      }
+    }
+    // The recovery event fires only after the caller has registered the completion and the process.
+    queueMicrotask(check)
+  }
+  return { completion, stop }
+}

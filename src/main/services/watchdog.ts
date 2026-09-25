@@ -1,0 +1,59 @@
+import * as asr from './asr'
+import * as tts from './tts'
+import * as aizuchi from './aizuchi'
+
+/**
+ * Health monitoring for the speech recognition and TTS engine sidecars, which tries to restart one that has
+ * died. onChange runs only when the snapshot differs from the previous one, because the renderer treats
+ * every call as a status change to push.
+ */
+
+const INTERVAL_MS = 30_000
+
+export interface HealthSnapshot {
+  asr: boolean
+  tts: boolean
+}
+
+let running = false
+let inflight = false
+let last: HealthSnapshot | null = null
+
+export function start(onChange: (snap: HealthSnapshot) => void): void {
+  if (running) return
+  running = true
+
+  const tick = async (): Promise<void> => {
+    if (inflight) return
+    inflight = true
+    try {
+      let [asrUp, ttsUp] = await Promise.all([asr.available(), tts.available()])
+      if (!asrUp) asrUp = await asr.revive()
+      if (!ttsUp) {
+        // ensureEngine leaves a process it already owns alone while that process is still coming up over
+        // HTTP, and retries only after the process has exited or errored.
+        void tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error))
+      }
+      const snap: HealthSnapshot = { asr: asrUp, tts: ttsUp }
+      if (!last || last.asr !== snap.asr || last.tts !== snap.tts) {
+        // Aizuchi clips built while TTS was down have audio=null, so the bank is rebuilt once it is back.
+        if (last && !last.tts && snap.tts) {
+          aizuchi.invalidate()
+          void aizuchi.getBank()
+        }
+        if (last) {
+          console.log(
+            `watchdog: asr ${last.asr}→${snap.asr}, tts ${last.tts}→${snap.tts}`
+          )
+        }
+        last = snap
+        onChange(snap)
+      }
+    } finally {
+      inflight = false
+    }
+  }
+
+  setInterval(() => void tick(), INTERVAL_MS)
+  void tick()
+}

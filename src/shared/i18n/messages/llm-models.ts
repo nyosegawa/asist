@@ -1,0 +1,355 @@
+import { defineMessages } from '../message'
+
+/**
+ * The depth of thinking and the one-line description of each conversation model, and the errors of the
+ * model providers' APIs with the names of what an API key is checked for. The model names stay in the code.
+ */
+export const llmModels = defineMessages({
+  effort: {
+    low: {
+      'ja-JP': '浅い',
+      'en-US': 'Shallow',
+      'fr-FR': 'Faible',
+      'de-DE': 'Flach',
+      'hi-IN': 'उथला',
+      'id-ID': 'Dangkal',
+      'it-IT': 'Superficiale',
+      'ko-KR': '얕음',
+      'pt-BR': 'Superficial',
+      'es-419': 'Superficial',
+      'es-ES': 'Superficial'
+    },
+    medium: {
+      'ja-JP': '普通',
+      'en-US': 'Normal',
+      'fr-FR': 'Normale',
+      'de-DE': 'Normal',
+      'hi-IN': 'सामान्य',
+      'id-ID': 'Sedang',
+      'it-IT': 'Normale',
+      'ko-KR': '보통',
+      'pt-BR': 'Normal',
+      'es-419': 'Normal',
+      'es-ES': 'Normal'
+    },
+    high: {
+      'ja-JP': '深い',
+      'en-US': 'Deep',
+      'fr-FR': 'Élevée',
+      'de-DE': 'Tief',
+      'hi-IN': 'गहरा',
+      'id-ID': 'Dalam',
+      'it-IT': 'Approfondito',
+      'ko-KR': '깊음',
+      'pt-BR': 'Profundo',
+      'es-419': 'Profundo',
+      'es-ES': 'Profundo'
+    },
+    xhigh: {
+      'ja-JP': 'より深い',
+      'en-US': 'Deeper',
+      'fr-FR': 'Très élevée',
+      'de-DE': 'Tiefer',
+      'hi-IN': 'और गहरा',
+      'id-ID': 'Lebih dalam',
+      'it-IT': 'Più approfondito',
+      'ko-KR': '더 깊음',
+      'pt-BR': 'Mais profundo',
+      'es-419': 'Más profundo',
+      'es-ES': 'Más profundo'
+    },
+    max: {
+      'ja-JP': '最大',
+      'en-US': 'Maximum',
+      'fr-FR': 'Maximale',
+      'de-DE': 'Maximal',
+      'hi-IN': 'अधिकतम',
+      'id-ID': 'Maksimum',
+      'it-IT': 'Massimo',
+      'ko-KR': '최대',
+      'pt-BR': 'Máximo',
+      'es-419': 'Máximo',
+      'es-ES': 'Máximo'
+    }
+  },
+  notes: {
+    standard: {
+      'ja-JP': '標準のモデルです。',
+      'en-US': 'The standard model.',
+      'fr-FR': 'Le modèle standard.',
+      'de-DE': 'Das Standardmodell.',
+      'hi-IN': 'यह मानक मॉडल है।',
+      'id-ID': 'Model standar.',
+      'it-IT': 'Il modello standard.',
+      'ko-KR': '표준 모델입니다.',
+      'pt-BR': 'O modelo padrão.',
+      'es-419': 'El modelo estándar.',
+      'es-ES': 'El modelo estándar.'
+    },
+    light: {
+      'ja-JP': '高速で軽量なモデルです。',
+      'en-US': 'Fast and lightweight.',
+      'fr-FR': 'Rapide et léger.',
+      'de-DE': 'Schnell und leichtgewichtig.',
+      'hi-IN': 'तेज़ और हल्का मॉडल है।',
+      'id-ID': 'Cepat dan ringan.',
+      'it-IT': 'Veloce e leggero.',
+      'ko-KR': '빠르고 가벼운 모델입니다.',
+      'pt-BR': 'Rápido e leve.',
+      'es-419': 'Rápido y ligero.',
+      'es-ES': 'Rápido y ligero.'
+    },
+    lightWithoutEffort: {
+      'ja-JP': '高速で軽量なモデルです。思考の深さは選べません。',
+      'en-US': 'Fast and lightweight. It does not take a depth of thinking.',
+      'fr-FR': 'Rapide et léger. La profondeur de réflexion ne se règle pas.',
+      'de-DE': 'Schnell und leichtgewichtig. Eine Denktiefe lässt sich nicht wählen.',
+      'hi-IN': 'तेज़ और हल्का मॉडल है। इसमें सोचने की गहराई नहीं चुनी जा सकती।',
+      'id-ID': 'Cepat dan ringan. Kedalaman berpikirnya tidak bisa dipilih.',
+      'it-IT': 'Veloce e leggero. Non accetta una profondità di ragionamento.',
+      'ko-KR': '빠르고 가벼운 모델입니다. 생각의 깊이는 선택할 수 없습니다.',
+      'pt-BR': 'Rápido e leve. Não aceita uma profundidade de raciocínio.',
+      'es-419': 'Rápido y ligero. No admite una profundidad de razonamiento.',
+      'es-ES': 'Rápido y ligero. No permite elegir la profundidad del pensamiento.'
+    },
+    mostCapable: {
+      'ja-JP': '最も性能の高いモデルです。',
+      'en-US': 'The most capable model.',
+      'fr-FR': 'Le modèle le plus performant.',
+      'de-DE': 'Das leistungsfähigste Modell.',
+      'hi-IN': 'सबसे सक्षम मॉडल है।',
+      'id-ID': 'Model dengan kemampuan tertinggi.',
+      'it-IT': 'Il modello più capace.',
+      'ko-KR': '성능이 가장 높은 모델입니다.',
+      'pt-BR': 'O modelo mais capaz.',
+      'es-419': 'El modelo con más capacidad.',
+      'es-ES': 'El modelo más capaz.'
+    },
+    cerebrasSpeed: {
+      'ja-JP': 'Cerebras の推論で、毎秒 1000 トークン以上を生成します。',
+      'en-US': 'Runs on Cerebras and generates more than 1,000 tokens per second.',
+      'fr-FR': 'Fonctionne sur Cerebras et génère plus de 1 000 tokens par seconde.',
+      'de-DE': 'Läuft auf Cerebras und erzeugt mehr als 1.000 Token pro Sekunde.',
+      'hi-IN': 'Cerebras पर चलता है और हर सेकंड 1,000 से ज़्यादा टोकन बनाता है।',
+      'id-ID': 'Berjalan di Cerebras dan menghasilkan lebih dari 1.000 token per detik.',
+      'it-IT': 'Funziona su Cerebras e genera più di 1.000 token al secondo.',
+      'ko-KR': 'Cerebras에서 추론하며 초당 1,000토큰 이상을 생성합니다.',
+      'pt-BR': 'Roda na Cerebras e gera mais de 1.000 tokens por segundo.',
+      'es-419': 'Funciona en Cerebras y genera más de 1000 tokens por segundo.',
+      'es-ES': 'Funciona con la inferencia de Cerebras y genera más de 1.000 tokens por segundo.'
+    },
+    openWeight: {
+      'ja-JP': 'OpenAI のオープンウェイトモデルです。',
+      'en-US': "OpenAI's open-weight model.",
+      'fr-FR': "Le modèle open-weight d'OpenAI.",
+      'de-DE': 'Das Open-Weight-Modell von OpenAI.',
+      'hi-IN': 'OpenAI का ओपन-वेट मॉडल है।',
+      'id-ID': 'Model open-weight dari OpenAI.',
+      'it-IT': 'Il modello open-weight di OpenAI.',
+      'ko-KR': 'OpenAI의 오픈 웨이트 모델입니다.',
+      'pt-BR': 'O modelo de pesos abertos da OpenAI.',
+      'es-419': 'El modelo de pesos abiertos de OpenAI.',
+      'es-ES': 'El modelo de pesos abiertos de OpenAI.'
+    }
+  },
+  /** What a validation error names as the thing it could not reach. It is filled in as `target`. */
+  targets: {
+    conversationModel: {
+      'ja-JP': '会話モデル',
+      'en-US': 'Conversation model',
+      'fr-FR': 'Modèle de conversation',
+      'de-DE': 'Gesprächsmodell',
+      'hi-IN': 'बातचीत का मॉडल',
+      'id-ID': 'Model percakapan',
+      'it-IT': 'il modello di conversazione',
+      'ko-KR': '대화 모델',
+      'pt-BR': 'Modelo de conversa',
+      'es-419': 'Modelo de conversación',
+      'es-ES': 'Modelo de conversación'
+    },
+    bridgeModel: {
+      'ja-JP': 'つなぎの一言のモデル',
+      'en-US': 'Bridge phrase model',
+      'fr-FR': 'Modèle de la phrase de transition',
+      'de-DE': 'Modell für den Überbrückungssatz',
+      'hi-IN': 'शुरुआती वाक्य का मॉडल',
+      'id-ID': 'Model kalimat penyambung',
+      'it-IT': 'il modello della frase di raccordo',
+      'ko-KR': '연결 멘트 모델',
+      'pt-BR': 'Modelo da frase de transição',
+      'es-419': 'Modelo de las frases de enlace',
+      'es-ES': 'Modelo de las frases de enlace'
+    },
+    apiKey: {
+      'ja-JP': 'API キー',
+      'en-US': 'API key',
+      'fr-FR': 'Clé API',
+      'de-DE': 'API-Schlüssel',
+      'hi-IN': 'API कुंजी',
+      'id-ID': 'Kunci API',
+      'it-IT': 'la chiave API',
+      'ko-KR': 'API 키',
+      'pt-BR': 'Chave de API',
+      'es-419': 'Clave de API',
+      'es-ES': 'Clave de API'
+    }
+  },
+  errors: {
+    keyMissing: {
+      'ja-JP': '{provider} の API キー({envKey})がありません。設定の「連携」で保存してください。',
+      'en-US': 'There is no {provider} API key ({envKey}). Save it on the Integrations page in Settings.',
+      'fr-FR': "Il n'y a pas de clé API {provider} ({envKey}). Enregistrez-la sur la page Intégrations des réglages.",
+      'de-DE': 'Es gibt keinen API-Schlüssel von {provider} ({envKey}). Speichern Sie ihn auf der Seite „Integrationen“ in den Einstellungen.',
+      'hi-IN': '{provider} की API कुंजी ({envKey}) नहीं है। इसे सेटिंग्ज़ के "इंटीग्रेशन" पेज पर सेव करें।',
+      'id-ID': 'Tidak ada kunci API {provider} ({envKey}). Simpan kuncinya di halaman Integrasi pada Pengaturan.',
+      'it-IT': 'Manca la chiave API di {provider} ({envKey}). Salvala nella pagina «Integrazioni» delle impostazioni.',
+      'ko-KR': "{provider} API 키가 없습니다({envKey}). 설정의 '연동'에서 저장하십시오.",
+      'pt-BR': 'Não há chave de API de {provider} ({envKey}). Salve na página Integrações dos ajustes.',
+      'es-419': 'No hay clave de API de {provider} ({envKey}). Guárdala en la página Integraciones de Configuración.',
+      'es-ES': 'No hay ninguna clave de API de {provider} ({envKey}). Guárdala en la página “Integraciones” de Ajustes.'
+    },
+    keyEmpty: {
+      'ja-JP': 'API キーを入れてください。',
+      'en-US': 'Enter an API key.',
+      'fr-FR': 'Saisissez une clé API.',
+      'de-DE': 'Geben Sie einen API-Schlüssel ein.',
+      'hi-IN': 'API कुंजी डालें।',
+      'id-ID': 'Masukkan kunci API.',
+      'it-IT': 'Inserisci una chiave API.',
+      'ko-KR': 'API 키를 입력하십시오.',
+      'pt-BR': 'Digite uma chave de API.',
+      'es-419': 'Escribe una clave de API.',
+      'es-ES': 'Introduce una clave de API.'
+    },
+    effortUnsupported: {
+      'ja-JP': '{model} はこの思考の深さを受け付けません。設定の「会話」で選び直してください。',
+      'en-US': '{model} does not accept this depth of thinking. Choose another one on the Conversation page in Settings.',
+      'fr-FR': "{model} n'accepte pas cette profondeur de réflexion. Choisissez-en une autre sur la page Conversation des réglages.",
+      'de-DE': '{model} nimmt diese Denktiefe nicht an. Wählen Sie auf der Seite „Gespräch“ in den Einstellungen eine andere.',
+      'hi-IN': '{model} सोचने की यह गहराई नहीं लेता। सेटिंग्ज़ के "बातचीत" पेज पर कोई दूसरी चुनें।',
+      'id-ID': '{model} tidak menerima kedalaman berpikir ini. Pilih yang lain di halaman Percakapan pada Pengaturan.',
+      'it-IT': "{model} non accetta questa profondità di ragionamento. Scegline un'altra nella pagina «Conversazione» delle impostazioni.",
+      'ko-KR': "{model} 모델은 이 생각 깊이를 받아들이지 않습니다. 설정의 '대화'에서 다시 선택하십시오.",
+      'pt-BR': '{model} não aceita esta profundidade de raciocínio. Escolha outra na página Conversa dos ajustes.',
+      'es-419': '{model} no admite esta profundidad de razonamiento. Elige otra en la página Conversación de Configuración.',
+      'es-ES': '{model} no acepta esta profundidad de pensamiento. Elige otra en la página “Conversación” de Ajustes.'
+    },
+    modelIdMissing: {
+      'ja-JP': '{target} のモデル ID がありません。モデル ID を入れてからもう一度試してください。',
+      'en-US': 'There is no model ID for {target}. Enter one and try again.',
+      'fr-FR': "Il n'y a pas d'identifiant de modèle pour {target}. Saisissez-en un et réessayez.",
+      'de-DE': 'Für „{target}“ fehlt die Modell-ID. Geben Sie eine ein und versuchen Sie es erneut.',
+      'hi-IN': '{target} के लिए कोई मॉडल ID नहीं है। एक डालकर फिर कोशिश करें।',
+      'id-ID': 'Tidak ada ID model untuk {target}. Masukkan ID model lalu coba lagi.',
+      'it-IT': "Manca l'ID del modello per {target}. Inseriscilo e riprova.",
+      'ko-KR': '{target}의 모델 ID가 없습니다. 모델 ID를 입력한 뒤에 다시 시도하십시오.',
+      'pt-BR': 'Não há ID de modelo para {target}. Digite um e tente de novo.',
+      'es-419': 'No hay ID de modelo para {target}. Escribe uno y vuelve a intentarlo.',
+      'es-ES': 'No hay ningún ID de modelo para {target}. Introduce uno y vuelve a intentarlo.'
+    },
+    authentication: {
+      'ja-JP': '{provider} の API キーを認証できませんでした。キーを確かめてください。',
+      'en-US': "Couldn't authenticate the {provider} API key. Check the key.",
+      'fr-FR': "Impossible d'authentifier la clé API {provider}. Vérifiez la clé.",
+      'de-DE': 'Der API-Schlüssel von {provider} ließ sich nicht authentifizieren. Prüfen Sie den Schlüssel.',
+      'hi-IN': '{provider} की API कुंजी की पुष्टि नहीं हो सकी। कुंजी देखें।',
+      'id-ID': 'Tidak bisa mengautentikasi kunci API {provider}. Periksa kuncinya.',
+      'it-IT': 'Impossibile autenticare la chiave API di {provider}. Controlla la chiave.',
+      'ko-KR': '{provider} API 키를 인증하지 못했습니다. 키를 확인하십시오.',
+      'pt-BR': 'Não foi possível autenticar a chave de API de {provider}. Confira a chave.',
+      'es-419': 'No se pudo autenticar la clave de API de {provider}. Revisa la clave.',
+      'es-ES': 'No se ha podido autenticar la clave de API de {provider}. Comprueba la clave.'
+    },
+    permission: {
+      'ja-JP': '{provider} の API キーでは {target} を使えません。{provider} 側の権限を確かめてください。',
+      'en-US': 'The {provider} API key may not use {target}. Check the permissions on {provider}.',
+      'fr-FR': "La clé API {provider} ne permet pas d'utiliser {target}. Vérifiez les autorisations chez {provider}.",
+      'de-DE': 'Der API-Schlüssel von {provider} darf „{target}“ nicht verwenden. Prüfen Sie die Rechte bei {provider}.',
+      'hi-IN': '{provider} की API कुंजी {target} इस्तेमाल नहीं कर सकती। {provider} पर अनुमतियाँ देखें।',
+      'id-ID': 'Kunci API {provider} mungkin tidak boleh memakai {target}. Periksa izinnya di {provider}.',
+      'it-IT': 'La chiave API di {provider} non può usare {target}. Controlla i permessi su {provider}.',
+      'ko-KR': '{provider} API 키로는 {target}에 접근할 수 없습니다. {provider} 쪽 권한을 확인하십시오.',
+      'pt-BR': 'A chave de API de {provider} não pode usar {target}. Confira as permissões em {provider}.',
+      'es-419': 'La clave de API de {provider} no puede usar {target}. Revisa los permisos en {provider}.',
+      'es-ES': 'La clave de API de {provider} no puede usar {target}. Comprueba los permisos en {provider}.'
+    },
+    modelUnavailable: {
+      'ja-JP': '{target} が見つからないか、この API キーでは使えません。モデル ID と権限を確かめてください。',
+      'en-US': '{target} was not found, or this API key may not use it. Check the model ID and the permissions.',
+      'fr-FR': "{target} est introuvable, ou cette clé API ne permet pas de l'utiliser. Vérifiez l'identifiant du modèle et les autorisations.",
+      'de-DE': '„{target}“ wurde nicht gefunden, oder dieser API-Schlüssel darf es nicht verwenden. Prüfen Sie die Modell-ID und die Rechte.',
+      'hi-IN': '{target} नहीं मिला, या यह API कुंजी इसे इस्तेमाल नहीं कर सकती। मॉडल ID और अनुमतियाँ देखें।',
+      'id-ID': '{target} tidak ditemukan, atau kunci API ini tidak boleh memakainya. Periksa ID model dan izinnya.',
+      'it-IT': "Non è stato trovato {target}, oppure questa chiave API non può usarlo. Controlla l'ID del modello e i permessi.",
+      'ko-KR': '{target}에 해당하는 모델을 찾을 수 없거나, 이 API 키로는 쓸 수 없습니다. 모델 ID와 권한을 확인하십시오.',
+      'pt-BR': '{target} não foi encontrado, ou esta chave de API não pode usá-lo. Confira o ID do modelo e as permissões.',
+      'es-419': 'No se encontró {target}, o esta clave de API no puede usarlo. Revisa el ID del modelo y los permisos.',
+      'es-ES': 'No se encuentra {target}, o esta clave de API no puede usarlo. Comprueba el ID del modelo y los permisos.'
+    },
+    billing: {
+      'ja-JP': '{provider} の API を使えませんでした。{provider} の支払いと残高を確かめてください。',
+      'en-US': "Couldn't use the {provider} API. Check the payment and the credit on {provider}.",
+      'fr-FR': "Impossible d'utiliser l'API {provider}. Vérifiez le paiement et le crédit chez {provider}.",
+      'de-DE': 'Die API von {provider} ließ sich nicht verwenden. Prüfen Sie Zahlung und Guthaben bei {provider}.',
+      'hi-IN': '{provider} की API इस्तेमाल नहीं हो सकी। {provider} पर भुगतान और बची राशि देखें।',
+      'id-ID': 'Tidak bisa memakai API {provider}. Periksa pembayaran dan saldo di {provider}.',
+      'it-IT': "Impossibile usare l'API di {provider}. Controlla il pagamento e il credito su {provider}.",
+      'ko-KR': '{provider} API를 쓰지 못했습니다. {provider}의 결제와 잔액을 확인하십시오.',
+      'pt-BR': 'Não foi possível usar a API de {provider}. Confira o pagamento e o saldo em {provider}.',
+      'es-419': 'No se pudo usar la API de {provider}. Revisa el pago y el saldo en {provider}.',
+      'es-ES': 'No se ha podido usar la API de {provider}. Comprueba el pago y el saldo en {provider}.'
+    },
+    rateLimit: {
+      'ja-JP': '{provider} の API の利用上限に達しました。しばらく待ってからもう一度試してください。',
+      'en-US': 'The {provider} API rate limit was reached. Wait a while and try again.',
+      'fr-FR': "La limite d'utilisation de l'API {provider} est atteinte. Attendez un moment et réessayez.",
+      'de-DE': 'Das Nutzungslimit der API von {provider} ist erreicht. Warten Sie eine Weile und versuchen Sie es erneut.',
+      'hi-IN': '{provider} की API की सीमा पूरी हो गई। कुछ देर बाद फिर कोशिश करें।',
+      'id-ID': 'Batas pemakaian API {provider} sudah tercapai. Tunggu sebentar lalu coba lagi.',
+      'it-IT': "È stato raggiunto il limite di utilizzo dell'API di {provider}. Aspetta un po' e riprova.",
+      'ko-KR': '{provider} API의 사용 한도에 도달했습니다. 잠시 기다린 뒤에 다시 시도하십시오.',
+      'pt-BR': 'O limite de uso da API de {provider} foi atingido. Espere um pouco e tente de novo.',
+      'es-419': 'Se alcanzó el límite de uso de la API de {provider}. Espera un rato y vuelve a intentarlo.',
+      'es-ES': 'Se ha alcanzado el límite de uso de la API de {provider}. Espera un rato y vuelve a intentarlo.'
+    },
+    service: {
+      'ja-JP': '{provider} の API が応答しませんでした。しばらくしてからもう一度試してください。',
+      'en-US': 'The {provider} API did not respond. Try again in a while.',
+      'fr-FR': "L'API {provider} n'a pas répondu. Réessayez dans un moment.",
+      'de-DE': 'Die API von {provider} hat nicht geantwortet. Versuchen Sie es in einer Weile erneut.',
+      'hi-IN': '{provider} की API ने जवाब नहीं दिया। कुछ देर बाद फिर कोशिश करें।',
+      'id-ID': 'API {provider} tidak merespons. Coba lagi beberapa saat lagi.',
+      'it-IT': "L'API di {provider} non ha risposto. Riprova tra poco.",
+      'ko-KR': '{provider} API가 응답하지 않았습니다. 잠시 뒤에 다시 시도하십시오.',
+      'pt-BR': 'A API de {provider} não respondeu. Tente de novo daqui a pouco.',
+      'es-419': 'La API de {provider} no respondió. Vuelve a intentarlo en un rato.',
+      'es-ES': 'La API de {provider} no ha respondido. Vuelve a intentarlo dentro de un rato.'
+    },
+    request: {
+      'ja-JP': '{provider} の API が {target} の確認を受け付けませんでした(HTTP {status})。設定を確かめてください。',
+      'en-US': 'The {provider} API rejected the check of {target} (HTTP {status}). Check the settings.',
+      'fr-FR': "L'API {provider} a refusé la vérification de {target} (HTTP {status}). Vérifiez les réglages.",
+      'de-DE': 'Die API von {provider} hat die Prüfung von „{target}“ abgelehnt (HTTP {status}). Prüfen Sie die Einstellungen.',
+      'hi-IN': '{provider} की API ने {target} की जाँच नहीं ली (HTTP {status})। सेटिंग्ज़ देखें।',
+      'id-ID': 'API {provider} menolak pemeriksaan {target} (HTTP {status}). Periksa pengaturannya.',
+      'it-IT': "L'API di {provider} ha rifiutato il controllo di {target} (HTTP {status}). Controlla le impostazioni.",
+      'ko-KR': '{provider} API가 {target} 확인을 받아들이지 않았습니다(HTTP {status}). 설정을 확인하십시오.',
+      'pt-BR': 'A API de {provider} recusou a verificação de {target} (HTTP {status}). Confira os ajustes.',
+      'es-419': 'La API de {provider} rechazó la verificación de {target} (HTTP {status}). Revisa la configuración.',
+      'es-ES': 'La API de {provider} no ha aceptado la comprobación de {target} (HTTP {status}). Comprueba los ajustes.'
+    },
+    connection: {
+      'ja-JP': '{provider} の API で {target} を確かめられませんでした。通信を確かめてもう一度試してください。',
+      'en-US': "Couldn't check {target} with the {provider} API. Check your connection and try again.",
+      'fr-FR': "Impossible de vérifier {target} auprès de l'API {provider}. Vérifiez votre connexion et réessayez.",
+      'de-DE': '„{target}“ ließ sich mit der API von {provider} nicht prüfen. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.',
+      'hi-IN': '{provider} की API से {target} की जाँच नहीं हो सकी। अपना कनेक्शन देखकर फिर कोशिश करें।',
+      'id-ID': 'Tidak bisa memeriksa {target} lewat API {provider}. Periksa koneksi Anda lalu coba lagi.',
+      'it-IT': "Impossibile controllare {target} con l'API di {provider}. Controlla la connessione e riprova.",
+      'ko-KR': '{provider} API에서 {target} 확인을 마치지 못했습니다. 통신 상태를 확인하고 다시 시도하십시오.',
+      'pt-BR': 'Não foi possível verificar {target} na API de {provider}. Confira a conexão e tente de novo.',
+      'es-419': 'No se pudo verificar {target} con la API de {provider}. Revisa tu conexión y vuelve a intentarlo.',
+      'es-ES': 'No se ha podido comprobar {target} con la API de {provider}. Comprueba la conexión y vuelve a intentarlo.'
+    }
+  }
+})

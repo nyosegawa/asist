@@ -1,0 +1,5 @@
+{
+  "drafts": [
+    { "id": "draft-1", "accountId": "account-1", "to": ["山田 <yamada@example.com>"], "cc": [], "subject": "明日の件", "body": "よろしくお願いします。", "reply": null, "origin": "agent", "createdAt": 1790000000000, "updatedAt": 1790000000000 }
+  ]
+}

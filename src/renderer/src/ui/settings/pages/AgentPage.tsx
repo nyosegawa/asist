@@ -1,0 +1,91 @@
+import type { SettingsContext } from '../context'
+import { Btn, Chip, Group, Link, Page, Row } from '../primitives'
+import { useT } from '@/i18n'
+import { AGENT_MODE_NAME } from '@shared/agent-cli'
+
+/** The Agent page: the engine of the working agent, its permissions and the directory it works in. */
+export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
+  const { settings, status, set, go } = ctx
+  /** Opens the system's folder dialog at `startAt` and hands the chosen folder on. A dismissed dialog changes nothing. */
+  const chooseFolder = (startAt: string | undefined, use: (folder: string) => void): void => {
+    void window.api.folderChoose(startAt).then((folder) => {
+      if (folder) use(folder)
+    })
+  }
+  const t = useT()
+  const missing = status !== null && !status.agent
+  return (
+    <Page title="Agent" lead={t('settingsAgent.lead')}>
+      <Group title={t('settingsAgent.run.title')} description={t('settingsAgent.run.description')}>
+        <Row
+          label={t('settingsAgent.run.engine')}
+          hint={missing ? t('settingsAgent.run.engineMissing', { engine: status.agentEngine }) : settings.agentEngine === 'claude' ? t('settingsAgent.run.claudeKeyHint') : undefined}
+        >
+          {missing && <Chip tone="warn">{t('common.notFound')}</Chip>}
+          <select
+            className="st-select"
+            aria-label={t('settingsAgent.run.engineLabel')}
+            value={settings.agentEngine}
+            onChange={(e) => set({ agentEngine: e.target.value as 'codex' | 'claude' })}
+          >
+            <option value="codex">Codex</option>
+            <option value="claude">Claude Code</option>
+          </select>
+        </Row>
+        {missing && (
+          <Row label={t('settingsAgent.run.install')} hint={t('settingsAgent.run.installHint')}>
+            <Link onClick={() => go('models')}>{t('common.openModels')}</Link>
+          </Row>
+        )}
+        <Row label={t('settingsAgent.run.permissions')} hint={t('settingsAgent.run.permissionsHint', { ...AGENT_MODE_NAME[settings.agentEngine], engine: settings.agentEngine === 'codex' ? 'Codex' : 'Claude Code' })}>
+          <select
+            className="st-select"
+            aria-label={t('settingsAgent.run.permissionsLabel')}
+            value={settings.agentMode}
+            onChange={(e) => set({ agentMode: e.target.value as 'readonly' | 'auto' })}
+          >
+            <option value="readonly">{AGENT_MODE_NAME[settings.agentEngine].readonly}</option>
+            <option value="auto">{AGENT_MODE_NAME[settings.agentEngine].auto}</option>
+          </select>
+        </Row>
+      </Group>
+
+      <Group title={t('settingsAgent.workspace.title')} description={t('settingsAgent.workspace.description')}>
+        <Row label={t('settingsAgent.workspace.parent')} wide>
+          <div className="st-field-action">
+            <input
+              className="st-input is-mono"
+              aria-label={t('settingsAgent.workspace.parentLabel')}
+              value={settings.agentCwd}
+              onChange={(e) => set({ agentCwd: e.target.value })}
+            />
+            <Btn onClick={() => chooseFolder(settings.agentCwd, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
+          </div>
+        </Row>
+      </Group>
+
+      <Group title={t('settingsAgent.roots.title')} description={t('settingsAgent.roots.description')}>
+        <Row label={t('settingsAgent.roots.folders')} wide>
+          <textarea
+            className="st-input is-mono st-roots"
+            aria-label={t('settingsAgent.roots.title')}
+            value={settings.fileRoots.join('\n')}
+            onChange={(e) => set({ fileRoots: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean) })}
+            placeholder="/Users/you/Desktop"
+          />
+          <div className="st-row-actions">
+            <Btn
+              onClick={() =>
+                chooseFolder(undefined, (folder) => {
+                  if (!settings.fileRoots.includes(folder)) set({ fileRoots: [...settings.fileRoots, folder] })
+                })
+              }
+            >
+              {t('settingsAgent.roots.add')}
+            </Btn>
+          </div>
+        </Row>
+      </Group>
+    </Page>
+  )
+}

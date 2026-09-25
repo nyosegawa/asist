@@ -1,0 +1,220 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
+
+/** The OpenAI adapter. These tests run fake Responses API events and check the conversion to the ASIST types. */
+
+const mocks = vi.hoisted(() => ({
+  events: [] as unknown[],
+  failAfter: null as Error | null,
+  params: [] as Array<Record<string, unknown>>
+}))
+
+vi.mock('openai', () => ({
+  default: class FakeOpenAI {
+    responses = {
+      create: async (params: Record<string, unknown>) => {
+        mocks.params.push(params)
+        return (async function* () {
+          for (const event of mocks.events) yield event
+          if (mocks.failAfter) throw mocks.failAfter
+        })()
+      }
+    }
+  }
+}))
+
+const MODEL = { provider: 'openai' as const, id: 'gpt-5.5' }
+
+const request = (over: Partial<ConversationRequest> = {}): ConversationRequest => ({
+  model: MODEL,
+  locale: 'ja-JP',
+  maxTokens: 1000,
+  system: [
+    { name: 'base', text: 'BASE' },
+    { name: 'memory', text: 'MEMORY' }
+  ],
+  tools: [{ name: 'show_weather', description: '天気', inputSchema: { $schema: 'x', type: 'object', properties: { location: { type: 'string' } } } }],
+  webSearch: false,
+  messages: [{ role: 'user', parts: [{ type: 'text', text: '大阪の天気' }] }],
+  signal: new AbortController().signal,
+  ...over
+})
+
+const REASONING = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'enc' }
+const CALL = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'show_weather', arguments: '{"location":"大阪"}', status: 'completed' }
+const SPOKEN = { type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: '調べますね。' }] }
+const completed = (usage = { input_tokens: 1000, input_tokens_details: { cached_tokens: 900 }, output_tokens: 20 }): unknown => ({
+  type: 'response.completed',
+  response: { status: 'completed', usage }
+})
+
+async function open(over: Partial<ConversationRequest> = {}) {
+  const { openaiAdapter } = await import('../src/main/services/llm/openai')
+  const stream = openaiAdapter.stream(request(over), 'key')
+  const seen = { text: [] as string[], calls: [] as ToolCallPart[], search: [] as SearchEvent[] }
+  stream.on('text', (delta) => seen.text.push(delta))
+  stream.on('toolCall', (call) => seen.calls.push(call))
+  stream.on('search', (event) => seen.search.push(event))
+  return { stream, seen }
+}
+
+beforeEach(() => {
+  vi.resetModules()
+  mocks.events = []
+  mocks.failAfter = null
+  mocks.params.length = 0
+})
+
+describe('toResponsesInput', () => {
+  const assistant: ConversationMessage = {
+    role: 'assistant',
+    parts: [
+      { type: 'text', text: '調べますね。' },
+      { type: 'tool_call', id: 'call_1', name: 'show_weather', input: { location: '大阪' } }
+    ],
+    native: { provider: 'openai', model: 'gpt-5.5', payload: [REASONING, CALL] }
+  }
+  const results: ConversationMessage = {
+    role: 'user',
+    parts: [
+      { type: 'tool_result', callId: 'call_1', name: 'show_weather', content: '{"temp":28}' },
+      { type: 'tool_result', callId: 'call_2', name: 'show_news', content: 'HTTP 503', isError: true },
+      { type: 'text', text: '[注]' }
+    ]
+  }
+
+  it('sends the output items back to the same model unchanged, encrypted reasoning included, with results after the calls and text last', async () => {
+    const { toResponsesInput } = await import('../src/main/services/llm/openai')
+    expect(toResponsesInput([assistant, results], 'gpt-5.5', 'ja-JP')).toEqual([
+      REASONING,
+      CALL,
+      { type: 'function_call_output', call_id: 'call_1', output: '{"temp":28}' },
+      { type: 'function_call_output', call_id: 'call_2', output: 'エラー: HTTP 503' },
+      { role: 'user', content: '[注]' }
+    ])
+  })
+
+  it('rebuilds a reply from another model or provider out of its parts and sends no reasoning', async () => {
+    const { toResponsesInput } = await import('../src/main/services/llm/openai')
+    const built = [
+      { role: 'assistant', content: '調べますね。' },
+      { type: 'function_call', call_id: 'call_1', name: 'show_weather', arguments: '{"location":"大阪"}' }
+    ]
+    expect(toResponsesInput([assistant], 'gpt-5.5-mini', 'ja-JP')).toEqual(built)
+    expect(toResponsesInput([{ ...assistant, native: { provider: 'google', model: 'gpt-5.5', payload: {} } }], 'gpt-5.5', 'ja-JP')).toEqual(built)
+  })
+})
+
+describe('CitationFilter', () => {
+  it('removes a citation link that spans several deltas and keeps ordinary parentheses and brackets', async () => {
+    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const filter = new CitationFilter()
+    const out = ['警戒が続いています。 (', '[weathernews.jp](https://weathernews', '.jp/news/1?utm_source=openai))', '明日は快晴(予報)で、[メモ]も', 'あります。']
+      .map((delta) => filter.push(delta))
+      .join('')
+    // A citation left in the text would be read aloud as the bare URL.
+    expect(out + filter.flush()).toBe('警戒が続いています。明日は快晴(予報)で、[メモ]もあります。')
+  })
+})
+
+describe('the OpenAI stream', () => {
+  it('keeps the conversation off the server, asks for encrypted reasoning, and joins the system layers into one instructions field', async () => {
+    mocks.events = [completed()]
+    const { stream } = await open()
+    await stream.final()
+    // With store: false, a reasoning item that arrived without encrypted_content cannot be sent back.
+    expect(mocks.params[0]).toMatchObject({ store: false, instructions: 'BASE\n\nMEMORY', max_output_tokens: 1000 })
+    expect(mocks.params[0].include).toContain('reasoning.encrypted_content')
+    expect(mocks.params[0].tools).toEqual([
+      { type: 'function', name: 'show_weather', description: '天気', parameters: { type: 'object', properties: { location: { type: 'string' } } }, strict: false }
+    ])
+  })
+
+  it('reports a function call when its item completes and keeps the output items in order in native at the end', async () => {
+    mocks.events = [
+      { type: 'response.output_item.done', item: REASONING },
+      { type: 'response.output_text.delta', delta: '調べ' },
+      { type: 'response.output_text.delta', delta: 'ますね。' },
+      { type: 'response.output_item.done', item: SPOKEN },
+      { type: 'response.output_item.done', item: CALL },
+      completed()
+    ]
+    const { stream, seen } = await open()
+    const result = await stream.final()
+    expect(seen.text).toEqual(['調べ', 'ますね。'])
+    expect(seen.calls).toEqual([{ type: 'tool_call', id: 'call_1', name: 'show_weather', input: { location: '大阪' } }])
+    expect(result.stop).toBe('tool_calls')
+    expect(result.message.parts).toEqual([{ type: 'text', text: '調べますね。' }, seen.calls[0]])
+    expect(result.message.native).toEqual({ provider: 'openai', model: 'gpt-5.5', payload: [REASONING, SPOKEN, CALL] })
+    // The tokens read from the cache are part of the reported input, so they are counted separately.
+    expect(result.usage).toEqual({ input: 100, cacheRead: 900, cacheCreation: 0, output: 20, webSearches: 0 })
+  })
+
+  it('keeps the completed items and the spoken text in the snapshot when the stream breaks, so nothing spoken is lost on the way back', async () => {
+    mocks.events = [
+      { type: 'response.output_item.done', item: REASONING },
+      { type: 'response.output_item.done', item: CALL },
+      { type: 'response.output_text.delta', delta: '少々' }
+    ]
+    mocks.failAfter = new Error('terminated')
+    const { stream } = await open()
+    await expect(stream.final()).rejects.toThrow('terminated')
+    expect(stream.snapshot()).toEqual({
+      role: 'assistant',
+      parts: [
+        { type: 'tool_call', id: 'call_1', name: 'show_weather', input: { location: '大阪' } },
+        { type: 'text', text: '少々' }
+      ],
+      native: { provider: 'openai', model: 'gpt-5.5', payload: [REASONING, CALL, { role: 'assistant', content: '少々' }] }
+    })
+  })
+
+  it('reports the start of a web search and its results with the titles of the citations, falling back to the URLs the search returned', async () => {
+    const searchCall = { type: 'web_search_call', id: 'ws_1', status: 'completed', action: { type: 'search', query: '最新ニュース', sources: [{ type: 'url', url: 'https://a.example' }] } }
+    mocks.events = [
+      { type: 'response.output_item.added', item: { type: 'web_search_call', id: 'ws_1' } },
+      { type: 'response.output_item.done', item: searchCall },
+      { type: 'response.output_text.delta', delta: 'ニュースです。 ([B](https://b.' },
+      { type: 'response.output_text.delta', delta: 'example))' },
+      { type: 'response.output_item.done', item: { type: 'message', id: 'msg_2', role: 'assistant', content: [] } },
+      { type: 'response.output_text.annotation.added', annotation: { type: 'url_citation', url: 'https://b.example', title: 'B' } },
+      { type: 'response.output_text.annotation.added', annotation: { type: 'url_citation', url: 'https://b.example', title: 'B' } },
+      completed()
+    ]
+    const cited = await open({ webSearch: true })
+    const result = await cited.stream.final()
+    expect(result.message.parts).toEqual([{ type: 'text', text: 'ニュースです。' }])
+    expect(cited.seen.text.join('')).toBe('ニュースです。')
+    // The fee is per search, on top of the tokens.
+    expect(result.usage.webSearches).toBe(1)
+    expect(mocks.params[0].tools).toContainEqual(expect.objectContaining({ type: 'web_search' }))
+    expect(cited.seen.search).toEqual([{ phase: 'start' }, { phase: 'done', query: '最新ニュース', sources: [{ url: 'https://b.example', title: 'B', cited: true }] }])
+
+    mocks.events = [{ type: 'response.output_item.done', item: searchCall }, completed()]
+    const listed = await open({ webSearch: true })
+    await listed.stream.final()
+    expect(listed.seen.search.at(-1)).toEqual({ phase: 'done', query: '最新ニュース', sources: [{ url: 'https://a.example', title: 'https://a.example' }] })
+  })
+
+  it('maps the output limit to max_tokens and a refusal to refusal, and turns a failure inside the stream into an error with a status', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '長い' }, { type: 'response.incomplete', response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } } }]
+    expect((await (await open()).stream.final()).stop).toBe('max_tokens')
+
+    mocks.events = [{ type: 'response.refusal.done', refusal: 'no' }, completed()]
+    expect((await (await open()).stream.final()).stop).toBe('refusal')
+
+    // The stream closes normally even after a failure, so without an error it would pass as an empty reply.
+    mocks.events = [{ type: 'response.failed', response: { status: 'failed', error: { code: 'rate_limit_exceeded', message: 'slow down' } } }]
+    await expect((await open()).stream.final()).rejects.toMatchObject({ status: 429 })
+
+    mocks.events = []
+    await expect((await open()).stream.final()).rejects.toThrow('without a completion event')
+  })
+
+  it('fails instead of running a tool call whose arguments are broken', async () => {
+    mocks.events = [{ type: 'response.output_item.done', item: { ...CALL, arguments: '{"location":' } }, completed()]
+    const { stream, seen } = await open()
+    await expect(stream.final()).rejects.toThrow('show_weather')
+    expect(seen.calls).toEqual([])
+  })
+})

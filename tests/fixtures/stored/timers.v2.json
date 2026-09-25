@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "timers": [
+    { "id": "timer:1", "label": "紅茶", "seconds": 180, "createdAt": 1790000000000, "endsAt": 1790000180000, "status": "active" },
+    { "id": "timer:2", "label": "洗濯", "seconds": 60, "createdAt": 1789990000000, "endsAt": 1789990060000, "status": "finished", "finishedAt": 1789990060000, "notificationStatus": "delivered" }
+  ]
+}

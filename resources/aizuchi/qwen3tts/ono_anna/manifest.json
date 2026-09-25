@@ -1,0 +1,206 @@
+{
+  "voice": "ono_anna",
+  "language": "japanese",
+  "model": "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit@049ef77fe8816b536193c0c25f9a214d17921282",
+  "clips": [
+    {
+      "text": "あ、すみません。",
+      "speedScale": 1.1,
+      "file": "f53b3d3b0b0c.wav"
+    },
+    {
+      "text": "あ、そういうことですね。",
+      "speedScale": 1.1,
+      "file": "f2477fba639d.wav"
+    },
+    {
+      "text": "あ、そうですね。",
+      "speedScale": 1.1,
+      "file": "d653c730e942.wav"
+    },
+    {
+      "text": "あ、そっちですね。",
+      "speedScale": 1.1,
+      "file": "f479d85c1b70.wav"
+    },
+    {
+      "text": "あ、それは",
+      "speedScale": 1.1,
+      "file": "778e557343f2.wav"
+    },
+    {
+      "text": "あ、ちょっと待ってくださいね。",
+      "speedScale": 1.05,
+      "file": "bb9d24509a2d.wav"
+    },
+    {
+      "text": "あ、はい。",
+      "speedScale": 1.15,
+      "file": "3c62e7ca0304.wav"
+    },
+    {
+      "text": "あ、わかりました。",
+      "speedScale": 1.1,
+      "file": "1a0e95884e39.wav"
+    },
+    {
+      "text": "あ、失礼しました。",
+      "speedScale": 1.1,
+      "file": "4115fa20f1d4.wav"
+    },
+    {
+      "text": "あー、はい。",
+      "speedScale": 1.1,
+      "file": "aceeb17caeed.wav"
+    },
+    {
+      "text": "あー。",
+      "speedScale": 1,
+      "file": "955d7def20eb.wav"
+    },
+    {
+      "text": "いいですね。",
+      "speedScale": 1.1,
+      "file": "d0fe68159fd3.wav"
+    },
+    {
+      "text": "うん。",
+      "speedScale": 1.2,
+      "volumeScale": 0.8,
+      "file": "6d41ff5a6c8d.wav"
+    },
+    {
+      "text": "うんうん。",
+      "speedScale": 1.2,
+      "volumeScale": 0.8,
+      "file": "0170c810ed26.wav"
+    },
+    {
+      "text": "うーん、そうですか。",
+      "speedScale": 1,
+      "file": "74eb80a3be75.wav"
+    },
+    {
+      "text": "うーん。",
+      "speedScale": 1.05,
+      "file": "89f352849419.wav"
+    },
+    {
+      "text": "え、そうなんですか。",
+      "speedScale": 1.1,
+      "file": "0a20489d9829.wav"
+    },
+    {
+      "text": "え、本当ですか。",
+      "speedScale": 1.1,
+      "file": "880d307a2003.wav"
+    },
+    {
+      "text": "えっ。",
+      "speedScale": 1.1,
+      "file": "0f23ec6a8e2a.wav"
+    },
+    {
+      "text": "えっと、",
+      "speedScale": 1.1,
+      "file": "54e55465ceac.wav"
+    },
+    {
+      "text": "えっとですね、",
+      "speedScale": 1.05,
+      "file": "0766a2cb572e.wav"
+    },
+    {
+      "text": "おお、すごい。",
+      "speedScale": 1.1,
+      "file": "9354ed9e1d71.wav"
+    },
+    {
+      "text": "おー。",
+      "speedScale": 1.05,
+      "file": "768e43ab1181.wav"
+    },
+    {
+      "text": "そうですね、",
+      "speedScale": 1.05,
+      "file": "978a2e33ecb8.wav"
+    },
+    {
+      "text": "そっか。",
+      "speedScale": 1.1,
+      "file": "1e3bad434d5f.wav"
+    },
+    {
+      "text": "そっかぁ。",
+      "speedScale": 1,
+      "file": "e383a1b3f4e1.wav"
+    },
+    {
+      "text": "それは大変ですね。",
+      "speedScale": 1.05,
+      "file": "531111e099c6.wav"
+    },
+    {
+      "text": "ちょっと見てみますね。",
+      "speedScale": 1.05,
+      "file": "c2b94435d9e2.wav"
+    },
+    {
+      "text": "ですよね。",
+      "speedScale": 1.1,
+      "file": "cc178f102199.wav"
+    },
+    {
+      "text": "なるほど。",
+      "speedScale": 1.1,
+      "file": "ff631c914389.wav"
+    },
+    {
+      "text": "なるほどなるほど。",
+      "speedScale": 1.15,
+      "file": "b2cbfa40743f.wav"
+    },
+    {
+      "text": "はい、オッケーです。",
+      "speedScale": 1.1,
+      "file": "a2f1901520e5.wav"
+    },
+    {
+      "text": "はい。",
+      "speedScale": 1.2,
+      "volumeScale": 0.8,
+      "file": "63bff28a8d91.wav"
+    },
+    {
+      "text": "はいはい。",
+      "speedScale": 1.2,
+      "volumeScale": 0.8,
+      "file": "a3cd31a91a40.wav"
+    },
+    {
+      "text": "了解です。",
+      "speedScale": 1.1,
+      "file": "229a0cad0b84.wav"
+    },
+    {
+      "text": "少々お待ちください。",
+      "speedScale": 1.05,
+      "file": "46ccf357b151.wav"
+    },
+    {
+      "text": "確かに。",
+      "speedScale": 1.1,
+      "file": "e46774016f58.wav"
+    },
+    {
+      "text": "確認しますね。",
+      "speedScale": 1.05,
+      "file": "55cc08d51bbf.wav"
+    },
+    {
+      "text": "調べてみますね。",
+      "speedScale": 1.05,
+      "file": "d346ab4a2edd.wav"
+    }
+  ]
+}

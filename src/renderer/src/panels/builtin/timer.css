@@ -1,0 +1,89 @@
+/* Timer card. Measured heights: l about 330px, m about 250px, s about 220px. */
+.tm-card {
+  --card-hue: #6fe7ff;
+  --card-focus-width: 520px;
+}
+.tm-ends {
+  font-size: 9px;
+  color: var(--ui-text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.tm-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tm-top .card-hero {
+  min-width: 0;
+  flex: 1;
+}
+.tm .card-big strong {
+  color: var(--ui-text-strong);
+}
+.tm[data-done] .card-big strong {
+  font-size: 40px;
+  font-weight: 300;
+  letter-spacing: 0;
+  color: var(--ui-tone-peach-text);
+  text-shadow: 0 0 24px rgb(from var(--color-holo-peach) r g b / 0.53);
+  animation: holo-pulse 1.4s ease-in-out infinite;
+}
+.tm[data-size='s'][data-done] .card-big strong {
+  font-size: 32px;
+}
+
+/* The ring is sized so that a six-character heading does not wrap in a 300px card. */
+.tm-ring {
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  margin-right: 4px;
+}
+.tm-ring-track {
+  fill: none;
+  stroke: rgb(from var(--color-holo-cyan) r g b / 0.13);
+  stroke-width: 6;
+}
+.tm-ring-fill {
+  fill: none;
+  stroke: var(--color-holo-cyan);
+  stroke-width: 6;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.2s linear;
+  filter: drop-shadow(0 0 6px rgb(from var(--color-holo-cyan) r g b / 0.53));
+}
+.tm-ring[data-done] .tm-ring-fill {
+  stroke: var(--color-holo-peach);
+  filter: drop-shadow(0 0 8px rgb(from var(--color-holo-peach) r g b / 0.53));
+}
+.tm[data-size='m'] .tm-ring {
+  width: 88px;
+  height: 88px;
+}
+.tm[data-size='focus'] .tm-ring {
+  width: 140px;
+  height: 140px;
+}
+
+.tm-bar {
+  height: 6px;
+  margin: 2px 5px 0;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(from var(--color-holo-cyan) r g b / 0.1);
+}
+.tm-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-holo-cyan), var(--color-holo-violet));
+  box-shadow: 0 0 10px rgb(from var(--color-holo-cyan) r g b / 0.4);
+  transition: width 0.2s linear;
+}
+.tm[data-done] .tm-bar i {
+  width: 100% !important;
+  background: var(--color-holo-peach);
+  box-shadow: 0 0 10px rgb(from var(--color-holo-peach) r g b / 0.53);
+}

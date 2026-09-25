@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "tasks": [
+    { "id": "task-1", "title": "牛乳を買う", "notes": "", "status": "todo", "due": "2026-09-25", "order": 0, "createdAt": 1790000000000, "updatedAt": 1790000000000, "completedAt": null },
+    { "id": "task-2", "title": "レビュー", "notes": "PR を読む", "status": "done", "due": null, "order": 0, "createdAt": 1789900000000, "updatedAt": 1790000000000, "completedAt": 1790000000000 }
+  ]
+}

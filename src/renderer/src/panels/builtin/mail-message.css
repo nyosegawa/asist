@@ -1,0 +1,59 @@
+/* Single mail card. The body is clamped to a line count that depends on the size, and the focus view shows
+   it in full. Measured heights: l about 560px with 18 lines, m about 450px with 12, s about 300px with 6 and
+   the recipients and attachments collapsed. */
+.mm-card {
+  --card-focus-width: 720px;
+}
+.mm .card-hero h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 18px;
+}
+.mm-star {
+  flex-shrink: 0;
+  color: var(--ui-tone-gold);
+  fill: var(--ui-tone-gold);
+}
+.mm .card-hero p {
+  overflow-wrap: anywhere;
+}
+.mm-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.mm-attachments span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.mm-attachments small {
+  color: var(--ui-text-faint);
+}
+/* The padding sits on the wrapper: padding on the clamped element makes the line after the cut render inside it. */
+.mm-body {
+  padding: 10px 12px;
+}
+.mm-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  margin: 0;
+  overflow: hidden;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-text-strong);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mm[data-size='s'] .mm-body {
+  padding: 8px 10px;
+}
+.mm[data-size='s'] .mm-text {
+  font-size: 11.5px;
+}
+.mm[data-size='focus'] .mm-text {
+  display: block;
+  font-size: 13px;
+}

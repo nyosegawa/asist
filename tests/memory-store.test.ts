@@ -1,0 +1,164 @@
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({ userData: '', conversationLocale: 'ja-JP' }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => mocks.userData, getPreferredSystemLanguages: () => ['ja-JP'] } }))
+vi.mock('../src/main/services/settings', () => ({
+  getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: mocks.conversationLocale, region: 'JP' })
+}))
+
+import * as store from '../src/main/services/memory-store'
+import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
+
+const ja = createTranslator('ja-JP')
+
+const commits = (dir: string): number =>
+  Number(execFileSync('git', ['rev-list', '--count', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim())
+const git = (dir: string, args: string[]): string => execFileSync('git', args, { cwd: dir, encoding: 'utf8' })
+
+const PAGE_TEMPLATE =
+  '---\naliases: []\nupdated: YYYY-MM-DD\n---\n# 名前\n\n## 要約\nこれが何で、本人とどう関わるか。\n\n## 経緯\nいつ何があったか。\n\n## 私の印象\n私から見てどういう存在か。\n'
+const INSTRUCTION = '# いつも覚えておくこと\n\n## この人について\n- 予約サービスの企画担当\n- 猫のムギと暮らす\n'
+const MATSUBAKEN = `---
+aliases: [松葉軒, ラーメン屋]
+updated: 2026-09-09
+---
+# 松葉軒
+
+## 要約
+本人の行きつけのラーメン屋。
+
+## 好み
+辛さは控えめが好みらしい。替え玉はしないようだ。
+`
+
+beforeEach(() => {
+  mocks.userData = mkdtempSync(path.join(tmpdir(), 'asist-memory-store-'))
+  mocks.conversationLocale = 'ja-JP'
+  store.ensureRepo()
+})
+
+const subjects = (dir: string): string[] => git(dir, ['log', '--format=%s']).split('\n').filter(Boolean)
+
+describe('the memory store', () => {
+  it('creates pages, journal and .gitignore with one initial commit, and adds nothing on a second call', () => {
+    const dir = store.memoryDir()
+    for (const name of ['pages', 'journal', '.gitignore', '.git']) {
+      expect(fs.existsSync(path.join(dir, name))).toBe(true)
+    }
+    expect(fs.readFileSync(path.join(dir, '.gitignore'), 'utf8')).toBe('.claude/\n.agents/\nAGENTS.md\n')
+    expect(commits(dir)).toBe(1)
+    expect(store.isClean()).toBe(true)
+    store.ensureRepo()
+    expect(commits(dir)).toBe(1)
+  })
+
+  it('reads user.md, me.md, the pages and the journal into units, leaves instruction.md out of them, and reports what to fix', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    fs.writeFileSync(path.join(dir, 'user.md'), '---\nupdated: 2026-09-09\n---\n# ユーザー\n\n## 好み\nコーヒーは砂糖なし。\n')
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    fs.writeFileSync(path.join(dir, 'pages', '壊れ.md'), '# 壊れ\n\n## 経緯\n書きかけのまま残った。\n')
+    fs.writeFileSync(path.join(dir, 'me.md'), '---\nkind: me\n---\n# 私について\n\n## 私は誰か\n落ち着いた声で話す。\n')
+    fs.writeFileSync(path.join(dir, 'journal', '2026-09-07.md'), '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n')
+    const result = store.readAll()
+    expect(result.pages).toBe(5)
+    expect(result.errors).toEqual([
+      ja('memory.check.frontmatterMissing', { file: 'pages/壊れ.md' }),
+      ja('memory.check.firstHeading', { file: 'pages/壊れ.md', heading: '要約' }),
+      ja('memory.check.obsoleteKey', { file: 'me.md', key: 'kind' })
+    ])
+    expect(result.units.map((u) => [u.file, u.kind, u.page, u.heading, u.text])).toEqual([
+      ['user.md', 'section', 'ユーザー', '好み', 'コーヒーは砂糖なし。'],
+      ['pages/壊れ.md', 'section', '壊れ', '経緯', '書きかけのまま残った。'],
+      ['pages/松葉軒.md', 'section', '松葉軒', '要約', '本人の行きつけのラーメン屋。'],
+      ['pages/松葉軒.md', 'section', '松葉軒', '好み', '辛さは控えめが好みらしい。替え玉はしないようだ。'],
+      ['journal/2026-09-07.md', 'journal', '2026-09-07', '四季の話', '春は桜を勧めた。'],
+      ['me.md', 'section', '私について', '私は誰か', '落ち着いた声で話す。']
+    ])
+    expect(result.units[2].aliases).toEqual(['松葉軒', 'ラーメン屋'])
+    expect(store.listDocuments().map((d) => [d.kind, d.title])).toEqual([
+      ['instruction', 'いつも覚えておくこと'],
+      ['me', '私について'],
+      ['user', 'ユーザー'],
+      ['page', '壊れ'],
+      ['page', '松葉軒'],
+      ['journal', '2026-09-07']
+    ])
+    expect(store.readDocument('journal/2026-09-07.md')).toBe('# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n')
+    expect(store.readDocument('journal/2026-09-08.md')).toBeNull()
+    expect(() => store.readDocument('../me.md')).toThrow(errorText('memory.errors.notADocument', { file: '../me.md' }))
+  })
+
+  it('reports a missing instruction.md and the files an earlier form of the memory kept, so that a curation cannot be merged over them', () => {
+    const dir = store.memoryDir()
+    expect(store.readAll().errors).toEqual([ja('memory.check.instructionMissing', { file: 'instruction.md' })])
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    fs.writeFileSync(path.join(dir, 'profile.md'), '# 要点\n- 猫のムギと暮らす\n')
+    fs.writeFileSync(path.join(dir, 'forget.jsonl'), '')
+    expect(store.readAll().errors).toEqual([
+      ja('memory.check.obsoleteFile', { file: 'profile.md' }),
+      ja('memory.check.obsoleteFile', { file: 'forget.jsonl' })
+    ])
+    expect(store.listDocuments().map((d) => d.file)).toEqual(['instruction.md'])
+    fs.writeFileSync(path.join(dir, 'instruction.md'), '---\nupdated: 2026-09-09\n---\n' + INSTRUCTION)
+    expect(store.readAll().errors).toContain(ja('memory.check.frontmatterNotAllowed', { file: 'instruction.md' }))
+  })
+
+  it('rewrites a whole document and commits it, refuses a save that breaks the rules, creates a page from its template, and deletes a page with a commit', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    const before = commits(dir)
+    const saved = store.writeDocument('pages/松葉軒.md', MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。'))
+    expect(saved).toMatchObject({ kind: 'page', title: '松葉軒', summary: '本人の行きつけの店。', headings: ['要約', '好み'] })
+    expect(fs.readFileSync(path.join(dir, 'pages', '松葉軒.md'), 'utf8')).toContain('## 要約\n本人の行きつけの店。\n')
+    expect(commits(dir)).toBe(before + 1)
+    expect(() => store.writeDocument('pages/松葉軒.md', '# 松葉軒\n\n## 好み\n辛さ控えめ\n')).toThrow(ja('memory.check.frontmatterMissing', { file: 'pages/松葉軒.md' }))
+    expect(store.readDocument('pages/松葉軒.md')).toContain('本人の行きつけの店。')
+
+    const created = store.createPage(' 田中さん ', PAGE_TEMPLATE)
+    expect(created).toMatchObject({ file: 'pages/田中さん.md', kind: 'page', title: '田中さん', headings: ['要約', '経緯', '私の印象'] })
+    expect(fs.readFileSync(path.join(dir, 'pages', '田中さん.md'), 'utf8')).toMatch(/^---\naliases: \[\]\nupdated: \d{4}-\d{2}-\d{2}\n---\n# 田中さん\n/)
+    expect(() => store.createPage('田中さん', PAGE_TEMPLATE)).toThrow(errorText('memory.errors.pageExists', { name: '田中さん' }))
+    expect(() => store.createPage('../x', PAGE_TEMPLATE)).toThrow(errorText('memory.errors.nameCharacters'))
+
+    const beforeDelete = commits(dir)
+    store.deleteDocument('pages/田中さん.md')
+    expect(fs.existsSync(path.join(dir, 'pages', '田中さん.md'))).toBe(false)
+    expect(commits(dir)).toBe(beforeDelete + 1)
+    expect(() => store.deleteDocument('me.md')).toThrow(errorText('memory.errors.deleteKind'))
+    expect(() => store.deleteDocument('instruction.md')).toThrow(errorText('memory.errors.deleteKind'))
+    expect(store.isClean()).toBe(true)
+  })
+
+  it('returns instruction.md without its title heading, and null when it is missing or empty', () => {
+    const dir = store.memoryDir()
+    expect(store.readInstruction()).toBeNull()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), '# いつも覚えておくこと\n')
+    expect(store.readInstruction()).toBeNull()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    expect(store.readInstruction()).toBe('## この人について\n- 予約サービスの企画担当\n- 猫のムギと暮らす')
+  })
+
+  it('writes its own commits in the language the memory is written in', () => {
+    const dir = store.memoryDir()
+    expect(subjects(dir)).toEqual(['asist: 記憶の置き場を作る'])
+    mocks.conversationLocale = 'de-DE'
+    const page = '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Summary\nThe ramen shop.\n'
+    fs.writeFileSync(path.join(dir, 'pages', 'Matsubaken.md'), page)
+    store.writeDocument('pages/Matsubaken.md', page.replace('The ramen shop.', 'The ramen shop they keep going back to.'))
+    store.createPage('Tanaka', PAGE_TEMPLATE.replace('## 要約', '## Summary'))
+    store.deleteDocument('pages/Tanaka.md')
+    expect(subjects(dir).slice(0, 4)).toEqual([
+      'asist: delete pages/Tanaka.md',
+      'asist: create the page Tanaka',
+      'asist: edit pages/Matsubaken.md',
+      'asist: 記憶の置き場を作る'
+    ])
+  })
+})

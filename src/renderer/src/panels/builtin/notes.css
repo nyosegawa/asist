@@ -1,0 +1,45 @@
+/* The notes card. Each row is one button that opens the note in the notes screen. */
+.nt-card {
+  --card-hue: #ffd27a;
+  --card-focus-width: 560px;
+}
+.nt-item {
+  padding: 0;
+}
+.nt-item[data-new] {
+  background: rgb(from var(--ui-tone-gold) r g b / 0.08);
+}
+.nt-open {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.nt-open:hover {
+  background: rgb(from var(--ui-tone-gold) r g b / 0.05);
+}
+.nt-open .card-row-title {
+  -webkit-line-clamp: 1;
+  font-weight: 600;
+}
+.nt-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 2px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ui-text);
+  overflow-wrap: anywhere;
+}
+.nt[data-size='s'] .nt-excerpt {
+  -webkit-line-clamp: 1;
+}
+.nt[data-size='focus'] .nt-excerpt {
+  -webkit-line-clamp: 3;
+}

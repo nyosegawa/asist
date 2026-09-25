@@ -1,0 +1,83 @@
+.fv-nb {
+  display: flex;
+  flex-direction: column;
+}
+.fv-nb-cell {
+  border-bottom: 1px solid var(--ui-divider);
+}
+.fv-nb-cell:last-child {
+  border-bottom: 0;
+}
+.fv-nb-cell[data-type='markdown'] {
+  padding: 10px 14px;
+}
+.fv-nb-cell[data-type='code'] {
+  padding: 6px 0;
+}
+.fv-nb-source {
+  display: flex;
+  align-items: flex-start;
+}
+.fv-nb-count {
+  flex: none;
+  width: 40px;
+  padding: 8px 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--code-keyword);
+  white-space: pre;
+  user-select: none;
+}
+.fv-nb-source .fv-code {
+  flex: 1;
+  min-width: 0;
+}
+.fv-nb-source .fv-code-no {
+  display: none;
+}
+.fv-nb-output {
+  margin: 4px 12px 4px 50px;
+  border-left: 2px solid var(--ui-line);
+}
+.fv-nb-output.fv-mono {
+  padding: 4px 10px;
+  white-space: pre-wrap;
+  color: var(--ui-text-soft);
+}
+.fv-nb-output[data-kind='error'] {
+  border-left-color: rgb(from var(--color-holo-red) r g b / 0.6);
+  background: rgb(from var(--color-holo-red) r g b / 0.08);
+  color: var(--ui-tone-red-text);
+}
+.fv-nb-output[data-kind='stream'][data-name='stderr'] {
+  color: var(--ui-tone-peach-text);
+}
+.fv-nb-output[data-kind='html'] {
+  padding: 4px 10px;
+}
+.fv-nb-output[data-kind='html'] table {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+}
+.fv-nb-output[data-kind='image'] {
+  padding: 4px 10px;
+}
+/* A plot saved with a transparent background is drawn for white paper, so the white stays in every theme. */
+.fv-nb-output[data-kind='image'] img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: #ffffff;
+}
+.card[data-size='s'] .fv-nb-output {
+  margin-left: 40px;
+}
+.card[data-size='s'] .fv-nb-count {
+  width: 32px;
+  padding-left: 6px;
+}
+.card[data-size='focus'] .fv-nb-cell[data-type='markdown'] {
+  padding: 14px 20px;
+}
