@@ -1,5 +1,4 @@
 import { app, BrowserWindow, Notification, powerMonitor, safeStorage, shell } from 'electron'
-import path from 'node:path'
 import mitt from 'mitt'
 import { displayName, type MailEvent } from '@shared/mail'
 import { requestConfirm } from './confirm'
@@ -10,6 +9,7 @@ import { createImapClient } from './mail-imap'
 import { createMailSecretStore } from './mail-secrets'
 import { MailService } from './mail-service'
 import { smtpSender } from './mail-smtp'
+import { docsUrl } from '@shared/docs-links'
 import { getSettings, saveSettings } from './settings'
 import { dataPath } from './store'
 
@@ -70,8 +70,6 @@ export function initMail(): void {
   mail.start()
 }
 
-export async function openMailGuide(): Promise<void> {
-  const guide = app.isPackaged ? path.join(process.resourcesPath, 'mail-guide/index.html') : path.join(app.getAppPath(), 'resources/mail-guide/index.html')
-  const error = await shell.openPath(guide)
-  if (error) throw new Error(error)
+export function openMailGuide(): Promise<void> {
+  return shell.openExternal(docsUrl('mail', getSettings().uiLocale))
 }
