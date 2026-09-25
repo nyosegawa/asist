@@ -20,6 +20,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Yomogi&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
+  <script>
+    // Google Analytics counts visits to the published site only, not npm run website or wrangler dev.
+    if (location.hostname === 'asist-agent.com') {
+      window.dataLayer = window.dataLayer || []
+      window.gtag = function () { dataLayer.push(arguments) }
+      gtag('js', new Date())
+      gtag('config', 'G-NC5XEGGKJ8')
+      const tag = document.createElement('script')
+      tag.async = true
+      tag.src = 'https://www.googletagmanager.com/gtag/js?id=G-NC5XEGGKJ8'
+      document.head.append(tag)
+    }
+  </script>
 </head>
 <body>
   <header class="header">
@@ -188,6 +201,7 @@
         <a href="#home">ホーム画面</a><a href="#cards">カード</a><a href="#apps">ミニアプリ</a><a href="#agent">Agent</a><a href="#memory">記憶</a><a href="#start">はじめる</a>
       </nav>
       <p><a href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener">GitHub で見る</a> ・ MIT License ・ © 2026 Sakasegawa</p>
+      <p class="footer-note">このサイトは、アクセス解析に Cookie を使う Google Analytics を使っています。<a href="https://policies.google.com/technologies/partner-sites?hl=ja" target="_blank" rel="noopener">Google によるデータの使用</a></p>
     </div>
   </footer>
 
