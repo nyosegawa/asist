@@ -2,7 +2,7 @@
 title: マイクの許可
 description: macOS のマイクの許可を与える、あとから与え直す。
 sidebar:
-  order: 4
+  order: 5
 ---
 
 声で話すときは、ASIST がマイクを使います。初回セットアップの「マイクを検証する」で、macOS が許可を求めるので、「許可」を押します。

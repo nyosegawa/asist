@@ -2,7 +2,7 @@
 title: Microphone permission
 description: Give ASIST the macOS microphone permission, or give it again later.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 ASIST uses the microphone when you talk by voice. macOS asks for permission when you click "Check the microphone" during the first-time setup. Click "Allow".

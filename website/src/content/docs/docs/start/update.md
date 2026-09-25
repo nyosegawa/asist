@@ -2,7 +2,7 @@
 title: 更新とアンインストール
 description: 新しいバージョンが届くしくみと、ASIST を消す手順。
 sidebar:
-  order: 8
+  order: 9
 ---
 
 ## 更新
