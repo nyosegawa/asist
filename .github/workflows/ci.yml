@@ -16,8 +16,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # Whether anything outside website/ changed. The main ruleset requires the check job, and a workflow left
+  # out by a paths filter never reports it, so the pull request waits forever; a job skipped by its if:
+  # counts as passed.
+  changes:
     if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.diff.outputs.app }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # The first parent is the base of a pull request's merge commit, and the previous main of a squash merge.
+      - id: diff
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -qv '^website/'; then
+            echo app=true >> "$GITHUB_OUTPUT"
+          fi
+
+  check:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     # Apple Silicon, the only platform the app is built for.
     runs-on: macos-latest
     timeout-minutes: 30
