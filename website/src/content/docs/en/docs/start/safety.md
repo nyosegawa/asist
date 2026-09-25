@@ -82,4 +82,4 @@ ASIST is independent software, not affiliated with OpenAI, Anthropic, Google or 
 
 ## There is no warranty
 
-ASIST is distributed under the [MIT License](https://github.com/nyosegawa/asist/blob/main/LICENSE), without warranty. The authors and copyright holders are not liable for any damage from using ASIST, such as lost data, charges you incur or mail sent by mistake. This page explains what to be careful about; it does not change the terms of the license.
+ASIST is distributed under the [MIT License](https://github.com/nyosegawa/asist/blob/main/LICENSE), which provides the software as is, without warranty of any kind. Nothing can promise that lost data, unexpected charges or mail sent by mistake will not happen, so follow this page when you use ASIST. This page explains what to be careful about; it does not change the terms of the license.
