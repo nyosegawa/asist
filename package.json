@@ -20,6 +20,7 @@
     "demo:cards": "node scripts/cdp/scenes/cards.mjs",
     "demo:gallery": "node scripts/cdp/scenes/gallery.mjs",
     "demo:setup": "node scripts/cdp/scenes/setup.mjs",
+    "demo:docs-shots": "node scripts/cdp/scenes/docs-shots.mjs",
     "demo:fit": "node scripts/cdp/scenes/fit.mjs",
     "gen:live-voices": "node scripts/gen-live-voices.mjs",
     "i18n": "node scripts/i18n.mjs",
