@@ -1,6 +1,7 @@
 import type { Root } from 'react-dom/client'
 import { defaultRegion } from '@shared/conversation-locale'
 import type { UiLocale } from '@shared/i18n'
+import { translate } from '@/i18n'
 import { useSettingsStore } from '@/state/stores'
 import { applyTheme, DEFAULT_THEME, isThemeName, THEMES, type ThemeName } from '@/themes'
 import { mockApi, scriptSayings } from './api'
@@ -32,7 +33,8 @@ export async function bootDemo(root: Root): Promise<boolean> {
       applyTheme(theme)
       await mockApi.saveSettings({ theme })
       await useSettingsStore.getState().load()
-    }
+    },
+    demoText
   })
   console.info('ASIST: explicit development demo mode (no Electron preload)')
   const params = new URLSearchParams(location.search)
@@ -72,4 +74,17 @@ export async function bootDemo(root: Root): Promise<boolean> {
   }
   scriptSayings(sayings)
   return false
+}
+
+/**
+ * The text of a dictionary key in the current interface language, through the translator the app uses. The
+ * capture scripts find a button by it, so the same steps press the same button in every language. A key the
+ * dictionary does not hold fails here with its name, rather than as a button that is never found.
+ */
+function demoText(key: string, values?: Record<string, string | number>): string {
+  try {
+    return (translate as (key: string, values?: Record<string, string | number>) => string)(key, values)
+  } catch (cause) {
+    throw new Error(`辞書に ${key} というキーはありません`, { cause })
+  }
 }

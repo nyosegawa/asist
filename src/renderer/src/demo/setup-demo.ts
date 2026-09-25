@@ -78,7 +78,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     }
     state.asrReady = true
     progressListeners.forEach((listener) => listener({ status: 'done', pct: 100, downloadedMb: totalMb, totalMb }))
-    return { ok: true, message: '音声認識を準備しました(デモのため実際には取得していません)' }
+    return { ok: true, message: translate('settingsModels.preparation.done', { model: (await base.getSetupStatus()).asr.label }) }
   }
   api.prepareTtsModel = async () => {
     const totalMb = 1974

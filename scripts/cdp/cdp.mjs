@@ -131,8 +131,10 @@ export async function connect(port) {
     /** Pretends the window has this size. It is for the demo, and never for the app's own window. */
     resize: ([width, height]) =>
       send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false }),
-    async screenshot() {
-      const { data } = await send('Page.captureScreenshot', { format: 'png' })
+    /** A PNG, or a WebP when a quality from 0 to 100 is given, which Chrome encodes itself. */
+    async screenshot({ webpQuality } = {}) {
+      const params = webpQuality === undefined ? { format: 'png' } : { format: 'webp', quality: webpQuality }
+      const { data } = await send('Page.captureScreenshot', params)
       return Buffer.from(data, 'base64')
     },
     close: () => ws.close()
