@@ -7,7 +7,7 @@ sidebar:
 
 ![The Mail mini app, with the inbox and a thread](/screens/en/mail.webp)
 
-How to connect a mail account is covered in [Connect your mail](/en/docs/start/mail/).
+How to connect a mail account is covered in [Connecting your mail](/en/docs/start/mail/).
 
 ## From the conversation
 

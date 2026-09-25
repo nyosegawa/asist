@@ -7,7 +7,7 @@ sidebar:
 
 ![The Calendar mini app, with an event open in the week view](/screens/en/calendar.webp)
 
-ASIST shows and searches the Google and iCloud events you have added to the macOS calendar, and can add, change and delete ordinary events. How to connect it is covered in [Connect your calendar](/en/docs/start/calendar/).
+ASIST shows and searches the Google and iCloud events you have added to the macOS calendar, and can add, change and delete ordinary events. How to connect it is covered in [Connecting your calendar](/en/docs/start/calendar/).
 
 Under "Calendar" in the Dock, you can switch between Month, Week and Schedule. In the conversation, ask things like "Show me today's schedule" or "Put a meeting in at 10 tomorrow".
 

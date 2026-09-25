@@ -7,7 +7,7 @@ description: Common problems and how to fix them.
 
 - In System Settings > Privacy & Security > Microphone, check that ASIST is turned on. After you turn it on, reopen ASIST.
 - Click `MIC OFF` on the screen and check that the microphone is on.
-- If the permission seems to be in a wrong state, remove it with the steps in [Resetting the permissions](/en/docs/start/permissions/#resetting-the-permissions) and grant it again.
+- If the permission seems to be in a wrong state, remove it with the steps in [Resetting the permission](/en/docs/start/microphone/#resetting-the-permission) and grant it again.
 
 ## The API key can't be checked
 
@@ -28,7 +28,7 @@ If the first-time setup or "Integrations" in the settings says the key couldn't 
 
 ## The calendar or mail won't connect
 
-See "If it does not connect" in [Connect your calendar](/en/docs/start/calendar/#if-it-does-not-connect) and [Connect your mail](/en/docs/start/mail/#if-it-does-not-connect).
+See "If it does not connect" in [Connecting your calendar](/en/docs/start/calendar/#if-it-does-not-connect) and [Connecting your mail](/en/docs/start/mail/#if-it-does-not-connect).
 
 ## At startup, ASIST says it can't read a file
 

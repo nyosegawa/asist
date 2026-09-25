@@ -1,5 +1,5 @@
 ---
-title: Connect your calendar
+title: Connecting your calendar
 description: Connect Google Calendar to ASIST through the Mac's Calendar app.
 sidebar:
   order: 6
@@ -60,9 +60,14 @@ ASIST reads and writes the calendars registered in macOS. macOS signs in to Goog
 - Calendars that cannot be written to, such as shared or subscribed calendars, can only be used for viewing.
 - Repeating events and events with invitations can be viewed and searched, but ASIST cannot change or delete them. Use the Mac's Calendar app for those.
 - If an event does not appear on Google, check your Mac's network connection and the account's sync. If you do not know whether an event was added, do not ask for the same event again and again.
+- If the permission seems to be in a wrong state, remove it in Terminal, then turn the "Turn the calendar integration on" switch on again in ASIST and allow it again.
+
+  ```bash
+  tccutil reset Calendar com.nyosegawa.asist
+  ```
 
 ## How ASIST handles your events
 
-The macOS permission covers all your calendars. ASIST searches the calendars you chose to show, and creates new events in the calendar you chose for saving. Turning the integration off stops ASIST from reading and writing them. To remove the macOS permission as well, see [Microphone and calendar permissions](/en/docs/start/permissions/).
+The macOS permission covers all your calendars. ASIST searches the calendars you chose to show, and creates new events in the calendar you chose for saving. Turning the integration off stops ASIST from reading and writing them. To remove the macOS permission as well, turn ASIST off in System Settings > Privacy & Security > Calendars.
 
 Events handled in the conversation are sent to the provider of the conversation model you chose, so that it can write a reply. They may also stay in the conversation history and be used in memory curation.
