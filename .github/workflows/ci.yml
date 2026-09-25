@@ -15,10 +15,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The app's checks run as separate jobs at the same time. In one job they took seven and a half minutes
+# on macos-latest (2026-09-25): npm test 122 s, demo:fit 205 s and the unsigned build 79 s.
 jobs:
-  # Whether anything outside website/ changed. The main ruleset requires the check job, and a workflow left
-  # out by a paths filter never reports it, so the pull request waits forever; a job skipped by its if:
-  # counts as passed.
+  # Whether anything outside website/ changed. A workflow left out by a paths filter never reports the
+  # result job the main ruleset requires, so the pull request would wait forever; the app's jobs are
+  # skipped by their if: instead.
   changes:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
@@ -36,18 +38,50 @@ jobs:
             echo app=true >> "$GITHUB_OUTPUT"
           fi
 
-  check:
+  # The jobs of the app run on macos-latest, which is Apple Silicon, the only platform the app is built for.
+  test:
     needs: changes
     if: needs.changes.outputs.app == 'true'
-    # Apple Silicon, the only platform the app is built for.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-app
+      - run: npm run typecheck
+      - run: npm run i18n -- check
+      - run: npm test
+
+  # Whether the text of every card and screen still fits in each of the eleven languages and every theme,
+  # in Chrome. The layout depends on the fonts of macOS, so it runs there, with the themes shared out.
+  fit:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-app
+      - run: npm run demo:fit -- --shard ${{ matrix.shard }}
+      # demo:fit captures what did not fit into fit-shots/; the pictures are kept with the failed run.
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fit-shots-${{ strategy.job-index }}
+          path: fit-shots/
+          if-no-files-found: ignore
+
+  # Builds the native helpers, the bundle and an unsigned app, which also checks electron-builder.yml.
+  build:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: npm
       # git is compiled from source and uv is fetched, both pinned in these scripts, so the scripts are the key.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -55,27 +89,7 @@ jobs:
             resources/git
             resources/uv
           key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-git.sh', 'scripts/fetch-uv.sh') }}
-      # The Electron zips the tests and electron-builder download, for the version in the lockfile.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/Library/Caches/electron
-            ~/Library/Caches/electron-builder
-          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run i18n -- check
-      - run: npm test
-      # Whether the text of every card and screen still fits in each of the eleven languages and every theme, in Chrome.
-      - run: npm run demo:fit
-      # demo:fit captures what did not fit into fit-shots/; the pictures are kept with the failed run.
-      - if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: fit-shots
-          path: fit-shots/
-          if-no-files-found: ignore
-      # Builds the native helpers, the bundle and an unsigned app, which also checks electron-builder.yml.
+      - uses: ./.github/actions/setup-app
       - run: npm run dist:mac:unsigned
       - name: Run the git and uv inside the app
         run: |
@@ -97,6 +111,17 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm ci --prefix website
       - run: npm run website:build
+
+  # The one job the main ruleset requires, so that it names neither each shard of fit nor the jobs a
+  # change to the website skips. A skipped job is not a failure.
+  result:
+    if: always() && github.event_name != 'schedule'
+    needs: [changes, test, fit, build, website]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
 
   audit:
     if: github.event_name != 'pull_request'

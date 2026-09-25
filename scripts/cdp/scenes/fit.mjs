@@ -27,9 +27,10 @@ import { startDemo } from '../demo-server.mjs'
  * everything fits; a finding is reported once, with every theme and language it appeared in, and captured
  * at 2x (fit-shots/ on CI, a temporary folder otherwise). On GitHub the findings also go to the run's summary.
  *
- * Usage: npm run demo:fit -- [--cards | --screens] [--theme name]... [locale]...
+ * Usage: npm run demo:fit -- [--cards | --screens] [--theme name]... [--shard k/n] [locale]...
  *   Without a flag both are checked; without a locale, every language that can be chosen; without --theme,
- *   every theme.
+ *   every theme. --shard k/n keeps every n-th of those themes from the k-th, so that n machines share the
+ *   check; the baseline of the cards is measured in each.
  * Exit code 2 when there is a finding.
  */
 
@@ -46,8 +47,14 @@ if (unknownThemes.length > 0) {
   console.error(`知らないテーマです: ${unknownThemes.join(', ')}。使えるのは ${allThemes.join(', ')} です`)
   process.exit(1)
 }
-const themes = themeArgs.length ? themeArgs : allThemes
-const requested = args.filter((arg, i) => !arg.startsWith('--') && args[i - 1] !== '--theme')
+const shardArg = args.includes('--shard') ? args[args.indexOf('--shard') + 1] : '1/1'
+const [shard, shards] = (/^(\d+)\/(\d+)$/.exec(shardArg) ?? []).slice(1).map(Number)
+if (!(shard >= 1 && shard <= shards)) {
+  console.error(`--shard は 1/2 のように「何番目/いくつに分けるか」で書きます: ${shardArg}`)
+  process.exit(1)
+}
+const themes = (themeArgs.length ? themeArgs : allThemes).filter((_, i) => i % shards === shard - 1)
+const requested = args.filter((arg, i) => !arg.startsWith('--') && args[i - 1] !== '--theme' && args[i - 1] !== '--shard')
 const unknown = requested.filter((locale) => !declared.includes(locale))
 if (unknown.length > 0) {
   console.error(`知らないロケールです: ${unknown.join(', ')}。使えるのは ${declared.join(', ')} です`)
