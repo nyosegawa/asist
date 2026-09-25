@@ -1,0 +1,9 @@
+# The app ships src/ and resources/. The scripts, tests, website and promotional video only run on a
+# developer's machine or on CI and read the repository's own files, and most of CodeQL's alerts there
+# were false positives.
+paths-ignore:
+  - scripts
+  - tests
+  - website
+  - promotions
+  - skills
