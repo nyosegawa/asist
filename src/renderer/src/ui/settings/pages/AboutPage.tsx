@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ASIST_LICENSE, creditsOf, type Credit, type CreditGroup } from '@shared/credits'
-import { Chip, Group, Page, Row } from '../primitives'
+import { Btn, Chip, Group, Page, Row } from '../primitives'
 import { useT } from '@/i18n'
 import type { Translate } from '@shared/i18n'
 
@@ -21,6 +21,9 @@ export function AboutPage(): React.JSX.Element {
           <a className="st-link" href={ASIST_LICENSE.url} target="_blank" rel="noreferrer">
             {ASIST_LICENSE.name}
           </a>
+        </Row>
+        <Row label={t('settingsAbout.notices.label')} hint={t('settingsAbout.notices.hint')}>
+          <Btn onClick={() => void window.api.licensesOpen()}>{t('settingsAbout.notices.open')}</Btn>
         </Row>
       </Group>
       <Credits group="local" t={t} />

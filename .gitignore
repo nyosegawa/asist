@@ -23,6 +23,8 @@ resources/uv/
 resources/git/
 # The permission texts that scripts/macos/permission-texts.mjs generates.
 build/lproj/
+# The licenses of the bundled packages that scripts/third-party-notices.mjs writes after each build.
+build/THIRD_PARTY_NOTICES.txt
 
 # Python bytecode.
 __pycache__/

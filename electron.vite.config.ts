@@ -1,17 +1,44 @@
 import { resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import type { Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+/**
+ * Adds bundled-packages-<name>.json to the output of a bundle: the folders of the npm packages whose code
+ * it took in, from which scripts/third-party-notices.mjs collects their licenses. The renderer and its
+ * workers take in development dependencies such as Transformers.js, which package.json alone would not
+ * show. Each worker is a bundle of its own, so the name comes from the bundle's entry.
+ */
+function bundledPackages(): Plugin {
+  return {
+    name: 'bundled-packages',
+    generateBundle(_options, bundle) {
+      const dirs = new Set<string>()
+      let entry = 'bundle'
+      for (const output of Object.values(bundle)) {
+        if (output.type !== 'chunk') continue
+        if (output.isEntry) entry = output.name
+        for (const id of Object.keys(output.modules)) {
+          // The last node_modules in the path is the package itself when one package nests another.
+          const match = /^.*[\\/]node_modules[\\/](?:@[^\\/]+[\\/])?[^\\/]+/.exec(id.replace(/^\0/, ''))
+          if (match) dirs.add(match[0])
+        }
+      }
+      this.emitFile({ type: 'asset', fileName: `bundled-packages-${entry}.json`, source: JSON.stringify([...dirs].sort(), null, 2) })
+    }
+  }
+}
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), bundledPackages()],
     resolve: {
       alias: { '@shared': resolve('src/shared') }
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), bundledPackages()],
     resolve: {
       alias: { '@shared': resolve('src/shared') }
     }
@@ -23,6 +50,9 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [react(), tailwindcss(), bundledPackages()],
+    worker: {
+      plugins: () => [bundledPackages()]
+    }
   }
 })

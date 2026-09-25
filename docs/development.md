@@ -116,6 +116,8 @@ CSC_NAME="Apple Development: ..." npm run dist:mac
 
 証明書は、Team ID を持つもの(Apple Development か Developer ID Application)を指定します。アプリはライブラリの検証を有効にしているので、自己署名の証明書で署名すると、アプリ本体と Electron Framework の Team ID が一致せず、起動した直後に終了します。`CSC_NAME` を省くと electron-builder がキーチェーンから証明書を選ぶので、自己署名の証明書があるときは必ず指定します。
 
+`npm run build` のあとには `scripts/third-party-notices.mjs` が動き、バンドルに入った npm のパッケージと、app.asar に入る本番用の依存パッケージのライセンスを集めて `build/THIRD_PARTY_NOTICES.txt` に書きます。アプリの `Contents/Resources` には、これと ASIST の `LICENSE.txt`、Electron と Chromium のライセンスが入り、「このアプリについて」から開けます。ライセンスを書いていないパッケージがあると、ビルドはそこで止まります。
+
 署名なしでビルドするには `npm run dist:mac:unsigned` を使います。署名なしでは、マイクの許可が再起動のあとに残らないことがあるので、音声の実機確認には署名付きのアプリを使います。配布の前には `npm audit --omit=dev` で依存関係も確かめます。
 
 ビルドしたアプリは、Electron の fuse(`electron-builder.yml` の `electronFuses`)で `ELECTRON_RUN_AS_NODE`、`NODE_OPTIONS`、`--inspect` を受け付けず、`app.asar` 以外からアプリのコードを読み込まず、`app.asar` の中身が変わっていれば起動しません。どれも、ほかのプロセスが ASIST の署名のまま、ユーザーが許可したマイクやカレンダーを使うことを防ぐためです。ビルドのあとに `npx @electron/fuses read --app dist/mac-arm64/ASIST.app` で値を確かめられます。`--remote-debugging-port` は fuse では止まらないので、CDP でアプリを動かすときだけ付けて起動します。

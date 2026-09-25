@@ -690,5 +690,6 @@ export const mockApi: RendererApi = {
     window.open(url, '_blank')
   },
   appVersion: async () => '1.0.0',
+  licensesOpen: async () => {},
   apiUsage: async () => demoUsageDays()
 }
