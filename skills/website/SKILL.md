@@ -1,18 +1,18 @@
 ---
 name: website
-description: How to change, check and publish ASIST's website at asist-agent.com (website/, a static page served by a Cloudflare Worker), with the Cloudflare login kept inside this repository. Use when asked to edit, preview, build, deploy, publish or roll back the website or landing page (紹介ページ、LP、サイト、asist-agent.com、デプロイして、公開して、サイトに反映して、Cloudflare、wrangler), or when wrangler reports the wrong account or no login. Do not use for the app's own screens (visual-debugging) or for rebuilding the promotional video, which only reads the website's images.
+description: How to change, check and publish ASIST's website at asist-agent.com (website/, the landing page and the Starlight documentation, served by a Cloudflare Worker), with the Cloudflare login kept inside this repository. Use when asked to edit, preview, build, deploy, publish or roll back the website, the landing page or the documentation, to write or translate a documentation page, or when a change to the app alters what a user sees or does (紹介ページ、LP、サイト、ドキュメント、docs、使い方のページ、翻訳、asist-agent.com、デプロイして、公開して、サイトに反映して、Cloudflare、wrangler), or when wrangler reports the wrong account or no login. Do not use for the app's own screens (visual-debugging) or for rebuilding the promotional video, which only reads the website's images.
 ---
 
 # The website
 
-`website/` is a separate npm project, apart from the app's dependencies and CI. Astro builds it into static HTML in `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`, `website/worker.js`) serves it at asist-agent.com and sends www.asist-agent.com there with a 301. The domain and its DNS are on the same Cloudflare account.
+`website/` is a separate npm project, apart from the app's dependencies and CI. It holds the landing page (`src/pages/`) and the documentation for users (Starlight, `src/content/docs/`). Astro builds both into static HTML in `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`, `website/worker.js`) serves it at asist-agent.com and sends www.asist-agent.com there with a 301. The domain and its DNS are on the same Cloudflare account.
 
 ## 1. Change and look
 
 ```bash
 npm --prefix website install   # once per checkout, and after website/package.json changes
 npm run website                # http://localhost:5194
-npm run website:build          # website/dist
+npm run website:build          # website/dist, then checks every internal link, image and #anchor
 ```
 
 The page is `website/src/pages/index.astro`, its style `website/src/styles/landing.css`.
@@ -22,7 +22,17 @@ The page is `website/src/pages/index.astro`, its style `website/src/styles/landi
 - Pictures in `website/public/` are also used by the promotional video (`promotions/x-promo-video/`). When one changes, say so in the report, since the next video changes with it.
 - A change reaches main through a pull request like any other (`pull-request`). Publish from main, never from a branch.
 
-## 2. Log in (once per checkout)
+## 2. Write the documentation
+
+- Japanese pages are in `src/content/docs/docs/` (served at `/docs/`), English pages in `src/content/docs/en/docs/` (at `/en/docs/`), with the same file names. Japanese is written first; a change to a Japanese page changes the English page in the same pull request. A page missing in English shows the Japanese one with a notice, so never leave one out.
+- The sidebar lists each chapter folder in `astro.config.mjs` and orders pages by `sidebar.order` in their frontmatter.
+- Quote a button, page or setting exactly as the app shows it: the `ja-JP` and `en-US` values of its key in `src/shared/i18n/messages/`.
+- A heading another page links to keeps its text; changing it breaks the `#anchor`, which the build then reports.
+- Screens of the app come from the demo: `npm run demo:docs-shots` writes them to `public/screens/{ja,en}/`. Pages refer to `/screens/ja/…` and `/screens/en/…`. Write the Japanese in plain words (see the `ui-text` skill's writing guide).
+- The languages of the site, and which of them have a landing page or documentation, are listed once in `src/i18n/languages.mjs`.
+- The dev server keeps the old sidebar after pages are moved or renamed; restart it.
+
+## 3. Log in (once per checkout)
 
 Always run wrangler as `npm run cf -- <command>`, never `npx wrangler`. `scripts/wrangler.mjs` points wrangler at a login stored in `.wrangler/config` of this checkout, so the account wrangler uses elsewhere on this Mac is never touched. It removes `CLOUDFLARE_API_TOKEN` and the other `CLOUDFLARE_*` variables, which would take precedence over the login, and it stops when `~/.wrangler` exists, since wrangler would then read that login instead.
 
@@ -34,7 +44,7 @@ npm run cf -- whoami
 - Check that the account id `whoami` prints is the `account_id` in `website/wrangler.jsonc`. If it differs, stop and ask; deploying would create the Worker in the wrong account.
 - A git worktree has its own `.wrangler/`, so it needs its own login. Publishing from the main checkout avoids that.
 
-## 3. Publish
+## 4. Publish
 
 Publishing changes a public site, so do it only when the user has asked for it.
 
@@ -53,7 +63,7 @@ curl -s https://asist-agent.com/ | grep -c '<the text you changed>'
 
 Open https://asist-agent.com/ in the browser pane as well and look at what changed. Report the commit you published and what you saw.
 
-## 4. Undo a publication
+## 5. Undo a publication
 
 ```bash
 npm run cf -- deployments list --config website/wrangler.jsonc

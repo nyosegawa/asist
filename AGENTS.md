@@ -3,8 +3,10 @@
 ## Project
 
 ASIST is an Electron desktop application for real-time voice interaction, built with TypeScript,
-React, electron-vite and Vitest. `README.md` covers setup, usage and manual validation. Read the
-relevant implementation and tests before changing behavior.
+React, electron-vite and Vitest. The documentation for users is on the website
+(`website/src/content/docs/`, in Japanese and English), and `docs/development.md` covers running from
+source, building, CI and manual validation. Read the relevant implementation and tests before changing
+behavior.
 
 Do not read or use `frontend-skill` in this product.
 
@@ -89,7 +91,10 @@ so, the record goes into the same commit (`adr` skill).
   such as `feat:`; the body says what changed and why.
 - The user merges pull requests, with a squash, once CI passes. An agent merges only when told to for
   that pull request.
-- Update `README.md` when setup, usage or manual validation changes.
+- When a change alters what a user sees or does, update the documentation pages that describe it, in
+  Japanese and English, in the same change (`website` skill). Update `docs/development.md` when running
+  from source, building or manual validation changes. `README.md` and `README.ja.md` only summarize and
+  link; change them when what they summarize changes.
 
 Skills live in `skills/`; `.claude/skills` and `.agents/skills` are symlinks to it. Whenever a task
 matches one of these, use that skill; each holds steps these rules do not repeat.
@@ -109,5 +114,5 @@ matches one of these, use that skill; each holds steps these rules do not repeat
   branch of the pull request.
 - `install-mac-app`: installing, deploying or updating the app on this Mac, or verifying a change
   in the installed app.
-- `website`: changing, checking or publishing the website at asist-agent.com, or anything that runs
-  wrangler.
+- `website`: changing, checking or publishing the website and the documentation at asist-agent.com,
+  writing or translating a documentation page, or anything that runs wrangler.

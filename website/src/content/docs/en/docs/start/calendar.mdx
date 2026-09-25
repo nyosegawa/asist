@@ -1,0 +1,68 @@
+---
+title: Connect your calendar
+description: Connect Google Calendar to ASIST through the Mac's Calendar app.
+sidebar:
+  order: 6
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components'
+
+ASIST reads and writes the calendars registered in macOS. macOS signs in to Google and syncs with it; ASIST does not connect to Google directly. iCloud calendars work with the same steps. If your Google events already appear in the Mac's Calendar app, start from step 4.
+
+<Steps>
+
+1. **Add an account to Calendar on your Mac**
+
+   Open the Calendar app on your Mac, and choose Calendar > Add Account… in the menu bar.
+
+   ![The Calendar menu with Add Account chosen](/guides/calendar/01-add-account.png)
+
+2. **Choose Google**
+
+   Choose "Google", click "Continue" and sign in to the Google account you want to use.
+
+   ![Google chosen as the account type](/guides/calendar/02-select-google.png)
+
+3. **Allow macOS to access your Google calendars**
+
+   When you see "macOS wants to access your Google Account", check the calendar permission and continue. This permission is for macOS; you give ASIST its permission in the next step.
+
+   ![The screen where macOS asks for access to the Google account](/guides/calendar/03-google-permission.png)
+
+   <Aside>
+   In the image, Gmail and contacts are also selected, but the ASIST calendar does not use mail or contacts. Decide on those based on whether you use them in the Mac's Mail and Contacts apps.
+   </Aside>
+
+   Once the account is added, check in System Settings > Internet Accounts that "Calendars" is turned on for that account, and wait until your events appear in the Mac's Calendar app.
+
+4. **Allow ASIST**
+
+   In the ASIST settings, under "Integrations", turn on the "Turn the calendar integration on" switch. In the macOS dialog, click "Allow Full Access".
+
+   ![The macOS dialog where ASIST asks for full access to your calendars](/guides/calendar/04-asist-permission.png)
+
+5. **Choose the calendars to show and where to save**
+
+   Under "Calendars to show", choose the calendars ASIST views and searches. Under "Calendar for new events", choose the calendar where ASIST saves the events it adds. If you want them on Google, choose a Google calendar. Your choice is saved each time you make it.
+
+   ![The settings with Google calendars chosen for Calendars to show and Calendar for new events](/guides/calendar/05-asist-calendars.png)
+
+6. **Check it**
+
+   Say "Show me today's schedule" and check that the same events appear as in the Mac's Calendar app. Next, ask "Add an event called Test from 10 to 10:30 tomorrow", check the calendar, date, time and title on the confirmation screen, and approve it. Once you have confirmed that it also appears in Google Calendar, ask "Delete tomorrow's Test event".
+
+</Steps>
+
+## If it does not connect
+
+- If you did not allow access, open System Settings from "macOS privacy settings" under "Integrations" in the settings, and give ASIST full access. Return to ASIST and click "Refresh the list".
+- If your calendars do not appear, check whether events appear in the Mac's Calendar app. If you added the account again, choose the calendars to show and the calendar for new events again in ASIST as well.
+- Calendars that cannot be written to, such as shared or subscribed calendars, can only be used for viewing.
+- Repeating events and events with invitations can be viewed and searched, but ASIST cannot change or delete them. Use the Mac's Calendar app for those.
+- If an event does not appear on Google, check your Mac's network connection and the account's sync. If you do not know whether an event was added, do not ask for the same event again and again.
+
+## How ASIST handles your events
+
+The macOS permission covers all your calendars. ASIST searches the calendars you chose to show, and creates new events in the calendar you chose for saving. Turning the integration off stops ASIST from reading and writing them. To remove the macOS permission as well, see [Microphone and calendar permissions](/en/docs/start/permissions/).
+
+Events handled in the conversation are sent to the provider of the conversation model you chose, so that it can write a reply. They may also remain in the conversation history and in the tidying of the memory.

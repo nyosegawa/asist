@@ -1,482 +1,103 @@
-# ASIST
+<p align="center">
+  <img src="website/public/img/og.png" alt="ASIST — just talk, and your schedule and mail get handled." width="720" />
+</p>
 
-Mac 向けのリアルタイムアシスタントです(紹介ページ: https://asist-agent.com)。話しかけると声で答え、天気や予定やメールを会話の横のカードに出し、時間のかかる作業は Agent(codex または claude の CLI)に任せます。音声認識はこの Mac の上で動き、会話には Anthropic、OpenAI、Google、Cerebras のモデルから選んだものを使います。
+<h1 align="center">ASIST</h1>
 
-会話は 11 の言語でできます。日本語は、相槌や間の取り方まで調整してあります。ほかの言語は、その調整を使わない共通の作りで動きます(くわしくは [docs/adr/0002](docs/adr/0002-only-japanese-conversation-is-tuned.md))。
+<p align="center">
+  A realtime assistant for the Mac
+</p>
 
-## できること
+<p align="center">
+  <a href="https://asist-agent.com">Website</a> ·
+  <a href="https://github.com/nyosegawa/asist/releases/latest">Download</a> ·
+  <a href="https://asist-agent.com/en/docs/">Documentation</a> ·
+  <a href="README.ja.md">日本語</a>
+</p>
 
-- 話の途中で相槌を打ち、話し終わると短い一言で本回答までをつなぎます。返事の途中の「うん」「はい」は相槌として聞き流し、話しかけると読み上げを止めて聞きます(相槌は日本語の会話のときだけです)。
-- 天気、ニュース、検索、為替、地図、予定、メール、タイマー、タスク、メモ、ファイルを、声と文字のどちらからでも扱えます。
-- 会話から、ユーザーや人や場所についての記憶を書き、あとの会話で使います。整理のたびに、アシスタント自身が一人称の日記を書きます。
-- codex または claude の CLI に調査やファイルの編集を頼み、進み具合と成果物を見られます。「さっきの続き」で同じ作業を再開できます。
-- ウィンドウを閉じてもトレイに残り、⌥Space で呼び出せます。タイマーの終了、ジョブの完了、新着メールは OS の通知でも知らせます。
+<p align="center">
+  <a href="https://github.com/nyosegawa/asist/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyosegawa/asist/ci.yml?branch=main&style=flat-square&label=CI" alt="CI" /></a>
+  <a href="https://github.com/nyosegawa/asist/releases/latest"><img src="https://img.shields.io/github/v/release/nyosegawa/asist?style=flat-square" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B%20%C2%B7%20Apple%20Silicon-lightgrey?style=flat-square" alt="macOS 14 or later, Apple Silicon" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT License" /></a>
+</p>
 
-## 必要なもの
+ASIST is an assistant you talk to, and it answers in its own voice. Weather, events and mail appear as cards beside the conversation, and research or file edits that take time go to an agent (the codex or claude CLI) once you approve them. The conversation runs on a model you choose from Anthropic, OpenAI, Google or Cerebras.
 
-Apple Silicon の Mac と macOS 14 以降が対象です。
+**Your data stays on your Mac.** Listening, memory, notes and the conversation history live on this Mac. The text of the conversation goes only to the model provider you chose, and cards ask only the weather or news service they need. ASIST sends nothing to its developer.
 
-| 必要なもの | 用途 |
+<p align="center">
+  <img src="website/public/screens/en/home.webp" alt="The home screen of ASIST: the conversation in the middle, an exchange rate card on the left, a weather card on the right and the Dock below" width="860" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="website/public/screens/en/calendar.webp" alt="The Calendar mini app, showing a week of events" /><br /><sub>Calendar. Ask “Show me next week’s schedule” to open it.</sub></td>
+    <td width="50%"><img src="website/public/screens/en/agent.webp" alt="The agent jobs screen, with the list of jobs and the log of one" /><br /><sub>Agent jobs. Follow the progress and open what they produce.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="website/public/screens/en/memory.webp" alt="The Memory mini app, with a diary entry ASIST wrote" /><br /><sub>Memory. A diary every day, and what it remembers.</sub></td>
+    <td width="50%"><img src="website/public/screens/en/mail.webp" alt="The Mail mini app, with the inbox and a thread" /><br /><sub>Mail. It reads, summarizes and drafts replies.</sub></td>
+  </tr>
+</table>
+
+## What it does
+
+- **Just talk.** It starts answering with a short phrase as soon as you finish, and stops reading aloud when you speak over it. In Japanese it also nods along with backchannels while you talk.
+- **Answers as cards.** Weather, events, mail drafts, to-dos, exchange rates, news, maps, timers and more appear beside the conversation while it answers aloud.
+- **Mini apps.** Agent jobs, tasks, notes, mail, memory and the calendar open from the Dock, or from the conversation: “Open next week in the calendar.”
+- **Hand tedious work to an agent.** Research and file edits go to the codex or claude CLI, and you can watch the progress and open the results. It always asks before it starts.
+- **It remembers.** Every day it sorts the day's conversations into its memory of you, and writes a diary of its own. The next day's conversation starts from there.
+- **Eleven languages.** The interface and the conversation work in eleven languages. Japanese conversation is tuned down to its backchannels and pauses.
+
+## Get started
+
+You need an Apple Silicon Mac with macOS 14 or later, and an API key for a conversation model from one of Anthropic, OpenAI, Google or Cerebras.
+
+1. Download `ASIST-arm64.dmg` from [Releases](https://github.com/nyosegawa/asist/releases/latest) and drag ASIST into Applications.
+2. Open ASIST and pick the language, model, voice and microphone in the first-run setup.
+3. Start talking. New versions arrive on their own and install the next time you quit.
+
+Step-by-step pages with screenshots, the microphone and calendar permissions, and setting up the agent CLI are in [Getting started](https://asist-agent.com/en/docs/start/).
+
+## Privacy
+
+| Where | What |
 |---|---|
-| Node.js、npm、Xcode Command Line Tools | ソースからの起動とビルドだけに使います。マイクとカレンダーのネイティブのヘルパーと git をコンパイルし、uv を取得して、アプリに同梱します。インストールしたアプリを使うだけなら要りません。 |
-| 会話のモデルの API キー(Anthropic、OpenAI、Google、Cerebras のどれか 1 つ) | 会話。初回セットアップで入れます。 |
-| `codex` または `claude` の CLI | Agent のジョブと記憶の整理。使うほうをインストールして、認証を済ませておきます。既定は codex です。 |
-| VOICEVOX または AivisSpeech(任意) | 日本語の読み上げ。「アプリケーション」に入れておくと、ASIST が裏で起動してつなぎます。 |
+| Only on this Mac | Listening, voice activity detection, backchannel classification, memory search. Settings, memory, notes, tasks, conversation history and fetched mail |
+| The model provider you chose | The text of the conversation and the memory that relates to it. With a Live API voice engine, the microphone audio |
+| The sources of card data | Only the words a card needs, such as a place for the weather, a news topic or a currency |
+| The service behind the codex or claude CLI | The prompt of a job you approved, and the files the CLI reads |
 
-この Mac で動かすモデルの Python 環境は、アプリに同梱した uv が作ります。Python もそのときに uv が取得するので、あらかじめ入れておくものはありません。記憶の履歴と編集ジョブの worktree には、アプリに同梱した git を使います。
+API keys and mail passwords are stored encrypted with a key from the macOS keychain, and are never passed to a child process, the agent CLI included. The full list of destinations is in [Privacy and data](https://asist-agent.com/en/docs/privacy/).
 
-## 起動する
+## Documentation
+
+The documentation for users is at [asist-agent.com/en/docs](https://asist-agent.com/en/docs/).
+
+| To learn about | Read |
+|---|---|
+| Installing, the first-run setup, permissions, the agent CLI | [Getting started](https://asist-agent.com/en/docs/start/) |
+| Talking to ASIST, cards, mini apps | [Using ASIST](https://asist-agent.com/en/docs/usage/) |
+| Appearance, language and region, models, voice, the agent | [Settings](https://asist-agent.com/en/docs/settings/) |
+| Where data is kept and where it is sent | [Privacy and data](https://asist-agent.com/en/docs/privacy/) |
+| When something does not work | [Troubleshooting](https://asist-agent.com/en/docs/troubleshooting/) |
+| The models, outside data and licenses | [Reference](https://asist-agent.com/en/docs/reference/models/) |
+| Running from source, building, releasing (in Japanese) | [docs/development.md](docs/development.md) in this repository |
+| Design decisions and their reasons (in Japanese) | [docs/adr/](docs/adr/) in this repository |
+
+## Development
 
 ```bash
 npm install
-npm run dev
-```
-
-### 初回セットアップ
-
-8 つの画面を順に進みます。話し方に要らない画面は飛ばします。各画面の下に、次にやることが 1 行で出ます。
-
-1. **言語。** 11 のロケールから 1 つ選びます。最初に選ばれているのはシステムの言語です。選んだものが、画面の言語、会話の言語、地域の 3 つの初期値になり、ここから先の画面はその言語で出ます。3 つはあとから設定画面で別々に変えられます。
-2. **会話のモデル。** provider を選んで API キーを入れます。キーは実際に問い合わせて確かめ、使えると分かったときだけ保存します。会話のモデルとつなぎの一言のモデルは、その provider の標準と軽量の組になります。
-3. **話し方。** 「声で話す」「文字で打ち、返事は声で聞く」「文字だけで使う」から選びます。
-4. **聞き取り**(声で話す場合)。搭載メモリに応じて Qwen3-ASR か Whisper の MLX 版を勧めます。ブラウザ内の Whisper も選べます。
-5. **読み上げ**(返事を声で聞く場合)。会話の言語を話せるものだけが出ます。日本語なら macOS の声、Qwen3-TTS、VOICEVOX、AivisSpeech です。ほかの言語では VOICEVOX と AivisSpeech は出ず、ヒンディー語とインドネシア語では Qwen3-TTS も出ません。Qwen3-TTS は 16GB 以上のメモリで選べ、モデル(約 1.9GB)を取得してこの Mac で動かします。macOS の声を選んだときは、その言語の声が入っているかを調べ、無ければシステム設定のどこで足すかを案内します。
-6. **マイク**(声で話す場合)。macOS の許可を求め、実際に音を受け取れるかを確かめます。許可されなかったときは、システム設定を開くか、文字で打つ使い方に切り替えられます。
-7. **その他の準備。** 記憶の意味検索のモデルを準備します。日本語で声で話す場合は、相槌分類器と MaAI も準備します。準備できなかったものは、やり直すか、あとに回せます。あとに回したものは設定画面の「モデル」で準備します。
-8. **確認。** 選んだ内容を見て始めます。
-
-### Agent の CLI の認証
-
-ASIST は、インストール済みの `codex` または `claude` をそのまま子プロセスとして起動します。認証情報には触れません。ASIST の API キーは、環境変数のものも設定で保存したものも CLI に渡さないので、CLI で使うキーは CLI の側で設定します。ログインはそれぞれの CLI の手順で済ませてください。費用と利用枠は、認証した本人のアカウントにかかります。
-
-- `codex` は、ChatGPT アカウントでのサインインでも API キーでも使えます。OpenAI の[非対話モードの文書](https://learn.chatgpt.com/docs/non-interactive-mode)は、保存済みのログインをスクリプトから使うことを前提にしています(2026-09-16 時点)。
-- `claude` は `ANTHROPIC_API_KEY` で動かす前提です。Anthropic の [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) は、第三者のアプリが Claude.ai のログインを提供したり、Free / Pro / Max の認証で利用者の代わりに要求を送ったりすることを認めていません。ASIST は Claude Code を子プロセスとして起動して要求を送る側なので、Claude.ai のサブスクリプションでのサインインは ASIST からの利用には使えません。`claude` に API キーを設定してから、ASIST の Agent を使ってください(2026-09-22 時点)。設定の「Agent」にも同じことを書いています。
-
-規約は変わります。配布や業務での利用の前に、上のページを確かめてください。
-
-## 使う
-
-`MIC OFF` を押して話しかけるか、入力欄に文字を打って送ります。下の Dock の「Agent」「タスク」「メモ」「メール」「記憶」「カレンダー」「設定」は ASIST のミニアプリで、押すと左にそのミニアプリ、右に会話が出ます。同じアイコンをもう一度押すか、Dock の ASIST、上のロゴ、Escape で会話に戻ります。会話から「カレンダーで来週を開いて」「このメールを開いて」と頼んで開くことも、「閉じて」で閉じることもできます。ミニアプリを開いているあいだは、何を表示しているかを会話のモデルが知っているので、「このメールを要約して」のように話しかけられます。Dock のアイコンは横にドラッグして並べ替えられます。
-
-| 話しかける例 | 起きること |
-|---|---|
-| 「明日の東京の天気は?」 | 天気のカードを出し、予報を話します。 |
-| 「最近の AI のニュースを調べて」 | Web 検索の結果をカードに出します。 |
-| 「3 分タイマーをかけて」 | タイマーを保存し、カードを閉じても終了を知らせます。 |
-| 「歯医者の予約をやることに追加して」 | タスクを保存してカードに出します。「〜を進行中にして」「〜終わった」で状態を変えます。 |
-| 「会議で決まったことをメモして」 | Markdown のメモを新しく書いて保存し、カードに出します。 |
-| 「未読メールある?」 | 受信箱のカードを出し、未読の要点を話します。 |
-| 「おはよう」 | 天気、ニュース、今日の予定、未読メールから、その日のことをまとめます。 |
-| 「このリポジトリを調査しておいて」 | 場所を確かめて Agent のジョブを始め、終わったら結果を報告します。 |
-
-カードは左右に 1 枚ずつ、最大 2 枚を出します。空きがなければ、いちばん前から出ているカードの位置に新しいカードを置きます。右上から拡大と、閉じる操作ができます。カードはウィンドウの高さに合わせて 3 つの大きさを切り替え、入りきらない分は「他 n 件」のような行から拡大表示で見せます。最小のウィンドウ(高さ 640)でも収まります。
-
-音声認識、返事の生成、読み上げにかかった時間は、上の HUD で見られます。
-
-## 設定
-
-設定の「API の料金」には、会話モデル、GPT-Live と Gemini Live、Claude Code のジョブにかかった料金が日ごとに出ます。使用量と各社の公開価格(2026-09-23 時点、`src/shared/api-pricing.ts`)から ASIST が計算した目安で、実際の請求額と一致するとは限りません。Codex は金額を報告しないので含みません。音声認識と読み上げはこの Mac で動かすので料金はかかりません。
-
-設定の最後のページ「このアプリについて」には、ASIST のバージョンとライセンス、使っているモデルと外部のデータの一覧が出ます。一覧の行には、提供元とライセンス、提供元のページへのリンクを並べています。
-
-### 見た目
-
-設定の「見た目」で、画面全体のテーマを 4 つから選びます。フューチャー(夜空と青いガラス、最初の見た目)、シンプル(明るい白い壁)、ポップ(明るい色と太い線)、クール(暗いコンクリートの部屋)です。選ぶとすぐに切り替わり、色、背景、カードの見出しが変わります。天気と時計のカードの絵は、どのテーマでも夜の景色のままです。
-
-### 言語と地域
-
-画面の言語は設定画面の右上で、会話の言語と地域は「会話」で選びます。3 つは別々の設定です。画面の言語は画面の文を、会話の言語は話す言葉と聞く言葉を、地域は天気とニュースの取得元、既定の通貨、日付と数値の書き方を決めます。
-
-日本語と英語以外の 9 言語の文言は、母語の話者の確認を経ていません。
-
-会話が日本語以外のときは、次のようになります。
-
-- 相槌、MaAI、VOICEVOX、AivisSpeech は使いません。設定画面にも出ません。
-- 会話のモデルには英語で書いたプロンプトを渡し、その中で会話の言語を名指しします。
-- 記憶は会話の言語で書きます。それまでに別の言語で書いた記憶は、そのまま残って検索できます。
-- 地域が日本以外なら、天気は [Open-Meteo](https://open-meteo.com) から取ります。地域がアメリカのときだけ華氏とマイル毎時です。
-
-会話の言語を、いまの読み上げが話せない言語に変えると、読み上げは同じ保存で macOS の声に切り替わります。
-
-### 会話のモデル
-
-「会話」で、会話のモデルと、つなぎの一言のモデルを選びます。つなぎの一言は、話している途中に用意して、相槌のあと、本回答の前に挟む短い一言です。選べるモデルは [llm-catalog.ts](src/shared/llm-catalog.ts) にあります。provider ごとのキーは「連携」の「API キー」で保存します。保存の前に、その provider の API でモデルを取得できることを確かめます。キーの無い provider のモデルは選べません。
-
-モデルの横で思考の深さを選べます。既定はいちばん浅い設定です。声で待たせないためで、Claude Sonnet 5 と Opus 5 は指定しないと、本文の前の思考で十数秒待つことがあります。
-
-Web 検索は provider の組み込みの検索を使うので、組み込みの検索が無い Cerebras のモデルでは使えません。会話の履歴は provider に依らない形で保存するので、途中でモデルを変えても会話は続きます。
-
-### 声のエンジン
-
-「会話」の「声のエンジン」で、誰が聞いて話すかを選びます。既定は、この Mac の音声認識、会話のモデル、読み上げを組み合わせる構成です。GPT-Live か Gemini Live を選ぶと、マイクの音声をそのまま provider に送り、provider の声で話します。相槌、聞き取り、発話の終わりと割り込みの判定はモデルが行い、この Mac の音声認識と読み上げ、つなぎの一言、MaAI は使いません。エンジンを変えたら、マイクを入れ直します。
-
-| エンジン | 判断とツール | 料金の目安 | 必要なキー |
-|---|---|---|---|
-| GPT-Live | GPT-Live が受け答えの間合いを受け持ち、中身は会話のモデルに任せます。会話のモデルの文を GPT-Live が自分の声で読みます。 | セッションが開いている時間で 1 分 $0.05 | `OPENAI_API_KEY` |
-| Gemini Live | Gemini 自身が判断して ASIST のツールを呼びます。実行は ASIST が行うので、書き込みの確認画面はそのまま出ます。会話のモデルは使いません。 | 音声入力 1 分 $0.005、音声出力 1 分 $0.018 | `GEMINI_API_KEY` |
-
-セッションは話し始めたときに開き、会話が止まって「会話が止まってから閉じるまで」(既定 90 秒)が過ぎると閉じます。閉じている間は課金されません。次に話しかけると、直前 3 秒の音声を溜めてから開き直すので、言い始めは欠けません。上の HUD に、接続、応答までの時間、セッションの分数、料金の見積もりが出ます。live では音声が常に provider へ流れます。マイクを OFF にすると、セッションを閉じます。
-
-声は provider が用意しているものから選び、「試聴」で同梱の見本を聞けます。試聴に API は使いません。会話ログには、実際に聞こえた入力と出力の転写を書きます。記憶の整理はこのログから行うので、エンジンを変えても同じ材料で動きます。
-
-### Agent
-
-「Agent」で、エンジン(Codex か Claude Code)と、ジョブの既定のモードを選びます。モードは、それぞれの CLI が付けている名前のまま出します。
-
-| エンジン | 調べるだけ | 書き込める |
-|---|---|---|
-| Claude Code | Plan(読むためのツールだけを許します) | Auto |
-| Codex | Read Only(読み取り専用のサンドボックス) | Approve for me(ワークスペースに書けるサンドボックス) |
-
-Auto と Approve for me は、人に尋ねる場面を CLI の自動レビューが判断して進めるモードです。Codex では、ネットワークやワークスペースの外が必要な操作がこのレビューに回ります。
-
-## それぞれのミニアプリ
-
-### Agent のジョブ
-
-会話から頼んだジョブは、読むだけのものも含めて、始める前と続ける前に確認画面が出ます。確認画面にはエージェントへの指示、作業場所、書き込めるかどうかが載り、「ジョブを始める」を押したときだけ始まります。ジョブはあなたの権限で動くので、頼んだ覚えのない指示ならキャンセルしてください。
-
-Git リポジトリへの編集は、別の worktree で進めます。終わったら差分を見て「取り込む」か「捨てる」を選びます。会話から取り込みを頼んだときも、変更の一覧を載せた確認画面で承認してから取り込みます。Git で管理していない既存のフォルダへの編集は、そのフォルダに直接書きます。作業場所を指定しないジョブは、専用の作業フォルダを作ってそこで動きます。記憶の整理は、変更が記憶のフォルダの中のファイルだけのときに限って自動で取り込みます。
-
-Dock の「Agent」に、ジョブの一覧、選んだジョブのログ、その下に成果物のカードが並びます。成果物を押すと、ファイルのカードで中身を見られます。ログは文字を選んでコピーでき、「コピー」で全文をクリップボードに入れます。
-
-会話からは 2 つのカードで見ます。「ジョブどうなってる?」で出る一覧のカードは、判断が要るもの(取り込み待ち、衝突)、実行中、最近終わったものの順に並びます。ジョブのカードは、段階に合わせて箱を 1 つだけ見せます。取り込み待ちなら差分と「取り込む / 捨てる」、実行中ならいまのステップとログ、完了なら要約と成果物、失敗なら理由とログの末尾です。判断が要るときと終わったときは、話しかけなくてもカードが出ます。
-
-キャンセルしたジョブは、プロセスの終了を確かめるまで「停止中」と出ます。異常終了のあとの再起動でも、止まったことを確かめてから成果物を確定し、確かめられなければ worktree を残します。終わったジョブの履歴は、新しいものから 50 件を残します。
-
-### タスク
-
-やること、進行中、完了の 3 列のボードと、期限順の一覧を切り替えて見られます。ボードではカードをドラッグして列と並びを変えます(キーボードでは Space で持ち上げて矢印で動かします)。カードを押すと、右に編集欄が出ます。一覧では、丸を押すと完了になります。Dock の数字は、今日が期限か、期限を過ぎた未完了の数です。
-
-会話からは「〜をやることに追加して」「〜を進行中にして」「〜終わった」「〜の期限を金曜にして」で同じデータを変えられます。やることや約束は記憶には書かず、タスクが持ちます。
-
-### メモ
-
-メモは Markdown で書く文書で、1 件が 1 つのファイルです。左の一覧は更新の新しい順に並び、検索は本文も対象にします。右では Markdown を整えて表示し(表やチェックボックスもそのまま見えます)、「編集」で元の Markdown を直して ⌘S で保存します。削除は確認画面を通り、ファイルを macOS のゴミ箱に移すので、ゴミ箱に残っているあいだは Finder から戻せます。
-
-会話からは「メモして」で新しいメモを書き、「〜のメモあった?」で探して読みます。会話から既存のメモを書き換えることと消すことはできません。メモは毎回の会話に載らず、記憶とも別です。
-
-### 記憶
-
-記憶は、毎日 0 時に動く整理の Agent が、前日までの会話ログをもとに書きます。0 時にアプリが起動していなければ、次に起動したときに動きます。会話中でも裏で動き、画面にもジョブの一覧にも出ません。「覚えておいて」と話した内容も整理のときに反映し、「今の忘れて」と言われた話は書きません。整理の Agent は、その日に何をして、何を聞かれ、何を思ったかを一人称の日記に書き、人や場所のページには自分の印象を残します。
-
-毎回の会話の system prompt に載るのは `instruction.md`(いつも覚えておくこと)だけです。この人のこと、ASIST 自身のこと、頼まれていることの要約で、整理の Agent が書き、記憶の画面で直すこともできます。手で直した文は、次の整理でも残ります。`user.md`、`me.md`、ページ、日記は、発話に関係するものだけを検索して会話に添えます。
-
-本文は Markdown のファイルで、置き場は Git で履歴を取っています。検索用の索引(SQLite)は、そこから作り直せます。検索は、文字の一致と、意味の近さ(multilingual-e5)を合わせて行います。
-
-Dock の「記憶」で、すべての文書を読み、書き換えられます。左の一覧は「私とユーザー」「日記」「ページ」に分かれ、名前、別名、見出しで絞り込めます。保存は Git へのコミットになります。機械が頼りにしている決まり(見出しと本文の長さ、ページの最初の「要約」の見出しなど)に合わない内容は保存せず、理由を表示します。消したページは、まだ整理していない日の会話に出てくると、次の整理で作り直されることがあります。
-
-設定画面の「記憶」で、整理の状態を確かめ、今すぐ実行できます。整理に失敗すると、その理由がここに出て、翌日の 0 時にやり直します。失敗した日の会話は、次の整理の対象に残ります。
-
-### メール
-
-IMAP と SMTP でメールサーバーに直接つなぎます。Gmail、iCloud、IMAP と SMTP を開いているほかのサービスが対象で、アカウントのパスワードではなく、メールアプリ用の「アプリパスワード」を使います。Outlook.com と Microsoft 365 は、パスワードでの IMAP 接続を受け付けないので使えません。アプリパスワードの発行から設定までは[連携ガイド](resources/mail-guide/index.html)にあり、設定画面の「連携手順を開く」からも開けます。
-
-設定画面の「連携」でアカウントを足します。「接続を確かめる」でサーバーにつなぎ、送信済み、アーカイブ、ゴミ箱のフォルダを探してから保存します。見つからないフォルダは推測せず、アカウントごとに指定します。パスワードは macOS のキーチェーンの鍵で暗号化して保存し、設定ファイルには接続先とフォルダ名だけを書きます。
-
-取り込むのは、受信箱、送信済み、アーカイブの、設定の「取り込む日数」(既定 30 日)の範囲です。受信箱は IMAP の IDLE で新着を待ち、全体の取り直しは 5 分ごとと、スリープから戻ったときに行います。取り込んだメールはこの Mac に置き、サーバーから作り直せます。
-
-会話では、「未読メールある?」で一覧のカードを、「読んで」で 1 通のカードを出して要点を話し、「〜のメール探して」で件名、差出人、本文から探します。**会話から頼んだ送信と返信は、送らずに下書きのカードを出します。** カードの上で宛先、件名、本文を直せ、「もう少し丁寧に」のように頼めば書き直され、「送信」を押した時点で送ります。アーカイブ、ゴミ箱、既読、スターは、会話からは確認画面で承認してから実行します。送信の結果が分からない失敗は再送せず、送信済みフォルダを確かめるよう伝えます。
-
-Dock の「メール」では、全アカウントをまとめて日付順に見られ、検索、スレッドの表示、返信、作成、下書きの保存ができます。画面からの送信は「送信」を押した時点で送ります。ゴミ箱は会話と同じ確認画面を通ります。Dock の数字は、直近 24 時間に届いた未読の数です。
-
-### カレンダー
-
-macOS のカレンダーに登録した Google や iCloud の予定を表示、検索し、通常の予定を追加、変更、削除できます。Google アカウントの追加から設定までは[連携ガイド](resources/calendar-guide/index.html)にあります。
-
-設定で連携を有効にして macOS のフルアクセスを許可し、表示するカレンダーと、新しい予定の保存先を選びます。書き込みは、会話からも画面からも、確認画面で承認したあとに実行します。繰り返しの予定と、招待の付いた予定の変更と削除は、Mac の「カレンダー」で行ってください。Google への同期は macOS が行うので、ASIST が保存できたことと、Google に反映されたことは別です。
-
-Dock の「カレンダー」で、月、週、リストを切り替えて見られます。
-
-### 地図
-
-「東京駅の地図を見せて」「上野のカフェを探して」「浜松町駅から東京タワーまでの行き方」で、Google マップのカードを出します。Google の Maps Embed API を iframe で表示します。この API は無料で、回数の上限がありません(2026-09-21 時点)。場所の名前は Google が iframe の中で解決するので、ASIST は住所や所要時間を受け取りません。会話で話せるのは、地図を出したことだけです。
-
-キーはビルドのときに埋め込みます。Google Cloud で Maps Embed API を有効にしてキーを作り、リポジトリ直下の `.env` に書いてから `npm run dev` や `npm run dist:mac` を実行します。
-
-```bash
-RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY=...
-```
-
-このキーは iframe の URL に載るので、配布したアプリから取り出せます。キーの「API の制限」で Maps Embed API だけを許可し、同じプロジェクトでほかの有料の API を有効にしないでください。本番のアプリは `file://` から開くので Referer が送られず、ウェブサイトによる制限は使えません。Google の規約で地図の帰属表示を変えられないため、カードの地図には色のフィルターをかけていません。
-
-### ファイル
-
-ファイルは、ファイルのカードで見ます。Markdown は文書として、CSV は表として、画像はそのまま、フォルダは中身の一覧として描きます。Word、Excel、PowerPoint、PDF、コード、JSON、Jupyter のノートブック、動画、音声、zip も描けます。描けない種類は、名前と大きさだけを出します。複数のファイルは一覧になり、押すと拡大表示でその項目を読めて、前後へ送れます。
-
-HTML は、ページとして表示し、「ソース」で元の HTML に切り替えられます。ページのスクリプトは動き、同じフォルダの CSS、画像、スクリプトと、https の資源も読み込みます。ページはアプリから切り離した枠の中で動くので、アプリの画面や機能には触れられず、ほかのファイルの中身も読めません。ページの中のリンクで別のサイトへ移ろうとすると、アプリの中では開かず、「ブラウザで開く」で既定のブラウザに渡せます。
-
-開けるのは、ジョブの作業場所、記憶のフォルダ、設定の「見せてよいフォルダ」の下だけです。
-
-## データの置き場所
-
-設定とデータは `~/Library/Application Support/asist/`(以下 `userData`)にあります。アプリを入れ直しても消えません。
-
-| 場所 | 中身 |
-|---|---|
-| `userData/settings.json` | 設定 |
-| `userData/api-keys.json` | 暗号化した API キー |
-| `userData/memory/` | 記憶(Markdown、Git の履歴つき) |
-| `userData/conversations/` | 会話ログ |
-| `userData/tasks.json` | タスク |
-| `userData/notes/` | メモ(1 件が 1 つの Markdown ファイル) |
-| `userData/mail-cache.sqlite`、`userData/mail-secrets.json` | 取り込んだメールと、暗号化したパスワード |
-| `userData/api-usage.json` | 有料の API の使用量と料金(日ごとの合計) |
-| `userData/joblogs/` | ジョブのログ(CLI の出力をイベントのまま保存し、表示のときに整えます) |
-| `userData/python/`、`userData/uv-cache/` | uv が取得した Python と、パッケージのキャッシュ |
-| `userData/mlx-audio-runtime/`、`userData/embedding-runtime/`、`userData/vap-runtime/` | この Mac で動かすモデルの Python 環境 |
-| `~/Library/Logs/asist/` | 動作ログ(日ごと) |
-
-起動時の環境変数は、親プロセスの環境変数、実行ディレクトリの `.env` の順に優先します。Finder や Dock から開いたアプリは `/` で起動するので、実行ディレクトリの `.env` を読むのは、`npm run dev` のようにリポジトリから起動したときだけです。
-
-API キーは、環境変数(実行ディレクトリの `.env` を含む)にあればそれを使い、なければ設定で保存したキーを使います。環境変数にある provider のキーは、設定では保存できません。設定で保存したキーは、Electron の safeStorage で macOS のキーチェーンの鍵を使って暗号化し、平文では書きません。暗号化が使えないときは保存せず、エラーにします。開発版とインストールしたアプリでは鍵が違うので、一方で保存したキーはもう一方では読めません。読めないときはエラーになるので、設定で入れ直します。
-
-Agent の CLI、Python のワーカー、音声エンジンなどの子プロセスには、どの provider の API キーも渡しません(`ANTHROPIC_API_KEY`、`OPENAI_API_KEY`、`GEMINI_API_KEY`、`CEREBRAS_API_KEY` は、環境変数にあっても子プロセスの環境から外します)。
-
-設定、タスク、タイマー、ジョブなどの JSON のファイルは、先頭の `version` に形式の版を持ちます。ASIST を新しくして古い版のファイルを開くと、元のファイルを `<名前>.v<版>.json` として同じ場所に残してから、今の形式に移します。今の ASIST より新しい ASIST が書いたファイルや、壊れていて読めないファイルがあるときは、ファイルの場所と理由を表示して止め、元のファイルには手を付けません。
-
-動作ログには、main の出力と、画面側の警告とエラーが残ります。キー、トークン、パスワードを持つ環境変数の値と、設定で保存した API キーは、書く前に伏せるので、不具合の報告にそのまま添えられます。会話の本文は書きません。14 日を過ぎたファイルは削除し、1 日のファイルは 20MB までです。設定画面の「会話」の「動作ログ」から、このフォルダを開けます。
-
-## 開発
-
-Electron、React、TypeScript、electron-vite、Vitest を使っています。開発のときの決まりは [AGENTS.md](AGENTS.md) に、文字列をどこに書くかは [ui-text skill](skills/ui-text/SKILL.md) に、設計の判断とその理由は [docs/adr](docs/adr/) にあります。
-
-```bash
-npm run typecheck
+npm run dev      # runs ASIST from source
 npm test
-npm run build
 ```
 
-`npm test` は、最初に同梱用の git をコンパイルし、テストが使う Electron を取得します。
+You need Node.js, npm and the Xcode Command Line Tools. Building, CI, checking screens and releasing are described in [docs/development.md](docs/development.md), and the rules for developing with an agent in [AGENTS.md](AGENTS.md).
 
-### CI
+Bug reports and requests are welcome in [Issues](https://github.com/nyosegawa/asist/issues). Please report vulnerabilities through [SECURITY.md](SECURITY.md), not in a public issue.
 
-GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull request のたびに、Apple Silicon の macOS で次の順に確かめます。
+## License
 
-1. `npm ci`
-2. `npm run typecheck`
-3. `npm run i18n -- check`
-4. `npm test`
-5. `npm run demo:fit`(11 の言語で、カードと画面の文字が収まっていること)
-6. `npm run dist:mac:unsigned`(ネイティブのヘルパー、git、uv を含めて、署名なしのアプリまで作ります)
-7. アプリの中の git と uv が動くこと
-
-コンパイルした git と取得した uv は、`scripts/build-git.sh` と `scripts/fetch-uv.sh` の内容をキーにしてキャッシュします。`npm audit --omit=dev` は、main への push のたびと、毎週火曜の朝 6 時(日本時間)に別のジョブで動きます。依存関係の脆弱性は、コードを変えなくても後から公開されるからです。署名付きのビルドと公証は、まだ CI に入れていません。
-
-### 画面をブラウザで確かめる
-
-画面だけを確かめるときは、Electron を起動せずに demo を配信します。本体のコンポーネントに固定のデータ(`src/renderer/src/demo/fixtures/`)を流して見ます。
-
-```bash
-npm run demo
-```
-
-| URL | 見えるもの |
-|---|---|
-| `http://localhost:5174/` | 見本の一覧のついたフレーム。左で画面やカードを選び、上で言語とウィンドウの大きさを選びます。 |
-| `/screens/setup?size=l` | 初回セットアップを、本体のウィンドウの大きさ(l / m / s)で見ます。`calendar`、`settings/voice`、`boot/error` なども同じです。名前は `src/renderer/src/demo/screens.ts` にあります。 |
-| `/cards/files-pdf` | カードの見本 1 件を s / m / l / focus で並べて見ます。`/cards` で全部です。 |
-| `/app?say=ドル円のレートを教えて` | フレームのないアプリ。文字で話しかけて使います。`say=` の文と、出るカードの対応は `src/renderer/src/demo/sayings.ts` にあります。 |
-| `/i18n?group=settingsVoice` | 画面の文言の一覧。`?q=` で絞り込み、`?langs=ja-JP,en-US` で言語を選びます。 |
-
-どの URL にも `?lang=de-DE` のように言語を付けられます。フレームの URL に `/preview` を付けたものが枠の中身で、撮影のスクリプトはここを直接開きます。
-
-見た目の確認と計測は、headless Chrome を CDP で動かす `scripts/cdp/` のスクリプトで行います。スクリプトは実行のたびに、置かれている作業ツリーの demo と Chrome を、OS が選んだ空いているポートで自分で起動し、終わると閉じます。先に `npm run demo` を起動しておく必要はなく、worktree ごとに同時に動かしてもぶつかりません。手順は[見た目のデバッグ](skills/visual-debugging/SKILL.md)に、カードの設計は[パネルカードの手順](skills/panel-card-design/SKILL.md)にあります。
-
-| コマンド | すること |
-|---|---|
-| `npm run demo:drive -- --launch <手順>` | 手順を並べて操作、計測、撮影します。`--port 9222` にすると、[インストールの手順](skills/install-mac-app/SKILL.md)の `--launch --cdp` で起動したアプリ本体にも同じ手順を使えます。 |
-| `npm run demo:open` | demo と Chrome を開いたままにし、Chrome のポートを表示します。画面を直しながら `demo:drive -- --port <そのポート>` で何度も測るときに使います。 |
-| `npm run demo:cards`、`npm run demo:gallery` | カードを 3 つの大きさで撮ります。一覧を 1 枚に撮ります。 |
-| `npm run demo:setup` | 初回セットアップを最初から最後まで歩いて撮ります。 |
-| `npm run demo:fit` | 全言語で、カードと画面の文言が収まるかを調べます。20 秒ほどかかります。 |
-
-実際のサービスを使うセルフテストは、API キーと音声のサービスを用意し、ビルドのあとに実行します。
-
-```bash
-ASIST_SELFTEST=1 npx electron .
-```
-
-### 同梱している素材の作り直し
-
-- **Qwen3-TTS の相槌の音声。** アプリは実行時に合成せず、`resources/aizuchi/qwen3tts/<声>/` に同梱したものを使います。Qwen3-TTS は、短い一言だけを読ませると数秒しゃべり続けることがあるためです。相槌の文言(`src/shared/aizuchi-bank.ts`)を変えたときや、声を足したときは、`node scripts/aizuchi-clips/build.mjs <声> <確認用の HTML の出力先>` で作り直します。スクリプトは、相槌を続きの文の前に付けて何度か読ませ、forced aligner で相槌の区間を切り出し、音声認識で文言を確かめて、いちばん良い候補を書き出します。アプリが準備した MLX の実行環境と、Qwen3-TTS、Qwen3-ASR、Qwen3-ForcedAligner のモデルが要ります。出力された HTML で全部を聞いて確かめてから、コミットします。
-- **live の声の見本。** `npm run gen:live-voices` が、provider の TTS に同じ文を読ませて `src/renderer/src/assets/live-voices/` に置きます。
-- **アイコン。** 元の画像と生成プロンプトは `resources/artwork/` にあり、`python3 scripts/gen-icon.py` で作り直せます(Pillow が要ります)。
-- **天気の画像。** 47 都道府県の風景と 5 種類の空模様を、別々の画像として重ねています。生成プロンプトは `src/renderer/src/assets/weather/` の各 `prompts.json` にあり、`python3 scripts/check-weather-alpha.py` で PNG のアルファを検査します。取得と対応表の更新は[天気の仕様](src/main/services/weather/SPEC.md)にあります。
-- **macOS の許可のダイアログの文。** `scripts/macos/permission-texts.mjs` が、ビルドの前に 11 言語分を書き出します。macOS は、アプリの設定ではなく、システムの言語でこの文を選びます。
-
-### 紹介ページと紹介動画
-
-紹介ページは [website/](website/) にあり、https://asist-agent.com で公開しています。X に投稿する紹介動画は [promotions/x-promo-video/](promotions/x-promo-video/) にあります。どちらもアプリには含まれません。
-
-```bash
-npm --prefix website install # 紹介ページの依存を入れます(最初に一度だけ)
-npm run website       # 紹介ページを http://localhost:5194 で開きます
-npm run website:deploy # 紹介ページを asist-agent.com に公開します
-npm run promo:video   # 紹介動画を promotions/x-promo-video/out/asist-promo.mp4 に作ります
-```
-
-### macOS のアプリをビルドする
-
-署名の証明書を指定して実行します。アプリは `dist/` に出ます。
-
-```bash
-CSC_NAME="Apple Development: ..." npm run dist:mac
-```
-
-証明書は、Team ID を持つもの(Apple Development か Developer ID Application)を指定します。アプリはライブラリの検証を有効にしているので、自己署名の証明書で署名すると、アプリ本体と Electron Framework の Team ID が一致せず、起動した直後に終了します。`CSC_NAME` を省くと electron-builder がキーチェーンから証明書を選ぶので、自己署名の証明書があるときは必ず指定します。
-
-署名なしでビルドするには `npm run dist:mac:unsigned` を使います。署名なしでは、マイクの許可が再起動のあとに残らないことがあるので、音声の実機確認には署名付きのアプリを使います。配布の前には `npm audit --omit=dev` で依存関係も確かめます。
-
-ビルドしたアプリは、Electron の fuse(`electron-builder.yml` の `electronFuses`)で `ELECTRON_RUN_AS_NODE`、`NODE_OPTIONS`、`--inspect` を受け付けず、`app.asar` 以外からアプリのコードを読み込まず、`app.asar` の中身が変わっていれば起動しません。どれも、ほかのプロセスが ASIST の署名のまま、ユーザーが許可したマイクやカレンダーを使うことを防ぐためです。ビルドのあとに `npx @electron/fuses read --app dist/mac-arm64/ASIST.app` で値を確かめられます。`--remote-debugging-port` は fuse では止まらないので、CDP でアプリを動かすときだけ付けて起動します。
-
-開発機の `/Applications` に入れて確かめるまでの手順は、[インストールの手順](skills/install-mac-app/SKILL.md)にあります。
-
-### 実機での確認
-
-挙動を変えたときは、署名付きのアプリと実際のサービスで、関係する項目を確かめます。配布の前にはひととおり行い、使ったコミット、構成、結果を作業の報告に残します。
-
-- **初回セットアップ。** 言語を選ぶと続きの画面がその言語になること、認証、モデルの準備、マイクの許可を確かめます。文字だけの使い方でも会話できることを確かめます。
-- **相槌とつなぎ**(日本語)。スピーカーで短い発話と長い発話を試し、相槌、つなぎの一言(相槌のあと、本回答の前に鳴ること)、割り込み、自分の声の拾い直しが起きないことを確かめます。挨拶には相槌が鳴らず、困りごとには共感、「〜だっけ」には短い確認、訂正には詫びの相槌が出ること、HUD に「相槌: 調べ物 98%」のように判定が出ること、「えっとね、昨日の」のような言いかけのあとの間で発話が確定しないことを確かめます。MaAI が有効なら、言い切りが早く確定すること、言い淀みで待ち時間が延びること、読み上げ中の「うん」で読み上げが止まらないことも確かめます。
-- **日本語以外の会話。** 会話の言語を英語に、地域をアメリカにして、返事が英語で返ること、天気が Open-Meteo から華氏で出ること、ニュースが英語圏のものになること、相槌分類器と MaAI が止まること、設定の「声」と「モデル」から日本語だけの項目が消えることを確かめます。ほかの設定を 1 つ保存しても、言語と地域が元に戻らないことを確かめます。日本語に戻して、相槌が再び動くことを確かめます。
-- **カード。** カードの表示と読み上げが一致し、返事の途中で言い直しても、古い返事やカードが混ざらないことを確かめます。ウィンドウの高さを変えて、カードが 3 つの大きさを切り替えながら下で切れないこと、最小の高さでも収まること、拡大表示で全部が見えることを確かめます。
-- **Qwen3-TTS。** 長い返事で、最初の文が全部できあがる前に声が出ること、文と文の間が空きすぎないこと、文ごとの音量がそろっていること、読み上げ中に話しかけると止まること、相槌とつなぎが同じ声で鳴ること、別のエンジンに切り替えると Qwen3-TTS の worker が終わることを確かめます。
-- **保存されるもの。** カードを閉じたあとや再起動のあともタイマーが動き、タスク、メモ、会話の履歴が残ることを確かめます。
-- **記憶。** 前日の会話を整理し、記憶の取り込み、`instruction.md` が次の会話に載ること、再起動のあとの検索、0 時を過ぎてから起動したときに整理が始まることを確かめます。
-- **Agent。** 検証用のフォルダで、会話から頼んだジョブの開始、継続、取り込みのたびに確認画面が出て、キャンセルすると何も始まらないことを確かめます。worktree の差分の取り込みと破棄も確かめます。コミットしていない変更や衝突があるときは、取り込みが止まることを確かめます。Agent の画面で、選んだジョブのログの下に成果物が並び、押すとファイルのカードが開くことを確かめます。成果物の HTML がページとして開き、同じフォルダの CSS と画像が効くこと、ページの中の外部リンクがアプリの中で開かないことを確かめます。
-- **常駐。** 通信や音声のサービスが戻ったときの復帰、30 分使ったときの CPU とメモリ、スリープからの復帰、トレイと ⌥Space、完全に終了したあとに子プロセスが残らないことを確かめます。
-- **カレンダー。** 許可、拒否、再許可、表示するカレンダーと保存先の選択、再起動のあとも設定が残ることを確かめます。検証用の予定で追加、変更、削除を試し、キャンセルで何も変わらないこと、Google にも反映されることを確かめます。月の表示で日をまたぐ終日の予定が 1 本の帯になること、週の表示で重なる予定が左右に分かれ、現在時刻の線が今日に出ることを確かめます。
-- **メール。** Gmail のアプリパスワードでアカウントを足し、受信箱の取り込み、IDLE での新着、再起動のあとの接続を確かめます。検証用のメールで「未読メールある?」「読んで」「返信して」を試し、返信が下書きのカードになり、「捨てる」で送らないこと、「送信」で相手に届いて送信済みに残ること、アーカイブとゴミ箱が確認画面を通ってサーバーにも反映されることを確かめます。メールの画面で、箱の切り替え、検索、スレッドの表示、作成からの送信と下書きの保存、まとめて既読にする操作を確かめます。
-- **マイクの許可。** 署名付きのアプリを 2 回再起動して、許可が残り、ネイティブのマイクが動くことを確かめます。音声認識、読み上げ、Agent の CLI が無い構成でも、設定の方法や失敗の理由が表示されることを確かめます。
-- **live のエンジン。** GPT-Live と Gemini Live をそれぞれ選び、話し始めでセッションが開くこと、返事が provider の声で鳴ること、天気や予定でカードが出ること、読み上げ中に話しかけると止まること、文字の入力に答えること、会話が止まると設定の秒数で閉じて次の声で開き直すこと、マイクを OFF にするとセッションが閉じることを確かめます。会話ログに転写が残ることも確かめます。
-
-## 実装を読む
-
-| 場所 | 役割 |
-|---|---|
-| [src/main/](src/main/) | 外部のサービス、保存、音声の worker、Agent の実行 |
-| [src/main/services/brain/](src/main/services/brain/) | 会話のループ、プロンプト、ツール、履歴、話す先の組み立て |
-| [src/main/services/llm/](src/main/services/llm/) | 会話のモデルの呼び出し。provider ごとの adapter が、provider に依らない会話の型([conversation.ts](src/shared/conversation.ts))と、それぞれの API の形を変換します。 |
-| [src/main/services/live/](src/main/services/live/) | GPT-Live と Gemini Live のエンジン |
-| [src/main/services/weather/](src/main/services/weather/) | 天気。気象庁と Open-Meteo |
-| [src/preload/](src/preload/) | main と画面の間の API。契約は [src/shared/ipc.ts](src/shared/ipc.ts) にあります。 |
-| [src/renderer/](src/renderer/) | React の画面、マイクの入力、音声の再生、カード |
-| [src/shared/](src/shared/) | プロセスの間で共有する型とロジック。画面の文言の辞書は [i18n/messages/](src/shared/i18n/messages/) にあります。 |
-| [resources/](resources/) | 音声と検索の worker、[記憶を整理する Agent の手順](resources/skills/memory-curation/SKILL.md)(日本語以外の会話では[英語の手順](resources/skills/memory-curation-en/SKILL.md)) |
-| [tests/](tests/) | Vitest のテスト |
-
-カードを足すときは、[カタログ](src/shared/panel-catalog.ts)にスキーマを定義し、[builtin/](src/renderer/src/panels/builtin/) に表示を実装して、[registry.tsx](src/renderer/src/panels/registry.tsx) に登録します。会話のモデルに渡すカード用のツールは、スキーマから作られます。
-
-## 使っているモデル
-
-### この Mac で動くもの
-
-取得するものは、どれも commit と sha256 を固定しています。取得元と固定している revision は、表の「定義」のファイルにあります。
-
-| 用途 | モデル | 取得元 | ライセンス | 定義 |
-|---|---|---|---|---|
-| 音声認識(既定、32GB 以上) | Qwen3-ASR 1.7B 8bit(MLX) | `mlx-community/Qwen3-ASR-1.7B-8bit` | Apache-2.0 | [asr-models.ts](src/shared/asr-models.ts) |
-| 音声認識(MLX の Whisper) | Whisper large-v3-turbo fp16(MLX) | `mlx-community/whisper-large-v3-turbo-asr-fp16` | MIT(OpenAI Whisper) | 同上 |
-| 音声認識(ブラウザ内、予備) | Whisper small(ONNX、transformers.js) | `onnx-community/whisper-small` | MIT(OpenAI Whisper) | [AsrEngine.ts](src/renderer/src/voice/AsrEngine.ts) |
-| 声の区間の検出 | Silero VAD(ONNX、同梱) | `src/renderer/src/assets/silero_vad.onnx` | MIT | [SileroVad.ts](src/renderer/src/voice/SileroVad.ts) |
-| マイクの雑音の抑制 | DeepFilterNet3(ONNX、同梱) | `src/renderer/src/assets/dfn3_denoiser.onnx` | MIT または Apache-2.0 | [VoiceController.ts](src/renderer/src/voice/VoiceController.ts) |
-| 読み上げ | Qwen3-TTS 12Hz 0.6B CustomVoice 8bit(MLX)。9 つの声 | `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit` | Apache-2.0 | [tts-models.ts](src/shared/tts-models.ts) |
-| 発話の終わりと相槌の間合い(MaAI、日本語) | 京都大学 MaAI team の `vap_jp_kyoto`、`bc_det_jp`、`vap_bc_2type_jp`、`vap_nod_jp`。エンコーダは kyutai の Mimi(`maai-kyoto/continuous-mimi-onnx`)、CPC の事前学習の重みは facebookresearch/CPC_audio | Hugging Face の `maai-kyoto`、`dl.fbaipublicfiles.com` | MIT(Mimi は CC BY 4.0) | [vap.ts](src/main/services/vap.ts)、しきい値の計測は [maai-thresholds.ts](src/shared/maai-thresholds.ts) |
-| 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8)。学習の手順とデータは、別の private リポジトリにあります。 | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT | [aizuchi-classifier.ts](src/shared/aizuchi-classifier.ts) |
-| 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(元は `intfloat/multilingual-e5-small`) | MIT | [memory-embedding.ts](src/shared/memory-embedding.ts) |
-
-読み上げには、ほかに macOS の声と、別のアプリとして動く VOICEVOX、AivisSpeech を使えます。VOICEVOX と AivisSpeech の声には、それぞれの利用規約があります。
-
-### API で呼ぶもの
-
-| 用途 | モデル | provider |
-|---|---|---|
-| 会話、つなぎの一言、履歴の要約 | Claude Sonnet 5、Claude Haiku 4.5、Claude Opus 5 | Anthropic |
-| 同上 | GPT-5.6 Luna、GPT-5.6 Terra、GPT-5.6 Sol | OpenAI |
-| 同上 | Gemini 3.8 Flash、Gemini 3.5 Flash Lite | Google |
-| 同上 | Qwen 3.8 27B、GPT OSS 120B | Cerebras |
-| 声のエンジン | `gpt-live-1` | OpenAI |
-| 声のエンジン | `gemini-3.8-live` | Google |
-
-会話に選べるモデルの一覧と既定は [llm-catalog.ts](src/shared/llm-catalog.ts) にあります。Agent のジョブと記憶の整理が使うモデルは、codex と claude の CLI が決めます。
-
-### 開発のときだけ使うもの
-
-| 用途 | モデル |
-|---|---|
-| 同梱する相槌の音声の切り出しと検証 | Qwen3-ForcedAligner 0.6B 4bit(`mlx-community/Qwen3-ForcedAligner-0.6B-4bit`、Apache-2.0)、Qwen3-ASR、Qwen3-TTS |
-| 同梱する live の声の見本 | OpenAI の `gpt-4o-mini-tts`(TTS に無い声は `gpt-live-1` のセッションから録音)、Google の `gemini-2.5-flash-preview-tts` |
-| アイコン、天気の風景と空模様の画像 | 画像生成のモデル。プロンプトは `resources/artwork/` と `src/renderer/src/assets/weather/` にあります。 |
-
-## 外部のデータ
-
-ASIST が外へ送るものと、外から受け取るものの一覧です。ニュースや検索結果のリンクを押したときは、その先を既定のブラウザで開きます。
-
-### 会話と声
-
-| 送り先 | 送るもの | 受け取るもの |
-|---|---|---|
-| 選んだ provider の API(Anthropic、OpenAI、Google、Cerebras) | 会話の文、プロンプト、記憶のうちその会話に関係する部分、ツールの結果 | 返事、ツールの呼び出し |
-| provider の組み込みの Web 検索(Anthropic、OpenAI、Google) | 会話のモデルが決めた検索の語 | 検索の結果 |
-| OpenAI または Google の Live API(声のエンジンに選んだときだけ) | マイクの音声、履歴の直近、ツールの結果 | 音声、転写 |
-| codex または claude の CLI の先のサービス | ジョブのプロンプト、作業フォルダの中身のうち CLI が読んだもの、記憶の整理では会話ログ | 作業の結果 |
-
-音声認識、声の区間の検出、相槌の判定、記憶の検索は、この Mac の上だけで動き、音声も文も外へ送りません。
-
-### カードのデータ
-
-| データ | 取得元 | 送るもの | 備考 |
-|---|---|---|---|
-| 天気(地域が日本) | [気象庁](https://www.jma.go.jp/bosai/)の予報、アメダスの観測値、分布予報 | 予報区と観測所のコード | 出典を表示し、加工していることを明記します([気象庁の利用規約](https://www.jma.go.jp/jma/kishou/info/coment.html))。 |
-| 天気(地域が日本以外) | [Open-Meteo](https://open-meteo.com) の予報とジオコーディング | 場所の名前、緯度と経度 | CC BY 4.0。出典を表示します。無料の API は非商用の利用に限られ、上限は 1 日 10,000 回、1 時間 5,000 回、1 分 600 回です。キーが無いので、この回数は接続元の IP アドレスごとに数えられます。ASIST は使う人の Mac から直接呼ぶので、上限はアプリ全体ではなく 1 人ずつにかかります。天気のカード 1 枚で 2 回(場所の検索と予報)使います。 |
-| 世界時計の場所 | Open-Meteo のジオコーディング | 都市の名前 | |
-| 為替 | ExchangeRate-API の公開エンドポイント(`open.er-api.com`) | 基準の通貨 | 利用条件に従い、カードに出典のリンクを表示します。 |
-| ニュース | Google ニュースの RSS | 話題の語、言語と地域 | |
-| 地図 | Google の Maps Embed API(iframe) | 場所や経路の語、埋め込んだ API キー | 場所の解決は iframe の中で Google が行い、ASIST は結果を受け取りません。 |
-
-カードのデータとモデルの取得では、`ASIST/<バージョン> (https://github.com/nyosegawa/asist)` を User-Agent として送ります。
-
-### ユーザーのアカウント
-
-| データ | つなぐ先 | 備考 |
-|---|---|---|
-| メール | 設定したアカウントの IMAP と SMTP のサーバー | 取り込んだメールはこの Mac に置きます。 |
-| カレンダー | macOS のカレンダー(EventKit) | Google や iCloud との同期は macOS が行います。ASIST はそれらのサービスに直接つなぎません。 |
-
-### モデルと実行環境の取得
-
-| 取得するもの | 取得元 |
-|---|---|
-| この Mac で動かすモデル | Hugging Face(`huggingface.co`)、CPC の重みだけ `dl.fbaipublicfiles.com` |
-| Python | 同梱の uv が、GitHub の python-build-standalone(`github.com/astral-sh/python-build-standalone`)から取得します。uv が持っているハッシュで確かめます。 |
-| Python のパッケージ | 同梱の uv が PyPI から取得し、`resources/*-requirements.txt` のハッシュで確かめます。 |
-
-### 同梱しているデータ
-
-| データ | 元 |
-|---|---|
-| 天気の地域の表(47 都道府県と 1,919 の市区町村、予報区と観測所の対応) | 気象庁の定数ファイルと国土地理院の市区町村の一覧から、`scripts/update-weather-regions.py` で作ります。 |
-| Qwen3-TTS の相槌の音声(9 つの声) | Qwen3-TTS で合成し、切り出して同梱しています。 |
-| live の声の見本 | provider の TTS で合成して同梱しています。 |
-
-### 同梱しているソフトウェア
-
-| ソフトウェア | 元 | ライセンス |
-|---|---|---|
-| uv | ビルドのときに `scripts/fetch-uv.sh` が GitHub のリリースから取得し、ハッシュで確かめます。 | MIT または Apache-2.0 |
-| git | ビルドのときに `scripts/build-git.sh` が kernel.org のソースの tarball を取得し、ハッシュで確かめてから、手元の操作に要る部分だけをコンパイルします。ソースには手を加えていません。 | GPL-2.0 |
-
-どちらもライセンスの本文をアプリの `Contents/Resources/uv/`、`Contents/Resources/git/` に入れています。
-
-### 常駐するモデルのメモリ
-
-準備したモデルは、それぞれ専用のプロセスに常駐します。M5(32GB)で、起動から 30 秒後に `vmmap --summary` の physical footprint を測った値です。
-
-| プロセス | モデル | メモリ | 起動する条件 | 測った日 |
-|---|---|---|---|---|
-| 音声認識 | Qwen3-ASR 1.7B 8bit(MLX) | 2.4GB | 起動時(音声認識が MLX のとき) | 2026-09-20 |
-| 記憶の意味検索 | multilingual-e5 small(ONNX int8) | 655MB | 起動時(意味検索が有効のとき) | 2026-09-22 |
-| 相槌分類器 | ModernBERT-ja 70m(ONNX int8) | 325MB | 起動時(日本語で、相槌が有効で、live のエンジンでないとき) | 2026-09-20 |
-| 発話の終わりの判定 | MaAI(PyTorch) | 685MB | マイクを入れたとき(日本語で、MaAI が有効のとき) | 2026-09-20 |
-
-4 つが全部常駐すると、約 4.1GB です。Qwen3-TTS を読み上げに選ぶと、さらに約 2GB を使います。main と renderer は、それぞれ約 90MB です。
+[MIT](LICENSE). The git bundled in the app is GPL-2.0, and its source is attached to every release. The licenses of the models and data ASIST uses are in [Reference](https://asist-agent.com/en/docs/reference/models/).
