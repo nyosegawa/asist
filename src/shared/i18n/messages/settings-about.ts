@@ -20,14 +20,14 @@ export const settingsAbout = defineMessages({
     'es-ES': 'Acerca de la app'
   },
   lead: {
-    'ja-JP': '使っているモデルと外部のデータを、提供元とライセンスとともに並べます。',
+    'ja-JP': 'ASIST が使っているモデルと外部のデータの一覧です。提供元とライセンスも書いてあります。',
     'en-US': 'The models and the outside data ASIST uses, with their providers and licenses.',
     'fr-FR': 'Les modèles et les données externes utilisés par ASIST, avec leur fournisseur et leur licence.',
     'de-DE': 'Die Modelle und die externen Daten, die ASIST nutzt, mit Anbieter und Lizenz.',
     'hi-IN': 'ASIST जिन मॉडल और बाहरी डेटा का उपयोग करता है, उनके प्रदाता और लाइसेंस के साथ।',
     'id-ID': 'Model dan data eksternal yang dipakai ASIST, beserta penyedia dan lisensinya.',
     'it-IT': 'I modelli e i dati esterni usati da ASIST, con il fornitore e la licenza.',
-    'ko-KR': 'ASIST가 사용하는 모델과 외부 데이터를 제공처와 라이선스와 함께 보여줍니다.',
+    'ko-KR': 'ASIST가 사용하는 모델과 외부 데이터의 목록입니다. 제공처와 라이선스도 함께 적었습니다.',
     'pt-BR': 'Os modelos e os dados externos que o ASIST usa, com o fornecedor e a licença.',
     'es-419': 'Los modelos y los datos externos que usa ASIST, con su proveedor y su licencia.',
     'es-ES': 'Los modelos y los datos externos que usa ASIST, con su proveedor y su licencia.'
