@@ -4,13 +4,35 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ASIST — 話しかけるだけで、予定もメールも片づく。</title>
-  <meta name="description" content="ASIST は Mac に常駐する汎用リアルタイムアシスタントです。話すだけであなたの作業をサポートします。天気や予定やメールは会話の横のカードに出て、時間のかかる作業は Agent に任せられます。" />
+  <meta name="description" content="ASIST は Mac 向けのリアルタイムアシスタントです。話すだけであなたの作業をサポートします。天気や予定やメールは会話の横のカードに出て、時間のかかる作業は Agent に任せられます。" />
   <meta name="theme-color" content="#fbfaf7" />
+  <link rel="canonical" href="https://asist-agent.com/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://asist-agent.com/" />
+  <meta property="og:title" content="ASIST — 話しかけるだけで、予定もメールも片づく。" />
+  <meta property="og:description" content="Mac 向けのリアルタイムアシスタント。話すだけであなたの作業をサポートします。" />
+  <meta property="og:image" content="https://asist-agent.com/img/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" href="/icons/asist.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Yomogi&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
+  <script>
+    // Google Analytics counts visits to the published site only, not npm run website or wrangler dev.
+    if (location.hostname === 'asist-agent.com') {
+      window.dataLayer = window.dataLayer || []
+      window.gtag = function () { dataLayer.push(arguments) }
+      gtag('js', new Date())
+      gtag('config', 'G-NC5XEGGKJ8')
+      const tag = document.createElement('script')
+      tag.async = true
+      tag.src = 'https://www.googletagmanager.com/gtag/js?id=G-NC5XEGGKJ8'
+      document.head.append(tag)
+    }
+  </script>
 </head>
 <body>
   <header class="header">
@@ -33,7 +55,7 @@
       <div class="wrap hero-grid">
         <div class="hero-copy" data-in>
           <h1>話しかけるだけで、<br />予定もメールも片づく。</h1>
-          <p class="lead">ASIST は Mac に常駐する<span class="nw">汎用リアルタイムアシスタントです。</span><br />話すだけであなたの作業をサポートします。</p>
+          <p class="lead">ASIST は Mac 向けの<span class="nw">リアルタイムアシスタントです。</span><br />話すだけであなたの作業をサポートします。</p>
           <div class="cta">
             <a class="btn primary" href="#start">はじめる <span aria-hidden="true">→</span></a>
             <a class="btn ghost" href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><use href="#gh" /></svg>GitHub で見る</a>
@@ -156,16 +178,16 @@
             <h2>さあ、はじめましょう。</h2>
             <p>あなたの Mac に、ASIST を。</p>
             <div class="cta">
-              <a class="btn primary" href="https://github.com/nyosegawa/asist#起動する" target="_blank" rel="noopener">はじめる <span aria-hidden="true">→</span></a>
+              <a class="btn primary" href="https://github.com/nyosegawa/asist/releases/latest">ダウンロード <span aria-hidden="true">→</span></a>
               <a class="btn ghost" href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><use href="#gh" /></svg>GitHub で見る</a>
             </div>
-            <p class="meta"><span>無料・オープンソース</span><span>macOS 14 以降</span></p>
+            <p class="meta"><span>無料・オープンソース</span><span>macOS 14 以降</span><span>Apple Silicon</span></p>
           </div>
           <p class="bubble robot hand">はじめよう!</p>
         </div>
         <div class="steps" data-in>
           <div><b>1</b><p>Apple Silicon の Mac と、会話のモデルの API キーを 1 つ用意します。</p></div>
-          <div><b>2</b><code>git clone https://github.com/nyosegawa/asist.git<br />cd asist &amp;&amp; npm install &amp;&amp; npm run dev</code></div>
+          <div><b>2</b><p>dmg をダウンロードして開き、ASIST を「アプリケーション」フォルダに入れます。新しい版は自動で届きます。</p></div>
           <div><b>3</b><p>初回セットアップで、言語、モデル、声、マイクを選べば話しかけられます。</p></div>
         </div>
       </div>
@@ -179,6 +201,7 @@
         <a href="#home">ホーム画面</a><a href="#cards">カード</a><a href="#apps">ミニアプリ</a><a href="#agent">Agent</a><a href="#memory">記憶</a><a href="#start">はじめる</a>
       </nav>
       <p><a href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener">GitHub で見る</a> ・ MIT License ・ © 2026 Sakasegawa</p>
+      <p class="footer-note">このサイトは、アクセス解析に Cookie を使う Google Analytics を使っています。<a href="https://policies.google.com/technologies/partner-sites?hl=ja" target="_blank" rel="noopener">Google によるデータの使用</a></p>
     </div>
   </footer>
 

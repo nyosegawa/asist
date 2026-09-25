@@ -1,6 +1,6 @@
 # ASIST
 
-macOS に常駐する音声アシスタントです。話しかけると声で答え、天気や予定やメールを会話の横のカードに出し、時間のかかる作業は Agent(codex または claude の CLI)に任せます。音声認識はこの Mac の上で動き、会話には Anthropic、OpenAI、Google、Cerebras のモデルから選んだものを使います。
+Mac 向けのリアルタイムアシスタントです(紹介ページ: https://asist-agent.com)。話しかけると声で答え、天気や予定やメールを会話の横のカードに出し、時間のかかる作業は Agent(codex または claude の CLI)に任せます。音声認識はこの Mac の上で動き、会話には Anthropic、OpenAI、Google、Cerebras のモデルから選んだものを使います。
 
 会話は 11 の言語でできます。日本語は、相槌や間の取り方まで調整してあります。ほかの言語は、その調整を使わない共通の作りで動きます(くわしくは [docs/adr/0002](docs/adr/0002-only-japanese-conversation-is-tuned.md))。
 
@@ -307,10 +307,11 @@ ASIST_SELFTEST=1 npx electron .
 
 ### 紹介ページと紹介動画
 
-紹介ページは [website/](website/) に、X に投稿する紹介動画は [promotions/x-promo-video/](promotions/x-promo-video/) にあります。アプリには含まれません。
+紹介ページは [website/](website/) にあり、https://asist-agent.com で公開しています。X に投稿する紹介動画は [promotions/x-promo-video/](promotions/x-promo-video/) にあります。どちらもアプリには含まれません。
 
 ```bash
 npm run website       # 紹介ページを http://localhost:5194 で開きます
+npm run website:deploy # 紹介ページを asist-agent.com に公開します
 npm run promo:video   # 紹介動画を promotions/x-promo-video/out/asist-promo.mp4 に作ります
 ```
 
