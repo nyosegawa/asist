@@ -43,7 +43,7 @@ import { startDemo } from './demo-server.mjs'
  *   --eval expression   evaluates JS and records the result
  *   --rect selector     records the position and size of the matching elements
  *   --cards             records each card's size, natural height and clipping
- *   --shot name         writes <name>.png under --out
+ *   --shot name         writes <name>.png under --out, or a WebP when the name ends in .webp
  *
  * The result is JSON. A --cards step exits with code 2 when a card does not fit, or when a card's size
  * does not match the preceding --size.
@@ -51,6 +51,12 @@ import { startDemo } from './demo-server.mjs'
  */
 
 const STEP_OPS = new Set(['say', 'click', 'key', 'goto', 'size', 'fit', 'wait', 'eval', 'rect', 'cards', 'shot'])
+/**
+ * The quality of a --shot written as WebP, which Chrome encodes itself so that no image library is needed.
+ * At 85 the text keeps sharp edges, and the largest 1440x900 screen captured at 2x by demo:docs-shots
+ * came to 309 KB (measured 2026-09-25).
+ */
+const WEBP_QUALITY = 85
 /** The tallest a single capture may be, in px. Captures are at 2x, so the image is twice this. */
 const FIT_MAX_HEIGHT = 12_000
 const FLAGS = new Set(['launch'])
@@ -169,8 +175,9 @@ export async function run(steps, options = {}) {
         case 'shot': {
           if (!options.out) throw new Error('--shot には --out が要ります')
           const prefix = options.name ? `${options.name}-` : ''
-          const file = path.join(options.out, `${prefix}${step.value}.png`)
-          await writeFile(file, await client.screenshot())
+          const webp = step.value.endsWith('.webp')
+          const file = path.join(options.out, `${prefix}${step.value}${webp ? '' : '.png'}`)
+          await writeFile(file, await client.screenshot(webp ? { webpQuality: WEBP_QUALITY } : {}))
           result.file = file
           break
         }
