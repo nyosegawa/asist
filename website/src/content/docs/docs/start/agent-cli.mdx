@@ -1,0 +1,35 @@
+---
+title: Agent の CLI
+description: Agent のジョブと記憶の整理に使う codex か claude の CLI を準備する。
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components'
+
+Agent のジョブと、毎日の記憶の整理は、この Mac に入れた `codex` か `claude` の CLI を ASIST が子プロセスとして起動して行います。使うほうをインストールして、認証を済ませておきます。どちらを使うかは、設定の「Agent」で選びます。既定は codex です。
+
+ASIST は CLI の認証情報に触れません。ASIST に保存した API キーは、環境変数にあるものも含めて CLI に渡しません。CLI で使う認証は、CLI の側で設定します。費用と利用枠は、CLI で認証したアカウントにかかります。
+
+<Tabs>
+  <TabItem label="codex">
+    ChatGPT のアカウントでのサインインでも、API キーでも使えます。インストールと認証は、OpenAI の [Codex CLI の文書](https://developers.openai.com/codex/cli)に従います。
+
+    ```bash
+    codex login
+    ```
+
+    OpenAI の[非対話モードの文書](https://learn.chatgpt.com/docs/non-interactive-mode)は、保存したログインをスクリプトから使うことを前提にしています(2026-09-16 時点)。
+  </TabItem>
+  <TabItem label="claude">
+    `ANTHROPIC_API_KEY` で動かします。インストールは Anthropic の [Claude Code の文書](https://code.claude.com/docs)に従い、CLI に API キーを設定します。
+
+    <Aside type="caution">
+    Claude.ai のサブスクリプション(Free、Pro、Max)でのサインインは、ASIST からは使えません。Anthropic の [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) は、ほかのアプリが Claude.ai のログインで利用者の代わりに要求を送ることを認めていないからです(2026-09-22 時点)。
+    </Aside>
+  </TabItem>
+</Tabs>
+
+規約は変わります。業務で使う前には、上のページを確かめてください。
+
+ジョブの動きと確認画面は、[Agent のジョブ](/docs/apps/agent/)にあります。

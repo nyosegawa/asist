@@ -1,0 +1,16 @@
+/* The documentation takes the landing page's blue and its Japanese typefaces. */
+:root {
+  --sl-font: "Zen Kaku Gothic New", "Hiragino Sans", system-ui, sans-serif;
+  --sl-color-accent-low: #dfeaff;
+  --sl-color-accent: #3f6fe0;
+  --sl-color-accent-high: #1f2a44;
+}
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #1c2b52;
+  --sl-color-accent: #6c93f0;
+  --sl-color-accent-high: #dfeaff;
+}
+.sl-markdown-content img {
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(31, 42, 68, 0.06), 0 12px 28px -16px rgba(31, 42, 68, 0.35);
+}
