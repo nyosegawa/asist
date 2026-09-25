@@ -31,7 +31,7 @@ ASIST が外へ送るものと、外から受け取るものの一覧です。�
 
 気象庁のデータは出典を表示し、加工していることを明記します([気象庁の利用規約](https://www.jma.go.jp/jma/kishou/info/coment.html))。Open-Meteo は CC BY 4.0 で、無料の API には非商用の利用と回数の上限(1 日 10,000 回など)があります。キーが無いので、回数は接続元の IP アドレスごとに数えられ、上限はアプリ全体ではなく 1 人ずつにかかります。
 
-カードのデータとモデルの取得では、`ASIST/<版> (https://github.com/nyosegawa/asist)` を User-Agent として送ります。
+カードのデータとモデルの取得では、`ASIST/<バージョン> (https://github.com/nyosegawa/asist)` を User-Agent として送ります。
 
 ## あなたのアカウント
 
@@ -47,4 +47,4 @@ ASIST が外へ送るものと、外から受け取るものの一覧です。�
 | この Mac で動かすモデル | Hugging Face(`huggingface.co`)。CPC の重みだけ `dl.fbaipublicfiles.com` |
 | Python | 同梱の uv が、GitHub の python-build-standalone から取得し、ハッシュで確かめます。 |
 | Python のパッケージ | 同梱の uv が PyPI から取得し、固定したハッシュで確かめます。 |
-| 新しい版の ASIST | GitHub の Release(`github.com/nyosegawa/asist`) |
+| 新しいバージョンの ASIST | GitHub の Release(`github.com/nyosegawa/asist`) |

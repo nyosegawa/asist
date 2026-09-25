@@ -7,7 +7,7 @@ sidebar:
 
 ## この Mac で動くもの
 
-取得するものは、どれも版と sha256 を固定しています。
+取得するものは、どれもバージョンと sha256 を固定しています。
 
 | 用途 | モデル | 取得元 | ライセンス |
 |---|---|---|---|
@@ -19,7 +19,7 @@ sidebar:
 | 読み上げ | Qwen3-TTS 12Hz 0.6B CustomVoice 8bit(MLX)。9 つの声 | `mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit` | Apache-2.0 |
 | 話し終わりと相槌の間合い(MaAI、日本語) | 京都大学 MaAI team の `vap_jp_kyoto`、`bc_det_jp`、`vap_bc_2type_jp`、`vap_nod_jp`。エンコーダは kyutai の Mimi、CPC の事前学習の重みは facebookresearch/CPC_audio | Hugging Face の `maai-kyoto`、`dl.fbaipublicfiles.com` | MIT(Mimi は CC BY 4.0) |
 | 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8) | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT |
-| 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(元は `intfloat/multilingual-e5-small`) | MIT |
+| 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(`intfloat/multilingual-e5-small` を変換したもの) | MIT |
 
 読み上げには、ほかに macOS の声と、別のアプリとして動く VOICEVOX、AivisSpeech を使えます。VOICEVOX と AivisSpeech の声には、それぞれの利用規約があります。
 

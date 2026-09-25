@@ -7,7 +7,7 @@ sidebar:
 
 ![メールのミニアプリ。受信箱とスレッドが並んでいる](/screens/ja/mail.webp)
 
-メールのアカウントのつなぎ方は、[メール](/docs/integrations/mail/)にあります。
+メールのアカウントのつなぎ方は、[メールをつなぐ](/docs/start/mail/)にあります。
 
 ## 会話から
 

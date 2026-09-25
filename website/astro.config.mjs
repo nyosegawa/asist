@@ -1,5 +1,6 @@
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
+import { LANGUAGES, ROOT_LANGUAGE } from './src/i18n/languages.mjs'
 
 /** The chapters of the documentation, in the order of the sidebar; each one lists the pages of its folder. */
 const chapter = (directory, label, en) => ({ label, translations: { en }, items: [{ autogenerate: { directory: `docs/${directory}` } }] })
@@ -13,9 +14,15 @@ export default defineConfig({
       description: 'Mac 向けのリアルタイムアシスタント',
       logo: { src: './src/assets/asist.png' },
       defaultLocale: 'root',
-      locales: {
-        root: { label: '日本語', lang: 'ja' },
-        en: { label: 'English', lang: 'en' }
+      locales: Object.fromEntries(
+        LANGUAGES.filter((language) => language.docs).map((language) => [
+          language.code === ROOT_LANGUAGE ? 'root' : language.code,
+          { label: language.label, lang: language.code }
+        ])
+      ),
+      components: {
+        LanguageSelect: './src/components/DocsLanguageSelect.astro',
+        ThemeSelect: './src/components/DocsThemeSelect.astro'
       },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/nyosegawa/asist' }],
       editLink: { baseUrl: 'https://github.com/nyosegawa/asist/edit/main/website/' },
@@ -46,7 +53,6 @@ export default defineConfig({
         chapter('start', 'はじめる', 'Getting started'),
         chapter('usage', '使い方', 'Using ASIST'),
         chapter('apps', 'ミニアプリ', 'Mini apps'),
-        chapter('integrations', '連携', 'Integrations'),
         chapter('settings', '設定', 'Settings'),
         chapter('privacy', 'プライバシーとデータ', 'Privacy and data'),
         { label: '困ったとき', translations: { en: 'Troubleshooting' }, link: '/docs/troubleshooting/' },

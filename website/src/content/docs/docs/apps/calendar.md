@@ -7,7 +7,7 @@ sidebar:
 
 ![カレンダーのミニアプリ。週の表示で予定を開いている](/screens/ja/calendar.webp)
 
-macOS のカレンダーに登録した Google や iCloud の予定を表示、検索し、通常の予定を追加、変更、削除できます。つなぎ方は [Google カレンダー](/docs/integrations/calendar/)にあります。
+macOS のカレンダーに登録した Google や iCloud の予定を表示、検索し、通常の予定を追加、変更、削除できます。つなぎ方は [カレンダーをつなぐ](/docs/start/calendar/)にあります。
 
 Dock の「カレンダー」で、月、週、リストを切り替えて見られます。会話からは「今日の予定を見せて」「明日の 10 時に打ち合わせを入れて」のように頼みます。
 

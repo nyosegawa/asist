@@ -1,0 +1,15 @@
+---
+import LanguageMenu from './LanguageMenu.astro'
+import { LANGUAGES, ROOT_LANGUAGE, pathIn } from '../i18n/languages.mjs'
+
+// Starlight names the root locale undefined.
+const current = Astro.locals.starlightRoute.locale ?? ROOT_LANGUAGE
+const options = LANGUAGES.filter((language) => language.docs).map((language) => ({
+  code: language.code,
+  label: language.label,
+  href: pathIn(Astro.url.pathname, current, language.code)
+}))
+---
+
+<LanguageMenu current={current} options={options} label={Astro.locals.t('languageSelect.accessibleLabel')} />
+

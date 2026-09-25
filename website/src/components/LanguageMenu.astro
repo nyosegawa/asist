@@ -1,0 +1,31 @@
+---
+import SiteMenu from './SiteMenu.astro'
+
+/** The current language, and a link to the same page in each language; the links work without the script. */
+interface Props {
+  current: string
+  options: { code: string; label: string; href: string }[]
+  label: string
+}
+const { current, options, label } = Astro.props
+const currentLabel = options.find((option) => option.code === current)?.label ?? current
+---
+
+<SiteMenu label={label}>
+  <Fragment slot="summary">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"></path>
+    </svg>
+    <span>{currentLabel}</span>
+  </Fragment>
+  {
+    options.map((option) => (
+      <li>
+        <a href={option.href} hreflang={option.code} lang={option.code} aria-current={option.code === current ? 'true' : undefined}>
+          {option.label}
+        </a>
+      </li>
+    ))
+  }
+</SiteMenu>

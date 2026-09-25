@@ -14,3 +14,15 @@
   border-radius: 10px;
   box-shadow: 0 2px 4px rgba(31, 42, 68, 0.06), 0 12px 28px -16px rgba(31, 42, 68, 0.35);
 }
+/* A short Japanese label in the first column, such as フォルダ, otherwise breaks between its characters. */
+.sl-markdown-content :is(th, td):first-child {
+  min-width: 6em;
+}
+/* The language and theme menus take Starlight's colours, so they follow its light and dark themes. */
+:root {
+  --site-menu-border: var(--sl-color-gray-5);
+  --site-menu-bg: var(--sl-color-bg-nav);
+  --site-menu-text: var(--sl-color-gray-1);
+  --site-menu-hover: var(--sl-color-gray-6);
+  --site-menu-accent: var(--sl-color-accent);
+}

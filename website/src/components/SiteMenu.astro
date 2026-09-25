@@ -1,0 +1,94 @@
+---
+/**
+ * A rounded button that opens a small list below it, used for the language and the theme. The script closes
+ * an open list when the page is clicked outside it.
+ */
+interface Props {
+  label: string
+  class?: string
+}
+const { label, class: className } = Astro.props
+---
+
+<details class:list={['site-menu', className]}>
+  <summary aria-label={label}>
+    <slot name="summary" />
+    <svg class="caret" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg>
+  </summary>
+  <ul>
+    <slot />
+  </ul>
+</details>
+
+<script>
+  document.addEventListener('click', (event) => {
+    for (const menu of document.querySelectorAll('details.site-menu[open]')) {
+      if (!menu.contains(event.target as Node)) menu.removeAttribute('open')
+    }
+  })
+</script>
+
+<style is:global>
+  .site-menu {
+    position: relative;
+    font-size: 0.875rem;
+  }
+  .site-menu > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--site-menu-border, currentColor);
+    border-radius: 999px;
+    color: var(--site-menu-text, inherit);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .site-menu > summary::-webkit-details-marker {
+    display: none;
+  }
+  .site-menu .caret {
+    transition: transform 0.15s;
+  }
+  .site-menu[open] .caret {
+    transform: rotate(180deg);
+  }
+  .site-menu > ul {
+    position: absolute;
+    inset-inline-end: 0;
+    top: calc(100% + 0.4rem);
+    z-index: 100;
+    min-width: 10rem;
+    margin: 0;
+    padding: 0.35rem;
+    list-style: none;
+    background: var(--site-menu-bg, Canvas);
+    border: 1px solid var(--site-menu-border, currentColor);
+    border-radius: 0.75rem;
+    box-shadow: 0 12px 32px -12px rgba(31, 42, 68, 0.35);
+  }
+  .site-menu li > :is(a, button) {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.45rem 0.75rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: none;
+    color: var(--site-menu-text, inherit);
+    font: inherit;
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .site-menu li > :is(a, button):hover {
+    background: var(--site-menu-hover, rgba(127, 127, 127, 0.12));
+  }
+  .site-menu li > [aria-current='true'] {
+    font-weight: 700;
+    color: var(--site-menu-accent, inherit);
+  }
+</style>
