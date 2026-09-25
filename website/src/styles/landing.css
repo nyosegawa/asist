@@ -35,7 +35,7 @@ h1, h2, h3 { margin: 0; }
 .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .logo span { font-family: var(--maru); font-weight: 700; font-size: 20px; letter-spacing: 0.32em; color: var(--ink); }
 .nav { display: flex; gap: 26px; margin-left: auto; }
-.nav a { font-family: var(--maru); font-weight: 700; font-size: 14px; color: var(--ink-2); text-decoration: none; position: relative; }
+.nav a { white-space: nowrap; font-family: var(--maru); font-weight: 700; font-size: 14px; color: var(--ink-2); text-decoration: none; position: relative; }
 .nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; border-radius: 3px; background: var(--sky); transform: scaleX(0); transition: transform 0.2s; }
 .nav a:hover::after { transform: scaleX(1); }
 
@@ -209,4 +209,17 @@ h1, h2, h3 { margin: 0; }
   * { animation: none !important; transition: none !important; }
   [data-in] { opacity: 1; transform: none; }
   html { scroll-behavior: auto; }
+}
+
+/* The language menu takes the landing page's colours. */
+:root {
+  --site-menu-border: var(--line);
+  --site-menu-bg: var(--white);
+  --site-menu-text: var(--ink-2);
+  --site-menu-hover: var(--paper-2);
+  --site-menu-accent: var(--blue);
+}
+.header .site-menu {
+  font-family: var(--maru);
+  font-weight: 700;
 }

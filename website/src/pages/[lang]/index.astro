@@ -1,0 +1,10 @@
+---
+import Landing from '../../components/Landing.astro'
+import { LANGUAGES, ROOT_LANGUAGE } from '../../i18n/languages.mjs'
+
+export function getStaticPaths() {
+  return LANGUAGES.filter((language) => language.landing && language.code !== ROOT_LANGUAGE).map((language) => ({ params: { lang: language.code } }))
+}
+---
+
+<Landing code={Astro.params.lang} />
