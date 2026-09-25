@@ -27,10 +27,6 @@ extraResources:
     to: .
   - from: resources/native/asist-calendar
     to: asist-calendar
-  - from: resources/calendar-guide
-    to: calendar-guide
-  - from: resources/mail-guide
-    to: mail-guide
   - from: resources/mlx_asr_worker.py
     to: mlx_asr_worker.py
   - from: resources/mlx-audio-requirements.txt

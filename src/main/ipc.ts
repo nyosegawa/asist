@@ -4,7 +4,6 @@ import { calendarStatus, changeCalendar, listCalendar, requestCalendarAccess } f
 import { events as mailEvents, getMailService, openMailGuide } from './services/mail'
 import { confirmEvents, resolveConfirm } from './services/confirm'
 import { app, dialog, ipcMain, shell, systemPreferences, type BrowserWindow } from 'electron'
-import path from 'node:path'
 import fs from 'node:fs'
 import {
   IpcChannel,
@@ -20,6 +19,7 @@ import type { AsrModel } from '@shared/asr-models'
 import { QWEN_TTS_MODEL, recommendQwenTts } from '@shared/tts-models'
 import { parseSettingsPatch } from '@shared/settings'
 import { parseTurnMetricLog } from '@shared/turn-metric-log'
+import { docsUrl } from '@shared/docs-links'
 import { getSettings, saveSettings } from './services/settings'
 import { features } from './services/conversation-locale'
 import * as asr from './services/asr'
@@ -417,11 +417,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   // in-app confirmation is approved.
   handle(IpcChannel.CalendarChange, (_e, change: unknown) => changeCalendar(change, new AbortController().signal))
   handle(IpcChannel.CalendarOpenPrivacy, () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'))
-  handle(IpcChannel.CalendarOpenGuide, async () => {
-    const guide = app.isPackaged ? path.join(process.resourcesPath, 'calendar-guide/index.html') : path.join(app.getAppPath(), 'resources/calendar-guide/index.html')
-    const error = await shell.openPath(guide)
-    if (error) throw new Error(error)
-  })
+  handle(IpcChannel.CalendarOpenGuide, () => shell.openExternal(docsUrl('calendar', getSettings().uiLocale)))
   handle(IpcChannel.MailStatus, () => getMailService().status())
   handle(IpcChannel.MailProbe, (_e, input: unknown) => getMailService().probe(input))
   handle(IpcChannel.MailAccountAdd, (_e, input: unknown) => withConfigurationMutation(() => getMailService().addAccount(input)))
