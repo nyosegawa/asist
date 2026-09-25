@@ -33,19 +33,19 @@ RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY=...
 
 ## CI
 
-GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull request のたびに、Apple Silicon の macOS で次の順に確かめます。
+GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull request のたびに、次の job を同時に動かします。アプリの job は Apple Silicon の macOS で動きます。
 
-1. `npm ci`
-2. `npm run typecheck`
-3. `npm run i18n -- check`
-4. `npm test`
-5. `npm run demo:fit`(11 の言語で、カードと画面の文字が収まっていること)
-6. `npm run dist:mac:unsigned`(ネイティブのヘルパー、git、uv を含めて、署名なしのアプリまで作ります)
-7. アプリの中の git と uv が動くこと
+| job | 確かめること |
+| --- | --- |
+| `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test` |
+| `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
+| `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
+| `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
+| `result` | ほかの job がどれも失敗していないこと |
 
-`website/` の中だけを変えたときは、この job はスキップします。スキップした job は通過したものとして扱われるので、プルリクエストはそのままマージできます。
+main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、`test`、`fit`、`build` をスキップします。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
 
-サイト(`website/`)は別の job が Ubuntu でビルドし、全ページのリンクと画像の行き先を確かめます。CodeQL(`.github/workflows/codeql.yml`)は、main への push のたびと毎週 1 回、アプリに入る部分の JavaScript/TypeScript、Python、Actions を解析します。プルリクエストでは動きません。開発のときだけ使う `scripts/`、`tests/`、`website/`、`promotions/`、`skills/` は、解析の対象から外しています(`.github/codeql/codeql-config.yml`)。
+CodeQL(`.github/workflows/codeql.yml`)は、main への push のたびと毎週 1 回、アプリに入る部分の JavaScript/TypeScript、Python、Actions を解析します。プルリクエストでは動きません。開発のときだけ使う `scripts/`、`tests/`、`website/`、`promotions/`、`skills/` は、解析の対象から外しています(`.github/codeql/codeql-config.yml`)。
 
 コンパイルした git と取得した uv は、`scripts/build-git.sh` と `scripts/fetch-uv.sh` の内容をキーにしてキャッシュします。`npm audit --omit=dev` は、main への push のたびと、毎週火曜の朝 6 時(日本時間)に別のジョブで動きます。依存関係の脆弱性は、コードを変えなくても後から公開されるからです。署名付きのビルドと公証は、まだ CI に入れていません。
 
