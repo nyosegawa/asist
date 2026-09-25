@@ -5,14 +5,17 @@ description: How to change, check and publish ASIST's website at asist-agent.com
 
 # The website
 
-`website/` is one static page. Vite builds it into `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`, `website/worker.js`) serves it at asist-agent.com and sends www.asist-agent.com there with a 301. The domain and its DNS are on the same Cloudflare account.
+`website/` is a separate npm project, apart from the app's dependencies and CI. Astro builds it into static HTML in `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`, `website/worker.js`) serves it at asist-agent.com and sends www.asist-agent.com there with a 301. The domain and its DNS are on the same Cloudflare account.
 
 ## 1. Change and look
 
 ```bash
-npm run website          # http://localhost:5194
-npm run website:build    # website/dist
+npm --prefix website install   # once per checkout, and after website/package.json changes
+npm run website                # http://localhost:5194
+npm run website:build          # website/dist
 ```
+
+The page is `website/src/pages/index.astro`, its style `website/src/styles/landing.css`.
 
 - Look at the page at desktop width and at phone width (about 390 px). Sections appear on scroll (`data-in`), so scroll to what you changed before judging it.
 - The dev server listens on this Mac only. To open it from a phone, start it with `npm run website -- --host` for the check alone: that serves it on every network the Mac is on, including shared Wi-Fi.
@@ -60,6 +63,8 @@ npm run cf -- rollback <version-id> --config website/wrangler.jsonc
 A rollback only changes what is served. Fix main afterwards through a pull request, or the next deploy brings the problem back.
 
 ## Notes
+
+- Astro's build drops an individual `translate`, `rotate` or `scale` property that shares a rule with `transform`, without a warning (Astro 7.3, 2026-09-25). Put all of it in `transform` in such a rule. A change to the CSS is safest checked against the published page: capture both at the same width and compare the pixels.
 
 - `npm run cf -- deploy --config website/wrangler.jsonc --dry-run` checks the configuration and the Worker without logging in.
 - `npm run cf -- dev --config website/wrangler.jsonc --host www.asist-agent.com` runs the Worker locally as if requests came to www, which is how to check the redirect before publishing. Without `--host`, `wrangler dev` rewrites the request's host to localhost and the redirect never fires.

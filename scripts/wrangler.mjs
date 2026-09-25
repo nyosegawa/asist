@@ -25,5 +25,5 @@ delete env.CLOUDFLARE_API_KEY
 delete env.CLOUDFLARE_EMAIL
 delete env.CLOUDFLARE_ACCOUNT_ID
 
-const result = spawnSync(path.join(root, 'node_modules', '.bin', 'wrangler'), process.argv.slice(2), { cwd: root, env, stdio: 'inherit' })
+const result = spawnSync(path.join(root, 'website', 'node_modules', '.bin', 'wrangler'), process.argv.slice(2), { cwd: root, env, stdio: 'inherit' })
 process.exit(result.status ?? 1)
