@@ -187,6 +187,8 @@ h1, h2, h3 { margin: 0; }
   .footer p { margin-left: 0; }
 }
 @media (max-width: 600px) {
+  /* The hero repeats the GitHub button, and the header keeps room for the language menu. */
+  .header .btn.ghost.small { display: none; }
   .collage { height: 330px; }
   .c { width: 30%; }
   .agent-art, .memory-art { grid-template-columns: 1fr; }
@@ -209,4 +211,17 @@ h1, h2, h3 { margin: 0; }
   * { animation: none !important; transition: none !important; }
   [data-in] { opacity: 1; transform: none; }
   html { scroll-behavior: auto; }
+}
+
+/* The language menu takes the landing page's colours. */
+:root {
+  --site-menu-border: var(--line);
+  --site-menu-bg: var(--white);
+  --site-menu-text: var(--ink-2);
+  --site-menu-hover: var(--paper-2);
+  --site-menu-accent: var(--blue);
+}
+.header .site-menu {
+  font-family: var(--maru);
+  font-weight: 700;
 }

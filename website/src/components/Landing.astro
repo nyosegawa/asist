@@ -1,0 +1,239 @@
+---
+import '../styles/landing.css'
+import LanguageMenu from './LanguageMenu.astro'
+import { LANDING } from '../i18n/landing'
+import { LANGUAGES, docsPrefixOf, prefixOf } from '../i18n/languages.mjs'
+
+/** The landing page in one language; the text comes from src/i18n/landing/. */
+interface Props {
+  code: string
+}
+const { code } = Astro.props
+const t = LANDING[code]
+if (!t) throw new Error(`The landing page has no text for ${code}`)
+const hreflang = LANGUAGES.find((language) => language.code === code)?.hreflang ?? code
+const landingLanguages = LANGUAGES.filter((language) => language.landing)
+const url = (language: string) => `https://asist-agent.com${prefixOf(language)}/`
+const docs = docsPrefixOf(code)
+const sep = code === 'ja' ? '・' : '·'
+const ogImage = code === 'ja' ? 'og.png' : 'og-en.png'
+const languages = landingLanguages.map((language) => ({ code: language.code, label: language.label, href: `${prefixOf(language.code)}/` }))
+---
+
+<!doctype html>
+<html lang={hreflang}>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{t.meta.title}</title>
+  <meta name="description" content={t.meta.description} />
+  <meta name="theme-color" content="#fbfaf7" />
+  <link rel="canonical" href={url(code)} />
+  {landingLanguages.map((language) => <link rel="alternate" hreflang={language.hreflang} href={url(language.code)} />)}
+  <link rel="alternate" hreflang="x-default" href={url('ja')} />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content={url(code)} />
+  <meta property="og:title" content={t.meta.title} />
+  <meta property="og:description" content={t.meta.ogDescription} />
+  <meta property="og:image" content={`https://asist-agent.com/img/${ogImage}`} />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" href="/icons/asist.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Yomogi&display=swap" rel="stylesheet" />
+  <script is:inline>
+    // Google Analytics counts visits to the published site only, not npm run website or wrangler dev.
+    if (location.hostname === 'asist-agent.com') {
+      window.dataLayer = window.dataLayer || []
+      window.gtag = function () { dataLayer.push(arguments) }
+      gtag('js', new Date())
+      gtag('config', 'G-NC5XEGGKJ8')
+      const tag = document.createElement('script')
+      tag.async = true
+      tag.src = 'https://www.googletagmanager.com/gtag/js?id=G-NC5XEGGKJ8'
+      document.head.append(tag)
+    }
+  </script>
+</head>
+<body>
+  <header class="header">
+    <div class="wrap header-inner">
+      <a class="logo" href="#top"><img src="/icons/asist.png" alt="" width="34" height="34" /><span>ASIST</span></a>
+      <nav class="nav" aria-label={t.nav.label}>
+        <a href="#home">{t.nav.home}</a>
+        <a href="#cards">{t.nav.cards}</a>
+        <a href="#apps">{t.nav.apps}</a>
+        <a href="#agent">{t.nav.agent}</a>
+        <a href="#memory">{t.nav.memory}</a>
+        <a href="#start">{t.nav.start}</a>
+        <a href={`${docs}/docs/`}>{t.nav.docs}</a>
+      </nav>
+      <a class="btn ghost small" href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>{t.nav.github}</a>
+      <LanguageMenu current={code} options={languages} label={t.nav.language} />
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="wrap hero-grid">
+        <div class="hero-copy" data-in>
+          <h1><Fragment set:html={t.hero.titleHtml} /></h1>
+          <p class="lead"><Fragment set:html={t.hero.leadHtml} /></p>
+          <div class="cta">
+            <a class="btn primary" href="#start">{t.hero.start} <span aria-hidden="true">→</span></a>
+            <a class="btn ghost" href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener"><svg class="gh" viewBox="0 0 16 16" aria-hidden="true"><use href="#gh" /></svg>{t.nav.github}</a>
+          </div>
+          <p class="meta"><span>{t.hero.macos}</span><span>{t.hero.free}</span></p>
+        </div>
+        <div class="hero-art" data-in>
+          <img class="diorama" src="/img/hero.png" alt={t.hero.artAlt} width="1300" height="867" />
+          <p class="bubble you hand"><Fragment set:html={t.hero.youHtml} /></p>
+          <p class="bubble me"><Fragment set:html={t.hero.meHtml} /></p>
+          <img class="hero-card" src="/cards/calendar.jpg" alt={t.hero.cardAlt} width="290" />
+        </div>
+      </div>
+    </section>
+    <section class="overview" id="home">
+      <div class="wrap">
+        <div class="ov-head" data-in>
+          <h2><mark>{t.home.title}</mark></h2>
+          <h3>{t.home.headline}</h3>
+          <p>{t.home.body}</p>
+        </div>
+        <figure class="ov-shot" data-in>
+          <div class="ov-win">
+            <div class="ov-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="/img/home.jpg" alt={t.home.shotAlt} width="2000" height="1150" loading="lazy" />
+          </div>
+          <i class="tag hand t-card1" aria-hidden="true">{t.home.card}</i>
+          <i class="tag hand t-talk" aria-hidden="true">{t.home.talk}</i>
+          <i class="tag hand t-card2" aria-hidden="true">{t.home.card}</i>
+          <i class="tag hand up t-dock" aria-hidden="true">{t.home.apps}</i>
+        </figure>
+      </div>
+    </section>
+    <section class="features">
+      <div class="wrap">
+        <article class="row" id="cards">
+          <div class="row-text" data-in>
+            <h2><mark>{t.cards.title}</mark></h2>
+            <h3>{t.cards.headline}</h3>
+            <p>{t.cards.body}</p>
+          </div>
+          <div class="row-art collage" data-in aria-label={t.cards.label}>
+            <img class="c c1" src="/cards/weather.jpg" alt={t.cards.weather} loading="lazy" />
+            <img class="c c2" src="/cards/map.jpg" alt={t.cards.map} loading="lazy" />
+            <img class="c c3" src="/cards/calendar.jpg" alt={t.cards.calendar} loading="lazy" />
+            <img class="c c4" src="/cards/fx.jpg" alt={t.cards.fx} loading="lazy" />
+            <img class="c c5" src="/cards/mail-draft.jpg" alt={t.cards.mailDraft} loading="lazy" />
+            <img class="c c6" src="/cards/todo.jpg" alt={t.cards.todo} loading="lazy" />
+            <img class="c c7" src="/cards/timer.jpg" alt={t.cards.timer} loading="lazy" />
+            <p class="note hand n1">{t.cards.note}</p>
+          </div>
+        </article>
+
+        <article class="row" id="apps">
+          <div class="row-text" data-in>
+            <h2><mark>{t.apps.title}</mark></h2>
+            <h3>{t.apps.headline}</h3>
+            <p>{t.apps.body}</p>
+          </div>
+          <div class="row-art dock-art" data-in>
+            <div class="dock">
+              <span class="dock-item home"><img src="/icons/asist.png" alt="ASIST" /></span>
+              <span class="dock-sep" aria-hidden="true"></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.agent}</i><img src="/icons/agent.png" alt={t.apps.agent} /><b>1</b></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.tasks}</i><img src="/icons/tasks.png" alt={t.apps.tasks} /><b>3</b></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.notes}</i><img src="/icons/notes.png" alt={t.apps.notes} /></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.mail}</i><img src="/icons/mail.png" alt={t.apps.mail} /><b>3</b></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.memory}</i><img src="/icons/memory.png" alt={t.apps.memory} /></span>
+              <span class="dock-item"><i class="lbl hand" aria-hidden="true">{t.apps.calendar}</i><img src="/icons/calendar.png" alt={t.apps.calendar} /></span>
+              <span class="dock-item"><img src="/icons/settings.png" alt={t.apps.settings} /></span>
+            </div>
+          </div>
+        </article>
+
+        <article class="row" id="agent">
+          <div class="row-text" data-in>
+            <h2><mark>{t.agent.title}</mark></h2>
+            <h3>{t.agent.headline}</h3>
+            <p>{t.agent.body}</p>
+          </div>
+          <div class="row-art agent-art" data-in>
+            <img class="diorama small" src="/img/agent.png" alt={t.agent.artAlt} loading="lazy" />
+            <p class="bubble you hand ask"><Fragment set:html={t.agent.askHtml} /></p>
+            <div class="flow">
+              <div class="confirm">
+                <span class="ok" aria-hidden="true">✓</span>
+                <b>{t.agent.confirm}</b>
+                <small>{t.agent.confirmMeta}</small>
+                <div class="confirm-btns"><span>{t.agent.cancel}</span><span class="go">{t.agent.startJob}</span></div>
+              </div>
+              <span class="arrow hand" aria-hidden="true">→</span>
+              <div class="clis"><span><i>&gt;_</i>codex</span><span><i>✳</i>claude CLI</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="row" id="memory">
+          <div class="row-text" data-in>
+            <h2><mark>{t.memory.title}</mark></h2>
+            <h3>{t.memory.headline}</h3>
+            <p>{t.memory.body}</p>
+          </div>
+          <div class="row-art memory-art" data-in>
+            <img class="diorama small" src="/img/memory.png" alt={t.memory.artAlt} loading="lazy" />
+            <div class="diary">
+              <p class="diary-k">{t.memory.diaryDate}</p>
+              <b>{t.memory.diaryTitle}</b>
+              <p>{t.memory.diaryBody}</p>
+            </div>
+            <p class="note hand n2"><Fragment set:html={t.memory.noteHtml} /></p>
+          </div>
+        </article>
+      </div>
+    </section>
+    <section class="start" id="start">
+      <div class="wrap">
+        <div class="start-band" data-in>
+          <img class="start-bg" src="/img/cta.jpg" alt="" />
+          <div class="start-inner">
+            <h2>{t.start.title}</h2>
+            <p>{t.start.sub}</p>
+            <div class="cta">
+              <a class="btn primary" href="https://github.com/nyosegawa/asist/releases/latest">{t.start.download} <span aria-hidden="true">→</span></a>
+              <a class="btn ghost" href={`${docs}/docs/start/`}>{t.start.setup}</a>
+            </div>
+            <p class="meta"><span>{t.hero.free}</span><span>{t.hero.macos}</span><span>{t.hero.silicon}</span></p>
+          </div>
+          <p class="bubble robot hand">{t.start.bubble}</p>
+        </div>
+        <div class="steps" data-in>
+          <div><b>1</b><p>{t.start.step1}</p></div>
+          <div><b>2</b><p>{t.start.step2}</p></div>
+          <div><b>3</b><p>{t.start.step3}</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer-inner">
+      <a class="logo" href="#top"><img src="/icons/asist.png" alt="" width="28" height="28" /><span>ASIST</span></a>
+      <nav class="nav" aria-label={t.nav.footerLabel}>
+        <a href="#home">{t.nav.home}</a><a href="#cards">{t.nav.cards}</a><a href="#apps">{t.nav.apps}</a><a href="#agent">{t.nav.agent}</a><a href="#memory">{t.nav.memory}</a><a href="#start">{t.nav.start}</a><a href={`${docs}/docs/`}>{t.nav.docs}</a>
+      </nav>
+      <p><a href={`${docs}/docs/`}>{t.nav.docs}</a> {sep} <a href="https://github.com/nyosegawa/asist" target="_blank" rel="noopener">{t.nav.github}</a> {sep} MIT License {sep} © 2026 Sakasegawa</p>
+      <p class="footer-note">{t.footer.analytics} <a href={`https://policies.google.com/technologies/partner-sites?hl=${hreflang}`} target="_blank" rel="noopener">{t.footer.analyticsLink}</a></p>
+    </div>
+  </footer>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol></svg>
+  <script>
+    import '../scripts/reveal.js'
+    import '../scripts/in-page-links.js'
+  </script>
+</body>
+</html>
