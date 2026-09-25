@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="website/public/img/og.png" alt="ASIST — just talk, and your schedule and mail get handled." width="720" />
+  <img src="website/public/img/og-en.png" alt="ASIST — just talk, and your schedule and mail get handled." width="720" />
 </p>
 
 <h1 align="center">ASIST</h1>
