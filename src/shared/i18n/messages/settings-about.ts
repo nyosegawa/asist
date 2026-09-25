@@ -605,7 +605,7 @@ export const settingsAbout = defineMessages({
       'es-ES': 'Buscando'
     },
     current: {
-      'ja-JP': '最新の版です',
+      'ja-JP': '最新のバージョンです',
       'en-US': 'Up to date',
       'fr-FR': 'À jour',
       'de-DE': 'Aktuell',
@@ -657,7 +657,7 @@ export const settingsAbout = defineMessages({
       'es-ES': 'Reiniciar ahora'
     },
     failed: {
-      'ja-JP': '新しい版を確認できませんでした',
+      'ja-JP': '新しいバージョンを確認できませんでした',
       'en-US': "Couldn't check for a new version",
       'fr-FR': 'Impossible de vérifier les nouvelles versions',
       'de-DE': 'Nach neuen Versionen konnte nicht gesucht werden',
