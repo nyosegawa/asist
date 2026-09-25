@@ -23,6 +23,50 @@ export interface Updater {
   quitAndInstall(): void
 }
 
+/** The part of Electron's own autoUpdater, Squirrel.Mac, that reports an update staged for install. */
+export interface NativeUpdater {
+  on(event: 'update-downloaded', listener: () => void): unknown
+}
+
+/**
+ * electron-updater reports update-downloaded once it has fetched the zip, before it hands the zip to
+ * Squirrel.Mac, and macOS installs at quit only what Squirrel has fetched and verified: a quit one second
+ * after the event installed nothing (electron-updater 6.8.9, 2026-09-25). This updater passes
+ * update-downloaded on only once both have reported it, so "ready" means the next quit installs it.
+ */
+export function afterStaging(updater: Updater, native: NativeUpdater): Updater {
+  const downloaded: ((info: { version: string }) => void)[] = []
+  let version: string | null = null
+  let staged = false
+  const settle = (): void => {
+    if (version === null || !staged) return
+    const info = { version }
+    version = null
+    staged = false
+    for (const listener of downloaded) listener(info)
+  }
+  updater.on('update-available', () => {
+    version = null
+    staged = false
+  })
+  updater.on('update-downloaded', (info) => {
+    version = info.version
+    settle()
+  })
+  native.on('update-downloaded', () => {
+    staged = true
+    settle()
+  })
+  return {
+    on(event: string, listener: never): unknown {
+      if (event === 'update-downloaded') return downloaded.push(listener)
+      return (updater.on as (event: string, listener: never) => unknown)(event, listener)
+    },
+    checkForUpdates: () => updater.checkForUpdates(),
+    quitAndInstall: () => updater.quitAndInstall()
+  } as Updater
+}
+
 /**
  * Follows the updater's events and keeps one state. A check while one is running, while a version is
  * downloading or once one is waiting to be installed would only start the same download again, so it is

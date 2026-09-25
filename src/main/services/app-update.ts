@@ -1,9 +1,9 @@
-import { app } from 'electron'
+import { app, autoUpdater as squirrel } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import mitt from 'mitt'
 import { autoUpdater } from 'electron-updater'
-import { AppUpdateController, type AppUpdateState } from '@shared/app-update'
+import { AppUpdateController, afterStaging, type AppUpdateState } from '@shared/app-update'
 
 /**
  * electron-builder writes app-update.yml, the address of the releases, only into a build with a dmg or zip
@@ -26,7 +26,7 @@ export function initAppUpdates(): void {
   autoUpdater.logger = console
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
-  controller = new AppUpdateController(autoUpdater, {
+  controller = new AppUpdateController(afterStaging(autoUpdater, squirrel), {
     now: Date.now,
     onChange: (state) => {
       if (state.phase === 'failed') console.error('app update failed:', state.message)
