@@ -3,20 +3,15 @@
   "name": "asist-website",
   // The account that holds the asist-agent.com zone; scripts/wrangler.mjs logs in to it.
   "account_id": "8cd37584be94a0254705a51d5b69bfc6",
-  "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": false,
+  // Only the built files, with no script: a request for an asset is free and unlimited, while one that runs
+  // a script counts towards the free plan's 100,000 requests a day, past which the site answers with an
+  // error until the next day (UTC). www.asist-agent.com has a Worker of its own in www/.
   "assets": {
     "directory": "./dist",
-    "binding": "ASSETS",
-    // The worker sees every request first, so that www can be sent to the bare domain before an asset
-    // with the same path answers it.
-    "run_worker_first": true,
     // A path with no file answers with the documentation's 404 page, not an empty body.
     "not_found_handling": "404-page"
   },
-  "routes": [
-    { "pattern": "asist-agent.com", "custom_domain": true },
-    { "pattern": "www.asist-agent.com", "custom_domain": true }
-  ]
+  "routes": [{ "pattern": "asist-agent.com", "custom_domain": true }]
 }

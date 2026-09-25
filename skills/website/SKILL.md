@@ -5,7 +5,7 @@ description: How to change, check and publish ASIST's website at asist-agent.com
 
 # The website
 
-`website/` is a separate npm project, apart from the app's dependencies and CI. It holds the landing page (`src/pages/`) and the documentation for users (Starlight, `src/content/docs/`). Astro builds both into static HTML in `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`, `website/worker.js`) serves it at asist-agent.com and sends www.asist-agent.com there with a 301. The domain and its DNS are on the same Cloudflare account.
+`website/` is a separate npm project, apart from the app's dependencies and CI. It holds the landing page (`src/pages/`) and the documentation for users (Starlight, `src/content/docs/`). Astro builds both into static HTML in `website/dist`, and the Worker `asist-website` (`website/wrangler.jsonc`) serves it at asist-agent.com as static assets, with no script. The Worker `asist-website-www` (`website/www/`) sends www.asist-agent.com there with a 301. Keep a script out of `asist-website`: every request that runs one, each image and stylesheet included, counts towards the free plan's 100,000 a day, past which the site fails until the next day, while asset requests are free and unlimited. The domain and its DNS are on the same Cloudflare account.
 
 ## 1. Change and look
 
@@ -51,7 +51,7 @@ Publishing changes a public site, so do it only when the user has asked for it.
 
 ```bash
 git switch main && git pull --ff-only
-npm run website:deploy   # builds website/dist and deploys the Worker with its assets
+npm run website:deploy   # builds website/dist, deploys the www redirect and then the site
 ```
 
 Then check the live site, not the build:
@@ -77,5 +77,5 @@ A rollback only changes what is served. Fix main afterwards through a pull reque
 
 - Astro's build drops an individual `translate`, `rotate` or `scale` property that shares a rule with `transform`, without a warning (Astro 7.3, 2026-09-25). Put all of it in `transform` in such a rule. A change to the CSS is safest checked against the published page: capture both at the same width and compare the pixels.
 
-- `npm run cf -- deploy --config website/wrangler.jsonc --dry-run` checks the configuration and the Worker without logging in.
-- `npm run cf -- dev --config website/wrangler.jsonc --host www.asist-agent.com` runs the Worker locally as if requests came to www, which is how to check the redirect before publishing. Without `--host`, `wrangler dev` rewrites the request's host to localhost and the redirect never fires.
+- `npm run cf -- deploy --config website/wrangler.jsonc --dry-run` (and the same with `website/www/wrangler.jsonc`) checks the configuration without logging in.
+- `npm run cf -- dev --config website/www/wrangler.jsonc` runs the www redirect locally; any request to it answers with a 301 to the same path on asist-agent.com.

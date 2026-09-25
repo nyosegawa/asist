@@ -28,7 +28,7 @@
     "website:build": "npm --prefix website run build",
     "promo:video": "node promotions/x-promo-video/scripts/render.mjs && uv run promotions/x-promo-video/scripts/audio.py && sh promotions/x-promo-video/scripts/encode.sh",
     "cf": "node scripts/wrangler.mjs",
-    "website:deploy": "npm run website:build && node scripts/wrangler.mjs deploy --config website/wrangler.jsonc"
+    "website:deploy": "npm run website:build && node scripts/wrangler.mjs deploy --config website/www/wrangler.jsonc && node scripts/wrangler.mjs deploy --config website/wrangler.jsonc"
   },
   "license": "MIT",
   "private": true,
