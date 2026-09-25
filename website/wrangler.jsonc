@@ -1,6 +1,8 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "asist-website",
+  // The account that holds the asist-agent.com zone; scripts/wrangler.mjs logs in to it.
+  "account_id": "8cd37584be94a0254705a51d5b69bfc6",
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "workers_dev": false,
