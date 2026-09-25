@@ -1,10 +1,11 @@
 /**
- * The languages of the site. Japanese is served at the root and the others under their code. `docs`
- * marks the languages the documentation is written in; the others reach it in English.
+ * The languages of the site. Japanese is served at the root and the others under their code. `landing`
+ * marks the languages the landing page is written in, and `docs` those of the documentation; a page in a
+ * language that has no landing page leads back to the Japanese one.
  */
 export const LANGUAGES = [
-  { code: 'ja', label: '日本語', docs: true },
-  { code: 'en', label: 'English', docs: true }
+  { code: 'ja', label: '日本語', landing: true, docs: true },
+  { code: 'en', label: 'English', landing: false, docs: true }
 ]
 
 export const ROOT_LANGUAGE = 'ja'

@@ -15,4 +15,4 @@ Web search uses the provider's built-in search, so it isn't available with Cereb
 
 The list of models you can choose is in [Models ASIST uses](/en/docs/reference/models/).
 
-![The Models page in the settings](/screens/en/settings-models.webp)
+![The Conversation page in the settings, with language and region, the voice engine and the models](/screens/en/settings-conversation.webp)

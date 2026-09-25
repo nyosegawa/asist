@@ -26,7 +26,7 @@ You need an API key from one of these providers. You enter it during the first-t
 
 | What | What it is for |
 |---|---|
-| The `codex` or `claude` CLI | Agent jobs and tidying the memory. Install the one you want to use and sign in to it first. See [The Agent CLI](/en/docs/start/agent-cli/). |
+| The `codex` or `claude` CLI | Agent jobs and memory curation. Install the one you want to use and sign in to it first. See [The Agent CLI](/en/docs/start/agent-cli/). |
 | VOICEVOX or AivisSpeech | Reading Japanese aloud. If it is in your Applications folder, ASIST starts it in the background and connects to it. |
 
 The uv bundled with the app creates the Python environments for the models that run on your Mac. uv also downloads Python at that point, so you do not need to install anything beforehand.

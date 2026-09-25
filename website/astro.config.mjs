@@ -13,6 +13,8 @@ export default defineConfig({
       title: 'ASIST',
       description: 'Mac 向けのリアルタイムアシスタント',
       logo: { src: './src/assets/asist.png' },
+      favicon: '/icons/asist.png',
+      routeMiddleware: './src/route-middleware.ts',
       defaultLocale: 'root',
       locales: Object.fromEntries(
         LANGUAGES.filter((language) => language.docs).map((language) => [
@@ -28,7 +30,6 @@ export default defineConfig({
       editLink: { baseUrl: 'https://github.com/nyosegawa/asist/edit/main/website/' },
       customCss: ['./src/styles/docs.css'],
       head: [
-        { tag: 'link', attrs: { rel: 'icon', href: '/icons/asist.png' } },
         { tag: 'link', attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true } },
         {
           tag: 'link',

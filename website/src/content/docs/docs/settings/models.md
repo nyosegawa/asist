@@ -15,4 +15,4 @@ Web 検索は提供元の組み込みの検索を使うので、組み込みの�
 
 選べるモデルの一覧は、[使っているモデル](/docs/reference/models/)にあります。
 
-![設定の「モデル」の画面](/screens/ja/settings-models.webp)
+![設定の「会話」の画面。言語と地域、声のエンジン、モデルが並んでいる](/screens/ja/settings-conversation.webp)

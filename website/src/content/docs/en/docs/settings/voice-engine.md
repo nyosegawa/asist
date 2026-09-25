@@ -18,4 +18,4 @@ A session opens when you start talking, and closes once the conversation has sto
 
 Choose a voice from the ones the provider offers, and use "Play sample" to hear a bundled sample. Playing a sample doesn't use the API. The conversation log records transcripts of the input and the output as they were actually heard. Memory curation works from this log, so it works from the same material whichever engine you use.
 
-![The Voice page in the settings](/screens/en/settings-voice.webp)
+![The Conversation page in the settings, with language and region, the voice engine and the models](/screens/en/settings-conversation.webp)

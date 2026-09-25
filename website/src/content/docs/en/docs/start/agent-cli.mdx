@@ -1,13 +1,13 @@
 ---
 title: The Agent CLI
-description: Set up the codex or claude CLI that ASIST uses for Agent jobs and for tidying the memory.
+description: Set up the codex or claude CLI that ASIST uses for Agent jobs and for memory curation.
 sidebar:
   order: 5
 ---
 
 import { Tabs, TabItem, Aside } from '@astrojs/starlight/components'
 
-For Agent jobs and the daily tidying of the memory, ASIST starts the `codex` or `claude` CLI installed on your Mac as a child process. Install the one you want to use and sign in to it first. You choose which one to use under "Agent" in the settings. The default is codex.
+For Agent jobs and the daily memory curation, ASIST starts the `codex` or `claude` CLI installed on your Mac as a child process. Install the one you want to use and sign in to it first. You choose which one to use under "Agent" in the settings. The default is codex.
 
 ASIST does not touch the CLI's credentials. It does not pass any API key saved in ASIST to the CLI, including keys in environment variables. Set up the CLI's authentication in the CLI itself. Costs and usage limits apply to the account you signed in with in the CLI.
 

@@ -22,3 +22,5 @@ The text in the nine languages other than Japanese and English has not been chec
 - If the region is outside Japan, the weather comes from [Open-Meteo](https://open-meteo.com). Fahrenheit and miles per hour are used only when the region is the United States.
 
 If you change the conversation language to one the current speech engine can't speak, reading aloud switches to the macOS voice.
+
+![The Conversation page in the settings, with language and region, the voice engine and the models](/screens/en/settings-conversation.webp)
