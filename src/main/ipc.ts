@@ -34,6 +34,7 @@ import { interject } from './services/brain/interject'
 import { acknowledgePlayback } from './services/brain/job-reporting'
 import * as agent from './services/agent'
 import { usageDays } from './services/usage-ledger'
+import { appUpdateState, events as appUpdateEvents, installAppUpdate } from './services/app-update'
 import { available as agentAvailable } from './services/agent-process'
 import { fetchPanel } from './services/panel-fetchers'
 import {
@@ -135,6 +136,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   taskEvents.on('changed', (tasks) => send(IpcChannel.TasksChanged, tasks))
   mailEvents.on('event', (event) => send(IpcChannel.MailEvent, event))
   confirmEvents.on('event', (event) => send(IpcChannel.ConfirmEvent, event))
+  appUpdateEvents.on('changed', (state) => send(IpcChannel.AppUpdateChanged, state))
   live.events.on('audio', (samples) => send(IpcChannel.LiveAudio, samples))
   live.events.on('event', (event) => send(IpcChannel.LiveEvent, event))
   timers.init()
@@ -201,6 +203,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   })
   handle(IpcChannel.MicOpenPrivacy, () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'))
   handle(IpcChannel.AppVersion, () => app.getVersion())
+  handle(IpcChannel.AppUpdateState, () => appUpdateState())
+  handle(IpcChannel.AppUpdateInstall, () => installAppUpdate())
   handle(IpcChannel.ApiUsage, () => usageDays())
 
   // Starting the engine takes seconds, around five for VOICEVOX, so the status is returned only once the

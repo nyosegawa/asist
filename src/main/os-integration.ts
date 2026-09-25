@@ -1,6 +1,7 @@
 import { isJobTerminal } from '@shared/job-status'
 import {
   app,
+  autoUpdater,
   globalShortcut,
   Menu,
   nativeImage,
@@ -35,6 +36,9 @@ const notify = (title: string, body: string): boolean => {
 
 export function setupOsIntegration(window: BrowserWindow): void {
   app.on('before-quit', () => (quitting = true))
+  // Installing an update closes every window before quitting, and a window that only hides here kept the
+  // app running with the update staged (a signed test build, 2026-09-25).
+  autoUpdater.on('before-quit-for-update', () => (quitting = true))
   window.on('close', (e) => {
     if (!quitting) {
       e.preventDefault()

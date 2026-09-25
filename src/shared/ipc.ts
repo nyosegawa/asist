@@ -1,6 +1,7 @@
 import type { AizuchiClassification } from './aizuchi-classifier'
 import type { AgentStreamEvent } from './agent-stream'
 import type { UsageDay } from './api-usage'
+import type { AppUpdateState } from './app-update'
 import type { CalendarChange, CalendarChangeResult, CalendarEvent, CalendarListRange, CalendarStatus } from './calendar'
 import type { ConfirmEvent } from './confirm'
 import type { MiniAppTarget, MiniAppView } from './mini-apps'
@@ -755,6 +756,9 @@ export const IpcChannel = {
   TtsVerify: 'tts-verify',
   MicOpenPrivacy: 'mic-open-privacy',
   AppVersion: 'app-version',
+  AppUpdateState: 'app-update-state',
+  AppUpdateChanged: 'app-update-changed',
+  AppUpdateInstall: 'app-update-install',
   ApiUsage: 'api-usage',
   LogsOpenFolder: 'logs-open-folder',
   FolderChoose: 'folder-choose',
@@ -1014,6 +1018,10 @@ export interface RendererApi {
   revealPath(path: string): Promise<void>
   /** The version of the packaged application, which only the main process knows. */
   appVersion(): Promise<string>
+  appUpdateState(): Promise<AppUpdateState>
+  onAppUpdateChanged(callback: (state: AppUpdateState) => void): () => void
+  /** Quits and installs the downloaded version now. Without it, macOS installs the version at the next quit. */
+  appUpdateInstall(): Promise<void>
   /** The paid API use summed per local day, oldest first. */
   apiUsage(): Promise<UsageDay[]>
 }

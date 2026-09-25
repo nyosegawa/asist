@@ -20,6 +20,7 @@ import * as aizuchiClassifier from './services/aizuchi-classifier'
 import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
 import * as memory from './services/memory'
+import { initAppUpdates } from './services/app-update'
 import { initMemoryCuration } from './services/memory-curation'
 import { allowedFileRoots, shutdown as shutdownAgents } from './services/agent'
 import { handleFileScheme, registerFileScheme } from './file-protocol'
@@ -190,6 +191,7 @@ if (!hasSingleInstanceLock) {
     memory.ensureLoaded()
     initMemoryCuration()
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
+    initAppUpdates()
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
