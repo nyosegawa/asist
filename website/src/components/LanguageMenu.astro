@@ -4,7 +4,7 @@ import SiteMenu from './SiteMenu.astro'
 /** The current language, and a link to the same page in each language; the links work without the script. */
 interface Props {
   current: string
-  options: { code: string; label: string; href: string }[]
+  options: { code: string; hreflang: string; label: string; href: string }[]
   label: string
 }
 const { current, options, label } = Astro.props
@@ -22,7 +22,7 @@ const currentLabel = options.find((option) => option.code === current)?.label ??
   {
     options.map((option) => (
       <li>
-        <a href={option.href} hreflang={option.code} lang={option.code} aria-current={option.code === current ? 'true' : undefined}>
+        <a href={option.href} hreflang={option.hreflang} lang={option.hreflang} aria-current={option.code === current ? 'true' : undefined}>
           {option.label}
         </a>
       </li>

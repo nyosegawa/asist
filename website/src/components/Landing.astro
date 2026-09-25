@@ -17,7 +17,7 @@ const url = (language: string) => `https://asist-agent.com${prefixOf(language)}/
 const docs = docsPrefixOf(code)
 const sep = code === 'ja' ? '・' : '·'
 const ogImage = code === 'ja' ? 'og.png' : 'og-en.png'
-const languages = landingLanguages.map((language) => ({ code: language.code, label: language.label, href: `${prefixOf(language.code)}/` }))
+const languages = landingLanguages.map((language) => ({ code: language.code, hreflang: language.hreflang, label: language.label, href: `${prefixOf(language.code)}/` }))
 ---
 
 <!doctype html>
