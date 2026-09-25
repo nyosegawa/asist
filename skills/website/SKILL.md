@@ -15,7 +15,7 @@ npm run website                # http://localhost:5194
 npm run website:build          # website/dist, then checks every internal link, image and #anchor
 ```
 
-The page is `website/src/pages/index.astro`, its style `website/src/styles/landing.css`.
+The landing page is `website/src/components/Landing.astro`, its style `website/src/styles/landing.css`.
 
 - Look at the page at desktop width and at phone width (about 390 px). Sections appear on scroll (`data-in`), so scroll to what you changed before judging it.
 - The dev server listens on this Mac only. To open it from a phone, start it with `npm run website -- --host` for the check alone: that serves it on every network the Mac is on, including shared Wi-Fi.
@@ -30,6 +30,7 @@ The page is `website/src/pages/index.astro`, its style `website/src/styles/landi
 - A heading another page links to keeps its text; changing it breaks the `#anchor`, which the build then reports.
 - Screens of the app come from the demo: `npm run demo:docs-shots` writes them to `public/screens/{ja,en}/`. Pages refer to `/screens/ja/…` and `/screens/en/…`. Write the Japanese in plain words (see the `ui-text` skill's writing guide).
 - The languages of the site, and which of them have a landing page or documentation, are listed once in `src/i18n/languages.mjs`.
+- The landing page is `src/components/Landing.astro`, and its text in each language is `src/i18n/landing/<code>.ts` (Japanese first, with the `LandingText` shape). A language appears once it is marked `landing: true` in `languages.mjs` and registered in `src/i18n/landing/index.ts`; its header menu, hreflang links and page follow from that. A language without documentation links to the English documentation. Social sites get `public/img/og.png` for Japanese and `og-en.png` for the rest (`node website/og/render.mjs [en]`).
 - The dev server keeps the old sidebar after pages are moved or renamed; restart it.
 
 ## 3. Log in (once per checkout)

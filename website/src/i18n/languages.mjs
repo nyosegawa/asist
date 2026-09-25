@@ -6,7 +6,15 @@
  */
 export const LANGUAGES = [
   { code: 'ja', hreflang: 'ja', label: '日本語', landing: true, docs: true },
-  { code: 'en', hreflang: 'en', label: 'English', landing: true, docs: true }
+  { code: 'en', hreflang: 'en', label: 'English', landing: true, docs: true },
+  { code: 'fr', hreflang: 'fr', label: 'Français', landing: true, docs: false },
+  { code: 'de', hreflang: 'de', label: 'Deutsch', landing: true, docs: false },
+  { code: 'es', hreflang: 'es', label: 'Español', landing: true, docs: false },
+  { code: 'it', hreflang: 'it', label: 'Italiano', landing: true, docs: false },
+  { code: 'pt-br', hreflang: 'pt-BR', label: 'Português (Brasil)', landing: true, docs: false },
+  { code: 'ko', hreflang: 'ko', label: '한국어', landing: true, docs: false },
+  { code: 'hi', hreflang: 'hi', label: 'हिन्दी', landing: true, docs: false },
+  { code: 'id', hreflang: 'id', label: 'Bahasa Indonesia', landing: true, docs: false }
 ]
 
 export const ROOT_LANGUAGE = 'ja'
