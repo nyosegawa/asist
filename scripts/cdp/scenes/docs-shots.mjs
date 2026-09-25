@@ -191,7 +191,11 @@ function steps({ locale, name }) {
     wait(300),
     setupShot('setup-mic-denied'),
 
-    ...['appearance', 'voice', 'models', 'agent', 'integrations'].flatMap((page) => [view(`settings/${page}`), settle, shot(`settings-${page}`)]),
+    // Settings opens on its conversation page, which holds the conversation model and the voice engine.
+    view('settings'),
+    settle,
+    shot('settings-conversation'),
+    ...['appearance', 'agent', 'integrations'].flatMap((page) => [view(`settings/${page}`), settle, shot(`settings-${page}`)]),
 
     // Adding a mail account: a Gmail account with a sample app password, after the connection is checked.
     view('settings/integrations'),
