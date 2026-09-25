@@ -1,0 +1,17 @@
+---
+import LanguageMenu from './LanguageMenu.astro'
+import { LANGUAGES, ROOT_LANGUAGE, pathIn, prefixOf } from '../i18n/languages.mjs'
+
+// Starlight names the root locale undefined.
+const current = Astro.locals.starlightRoute.locale ?? ROOT_LANGUAGE
+// The 404 page has no counterpart in another language, so the menu leads to the start of the documentation there.
+const notFound = Astro.locals.starlightRoute.id === '404'
+const options = LANGUAGES.filter((language) => language.docs).map((language) => ({
+  code: language.code,
+  label: language.label,
+  href: notFound ? `${prefixOf(language.code)}/docs/` : pathIn(Astro.url.pathname, current, language.code)
+}))
+---
+
+<LanguageMenu current={current} options={options} label={Astro.locals.t('languageSelect.accessibleLabel')} />
+

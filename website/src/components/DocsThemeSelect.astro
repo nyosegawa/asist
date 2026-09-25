@@ -1,0 +1,66 @@
+---
+import SiteMenu from './SiteMenu.astro'
+
+const choices = [
+  { value: 'auto', label: Astro.locals.t('themeSelect.auto') },
+  { value: 'light', label: Astro.locals.t('themeSelect.light') },
+  { value: 'dark', label: Astro.locals.t('themeSelect.dark') }
+]
+---
+
+<SiteMenu label={Astro.locals.t('themeSelect.accessibleLabel')} class="theme-menu">
+  <Fragment slot="summary">
+    <span class="theme-icon" data-for="auto"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="4" y="5" width="16" height="11" rx="1.5"></rect><path d="M2 19h20"></path></svg></span>
+    <span class="theme-icon" data-for="light"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></span>
+    <span class="theme-icon" data-for="dark"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path></svg></span>
+    <span class="theme-label">{choices[0].label}</span>
+  </Fragment>
+  {
+    choices.map((choice) => (
+      <li>
+        <button type="button" data-theme-choice={choice.value}>
+          {choice.label}
+        </button>
+      </li>
+    ))
+  }
+</SiteMenu>
+
+<script>
+  // The same key and values as Starlight's own ThemeProvider, which applies the saved choice before the page paints.
+  const storageKey = 'starlight-theme'
+  type Choice = 'auto' | 'light' | 'dark'
+  const saved = (): Choice => {
+    const value = localStorage.getItem(storageKey)
+    return value === 'light' || value === 'dark' ? value : 'auto'
+  }
+  const systemScheme = () => (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+
+  function show(choice: Choice): void {
+    for (const menu of document.querySelectorAll<HTMLDetailsElement>('.theme-menu')) {
+      for (const icon of menu.querySelectorAll<HTMLElement>('.theme-icon')) icon.hidden = icon.dataset.for !== choice
+      const button = menu.querySelector<HTMLButtonElement>(`[data-theme-choice="${choice}"]`)
+      const label = menu.querySelector('.theme-label')
+      if (label && button) label.textContent = button.textContent?.trim() ?? ''
+      for (const option of menu.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')) {
+        option.setAttribute('aria-current', String(option === button))
+      }
+    }
+  }
+  function apply(choice: Choice): void {
+    localStorage.setItem(storageKey, choice === 'auto' ? '' : choice)
+    document.documentElement.dataset.theme = choice === 'auto' ? systemScheme() : choice
+    show(choice)
+  }
+
+  show(saved())
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (saved() === 'auto') apply('auto')
+  })
+  document.addEventListener('click', (event) => {
+    const button = (event.target as Element).closest<HTMLButtonElement>('[data-theme-choice]')
+    if (!button) return
+    apply(button.dataset.themeChoice as Choice)
+    button.closest('details')?.removeAttribute('open')
+  })
+</script>

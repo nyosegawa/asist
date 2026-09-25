@@ -1,0 +1,12 @@
+---
+title: Files
+description: See output files and the contents of folders on cards.
+sidebar:
+  order: 8
+---
+
+You see files on file cards. Markdown appears as a document, CSV as a table, images as they are, and a folder as a list of its contents. Word, Excel, PowerPoint, PDF, code, JSON, Jupyter notebooks, video, audio and zip files can be shown as well. For a type the card can't show, it shows only the name and the size. Several files appear as a list; click one to read that item in the enlarged view, and move to the previous or next one from there.
+
+HTML appears as a page, and "Source" switches to the original HTML. The page's scripts run, and the page loads CSS, images and scripts from the same folder, as well as resources over https. The page runs in a frame that is cut off from the app, so it can't touch the app's screens or features, and it can't read the contents of other files. When a link in the page tries to go to another site, the site doesn't open in the app; "Open in browser" hands it to your default browser.
+
+Only files under a job's working directory, the memory folder, and the "Folders ASIST may open" on the "Agent" page of the settings can be opened.
