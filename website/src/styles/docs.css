@@ -14,7 +14,7 @@
   border-radius: 10px;
   box-shadow: 0 2px 4px rgba(31, 42, 68, 0.06), 0 12px 28px -16px rgba(31, 42, 68, 0.35);
 }
-/* A short Japanese label in the first column, such as フォルダ, otherwise breaks between its characters. */
+/* A short Japanese label in the first column, such as "フォルダ", otherwise breaks between its characters. */
 .sl-markdown-content :is(th, td):first-child {
   min-width: 6em;
 }
