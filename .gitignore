@@ -26,3 +26,6 @@ build/lproj/
 
 # Python bytecode.
 __pycache__/
+
+# The login and the local state of wrangler (scripts/wrangler.mjs keeps its login in .wrangler/config).
+.wrangler/

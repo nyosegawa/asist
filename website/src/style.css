@@ -162,11 +162,10 @@ h1, h2, h3 { margin: 0; }
 .start-inner .meta { justify-content: center; }
 .robot { right: 11%; top: 24%; font-size: 17px; }
 .robot::after { left: 22px; bottom: -6px; }
-.steps { display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 16px; margin-top: 20px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 20px; }
 .steps > div { display: flex; gap: 12px; align-items: flex-start; background: var(--white); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); min-width: 0; }
 .steps b { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--sky); color: var(--blue); font-family: var(--maru); display: grid; place-items: center; font-size: 14px; }
 .steps p { margin: 0; font-size: 13.5px; color: var(--ink-2); line-height: 1.75; }
-.steps code { font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; line-height: 1.8; color: var(--ink); background: var(--paper-2); border-radius: 8px; padding: 6px 10px; overflow-x: auto; white-space: nowrap; display: block; min-width: 0; }
 
 .footer { border-top: 1.5px solid var(--line); padding: 22px 0; }
 .footer-inner { display: flex; align-items: center; gap: 12px 28px; flex-wrap: wrap; }

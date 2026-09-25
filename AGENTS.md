@@ -109,3 +109,5 @@ matches one of these, use that skill; each holds steps these rules do not repeat
   branch of the pull request.
 - `install-mac-app`: installing, deploying or updating the app on this Mac, or verifying a change
   in the installed app.
+- `website`: changing, checking or publishing the website at asist-agent.com, or anything that runs
+  wrangler.

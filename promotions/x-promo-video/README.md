@@ -26,7 +26,7 @@ Google Chrome、ffmpeg、[uv](https://docs.astral.sh/uv/) が要ります。見�
 | 18.6–23.2 | ミニアプリ。Dock の各アイコンに手書きのラベルが付く |
 | 23.2–29 | Agent。依頼、承認、codex か claude への引き渡し、完了までを見せる |
 | 29–33.8 | 記憶。夜に書かれる日記 |
-| 33.8–40 | 「さあ、はじめましょう。」と GitHub の URL |
+| 33.8–40 | 「さあ、はじめましょう。」とサイトの URL(asist-agent.com) |
 
 ## BGM
 
