@@ -135,11 +135,12 @@ const news: Fetcher = async (props, signal) => {
       const raw = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? ''
       return raw
         .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-        .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&#39;/g, "'")
         .replace(/&quot;/g, '"')
+        // Last, or the text "&lt;" that the feed escapes as "&amp;lt;" would be read as "<".
+        .replace(/&amp;/g, '&')
         .trim()
     }
     return { title: pick('title'), url: pick('link'), date: pick('pubDate'), source: pick('source') }

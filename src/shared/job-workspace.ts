@@ -12,7 +12,7 @@ export function workspaceDirName(title: string, at: Date): string {
   const stamp =
     `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}` +
     `-${pad(at.getHours())}${pad(at.getMinutes())}${pad(at.getSeconds())}`
-  const slug = title.slice(0, 24).replace(/[^\w぀-ヿー一-龯a-zA-Z0-9-]/g, '_') || 'job'
+  const slug = title.slice(0, 24).replace(/[^\w\u3040-\u30ff\u4e00-\u9faf-]/g, '_') || 'job'
   return `${stamp}-${slug}`
 }
 

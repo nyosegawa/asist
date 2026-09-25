@@ -353,7 +353,7 @@ console.log(lines.join('\n'))
 
 // On GitHub the same findings go to the run's summary page, so they can be read without opening the log.
 if (process.env.GITHUB_STEP_SUMMARY) {
-  const cell = (text) => String(text).replace(/\|/g, '\\|')
+  const cell = (text) => String(text).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')
   const summary = ['### demo:fit', '', lines[0].replace('demo:fit  ', ''), '']
   if (grouped.length === 0) summary.push('Everything fits.')
   else {
