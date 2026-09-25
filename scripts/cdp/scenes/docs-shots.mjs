@@ -59,7 +59,26 @@ const type = (selector, text) => ({
   value: `(() => { const el = document.querySelector(${JSON.stringify(selector)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); return 'typed' })()`
 })
 const wait = (ms) => ({ op: 'wait', value: String(ms) })
+/** Types into the input whose aria-label is the text of a dictionary key, through the native setter React listens to. */
+const fill = (key, text) => ({
+  op: 'eval',
+  value: `(() => { const el = document.querySelector('input[aria-label="' + ${textOf(key)} + '"]'); if (!el) throw new Error('入力欄がありません: ' + ${JSON.stringify(key)}); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, ${JSON.stringify(text)}); el.dispatchEvent(new Event('input', { bubbles: true })); return 'filled' })()`
+})
+/** Chooses an option of the select whose aria-label is the text of a dictionary key. */
+const choose = (key, value) => ({
+  op: 'eval',
+  value: `(() => { const el = document.querySelector('select[aria-label="' + ${textOf(key)} + '"]'); if (!el) throw new Error('選択欄がありません: ' + ${JSON.stringify(key)}); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('change', { bubbles: true })); return 'chosen' })()`
+})
+/** The sample mail account the documentation shows. The address and the password are not real. */
+const MAIL_SAMPLE = {
+  label: { 'ja-JP': '個人', en: 'Personal' },
+  email: 'you@example.com',
+  senderName: 'ASIST',
+  password: 'abcd efgh ijkl mnop'
+}
 const shot = (name) => ({ op: 'shot', value: `${name}.webp` })
+/** The setup is a dialog over a blurred screen, so only the dialog is kept, where its text stays readable. */
+const setupShot = (name) => ({ op: 'shot', value: `${name}.webp`, clip: '.su-dialog' })
 
 /** Steps for one language. Each image is taken once the step it shows is done, as a user sees it before going on. */
 function steps({ locale, name }) {
@@ -118,19 +137,19 @@ function steps({ locale, name }) {
     wait(1200),
     pressData(name),
     wait(400),
-    shot('setup-1-language'),
+    setupShot('setup-1-language'),
     press('setup.next'),
     wait(300),
     type('#su-key', 'demo-key-not-a-real-one'),
     press('setup.model.verifyAndSave'),
     untilText('setup.guide.model.verified'),
     wait(300),
-    shot('setup-2-model'),
+    setupShot('setup-2-model'),
     press('setup.next'),
     wait(300),
     press('setup.speaking.voice.title'),
     wait(300),
-    shot('setup-3-speaking'),
+    setupShot('setup-3-speaking'),
     press('setup.next'),
     wait(300),
     recommended,
@@ -138,7 +157,7 @@ function steps({ locale, name }) {
     press('setup.listening.prepareModel'),
     untilText('setup.guide.listening.ready'),
     wait(300),
-    shot('setup-4-listening'),
+    setupShot('setup-4-listening'),
     press('setup.next'),
     wait(300),
     // The demo opens on VOICEVOX, which is checked before it counts as ready. VOICEVOX reads Japanese only, so
@@ -146,33 +165,49 @@ function steps({ locale, name }) {
     pressIfShown('setup.tts.verify'),
     untilText('setup.guide.tts.ready'),
     wait(300),
-    shot('setup-5-speech'),
+    setupShot('setup-5-speech'),
     press('setup.next'),
     wait(300),
     press('setup.mic.check'),
     untilText('setup.guide.mic.ready'),
     wait(300),
-    shot('setup-6-microphone'),
+    setupShot('setup-6-microphone'),
     press('setup.next'),
     untilText('setup.guide.extras.done', undefined, 20_000),
     wait(300),
-    shot('setup-7-extras'),
+    setupShot('setup-7-extras'),
     press('setup.next'),
     wait(300),
-    shot('setup-8-summary'),
+    setupShot('setup-8-summary'),
 
     // The two failures the troubleshooting page shows.
     view('setup/key-failed'),
     ...passLanguage,
-    shot('setup-key-failed'),
+    setupShot('setup-key-failed'),
     view('setup/mic-denied'),
     ...toMicrophone,
     press('setup.mic.check'),
     untilText('setup.guide.mic.denied'),
     wait(300),
-    shot('setup-mic-denied'),
+    setupShot('setup-mic-denied'),
 
-    ...['appearance', 'voice', 'models', 'agent', 'integrations'].flatMap((page) => [view(`settings/${page}`), settle, shot(`settings-${page}`)])
+    ...['appearance', 'voice', 'models', 'agent', 'integrations'].flatMap((page) => [view(`settings/${page}`), settle, shot(`settings-${page}`)]),
+
+    // Adding a mail account: a Gmail account with a sample app password, after the connection is checked.
+    view('settings/integrations'),
+    settle,
+    press('settingsMail.add'),
+    wait(400),
+    choose('settingsMail.form.provider', 'gmail'),
+    fill('settingsMail.form.label', MAIL_SAMPLE.label[locale] ?? MAIL_SAMPLE.label.en),
+    fill('settingsMail.form.email', MAIL_SAMPLE.email),
+    fill('settingsMail.form.senderName', MAIL_SAMPLE.senderName),
+    fill('settingsMail.form.password', MAIL_SAMPLE.password),
+    press('settingsMail.form.probe'),
+    until(`document.querySelector('.ml-probe')`, 'the probe result'),
+    { op: 'eval', value: `document.querySelector('.ml-account-form').scrollIntoView({ block: 'center' }), 'scrolled'` },
+    wait(500),
+    { op: 'shot', value: 'mail-add-account.webp', clip: '.ml-account-form' }
   ]
 }
 

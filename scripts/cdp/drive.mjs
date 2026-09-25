@@ -44,6 +44,7 @@ import { startDemo } from './demo-server.mjs'
  *   --rect selector     records the position and size of the matching elements
  *   --cards             records each card's size, natural height and clipping
  *   --shot name         writes <name>.png under --out, or a WebP when the name ends in .webp
+ *                       (a scene's shot step may also carry clip: selector, which keeps only that element)
  *
  * The result is JSON. A --cards step exits with code 2 when a card does not fit, or when a card's size
  * does not match the preceding --size.
@@ -57,6 +58,8 @@ const STEP_OPS = new Set(['say', 'click', 'key', 'goto', 'size', 'fit', 'wait', 
  * came to 309 KB (measured 2026-09-25).
  */
 const WEBP_QUALITY = 85
+/** The margin a clipped --shot keeps around its element, in CSS px, so that its shadow is not cut. */
+const CLIP_MARGIN = 24
 /** The tallest a single capture may be, in px. Captures are at 2x, so the image is twice this. */
 const FIT_MAX_HEIGHT = 12_000
 const FLAGS = new Set(['launch'])
@@ -177,7 +180,8 @@ export async function run(steps, options = {}) {
           const prefix = options.name ? `${options.name}-` : ''
           const webp = step.value.endsWith('.webp')
           const file = path.join(options.out, `${prefix}${step.value}${webp ? '' : '.png'}`)
-          await writeFile(file, await client.screenshot(webp ? { webpQuality: WEBP_QUALITY } : {}))
+          const clip = step.clip ? await clipAround(client, step.clip) : undefined
+          await writeFile(file, await client.screenshot({ ...(webp ? { webpQuality: WEBP_QUALITY } : {}), clip }))
           result.file = file
           break
         }
@@ -209,4 +213,22 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main(steps, options)
   // The demo this run served leaves the process alive after it is closed (demo-server.mjs).
   process.exit()
+}
+
+/** The rectangle of the element, widened by CLIP_MARGIN and kept inside the window. A missing element fails the step. */
+async function clipAround(client, selector) {
+  const rect = await client.evaluate(`(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) throw new Error('要素がありません: ' + ${JSON.stringify(selector)})
+    const r = el.getBoundingClientRect()
+    return { x: r.x, y: r.y, width: r.width, height: r.height, innerWidth, innerHeight }
+  })()`)
+  const x = Math.max(0, rect.x - CLIP_MARGIN)
+  const y = Math.max(0, rect.y - CLIP_MARGIN)
+  return {
+    x,
+    y,
+    width: Math.min(rect.innerWidth, rect.x + rect.width + CLIP_MARGIN) - x,
+    height: Math.min(rect.innerHeight, rect.y + rect.height + CLIP_MARGIN) - y
+  }
 }
