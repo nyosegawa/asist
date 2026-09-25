@@ -79,6 +79,7 @@ const requestedTheme = new URLSearchParams(location.search).get('theme')
 
 const settings: AppSettings = {
   onboardingVersion: 1,
+  safetyNoticeVersion: 1,
   uiLocale: demoLocale,
   theme: THEMES.find((theme) => theme === requestedTheme) ?? DEFAULT_THEME,
   // The conversation stays Japanese, which the sample data is written in; the region follows the interface so

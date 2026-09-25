@@ -1,11 +1,12 @@
 import type { UiLocale } from './i18n/message'
 
-/** The pages of the documentation at asist-agent.com that the settings screen opens. */
-export type DocsPage = 'calendar' | 'mail'
+/** The pages of the documentation at asist-agent.com that the app opens. */
+export type DocsPage = 'calendar' | 'mail' | 'safety'
 
 const PAGES: Record<DocsPage, string> = {
   calendar: 'start/calendar/',
-  mail: 'start/mail/'
+  mail: 'start/mail/',
+  safety: 'start/safety/'
 }
 
 /**

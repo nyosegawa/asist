@@ -15,6 +15,11 @@ import { VOICE_ENGINES, liveModelSettingSchema } from './voice-engine'
 /** Every setting, without a default: a patch that names one field must leave the others as they are. */
 const fields = {
   onboardingVersion: z.union([z.literal(0), z.literal(1)]),
+  /**
+   * 1 once the user has read the risks of using ASIST and ticked the box under them, in the setup or,
+   * for someone who finished the setup before the notice existed, in a dialog of its own.
+   */
+  safetyNoticeVersion: z.union([z.literal(0), z.literal(1)]),
   conversationModel: conversationModelSchema,
   /**
    * The provider and model for the aizuchi lookahead, which picks the kind of aizuchi and prepares a
@@ -103,12 +108,22 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 export const parseAppSettings = (value: unknown): AppSettings => parse(appSettingsSchema, value)
 export const parseSettingsPatch = (value: unknown): Partial<AppSettings> => parse(patchSchema, value)
 
+/**
+ * Whether the risks have to be shown in a dialog of their own: the setup is finished, but the box under
+ * them has not been ticked. During the setup the notice is one of its steps instead.
+ */
+export const safetyNoticePending = (settings: Pick<AppSettings, 'onboardingVersion' | 'safetyNoticeVersion'>): boolean =>
+  settings.onboardingVersion >= 1 && settings.safetyNoticeVersion < 1
+
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
-  version: 2,
+  version: 3,
   upgrades: {
     // Version 2 adds the theme. Everything written before it was drawn in future.
-    1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' })
+    1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' }),
+    // Version 3 adds the acknowledgement of the risks. Nobody has seen them before it, so everyone,
+    // including someone who finished the setup, is asked once.
+    2: (content) => ({ ...(content as Record<string, unknown>), safetyNoticeVersion: 0 })
   },
   parse: parseAppSettings,
   serialize: (settings) => ({ ...settings })

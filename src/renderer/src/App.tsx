@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { initConversation } from '@/conversation'
+import { initConversation, startMicAtLaunch } from '@/conversation'
 import { translate, useT, useUiLocale } from '@/i18n'
 import { usePanelStore, useSettingsStore, useTurnStore } from '@/state/stores'
 import { applyTheme, DEFAULT_THEME } from '@/themes'
@@ -17,6 +17,7 @@ import { SettingsDialog } from '@/ui/SettingsDialog'
 import { JobsView } from '@/ui/JobsView'
 import { FocusOverlay } from '@/ui/FocusOverlay'
 import { SetupWizard } from '@/ui/SetupWizard'
+import { SafetyNotice } from '@/ui/setup/safety'
 import { CalendarView } from '@/ui/calendar/CalendarView'
 import { TasksView } from '@/ui/tasks/TasksView'
 import { MailView } from '@/ui/mail/MailView'
@@ -283,6 +284,7 @@ export default function App(): React.JSX.Element {
           <FocusOverlay />
           <ConfirmSheet />
           <SetupWizard />
+          <SafetyNotice onAcknowledged={startMicAtLaunch} />
         </div>
       )}
       <AnimatePresence>

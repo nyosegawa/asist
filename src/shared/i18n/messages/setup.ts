@@ -394,6 +394,47 @@ export const setup = defineMessages({
         'es-419': 'ASIST empieza con esta configuración. Puedes cambiar cualquier punto más adelante en Configuración.',
         'es-ES': 'ASIST empieza con estos ajustes. Puedes cambiar cualquiera de ellos más adelante en Ajustes.'
       }
+    },
+    safety: {
+      label: {
+        'ja-JP': '注意点',
+        'en-US': 'Risks',
+        'fr-FR': 'Risques',
+        'de-DE': 'Risiken',
+        'hi-IN': 'जोखिम',
+        'id-ID': 'Risiko',
+        'it-IT': 'Rischi',
+        'ko-KR': '주의 사항',
+        'pt-BR': 'Riscos',
+        'es-419': 'Riesgos',
+        'es-ES': 'Riesgos'
+      },
+      title: {
+        'ja-JP': '使う前に知っておくこと',
+        'en-US': 'Before you use ASIST',
+        'fr-FR': "Avant d'utiliser ASIST",
+        'de-DE': 'Bevor Sie ASIST verwenden',
+        'hi-IN': 'ASIST इस्तेमाल करने से पहले',
+        'id-ID': 'Sebelum memakai ASIST',
+        'it-IT': 'Prima di usare ASIST',
+        'ko-KR': 'ASIST를 쓰기 전에',
+        'pt-BR': 'Antes de usar o ASIST',
+        'es-419': 'Antes de usar ASIST',
+        'es-ES': 'Antes de usar ASIST'
+      },
+      lead: {
+        'ja-JP': '4つとも読んでから、下のチェックを入れてください。',
+        'en-US': 'Read all four points, then tick the box below.',
+        'fr-FR': 'Lisez les quatre points, puis cochez la case en bas.',
+        'de-DE': 'Lesen Sie alle vier Punkte und setzen Sie dann unten das Häkchen.',
+        'hi-IN': 'चारों बातें पढ़ें, फिर नीचे वाले बॉक्स पर टिक करें।',
+        'id-ID': 'Baca keempat poin ini, lalu centang kotak di bawah.',
+        'it-IT': 'Leggi tutti e quattro i punti, poi spunta la casella in fondo.',
+        'ko-KR': '네 가지를 모두 읽은 뒤 아래 확인란을 선택하십시오.',
+        'pt-BR': 'Leia os quatro pontos e marque a caixa no final.',
+        'es-419': 'Lee los cuatro puntos y luego marca la casilla de abajo.',
+        'es-ES': 'Lee los cuatro puntos y después marca la casilla de abajo.'
+      }
     }
   },
   guide: {
@@ -696,6 +737,34 @@ export const setup = defineMessages({
       'pt-BR': 'Confira os ajustes e clique em Começar com estes ajustes.',
       'es-419': 'Revisa la configuración y presiona «Empezar con esta configuración».',
       'es-ES': 'Revisa los ajustes y pulsa “Empezar con estos ajustes”.'
+    },
+    safety: {
+      tick: {
+        'ja-JP': '読み終えたら、チェックを入れてください。',
+        'en-US': 'Tick the box once you have read them.',
+        'fr-FR': 'Cochez la case une fois les points lus.',
+        'de-DE': 'Setzen Sie das Häkchen, wenn Sie alles gelesen haben.',
+        'hi-IN': 'पढ़ लेने के बाद बॉक्स पर टिक करें।',
+        'id-ID': 'Centang kotaknya setelah selesai membaca.',
+        'it-IT': 'Spunta la casella dopo aver letto.',
+        'ko-KR': '다 읽었으면 확인란을 선택하십시오.',
+        'pt-BR': 'Marque a caixa depois de ler.',
+        'es-419': 'Marca la casilla cuando termines de leer.',
+        'es-ES': 'Marca la casilla cuando termines de leer.'
+      },
+      done: {
+        'ja-JP': '「次へ」で進みます。',
+        'en-US': 'Continue with Next.',
+        'fr-FR': 'Continuez avec « Suivant ».',
+        'de-DE': 'Mit „Weiter“ geht es weiter.',
+        'hi-IN': '"आगे" से आगे बढ़ें।',
+        'id-ID': 'Lanjutkan dengan Berikutnya.',
+        'it-IT': 'Prosegui con «Avanti».',
+        'ko-KR': "'다음'으로 넘어갑니다.",
+        'pt-BR': 'Continue em Avançar.',
+        'es-419': 'Continúa con Siguiente.',
+        'es-ES': 'Continúa con “Siguiente”.'
+      }
     }
   },
   language: {
@@ -2319,6 +2388,174 @@ export const setup = defineMessages({
       'pt-BR': '{engine} não consegue ler as respostas.',
       'es-419': '{engine} no puede leer las respuestas.',
       'es-ES': '{engine} no puede leer las respuestas.'
+    },
+    safetyNotAcknowledged: {
+      'ja-JP': '注意点の画面でチェックを入れてから終えてください。',
+      'en-US': 'Tick the box on the Risks step before you finish.',
+      'fr-FR': "Cochez la case de l'étape Risques avant de terminer.",
+      'de-DE': 'Setzen Sie im Schritt Risiken das Häkchen, bevor Sie abschließen.',
+      'hi-IN': 'खत्म करने से पहले जोखिम वाले चरण में बॉक्स पर टिक करें।',
+      'id-ID': 'Centang kotak di langkah Risiko sebelum menyelesaikan penyiapan.',
+      'it-IT': 'Spunta la casella nel passaggio Rischi prima di finire.',
+      'ko-KR': '마치기 전에 주의 사항 단계에서 확인란을 선택하십시오.',
+      'pt-BR': 'Marque a caixa na etapa Riscos antes de terminar.',
+      'es-419': 'Marca la casilla del paso Riesgos antes de terminar.',
+      'es-ES': 'Marca la casilla del paso Riesgos antes de terminar.'
+    }
+  },
+  safety: {
+    points: {
+      answers: {
+        title: {
+          'ja-JP': '答えやカードは間違っていることがあります',
+          'en-US': 'Answers and cards can be wrong',
+          'fr-FR': 'Les réponses et les cartes peuvent être fausses',
+          'de-DE': 'Antworten und Karten können falsch sein',
+          'hi-IN': 'जवाब और कार्ड ग़लत हो सकते हैं',
+          'id-ID': 'Jawaban dan kartu bisa salah',
+          'it-IT': 'Risposte e schede possono essere sbagliate',
+          'ko-KR': '답과 카드는 틀릴 수 있습니다',
+          'pt-BR': 'Respostas e cartões podem estar errados',
+          'es-419': 'Las respuestas y las tarjetas pueden estar equivocadas',
+          'es-ES': 'Las respuestas y las tarjetas pueden estar equivocadas'
+        },
+        body: {
+          'ja-JP': '答えとカードは言語モデルが作ります。予定の変更やメールを確定する前に、内容を確かめてください。',
+          'en-US': 'Language models write them. Check them before you confirm a calendar change or an email.',
+          'fr-FR': "Elles sont rédigées par des modèles de langage. Vérifiez-les avant de confirmer une modification d'agenda ou un e-mail.",
+          'de-DE': 'Sie stammen von Sprachmodellen. Prüfen Sie sie, bevor Sie eine Kalenderänderung oder eine E-Mail bestätigen.',
+          'hi-IN': 'इन्हें भाषा मॉडल लिखते हैं। कैलेंडर में बदलाव या ईमेल की पुष्टि करने से पहले इन्हें जाँच लें।',
+          'id-ID': 'Semuanya ditulis oleh model bahasa. Periksa dulu sebelum mengonfirmasi perubahan kalender atau email.',
+          'it-IT': "Le scrivono modelli linguistici. Controllale prima di confermare una modifica al calendario o un'email.",
+          'ko-KR': '답과 카드는 언어 모델이 만듭니다. 일정 변경이나 메일을 확정하기 전에 내용을 확인하십시오.',
+          'pt-BR': 'Eles são escritos por modelos de linguagem. Confira antes de confirmar uma mudança na agenda ou um e-mail.',
+          'es-419': 'Las escriben modelos de lenguaje. Revísalas antes de confirmar un cambio en el calendario o un correo.',
+          'es-ES': 'Las escriben modelos de lenguaje. Revísalas antes de confirmar un cambio en el calendario o un correo.'
+        }
+      },
+      approval: {
+        title: {
+          'ja-JP': '変更はあなたが承認してから実行します',
+          'en-US': 'Changes run only after you approve them',
+          'fr-FR': 'Les modifications attendent votre accord',
+          'de-DE': 'Änderungen laufen erst nach Ihrer Freigabe',
+          'hi-IN': 'बदलाव आपकी मंज़ूरी के बाद ही चलते हैं',
+          'id-ID': 'Perubahan berjalan setelah Anda menyetujuinya',
+          'it-IT': 'Le modifiche partono solo con la tua approvazione',
+          'ko-KR': '변경은 승인한 뒤에만 실행됩니다',
+          'pt-BR': 'Mudanças só rodam com a sua aprovação',
+          'es-419': 'Los cambios solo se ejecutan con tu aprobación',
+          'es-ES': 'Los cambios solo se ejecutan con tu aprobación'
+        },
+        body: {
+          'ja-JP': '予定の変更、メールの送信、Agent のジョブは、あなたが承認したときだけ実行します。承認したジョブは、Codex か Claude Code の CLI をその CLI の権限で動かします。作業するフォルダのファイルを変更することがあるので、フォルダは git で管理するかバックアップを取ってください。ジョブは内容を読んでから承認してください。',
+          'en-US': "Calendar changes, sending email and Agent jobs run only after you approve them. An approved job runs the Codex or Claude Code CLI with that CLI's permissions. It can change files in the folder it works in, so keep that folder in git or backed up. Read a job before you approve it.",
+          'fr-FR': "Les modifications d'agenda, l'envoi d'e-mails et les jobs Agent ne s'exécutent qu'après votre approbation. Un job approuvé lance la CLI de Codex ou de Claude Code avec les autorisations de cette CLI. Il peut modifier les fichiers du dossier où il travaille : gardez ce dossier sous git ou sauvegardé. Lisez un job avant de l'approuver.",
+          'de-DE': 'Kalenderänderungen, das Senden von E-Mails und Agent-Jobs laufen erst, wenn Sie sie freigeben. Ein freigegebener Job startet die CLI von Codex oder Claude Code mit deren Berechtigungen. Er kann Dateien in seinem Arbeitsordner ändern. Halten Sie diesen Ordner deshalb in Git oder gesichert. Lesen Sie einen Job, bevor Sie ihn freigeben.',
+          'hi-IN': 'कैलेंडर में बदलाव, ईमेल भेजना और Agent की जॉब आपकी मंज़ूरी के बाद ही चलते हैं। मंज़ूर की गई जॉब Codex या Claude Code की CLI को उसी CLI की अनुमतियों के साथ चलाती है। वह जिस फ़ोल्डर में काम करती है, उसकी फ़ाइलें बदल सकती है, इसलिए उस फ़ोल्डर को git में रखें या उसका बैकअप लें। जॉब को मंज़ूरी देने से पहले उसे पढ़ लें।',
+          'id-ID': 'Perubahan kalender, pengiriman email, dan pekerjaan Agent hanya berjalan setelah Anda menyetujuinya. Pekerjaan yang disetujui menjalankan CLI Codex atau Claude Code dengan izin CLI tersebut. Pekerjaan itu bisa mengubah file di folder tempatnya bekerja, jadi simpan folder itu di git atau buat cadangannya. Baca pekerjaan sebelum menyetujuinya.',
+          'it-IT': 'Modifiche al calendario, invio di email e incarichi di Agent partono solo dopo che li approvi. Un incarico approvato avvia la CLI di Codex o di Claude Code con i permessi di quella CLI. Può modificare i file della cartella in cui lavora, quindi tieni quella cartella in git o fanne un backup. Leggi un incarico prima di approvarlo.',
+          'ko-KR': '일정 변경, 메일 보내기, Agent 작업은 승인한 뒤에만 실행됩니다. 승인한 작업은 Codex나 Claude Code의 CLI를 그 CLI의 권한으로 실행합니다. 작업하는 폴더의 파일을 바꿀 수 있으므로 그 폴더는 git으로 관리하거나 백업해 두십시오. 작업은 내용을 읽고 나서 승인하십시오.',
+          'pt-BR': 'Mudanças na agenda, envio de e-mails e jobs do Agent só rodam depois que você aprova. Um job aprovado executa a CLI do Codex ou do Claude Code com as permissões dessa CLI. Ele pode alterar arquivos na pasta em que trabalha, então mantenha essa pasta no git ou com backup. Leia o job antes de aprovar.',
+          'es-419': 'Los cambios en el calendario, el envío de correos y los trabajos de Agent solo se ejecutan cuando los apruebas. Un trabajo aprobado ejecuta la CLI de Codex o de Claude Code con los permisos de esa CLI. Puede modificar archivos de la carpeta donde trabaja, así que mantén esa carpeta en git o con copia de seguridad. Lee el trabajo antes de aprobarlo.',
+          'es-ES': 'Los cambios en el calendario, el envío de correos y los trabajos de Agent solo se ejecutan cuando los apruebas. Un trabajo aprobado ejecuta la CLI de Codex o de Claude Code con los permisos de esa CLI. Puede modificar archivos de la carpeta en la que trabaja, así que ten esa carpeta en git o con copia de seguridad. Lee el trabajo antes de aprobarlo.'
+        }
+      },
+      billing: {
+        title: {
+          'ja-JP': 'API の料金は各プロバイダから請求されます',
+          'en-US': 'Each provider bills you for API use',
+          'fr-FR': "Chaque fournisseur vous facture l'usage de l'API",
+          'de-DE': 'Jeder Anbieter rechnet die API-Nutzung ab',
+          'hi-IN': 'API के इस्तेमाल का बिल हर प्रोवाइडर भेजता है',
+          'id-ID': 'Setiap penyedia menagih pemakaian API',
+          'it-IT': "Ogni provider ti addebita l'uso delle API",
+          'ko-KR': 'API 요금은 각 제공업체가 청구합니다',
+          'pt-BR': 'Cada provedor cobra o uso da API',
+          'es-419': 'Cada proveedor te cobra el uso de la API',
+          'es-ES': 'Cada proveedor te cobra el uso de la API'
+        },
+        body: {
+          'ja-JP': '入力した API キーの利用料は、各プロバイダからあなたに直接請求されます。音声の会話や長いジョブは高額になることがあります。各プロバイダの管理画面で、利用額の上限を設定してください。',
+          'en-US': "Each provider bills you directly for the API keys you enter. Voice conversations and long jobs can cost a lot. Set a spending limit in each provider's console.",
+          'fr-FR': "Chaque fournisseur vous facture directement l'usage des clés API que vous saisissez. Les conversations vocales et les longs jobs peuvent coûter cher. Fixez une limite de dépenses dans la console de chaque fournisseur.",
+          'de-DE': 'Jeder Anbieter berechnet Ihnen die Nutzung der eingegebenen API-Schlüssel direkt. Sprachgespräche und lange Jobs können teuer werden. Legen Sie in der Konsole jedes Anbieters ein Ausgabenlimit fest.',
+          'hi-IN': 'आपकी डाली गई API कुंजियों के इस्तेमाल का बिल हर प्रोवाइडर सीधे आपको भेजता है। आवाज़ वाली बातचीत और लंबी जॉब महँगी पड़ सकती हैं। हर प्रोवाइडर के कंसोल में खर्च की सीमा तय करें।',
+          'id-ID': 'Setiap penyedia menagih Anda langsung untuk pemakaian kunci API yang Anda masukkan. Percakapan suara dan pekerjaan panjang bisa mahal. Atur batas pengeluaran di konsol setiap penyedia.',
+          'it-IT': "Ogni provider ti addebita direttamente l'uso delle chiavi API che inserisci. Le conversazioni vocali e gli incarichi lunghi possono costare molto. Imposta un limite di spesa nella console di ogni provider.",
+          'ko-KR': '입력한 API 키의 사용료는 각 제공업체가 직접 청구합니다. 음성 대화나 긴 작업은 비용이 많이 들 수 있습니다. 각 제공업체의 콘솔에서 사용 금액 한도를 설정하십시오.',
+          'pt-BR': 'Cada provedor cobra você diretamente pelo uso das chaves de API que você informar. Conversas por voz e jobs longos podem sair caros. Defina um limite de gastos no console de cada provedor.',
+          'es-419': 'Cada proveedor te cobra directamente el uso de las claves de API que ingreses. Las conversaciones por voz y los trabajos largos pueden salir caros. Define un límite de gasto en la consola de cada proveedor.',
+          'es-ES': 'Cada proveedor te cobra directamente el uso de las claves de API que introduzcas. Las conversaciones por voz y los trabajos largos pueden salir caros. Fija un límite de gasto en la consola de cada proveedor.'
+        }
+      },
+      data: {
+        title: {
+          'ja-JP': '会話は選んだプロバイダに送られます',
+          'en-US': 'Conversations go to the providers you chose',
+          'fr-FR': 'Les conversations vont aux fournisseurs choisis',
+          'de-DE': 'Gespräche gehen an die gewählten Anbieter',
+          'hi-IN': 'बातचीत आपके चुने प्रोवाइडर को जाती है',
+          'id-ID': 'Percakapan dikirim ke penyedia pilihan Anda',
+          'it-IT': 'Le conversazioni vanno ai provider che hai scelto',
+          'ko-KR': '대화는 선택한 제공업체로 전송됩니다',
+          'pt-BR': 'As conversas vão para os provedores escolhidos',
+          'es-419': 'Las conversaciones van a los proveedores que elegiste',
+          'es-ES': 'Las conversaciones van a los proveedores que has elegido'
+        },
+        body: {
+          'ja-JP': '会話の内容と、答えるために読んだメモや予定、メールは、あなたが選んだプロバイダに送られます。',
+          'en-US': 'Your conversations, and the notes, events and email ASIST reads to answer, are sent to the providers you chose.',
+          'fr-FR': "Vos conversations, ainsi que les notes, événements et e-mails qu'ASIST lit pour répondre, sont envoyés aux fournisseurs que vous avez choisis.",
+          'de-DE': 'Ihre Gespräche sowie die Notizen, Termine und E-Mails, die ASIST für eine Antwort liest, werden an die von Ihnen gewählten Anbieter gesendet.',
+          'hi-IN': 'आपकी बातचीत, और जवाब देने के लिए ASIST जो नोट, इवेंट और ईमेल पढ़ता है, वे आपके चुने हुए प्रोवाइडर को भेजे जाते हैं।',
+          'id-ID': 'Percakapan Anda, serta catatan, acara, dan email yang dibaca ASIST untuk menjawab, dikirim ke penyedia yang Anda pilih.',
+          'it-IT': 'Le tue conversazioni, e le note, gli eventi e le email che ASIST legge per rispondere, vengono inviati ai provider che hai scelto.',
+          'ko-KR': '대화 내용과, 답하기 위해 ASIST가 읽은 메모·일정·메일은 선택한 제공업체로 전송됩니다.',
+          'pt-BR': 'Suas conversas, e as notas, eventos e e-mails que o ASIST lê para responder, são enviados aos provedores que você escolheu.',
+          'es-419': 'Tus conversaciones, y las notas, eventos y correos que ASIST lee para responder, se envían a los proveedores que elegiste.',
+          'es-ES': 'Tus conversaciones, y las notas, eventos y correos que ASIST lee para responder, se envían a los proveedores que has elegido.'
+        }
+      }
+    },
+    docsLink: {
+      'ja-JP': '詳しい説明を開く',
+      'en-US': 'Read the full explanation',
+      'fr-FR': "Lire l'explication complète",
+      'de-DE': 'Ausführliche Erklärung lesen',
+      'hi-IN': 'पूरी जानकारी पढ़ें',
+      'id-ID': 'Baca penjelasan lengkap',
+      'it-IT': 'Leggi la spiegazione completa',
+      'ko-KR': '자세한 설명 열기',
+      'pt-BR': 'Ler a explicação completa',
+      'es-419': 'Leer la explicación completa',
+      'es-ES': 'Leer la explicación completa'
+    },
+    acknowledge: {
+      'ja-JP': '4つの点を読んで理解しました',
+      'en-US': 'I have read and understood these four points',
+      'fr-FR': "J'ai lu et compris ces quatre points",
+      'de-DE': 'Ich habe die vier Punkte gelesen und verstanden',
+      'hi-IN': 'मैंने ये चार बातें पढ़ और समझ ली हैं',
+      'id-ID': 'Saya sudah membaca dan memahami keempat poin ini',
+      'it-IT': 'Ho letto e capito questi quattro punti',
+      'ko-KR': '네 가지를 읽고 이해했습니다',
+      'pt-BR': 'Li e entendi estes quatro pontos',
+      'es-419': 'Leí y entendí estos cuatro puntos',
+      'es-ES': 'He leído y entendido estos cuatro puntos'
+    },
+    continue: {
+      'ja-JP': '続ける',
+      'en-US': 'Continue',
+      'fr-FR': 'Continuer',
+      'de-DE': 'Weiter',
+      'hi-IN': 'जारी रखें',
+      'id-ID': 'Lanjutkan',
+      'it-IT': 'Continua',
+      'ko-KR': '계속',
+      'pt-BR': 'Continuar',
+      'es-419': 'Continuar',
+      'es-ES': 'Continuar'
     }
   }
 })
