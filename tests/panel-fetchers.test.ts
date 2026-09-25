@@ -88,3 +88,12 @@ describe('the requests a card makes for the conversation language and the region
     expect((await fetchPanel('fx', { base: 'USD', quote: 'JPY' })).props).toMatchObject({ quote: 'JPY' })
   })
 })
+
+describe('the news card', () => {
+  it('reads an escaped ampersand in a news title as the text the feed wrote, not as a second escape', async () => {
+    const item = '<item><title>5 &amp;lt; 6 &amp;amp; Q&amp;A</title><link>https://example.test</link><pubDate>x</pubDate><source>y</source></item>'
+    respond(`<rss>${item}</rss>`, [])
+    const { props } = await fetchPanel('news', { topic: 'AI' })
+    expect((props.items as { title: string }[])[0].title).toBe('5 &lt; 6 &amp; Q&A')
+  })
+})

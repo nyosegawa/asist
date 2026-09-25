@@ -22,7 +22,7 @@ const view = (name) => previewPath(`/screens/${name}`)
 /** Buttons have no id, so one is found by its label and pressed. A missing button fails the run. */
 const press = (text) => ({
   op: 'eval',
-  value: `(() => { const b = [...document.querySelectorAll('button')].find((el) => el.textContent.includes(${JSON.stringify(text)}) && !el.disabled); if (!b) throw new Error('押せるボタンがありません: ${text}'); b.click(); return ${JSON.stringify(text)} })()`
+  value: `(() => { const b = [...document.querySelectorAll('button')].find((el) => el.textContent.includes(${JSON.stringify(text)}) && !el.disabled); if (!b) throw new Error(${JSON.stringify(`押せるボタンがありません: ${text}`)}); b.click(); return ${JSON.stringify(text)} })()`
 })
 /** React tracks an input through its own setter, so the value goes in through the native setter and the event is dispatched afterwards. */
 const type = (selector, text) => ({
