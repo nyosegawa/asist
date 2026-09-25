@@ -31,8 +31,8 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     completeSetup: api.completeSetup
   }
   // The demo starts on VOICEVOX, as the app's own default does. The demo Mac does not have it installed,
-  // so it stays unconnected.
-  void base.saveSettings({ ttsEngine: 'voicevox' })
+  // so it stays unconnected. The risks have not been acknowledged yet, as on a new Mac.
+  void base.saveSettings({ ttsEngine: 'voicevox', safetyNoticeVersion: 0 })
   // The mock settings already count as onboarded, so every read is rewritten as not onboarded until the
   // wizard finishes.
   const unfinished = <T extends { onboardingVersion: number }>(settings: T): T => (state.completed ? settings : { ...settings, onboardingVersion: 0 })

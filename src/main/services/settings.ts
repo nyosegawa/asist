@@ -23,6 +23,7 @@ function defaultSettings(): AppSettings {
   const locale = pickInitialLocale(app.getPreferredSystemLanguages())
   return parseAppSettings({
     onboardingVersion: 0,
+    safetyNoticeVersion: 0,
     uiLocale: locale,
     theme: DEFAULT_THEME,
     conversationLocale: locale,

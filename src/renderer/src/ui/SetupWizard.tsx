@@ -12,6 +12,7 @@ import { microphoneCaptureErrorMessage, verifyMicrophoneCapture } from '@/voice/
 import { Btn } from './settings/primitives'
 import { useExtraModels } from './setup/extras'
 import { LanguageStep } from './setup/language'
+import { SafetyStep } from './setup/safety'
 import { ExtrasStep, ListeningStep, MicStep, ModelStep, SpeakingStep, SummaryStep, TtsStep, type ListeningChoice, type MicState, type SpeakingMode } from './setup/steps'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
@@ -23,7 +24,7 @@ import type { MessageKey } from '@shared/i18n'
  * the heading and the buttons stay in place when the screen changes.
  */
 
-const STEPS = ['language', 'model', 'speaking', 'listening', 'tts', 'mic', 'extras', 'summary'] as const
+const STEPS = ['language', 'safety', 'model', 'speaking', 'listening', 'tts', 'mic', 'extras', 'summary'] as const
 type StepId = (typeof STEPS)[number]
 
 /** The way of talking is named in the same words on its own screen and in the summary. */
@@ -127,6 +128,7 @@ export function SetupWizard(): React.JSX.Element | null {
   const ready: Record<StepId, boolean> = {
     // A fresh installation already carries the language of the system, so this screen opens on an answer.
     language: true,
+    safety: settings.safetyNoticeVersion >= 1,
     model: modelReady,
     speaking: mode !== null,
     listening: listeningReady,
@@ -307,6 +309,7 @@ export function SetupWizard(): React.JSX.Element | null {
   /** What the user has to do in order to move on, shown as a single line to the left of the buttons. */
   const nextAction = ((): string => {
     if (step === 'language') return t('setup.guide.language.chosen', { language: UI_LOCALE_NAMES[locale] })
+    if (step === 'safety') return ready.safety ? t('setup.guide.safety.done') : t('setup.guide.safety.tick')
     if (step === 'model') {
       if (modelReady) return t('setup.guide.model.verified')
       if (apiBusy) return t('setup.guide.model.verifying')
@@ -355,6 +358,16 @@ export function SetupWizard(): React.JSX.Element | null {
 
         <div className="su-body" data-step={step}>
           {step === 'language' && <LanguageStep locale={locale} onLocale={chooseLocale} />}
+          {step === 'safety' && (
+            <SafetyStep
+              uiLocale={settings.uiLocale}
+              acknowledged={ready.safety}
+              onAcknowledged={(acknowledged) => {
+                setError('')
+                void saveSettings({ safetyNoticeVersion: acknowledged ? 1 : 0 }).catch((err: unknown) => setError(displayError(err)))
+              }}
+            />
+          )}
           {step === 'model' && (
             <ModelStep
               provider={provider}
