@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700;900&family=Zen+Kaku+Gothic+New:wght@500&display=block" rel="stylesheet" />
+  <style>
+    /* The card that social sites show for asist-agent.com, 1200×630. render.mjs writes it to public/img/og.png. */
+    :root { --paper: #fbfaf7; --ink: #1f2a44; --ink-2: #4d5670; --blue: #3f6fe0; --sky: #dfeaff; }
+    html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: var(--paper); }
+    .art { position: absolute; right: -30px; top: 15px; width: 1152px; height: 600px; }
+    .copy { position: absolute; left: 72px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; }
+    .logo { display: flex; align-items: center; gap: 14px; }
+    .logo img { width: 52px; height: 52px; }
+    .logo span { font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.32em; color: var(--ink); }
+    h1 { margin: 34px 0 0; font-family: "Zen Maru Gothic", sans-serif; font-weight: 900; font-size: 46px; line-height: 1.4; color: var(--ink); }
+    h1 mark { background: linear-gradient(transparent 62%, var(--sky) 62%); color: inherit; }
+    p { margin: 22px 0 0; font-family: "Zen Kaku Gothic New", sans-serif; font-weight: 500; font-size: 24px; color: var(--ink-2); }
+    .url { margin-top: 30px; font-family: "Zen Maru Gothic", sans-serif; font-weight: 700; font-size: 22px; color: var(--blue); }
+  </style>
+</head>
+<body>
+  <img class="art" src="art.png" alt="" />
+  <div class="copy">
+    <div class="logo"><img src="../public/icons/asist.png" alt="" /><span>ASIST</span></div>
+    <h1>話しかけるだけで、<br /><mark>予定もメールも</mark>片づく。</h1>
+    <p>Mac 向けのリアルタイムアシスタント</p>
+    <div class="url">asist-agent.com</div>
+  </div>
+</body>
+</html>
