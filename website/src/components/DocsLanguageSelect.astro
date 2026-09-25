@@ -8,6 +8,7 @@ const current = Astro.locals.starlightRoute.locale ?? ROOT_LANGUAGE
 const notFound = Astro.locals.starlightRoute.id === '404'
 const options = LANGUAGES.filter((language) => language.docs).map((language) => ({
   code: language.code,
+  hreflang: language.hreflang,
   label: language.label,
   href: notFound ? `${prefixOf(language.code)}/docs/` : pathIn(Astro.url.pathname, current, language.code)
 }))
