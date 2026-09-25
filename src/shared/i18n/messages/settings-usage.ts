@@ -19,14 +19,14 @@ export const settingsUsage = defineMessages({
     'es-ES': 'Costes de API'
   },
   lead: {
-    'ja-JP': 'ASIST が有料の API を使った分の料金を、日ごとに示します。',
+    'ja-JP': 'ASIST が有料の API を使った分の、日ごとの料金です。',
     'en-US': 'What ASIST spent on paid APIs, day by day.',
     'fr-FR': 'Ce que ASIST a dépensé en API payantes, jour par jour.',
     'de-DE': 'Was ASIST für kostenpflichtige APIs ausgegeben hat, Tag für Tag.',
     'hi-IN': 'ASIST ने पेड API पर हर दिन कितना ख़र्च किया।',
     'id-ID': 'Biaya API berbayar yang dipakai ASIST, per hari.',
     'it-IT': 'Quanto ha speso ASIST in API a pagamento, giorno per giorno.',
-    'ko-KR': 'ASIST가 유료 API를 사용한 요금을 날짜별로 보여 줍니다.',
+    'ko-KR': 'ASIST가 유료 API를 사용한 날짜별 요금입니다.',
     'pt-BR': 'Quanto o ASIST gastou com APIs pagas, dia a dia.',
     'es-419': 'Lo que ASIST gastó en API de pago, día por día.',
     'es-ES': 'Lo que ASIST ha gastado en API de pago, día a día.'

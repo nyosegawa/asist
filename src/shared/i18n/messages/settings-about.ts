@@ -20,14 +20,14 @@ export const settingsAbout = defineMessages({
     'es-ES': 'Acerca de la app'
   },
   lead: {
-    'ja-JP': '使っているモデルと外部のデータを、提供元とライセンスとともに並べます。',
+    'ja-JP': 'ASIST が使っているモデルと外部のデータの一覧です。提供元とライセンスも書いてあります。',
     'en-US': 'The models and the outside data ASIST uses, with their providers and licenses.',
     'fr-FR': 'Les modèles et les données externes utilisés par ASIST, avec leur fournisseur et leur licence.',
     'de-DE': 'Die Modelle und die externen Daten, die ASIST nutzt, mit Anbieter und Lizenz.',
     'hi-IN': 'ASIST जिन मॉडल और बाहरी डेटा का उपयोग करता है, उनके प्रदाता और लाइसेंस के साथ।',
     'id-ID': 'Model dan data eksternal yang dipakai ASIST, beserta penyedia dan lisensinya.',
     'it-IT': 'I modelli e i dati esterni usati da ASIST, con il fornitore e la licenza.',
-    'ko-KR': 'ASIST가 사용하는 모델과 외부 데이터를 제공처와 라이선스와 함께 보여줍니다.',
+    'ko-KR': 'ASIST가 사용하는 모델과 외부 데이터의 목록입니다. 제공처와 라이선스도 함께 적었습니다.',
     'pt-BR': 'Os modelos e os dados externos que o ASIST usa, com o fornecedor e a licença.',
     'es-419': 'Los modelos y los datos externos que usa ASIST, con su proveedor y su licencia.',
     'es-ES': 'Los modelos y los datos externos que usa ASIST, con su proveedor y su licencia.'
@@ -114,17 +114,17 @@ export const settingsAbout = defineMessages({
       'es-ES': 'Modelos y CLI que se llaman por API'
     },
     description: {
-      'ja-JP': '会話のモデル、声のエンジン、Agent の CLI は、登録した API キーで呼びます。料金も利用規約も、使う人と提供元の間のものです。',
-      'en-US': 'The conversation model, the voice engine and the agent CLI are called with the API key you registered. The charges and the terms are between you and the provider.',
-      'fr-FR': 'Le modèle de conversation, le moteur vocal et la CLI de l’Agent sont appelés avec la clé API que vous avez enregistrée. Les frais et les conditions relèvent de vous et du fournisseur.',
-      'de-DE': 'Das Gesprächsmodell, die Sprach-Engine und die Agent-CLI werden mit dem hinterlegten API-Schlüssel aufgerufen. Kosten und Bedingungen bestehen zwischen Ihnen und dem Anbieter.',
-      'hi-IN': 'बातचीत का मॉडल, आवाज़ का इंजन और Agent की CLI आपकी दर्ज की गई API कुंजी से बुलाए जाते हैं। शुल्क और शर्तें आपके और प्रदाता के बीच की हैं।',
-      'id-ID': 'Model percakapan, mesin suara, dan CLI Agent dipanggil dengan kunci API yang Anda daftarkan. Biaya dan ketentuannya adalah antara Anda dan penyedia.',
-      'it-IT': 'Il modello di conversazione, il motore vocale e la CLI dell’Agent vengono chiamati con la chiave API che hai registrato. I costi e le condizioni riguardano te e il fornitore.',
-      'ko-KR': '대화 모델, 음성 엔진, Agent의 CLI는 등록한 API 키로 호출합니다. 요금과 이용약관은 사용자와 제공처 사이의 것입니다.',
-      'pt-BR': 'O modelo de conversa, o motor de voz e a CLI do Agent são chamados com a chave de API que você registrou. As cobranças e os termos são entre você e o fornecedor.',
-      'es-419': 'El modelo de conversación, el motor de voz y la CLI del Agent se llaman con la clave de API que registraste. Los cobros y los términos corresponden a ti y al proveedor.',
-      'es-ES': 'El modelo de conversación, el motor de voz y la CLI del Agent se llaman con la clave de API que has registrado. Los cobros y las condiciones corresponden a ti y al proveedor.'
+      'ja-JP': '会話のモデルと声のエンジンは、登録した API キーで呼びます。Agent の CLI は、その CLI の側で設定した認証で動きます。料金も利用規約も、使う人と提供元の間のものです。',
+      'en-US': 'The conversation model and the voice engine are called with the API key you registered. The agent CLI runs with the sign-in you set up in that CLI. The charges and the terms are between you and the provider.',
+      'fr-FR': 'Le modèle de conversation et le moteur vocal sont appelés avec la clé API que vous avez enregistrée. La CLI de l’Agent fonctionne avec l’authentification configurée dans cette CLI. Les frais et les conditions relèvent de vous et du fournisseur.',
+      'de-DE': 'Das Gesprächsmodell und die Sprach-Engine werden mit dem hinterlegten API-Schlüssel aufgerufen. Die Agent-CLI nutzt die Anmeldung, die Sie in dieser CLI eingerichtet haben. Kosten und Bedingungen bestehen zwischen Ihnen und dem Anbieter.',
+      'hi-IN': 'बातचीत का मॉडल और आवाज़ का इंजन आपकी दर्ज की गई API कुंजी से बुलाए जाते हैं। Agent की CLI उसी CLI में सेट किए गए साइन-इन से चलती है। शुल्क और शर्तें आपके और प्रदाता के बीच की हैं।',
+      'id-ID': 'Model percakapan dan mesin suara dipanggil dengan kunci API yang Anda daftarkan. CLI Agent berjalan dengan login yang Anda atur di CLI tersebut. Biaya dan ketentuannya adalah antara Anda dan penyedia.',
+      'it-IT': 'Il modello di conversazione e il motore vocale vengono chiamati con la chiave API che hai registrato. La CLI dell’Agent funziona con l’accesso configurato in quella CLI. I costi e le condizioni riguardano te e il fornitore.',
+      'ko-KR': '대화 모델과 음성 엔진은 등록한 API 키로 호출합니다. Agent의 CLI는 그 CLI에서 설정한 인증으로 동작합니다. 요금과 이용약관은 사용자와 제공처 사이의 것입니다.',
+      'pt-BR': 'O modelo de conversa e o motor de voz são chamados com a chave de API que você registrou. A CLI do Agent funciona com o login configurado nessa CLI. As cobranças e os termos são entre você e o fornecedor.',
+      'es-419': 'El modelo de conversación y el motor de voz se llaman con la clave de API que registraste. La CLI del Agent funciona con el inicio de sesión que configuraste en esa CLI. Los cargos y las condiciones son entre tú y el proveedor.',
+      'es-ES': 'El modelo de conversación y el motor de voz se llaman con la clave de API que has registrado. La CLI del Agent funciona con el inicio de sesión que has configurado en esa CLI. Los cargos y las condiciones son entre tú y el proveedor.'
     }
   },
   data: {
@@ -575,6 +575,47 @@ export const settingsAbout = defineMessages({
       'pt-BR': 'O histórico da memória e os worktrees das tarefas de edição',
       'es-419': 'El historial de la memoria y los worktrees de las tareas de edición',
       'es-ES': 'El historial de la memoria y los worktrees de las tareas de edición'
+    }
+  },
+  notices: {
+    label: {
+      'ja-JP': 'オープンソースのライセンス',
+      'en-US': 'Open source licenses',
+      'fr-FR': 'Licences open source',
+      'de-DE': 'Open-Source-Lizenzen',
+      'hi-IN': 'ओपन सोर्स लाइसेंस',
+      'id-ID': 'Lisensi sumber terbuka',
+      'it-IT': 'Licenze open source',
+      'ko-KR': '오픈 소스 라이선스',
+      'pt-BR': 'Licenças de código aberto',
+      'es-419': 'Licencias de código abierto',
+      'es-ES': 'Licencias de código abierto'
+    },
+    hint: {
+      'ja-JP': 'ASIST と、アプリに含まれるソフトウェアのライセンスの全文です。',
+      'en-US': 'The full license texts of ASIST and of the software it includes.',
+      'fr-FR': 'Le texte complet des licences d’ASIST et des logiciels qu’il inclut.',
+      'de-DE': 'Der vollständige Text der Lizenzen von ASIST und der enthaltenen Software.',
+      'hi-IN': 'ASIST और उसमें शामिल सॉफ़्टवेयर के लाइसेंस का पूरा पाठ।',
+      'id-ID': 'Teks lengkap lisensi ASIST dan perangkat lunak yang disertakannya.',
+      'it-IT': 'Il testo completo delle licenze di ASIST e del software che include.',
+      'ko-KR': 'ASIST와 앱에 포함된 소프트웨어의 라이선스 전문입니다.',
+      'pt-BR': 'O texto completo das licenças do ASIST e do software que ele inclui.',
+      'es-419': 'El texto completo de las licencias de ASIST y del software que incluye.',
+      'es-ES': 'El texto completo de las licencias de ASIST y del software que incluye.'
+    },
+    open: {
+      'ja-JP': '開く',
+      'en-US': 'Open',
+      'fr-FR': 'Ouvrir',
+      'de-DE': 'Öffnen',
+      'hi-IN': 'खोलें',
+      'id-ID': 'Buka',
+      'it-IT': 'Apri',
+      'ko-KR': '열기',
+      'pt-BR': 'Abrir',
+      'es-419': 'Abrir',
+      'es-ES': 'Abrir'
     }
   }
 })

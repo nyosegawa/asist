@@ -5,6 +5,7 @@ import { events as mailEvents, getMailService, openMailGuide } from './services/
 import { confirmEvents, resolveConfirm } from './services/confirm'
 import { app, dialog, ipcMain, shell, systemPreferences, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
+import path from 'node:path'
 import {
   IpcChannel,
   type AgentJob,
@@ -201,6 +202,12 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   })
   handle(IpcChannel.MicOpenPrivacy, () => shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'))
   handle(IpcChannel.AppVersion, () => app.getVersion())
+  handle(IpcChannel.LicensesOpen, async () => {
+    // npm run build writes the file into build/, and electron-builder copies it into the app's Resources.
+    const file = app.isPackaged ? path.join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt') : path.join(app.getAppPath(), 'build', 'THIRD_PARTY_NOTICES.txt')
+    const error = await shell.openPath(file)
+    if (error) throw new Error(error)
+  })
   handle(IpcChannel.ApiUsage, () => usageDays())
 
   // Starting the engine takes seconds, around five for VOICEVOX, so the status is returned only once the

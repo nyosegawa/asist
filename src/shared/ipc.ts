@@ -755,6 +755,7 @@ export const IpcChannel = {
   TtsVerify: 'tts-verify',
   MicOpenPrivacy: 'mic-open-privacy',
   AppVersion: 'app-version',
+  LicensesOpen: 'licenses-open',
   ApiUsage: 'api-usage',
   LogsOpenFolder: 'logs-open-folder',
   FolderChoose: 'folder-choose',
@@ -1014,6 +1015,8 @@ export interface RendererApi {
   revealPath(path: string): Promise<void>
   /** The version of the packaged application, which only the main process knows. */
   appVersion(): Promise<string>
+  /** Opens THIRD_PARTY_NOTICES.txt, the licenses of ASIST and of everything it bundles, in the default text editor. */
+  licensesOpen(): Promise<void>
   /** The paid API use summed per local day, oldest first. */
   apiUsage(): Promise<UsageDay[]>
 }

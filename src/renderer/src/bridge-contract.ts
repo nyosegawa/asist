@@ -125,6 +125,7 @@ export const rendererApiMethods = [
   'openExternal',
   'revealPath',
   'appVersion',
+  'licensesOpen',
   'apiUsage'
 ] as const satisfies readonly (keyof RendererApi)[]
 
