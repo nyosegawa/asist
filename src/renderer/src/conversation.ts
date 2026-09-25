@@ -3,6 +3,7 @@ import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ip
 import { isSelfEcho, stripClipEcho } from '@shared/self-echo'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { isLiveEngine, type VoiceEngine } from '@shared/voice-engine'
+import { safetyNoticePending } from '@shared/settings'
 import { translate } from '@/i18n'
 import { voiceController } from '@/voice/VoiceController'
 import { liveVoice } from '@/voice/LiveVoice'
@@ -467,13 +468,20 @@ async function initializeConversation(): Promise<void> {
 
   void useJobStore.getState().load()
   feed.append({ role: 'sys', text: '', message: { key: 'conversation.start' } })
-  const settings = useSettingsStore.getState().settings
-  if ((settings?.onboardingVersion ?? 0) >= 1 && settings?.micAutoStart) {
-    if (liveMode()) void liveVoice.enable()
-    else void voiceController.enable()
-  }
+  startMicAtLaunch()
 
   turn.setPhase('idle')
+}
+
+/**
+ * Turns the microphone on when the user chose to have it on at launch. It stays off while the setup or
+ * the notice of the risks covers the app, so that nothing is heard before they are answered.
+ */
+export function startMicAtLaunch(): void {
+  const settings = useSettingsStore.getState().settings
+  if (!settings?.micAutoStart || settings.onboardingVersion < 1 || safetyNoticePending(settings)) return
+  if (liveMode()) void liveVoice.enable()
+  else void voiceController.enable()
 }
 
 function handleLiveEvent(event: LiveEvent): void {

@@ -23,6 +23,9 @@ export async function completeSetup(request: unknown): Promise<AppSettings> {
   }
 
   const settings = getSettings()
+  if (settings.safetyNoticeVersion < 1) {
+    throw new Error(errorText('setup.completion.safetyNotAcknowledged'))
+  }
   if (settings.ttsEngine === 'system' && input?.systemTtsVerified !== true) {
     throw new Error(errorText('setup.completion.systemTtsUnavailable'))
   }

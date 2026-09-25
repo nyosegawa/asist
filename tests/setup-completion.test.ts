@@ -6,6 +6,7 @@ const t = createTranslator('ja-JP')
 
 const mocks = vi.hoisted(() => ({
   settings: {
+    safetyNoticeVersion: 1,
     ttsEngine: 'system',
     conversationModel: { provider: 'anthropic', id: 'claude-main' },
     bridgeModel: { provider: 'anthropic', id: 'claude-fast' }
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.resetModules()
   vi.clearAllMocks()
   mocks.settings.ttsEngine = 'system'
+  mocks.settings.safetyNoticeVersion = 1
   mocks.validateConfiguration.mockResolvedValue(undefined)
   mocks.asrAvailable.mockResolvedValue(false)
   mocks.asrEnsure.mockResolvedValue(true)
@@ -65,6 +67,18 @@ afterEach(() => {
 })
 
 describe('completeSetup', () => {
+  it('neither validates nor persists while the risks have not been acknowledged', async () => {
+    mocks.settings.safetyNoticeVersion = 0
+    const { completeSetup } = await import('../src/main/services/setup-completion')
+
+    await expect(
+      completeSetup({ voiceMode: 'text', microphoneVerified: false, localAsrVerified: false, systemTtsVerified: true, micAutoStart: false })
+    ).rejects.toThrow(errorText('setup.completion.safetyNotAcknowledged'))
+
+    expect(mocks.validateConfiguration).not.toHaveBeenCalled()
+    expect(mocks.saveSettings).not.toHaveBeenCalled()
+  })
+
   it('neither validates nor persists when the renderer has not verified the chosen ASR', async () => {
     const { completeSetup } = await import('../src/main/services/setup-completion')
 

@@ -79,6 +79,8 @@ const MAIL_SAMPLE = {
 const shot = (name) => ({ op: 'shot', value: `${name}.webp` })
 /** The setup is a dialog over a blurred screen, so only the dialog is kept, where its text stays readable. */
 const setupShot = (name) => ({ op: 'shot', value: `${name}.webp`, clip: '.su-dialog' })
+/** Ticks the box under the risks, which the next button waits for. */
+const acknowledge = { op: 'eval', value: `(() => { document.querySelector('.su-ack input').click(); return 'ticked' })()` }
 
 /** Steps for one language. Each image is taken once the step it shows is done, as a user sees it before going on. */
 function steps({ locale, name }) {
@@ -87,7 +89,7 @@ function steps({ locale, name }) {
   const settle = wait(1500)
   // The label of the recommended option carries the name of the model, so the button is found by the rest of the label.
   const recommended = press('setup.listening.recommended', { model: '' })
-  const passLanguage = [wait(1200), pressData(name), wait(400), press('setup.next'), wait(300)]
+  const passLanguage = [wait(1200), pressData(name), wait(400), press('setup.next'), wait(300), acknowledge, wait(200), press('setup.next'), wait(300)]
   const toMicrophone = [
     ...passLanguage,
     type('#su-key', 'demo-key-not-a-real-one'),
@@ -138,6 +140,12 @@ function steps({ locale, name }) {
     pressData(name),
     wait(400),
     setupShot('setup-1-language'),
+    press('setup.next'),
+    wait(300),
+    acknowledge,
+    untilText('setup.guide.safety.done'),
+    wait(300),
+    setupShot('setup-safety'),
     press('setup.next'),
     wait(300),
     type('#su-key', 'demo-key-not-a-real-one'),

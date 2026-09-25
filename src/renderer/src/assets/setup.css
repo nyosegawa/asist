@@ -505,3 +505,55 @@
   color: var(--color-holo-muted);
   list-style: decimal;
 }
+
+.su-dialog.is-notice {
+  height: auto;
+  max-height: 100%;
+}
+.su-dialog.is-notice .su-body {
+  padding-bottom: 20px;
+}
+.su-risks {
+  margin: 0;
+  padding: 2px 14px;
+  border: 1px solid var(--color-holo-line);
+  border-radius: var(--ui-box-radius);
+  background: rgb(from var(--color-holo-bg) r g b / 0.3);
+  list-style: none;
+}
+.su-risks li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 0;
+  border-top: 1px solid var(--ui-divider);
+}
+.su-risks li:first-child {
+  border-top: 0;
+}
+.su-risks h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-holo-text);
+}
+.su-risks p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}
+.su-risks-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.su-risks-foot .su-link {
+  margin-left: 0;
+}
+.su-check.su-ack {
+  font-size: 12.5px;
+  color: var(--color-holo-text);
+}

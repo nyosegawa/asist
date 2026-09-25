@@ -31,12 +31,14 @@ const type = (selector, text) => ({
 })
 const wait = (ms) => ({ op: 'wait', value: String(ms) })
 const shot = (name) => ({ op: 'shot', value: name })
+/** Ticks the box under the risks, which the next button waits for. */
+const acknowledge = { op: 'eval', value: `(() => { document.querySelector('.su-ack input').click(); return 'ticked' })()` }
 
 /**
- * Gets past the language screen, which opens on the language of the system, and then past the model
- * screen, leaving the provider as it is and verifying a sample key.
+ * Gets past the language screen, which opens on the language of the system, past the risks, and then
+ * past the model screen, leaving the provider as it is and verifying a sample key.
  */
-const passModel = [wait(1000), press('次へ'), wait(300), type('#su-key', 'demo-key-not-a-real-one'), press('検証して保存'), wait(1300), press('次へ'), wait(300)]
+const passModel = [wait(1000), press('次へ'), wait(300), acknowledge, wait(200), press('次へ'), wait(300), type('#su-key', 'demo-key-not-a-real-one'), press('検証して保存'), wait(1300), press('次へ'), wait(300)]
 
 await main(
   [
@@ -44,6 +46,13 @@ await main(
     // 1. Language.
     wait(1200),
     shot('setup-01-language'),
+    press('次へ'),
+    // 1b. The risks, which wait for the box to be ticked.
+    wait(300),
+    shot('setup-01b-safety'),
+    acknowledge,
+    wait(200),
+    shot('setup-01c-safety-acknowledged'),
     press('次へ'),
     // 2. Model.
     wait(300),
@@ -182,7 +191,12 @@ await main(
     shot('setup-36-language-english'),
     press('Next'),
     wait(300),
-    shot('setup-37-model-english')
+    shot('setup-37-safety-english'),
+    acknowledge,
+    wait(200),
+    press('Next'),
+    wait(300),
+    shot('setup-38-model-english')
   ],
   { launch: true, url: view('setup'), out }
 )

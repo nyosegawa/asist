@@ -84,6 +84,17 @@ const chooseLanguage = async (locale: UiLocale): Promise<void> => {
   await act(async () => container.querySelector<HTMLButtonElement>(`.su-language[data-locale="${locale}"]`)!.click())
   await flush()
 }
+/** Ticks the box under the risks, which the next button of that screen waits for. */
+const tickRisks = async (): Promise<void> => {
+  await act(async () => container.querySelector<HTMLInputElement>('.su-ack input')!.click())
+  await flush()
+}
+/** Leaves the language screen and acknowledges the risks, which brings the model screen up. */
+const toModel = async (t: Translate): Promise<void> => {
+  await press(t('setup.next'))
+  await tickRisks()
+  await press(t('setup.next'))
+}
 /** Types a key on the model screen and verifies it, which every later screen depends on. */
 const verifyKey = async (t: Translate): Promise<void> => {
   const input = container.querySelector<HTMLInputElement>('#su-key')!
@@ -106,6 +117,7 @@ beforeEach(async () => {
   qwenTtsRecommended = false
   settings = {
     onboardingVersion: 0,
+    safetyNoticeVersion: 0,
     uiLocale: 'ja-JP',
     conversationLocale: 'ja-JP',
     region: 'JP',
@@ -168,11 +180,27 @@ describe('first-run setup', () => {
     expect(api.saveSettings).toHaveBeenLastCalledWith({ uiLocale: 'ja-JP', conversationLocale: 'ja-JP', region: 'JP' })
   })
 
+  it('keeps the next button of the risks disabled until the box is ticked, and saves the acknowledgement', async () => {
+    await render()
+    await press(ja('setup.next'))
+    expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.safety.title'))
+    expect(button(ja('setup.next')).disabled).toBe(true)
+
+    await tickRisks()
+    expect(api.saveSettings).toHaveBeenLastCalledWith({ safetyNoticeVersion: 1 })
+    expect(button(ja('setup.next')).disabled).toBe(false)
+
+    // Clearing the box withdraws the acknowledgement, and the step waits again.
+    await tickRisks()
+    expect(api.saveSettings).toHaveBeenLastCalledWith({ safetyNoticeVersion: 0 })
+    expect(button(ja('setup.next')).disabled).toBe(true)
+  })
+
   it('offers VOICEVOX, AivisSpeech, the backchannel classifier and MaAI for a Japanese conversation', async () => {
     status = { ...status, asr: true }
     await render()
     const t = createTranslator('ja-JP')
-    await press(t('setup.next'))
+    await toModel(t)
     await verifyKey(t)
     await press(t('setup.next'))
     await press(t('setup.speaking.voice.title'))
@@ -193,7 +221,7 @@ describe('first-run setup', () => {
     await render()
     const t = createTranslator('en-US')
     await chooseLanguage('en-US')
-    await press(t('setup.next'))
+    await toModel(t)
     await verifyKey(t)
     await press(t('setup.next'))
     await press(t('setup.speaking.voice.title'))
@@ -211,7 +239,7 @@ describe('first-run setup', () => {
 
   it('derives the conversation and aizuchi models from the key of a provider other than Anthropic and enables the next step', async () => {
     await render()
-    await press(ja('setup.next'))
+    await toModel(ja)
     expect(button(ja('setup.next')).disabled).toBe(true)
     await act(async () => container.querySelector<HTMLButtonElement>('.su-provider[data-provider="openai"]')!.click())
     const input = container.querySelector<HTMLInputElement>('#su-key')!
@@ -231,7 +259,7 @@ describe('first-run setup', () => {
 
   it('skips the listening, reading and microphone steps in text-only mode and completes with TTS turned off', async () => {
     await render()
-    await press(ja('setup.next'))
+    await toModel(ja)
     const input = container.querySelector<HTMLInputElement>('#su-key')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'sk-ant-test')
@@ -268,7 +296,7 @@ describe('first-run setup', () => {
     qwenTtsRecommended = true
     await render()
     const t = createTranslator('ja-JP')
-    await press(t('setup.next'))
+    await toModel(t)
     await verifyKey(t)
     await press(t('setup.next'))
     await press(t('setup.speaking.voice.title'))
