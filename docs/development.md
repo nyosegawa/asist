@@ -43,6 +43,8 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 6. `npm run dist:mac:unsigned`(ネイティブのヘルパー、git、uv を含めて、署名なしのアプリまで作ります)
 7. アプリの中の git と uv が動くこと
 
+`website/` の中だけを変えたときは、この job はスキップします。スキップした job は通過したものとして扱われるので、プルリクエストはそのままマージできます。
+
 サイト(`website/`)は別の job が Ubuntu でビルドし、全ページのリンクと画像の行き先を確かめます。CodeQL(`.github/workflows/codeql.yml`)は、main への push のたびと毎週 1 回、アプリに入る部分の JavaScript/TypeScript、Python、Actions を解析します。プルリクエストでは動きません。開発のときだけ使う `scripts/`、`tests/`、`website/`、`promotions/`、`skills/` は、解析の対象から外しています(`.github/codeql/codeql-config.yml`)。
 
 コンパイルした git と取得した uv は、`scripts/build-git.sh` と `scripts/fetch-uv.sh` の内容をキーにしてキャッシュします。`npm audit --omit=dev` は、main への push のたびと、毎週火曜の朝 6 時(日本時間)に別のジョブで動きます。依存関係の脆弱性は、コードを変えなくても後から公開されるからです。署名付きのビルドと公証は、まだ CI に入れていません。
