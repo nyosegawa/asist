@@ -30,3 +30,7 @@ You need an API key from one of these providers. You enter it during the first-t
 | VOICEVOX or AivisSpeech | Reading Japanese aloud. If it is in your Applications folder, ASIST starts it in the background and connects to it. |
 
 The uv bundled with the app creates the Python environments for the models that run on your Mac. uv also downloads Python at that point, so you do not need to install anything beforehand.
+
+## Before you start
+
+ASIST's answers can be wrong, the APIs are billed to your own accounts, and an Agent job you approve can change your files. Before you start, read [Using ASIST safely](/en/docs/start/safety/).

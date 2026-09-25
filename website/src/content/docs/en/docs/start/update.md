@@ -2,7 +2,7 @@
 title: Updating and uninstalling
 description: How new versions arrive, and how to remove ASIST.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 ## Updating

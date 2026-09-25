@@ -2,7 +2,7 @@
 title: インストール
 description: dmg から ASIST を入れて、最初に開くまで。
 sidebar:
-  order: 2
+  order: 3
 ---
 
 1. [Releases](https://github.com/nyosegawa/asist/releases/latest) から `ASIST-arm64.dmg` をダウンロードします。

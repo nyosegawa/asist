@@ -2,7 +2,7 @@
 title: Installation
 description: Install ASIST from the dmg and open it for the first time.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 1. Download `ASIST-arm64.dmg` from [Releases](https://github.com/nyosegawa/asist/releases/latest).
