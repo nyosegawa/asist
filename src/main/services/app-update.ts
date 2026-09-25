@@ -37,7 +37,13 @@ export function initAppUpdates(): void {
   setInterval(() => controller?.check(), CHECK_INTERVAL_MS)
 }
 
-export function installAppUpdate(): void {
-  if (!controller) throw new Error('automatic updates are off in this build')
-  controller.install()
+/**
+ * The install of the downloaded version, checked now so that the about page hears why it cannot start.
+ * Installing quits the app, so the caller runs it through the same gate as any other quit.
+ */
+export function readyUpdateInstall(): () => void {
+  const ready = controller
+  if (!ready) throw new Error('automatic updates are off in this build')
+  if (ready.state.phase !== 'ready') throw new Error(`no update is ready to install (${ready.state.phase})`)
+  return () => ready.install()
 }
