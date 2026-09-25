@@ -310,6 +310,7 @@ ASIST_SELFTEST=1 npx electron .
 紹介ページは [website/](website/) にあり、https://asist-agent.com で公開しています。X に投稿する紹介動画は [promotions/x-promo-video/](promotions/x-promo-video/) にあります。どちらもアプリには含まれません。
 
 ```bash
+npm --prefix website install # 紹介ページの依存を入れます(最初に一度だけ)
 npm run website       # 紹介ページを http://localhost:5194 で開きます
 npm run website:deploy # 紹介ページを asist-agent.com に公開します
 npm run promo:video   # 紹介動画を promotions/x-promo-video/out/asist-promo.mp4 に作ります

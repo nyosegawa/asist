@@ -64,7 +64,8 @@ h1, h2, h3 { margin: 0; }
 /* The question comes from the girl and the answer from the robot next to her. */
 .hero-art .bubble { z-index: 2; white-space: nowrap; }
 /* The girl's head is 53% across the illustration and its top 24% down it. */
-.hero-art .you { left: 53%; bottom: 79%; translate: -50% 0; transform: rotate(-3deg); }
+/* Astro's build drops a translate property that shares a rule with transform (Astro 7.3, 2026-09-25), so both go in transform. */
+.hero-art .you { left: 53%; bottom: 79%; transform: translate(-50%, 0) rotate(-3deg); }
 .hero-art .you::after { left: calc(50% - 7px); bottom: -6px; }
 .hero-art .me { left: 73%; top: 41%; background: var(--sky); }
 .hero-art .me::after { left: -6px; top: 40%; background: var(--sky); }
