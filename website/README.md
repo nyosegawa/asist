@@ -1,6 +1,6 @@
 # ASIST の紹介ページ
 
-ASIST を紹介するサイトで、https://asist-agent.com で公開しています。[Astro](https://astro.build) で静的な HTML に書き出し、Cloudflare の Worker(`wrangler.jsonc`、`worker.js`)で配信します。www.asist-agent.com は asist-agent.com に転送します。
+ASIST を紹介するサイトで、https://asist-agent.com で公開しています。[Astro](https://astro.build) で静的な HTML に書き出し、Cloudflare の Worker `asist-website`(`wrangler.jsonc`)が、スクリプトを持たずに書き出したファイルだけを配信します。www.asist-agent.com は、別の Worker `asist-website-www`(`www/`)が asist-agent.com に転送します。
 
 このフォルダは、アプリとは別の npm のプロジェクトです。アプリの依存と CI に Astro を混ぜないためです。最初に一度だけ依存を入れます。
 

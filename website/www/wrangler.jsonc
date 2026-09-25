@@ -1,0 +1,9 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "asist-website-www",
+  "account_id": "8cd37584be94a0254705a51d5b69bfc6",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "www.asist-agent.com", "custom_domain": true }]
+}
