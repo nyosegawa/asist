@@ -152,6 +152,9 @@ const api: RendererApi = {
   openExternal: (url) => ipcRenderer.invoke(IpcChannel.OpenExternal, url),
   revealPath: (path) => ipcRenderer.invoke(IpcChannel.RevealPath, path),
   appVersion: () => ipcRenderer.invoke(IpcChannel.AppVersion),
+  appUpdateState: () => ipcRenderer.invoke(IpcChannel.AppUpdateState),
+  onAppUpdateChanged: subscribe(IpcChannel.AppUpdateChanged),
+  appUpdateInstall: () => ipcRenderer.invoke(IpcChannel.AppUpdateInstall),
   apiUsage: () => ipcRenderer.invoke(IpcChannel.ApiUsage)
 }
 
