@@ -459,7 +459,8 @@ export const mockApi: RendererApi = {
   memoryDocuments: async () => demoDocuments(demoMemory),
   memoryDocumentRead: async (file) => demoMemory[file] ?? null,
   memoryDocumentWrite: async (file, markdown, base) => {
-    if ((demoMemory[file] ?? null) !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
+    if (demoMemory[file] === undefined) throw new Error(errorText('memory.errors.removedSinceOpened'))
+    if (demoMemory[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
     const errors = validateDocument(file, markdown, translate)
     if (errors.length > 0) throw new Error(errors.join(' / '))
     demoMemory[file] = markdown

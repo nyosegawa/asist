@@ -50,8 +50,12 @@ const matches = (doc: MemoryDocument, filter: string): boolean => {
   return [doc.title, doc.summary, ...doc.aliases, ...doc.headings].some((text) => text.toLowerCase().includes(needle))
 }
 
-/** An edit keeps the text it started from, which a save hands to main as the version it replaces. */
-type Mode = { kind: 'read' } | { kind: 'edit'; draft: string; base: string } | { kind: 'create' }
+/**
+ * An edit keeps the document it edits and the text it started from, which a save hands to main as the
+ * version it replaces. It ends only through leaveEditing or a save, so the draft stays even when the
+ * document leaves the list, as when a curation removes it.
+ */
+type Mode = { kind: 'read' } | { kind: 'edit'; doc: MemoryDocument; draft: string; base: string } | { kind: 'create' }
 
 /** App passes `open`, so the view keeps drawing through the closing animation even after the store says it is closed. */
 export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
@@ -71,7 +75,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [revision, setRevision] = useState(0)
   // A page that has just been created goes straight into editing once it has loaded.
-  const editOnLoad = useRef<string | null>(null)
+  const editOnLoad = useRef<MemoryDocument | null>(null)
 
   const reload = async (): Promise<MemoryDocument[]> => {
     const list = await window.api.memoryDocuments()
@@ -90,27 +94,29 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     }
   }, [open, revision])
 
+  const editing = mode.kind === 'edit'
   // With no document chosen, or one the list does not have, the newest diary entry is shown, or the
-  // first document when there is no diary.
+  // first document when there is no diary. An edit keeps its document chosen until it ends.
   useEffect(() => {
-    if (!loaded || (selected && documents.some((doc) => doc.file === selected))) return
+    if (!loaded || editing || (selected && documents.some((doc) => doc.file === selected))) return
     update('memory', { file: (documents.find((doc) => doc.kind === 'journal') ?? documents[0])?.file ?? null })
-  }, [loaded, documents, selected, update])
+  }, [loaded, editing, documents, selected, update])
 
   useEffect(() => {
     if (!open || !selected) return
     let active = true
     setMarkdown(null)
-    setMode({ kind: 'read' })
+    setMode((current) => (current.kind === 'edit' ? current : { kind: 'read' }))
     window.api
       .memoryDocumentRead(selected)
       .then((text) => {
         if (!active) return
         const value = text ?? ''
         setMarkdown(value)
-        if (editOnLoad.current === selected) {
+        const created = editOnLoad.current
+        if (created?.file === selected) {
           editOnLoad.current = null
-          setMode({ kind: 'edit', draft: value, base: value })
+          setMode({ kind: 'edit', doc: created, draft: value, base: value })
         }
       })
       .catch((err: unknown) => active && setError(displayError(err)))
@@ -140,7 +146,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, markdown, closeApp])
 
-  const doc = documents.find((candidate) => candidate.file === selected) ?? null
+  const doc = mode.kind === 'edit' ? mode.doc : (documents.find((candidate) => candidate.file === selected) ?? null)
   const shown = useMemo(() => documents.filter((candidate) => matches(candidate, filter)), [documents, filter])
   const self = shown.filter((candidate) => candidate.kind === 'instruction' || candidate.kind === 'me' || candidate.kind === 'user')
   const journals = shown.filter((candidate) => candidate.kind === 'journal')
@@ -161,22 +167,29 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     setMode({ kind: 'read' })
     setSelected(file)
   }
+  const startCreate = async (): Promise<void> => {
+    if (mode.kind === 'edit' && !(await leaveEditing())) return
+    setMode({ kind: 'create' })
+  }
   const save = (): void => {
-    if (mode.kind !== 'edit' || !doc || busy) return
+    if (mode.kind !== 'edit' || busy) return
+    const { doc: edited, draft, base } = mode
     setBusy(true)
     void window.api
-      .memoryDocumentWrite(doc.file, mode.draft, mode.base)
+      .memoryDocumentWrite(edited.file, draft, base)
       .then(
         () => {
-          toast({ kind: 'ok', title: t('memory.saved'), body: titleOf(doc, t, locale) })
+          toast({ kind: 'ok', title: t('memory.saved'), body: titleOf(edited, t, locale) })
+          setMode({ kind: 'read' })
           // Main may have written the draft with a final newline added, so the next edit starts from the file.
           setRevision((v) => v + 1)
         },
         async (err: unknown) => {
           toast({ kind: 'error', title: t('memory.saveFailed'), body: displayError(err) })
-          // The draft stays in the editor. The document is read again for the view the editor leaves to,
-          // because a save is refused when a curation has changed it since the editor opened.
-          const text = await window.api.memoryDocumentRead(doc.file)
+          // The draft stays in the editor. The document and the list are read again for the view the editor
+          // leaves to, because a save is refused when a curation has changed or removed the document since
+          // the editor opened.
+          const text = await window.api.memoryDocumentRead(edited.file)
           setMarkdown(text ?? '')
           await reload()
         }
@@ -190,7 +203,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
       .memoryDocumentCreate({ name })
       .then(async (created) => {
         await reload()
-        editOnLoad.current = created.file
+        editOnLoad.current = created
         setSelected(created.file)
         toast({ kind: 'ok', title: t('memory.created'), body: created.title })
       })
@@ -302,7 +315,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
             <h3>
               {t('memory.pages')}
               <b>{pages.length}</b>
-              <button type="button" className="my-side-action" disabled={busy} onClick={() => setMode({ kind: 'create' })}>
+              <button type="button" className="my-side-action" disabled={busy} onClick={() => void startCreate()}>
                 <Plus size={13} />
                 {t('memory.newPage')}
               </button>
@@ -350,7 +363,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
                         type="button"
                         className="my-btn"
                         disabled={markdown === null || busy}
-                        onClick={() => setMode({ kind: 'edit', draft: markdown ?? '', base: markdown ?? '' })}
+                        onClick={() => setMode({ kind: 'edit', doc, draft: markdown ?? '', base: markdown ?? '' })}
                       >
                         <Pencil size={13} />
                         {t('memory.doc.edit')}
@@ -393,7 +406,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
                 <button type="button" className="cal-btn" disabled={busy} onClick={curate}>
                   {t('memory.empty.curate')}
                 </button>
-                <button type="button" className="cal-btn" disabled={busy} onClick={() => setMode({ kind: 'create' })}>
+                <button type="button" className="cal-btn" disabled={busy} onClick={() => void startCreate()}>
                   {t('memory.newPage')}
                 </button>
               </div>

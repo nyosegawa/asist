@@ -35,6 +35,7 @@ const api = {
   memoryDocuments: vi.fn(async () => listed().map((file) => documentOf(file, files[file]))),
   memoryDocumentRead: vi.fn(async (file: string) => files[file] ?? null),
   memoryDocumentWrite: vi.fn(async (file: string, markdown: string, base: string) => {
+    if (files[file] === undefined) throw new Error(errorText('memory.errors.removedSinceOpened'))
     if (files[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
     files[file] = markdown
     return documentOf(file, markdown)
@@ -214,19 +215,61 @@ describe('the memory screen', () => {
     expect(useViewStore.getState().open?.app).not.toBe('memory')
   })
 
+  it('keeps the draft of a page a curation removed while it was edited, refuses to save it with the reason, and moves on only once the draft is thrown away', async () => {
+    const view = await render()
+    await act(async () => itemByTitle(view, '松葉軒').click())
+    await act(async () => {})
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
+    const draft = FILES['pages/松葉軒.md'].replace('疲れた日に名前が出る。', '疲れた日に名前が出る。長い下書き。')
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, draft))
+    // A curation moves what the page held into another and removes it.
+    delete files['pages/松葉軒.md']
+    const saveButton = (): HTMLButtonElement => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent?.startsWith(t('common.save')))!
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await act(async () => saveButton().click())
+      await settle()
+      expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', body: t('memory.errors.removedSinceOpened') })
+      expect(files['pages/松葉軒.md']).toBeUndefined()
+      expect(useConfirmStore.getState().queue).toEqual([])
+      expect(useViewStore.getState().open).toEqual({ app: 'memory', file: 'pages/松葉軒.md' })
+      expect(heading(view)).toBe('松葉軒')
+      expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(draft)
+    }
+    expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介'])
+
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('common.cancel'))!.click())
+    await answerConfirm(true)
+    await settle()
+    expect(useViewStore.getState().open).toEqual({ app: 'memory', file: 'journal/2026-09-14.md' })
+    expect(heading(view)).toBe('2026年9月14日(月)')
+  })
+
+  it('asks before "New page" throws an unsaved edit away', async () => {
+    const view = await render()
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, '書きかけ'))
+    await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
+    await answerConfirm(false)
+    expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('書きかけ')
+    await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
+    await answerConfirm(true)
+    expect(view.querySelector(`form[aria-label="${t('memory.newPage')}"]`)).not.toBeNull()
+    expect(view.querySelector('textarea')).toBeNull()
+  })
+
   it('asks before the back button, the Dock, a card or open_app throws an unsaved edit away, and keeps it when the answer is no', async () => {
     const view = await render()
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
     const draft = FILES['journal/2026-09-14.md'].replace('## 今日の私', '## 書きかけ\n長い下書き。\n\n## 今日の私')
     await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, draft))
     // open_app naming the document already shown leaves the draft where it is without asking.
-    await act(async () => useViewStore.getState().openApp({ app: 'memory', file: 'journal/2026-09-14.md' }))
+    await act(async () => void useViewStore.getState().openApp({ app: 'memory', file: 'journal/2026-09-14.md' }))
     expect(useConfirmStore.getState().queue).toEqual([])
     const leaves = [
       () => view.querySelector<HTMLButtonElement>('header > button')!.click(),
-      () => useViewStore.getState().toggleApp('memory'),
-      () => useViewStore.getState().openApp({ app: 'memory', file: 'pages/松葉軒.md' }),
-      () => useViewStore.getState().openApp({ app: 'tasks' })
+      () => void useViewStore.getState().toggleApp('memory'),
+      () => void useViewStore.getState().openApp({ app: 'memory', file: 'pages/松葉軒.md' }),
+      () => void useViewStore.getState().openApp({ app: 'tasks' })
     ]
     for (const leave of leaves) {
       await act(async () => leave())
@@ -234,7 +277,7 @@ describe('the memory screen', () => {
       expect(useViewStore.getState().open).toEqual({ app: 'memory', file: 'journal/2026-09-14.md' })
       expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(draft)
     }
-    await act(async () => useViewStore.getState().openApp({ app: 'tasks' }))
+    await act(async () => void useViewStore.getState().openApp({ app: 'tasks' }))
     await answerConfirm(true)
     expect(useViewStore.getState().open).toEqual({ app: 'tasks', view: 'board', taskId: null })
     expect(api.memoryDocumentWrite).not.toHaveBeenCalled()

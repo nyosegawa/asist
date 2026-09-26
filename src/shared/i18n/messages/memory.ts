@@ -1146,6 +1146,19 @@ export const memory = defineMessages({
       'pt-BR': 'Mudou depois de aberto, por isso não foi salvo. “Cancelar” mostra a versão atual',
       'es-419': 'Cambió después de abrirlo, así que no se guardó. «Cancelar» muestra la versión actual',
       'es-ES': 'Ha cambiado tras abrirlo y no se ha guardado. “Cancelar” muestra la versión actual'
+    },
+    removedSinceOpened: {
+      'ja-JP': '開いたあとに文書が消えたため、保存しませんでした。書いた内容を控えてから「キャンセル」を押してください',
+      'en-US': 'It was deleted after you opened it, so it was not saved. Copy what you wrote, then press "Cancel"',
+      'fr-FR': "Supprimé après l'ouverture, donc non enregistré. Copiez votre texte, puis cliquez sur « Annuler »",
+      'de-DE': 'Nach dem Öffnen gelöscht, daher nicht gespeichert. Kopieren Sie Ihren Text und wählen Sie „Abbrechen“',
+      'hi-IN': 'खोलने के बाद इसे हटा दिया गया, इसलिए सेव नहीं हुआ। लिखा हुआ कॉपी करें, फिर "रद्द करें" दबाएँ',
+      'id-ID': 'Dihapus setelah dibuka, jadi tidak disimpan. Salin tulisan Anda, lalu tekan “Batal”',
+      'it-IT': "Eliminato dopo l'apertura, quindi non salvato. Copia il testo, poi premi «Annulla»",
+      'ko-KR': '연 뒤에 문서가 삭제되어 저장하지 않았습니다. 쓴 내용을 복사한 뒤 “취소”를 누르세요',
+      'pt-BR': 'Excluído depois de aberto, por isso não foi salvo. Copie o que escreveu e clique em “Cancelar”',
+      'es-419': 'Se eliminó después de abrirlo, así que no se guardó. Copia lo que escribiste y haz clic en «Cancelar»',
+      'es-ES': 'Se ha eliminado tras abrirlo y no se ha guardado. Copia lo que has escrito y pulsa “Cancelar”'
     }
   }
 })

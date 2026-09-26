@@ -157,6 +157,38 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(before + 1)
   })
 
+  it('refuses to save a page removed after the screen read it, rather than making it again', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    const opened = store.readDocument('pages/松葉軒.md')!
+    fs.rmSync(path.join(dir, 'pages', '松葉軒.md'))
+    const draft = opened.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(() => store.writeDocument('pages/松葉軒.md', draft, opened)).toThrow(errorText('memory.errors.removedSinceOpened'))
+    expect(store.readDocument('pages/松葉軒.md')).toBeNull()
+  })
+
+  it('leaves each file as it was when its commit fails, so that the same save can be made again', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'page'])
+    const before = commits(dir)
+    // A lock left behind by a git process that died stops every commit until it is removed.
+    fs.writeFileSync(path.join(dir, '.git', 'index.lock'), '')
+    const draft = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(() => store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)).toThrow()
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    expect(() => store.createPage('田中さん', PAGE_TEMPLATE)).toThrow()
+    expect(store.readDocument('pages/田中さん.md')).toBeNull()
+    expect(() => store.deleteDocument('pages/松葉軒.md')).toThrow()
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    fs.rmSync(path.join(dir, '.git', 'index.lock'))
+    expect(store.isClean()).toBe(true)
+    store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)
+    expect(store.readDocument('pages/松葉軒.md')).toBe(draft)
+    expect(commits(dir)).toBe(before + 1)
+  })
+
   it('refuses a named pipe at once instead of waiting for a writer, since git never shows one in a curation worktree', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)

@@ -199,19 +199,20 @@ export function readDocument(file: string, dir = memoryDir()): string | null {
 
 /**
  * Replaces a whole document and commits it, on the user's own action from the memory screen. `base` is
- * the text the screen read before the user started editing. A document that has changed since, as a
- * curation merged meanwhile changes it, is not written, because the save would take back what the other
- * writer added without anyone seeing it. A document that breaks the rules is not written either, and the
- * reason is thrown.
+ * the text the screen read before the user started editing. A document that has changed or gone since,
+ * as a curation merged meanwhile changes or removes it, is not written, because the save would take back
+ * what the other writer did without anyone seeing it; a removed page is not made again, since the
+ * curation removes one when it moves what it held elsewhere. A document that breaks the rules is not
+ * written either, and the reason is thrown.
  */
 export function writeDocument(file: string, markdown: string, base: string, dir = memoryDir()): MemoryDocument {
-  const full = documentPath(dir, file)
-  if (readFileOf(dir, file) !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
+  const current = readFileOf(dir, documentFile(file))
+  if (current === null) throw new Error(errorText('memory.errors.removedSinceOpened'))
+  if (current !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
-  fs.writeFileSync(full, text, { mode: 0o600 })
-  commit(dir, written('edited', { file }))
+  commitFile(dir, file, text, written('edited', { file }))
   return documentOf(file, text)
 }
 
@@ -219,16 +220,14 @@ export function writeDocument(file: string, markdown: string, base: string, dir 
 export function createPage(name: string, template: string, dir = memoryDir()): MemoryDocument {
   const input = parseMemoryPageInput({ name })
   const file = `${PAGES_DIR}/${input.name}.md`
-  const full = documentPath(dir, file)
-  if (fs.existsSync(full)) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
+  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
   // The name goes in through a function, because a replacement string reads `$&` or `$$` in it as a pattern.
   const markdown = template
     .replace(/^updated: .*$/m, `updated: ${localDateKey(new Date())}`)
     .replace(/^# .*$/m, () => `# ${input.name}`)
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errorText('memory.errors.templateInvalid', { errors: errors.join(' / ') }))
-  fs.writeFileSync(full, markdown, { mode: 0o600 })
-  commit(dir, written('pageCreated', { name: input.name }))
+  commitFile(dir, file, markdown, written('pageCreated', { name: input.name }))
   return documentOf(file, markdown)
 }
 
@@ -239,20 +238,36 @@ export function createPage(name: string, template: string, dir = memoryDir()): M
 export function deleteDocument(file: string, dir = memoryDir()): void {
   const kind = documentKindOf(file)
   if (kind !== 'page' && kind !== 'journal') throw new Error(errorText('memory.errors.deleteKind'))
-  const full = documentPath(dir, file)
-  if (!fs.existsSync(full)) throw new Error(errorText('memory.errors.notFound', { file }))
-  fs.rmSync(full)
-  commit(dir, written('deleted', { file }))
+  if (!fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.notFound', { file }))
+  commitFile(dir, file, null, written('deleted', { file }))
+}
+
+/**
+ * Puts one file in its new state, removing it for null, and commits it; when the commit fails the file
+ * goes back to what it held. Each change from the screen is meant to be a commit: the curation cuts its
+ * worktree from HEAD and would not see a change left on disk, and the screen would take such a change for
+ * someone else's and refuse its own next save of the document.
+ */
+function commitFile(dir: string, file: string, text: string | null, message: string): void {
+  const full = path.join(dir, file)
+  const put = (content: string | null): void => {
+    if (content === null) fs.rmSync(full, { force: true })
+    else fs.writeFileSync(full, content, { mode: 0o600 })
+  }
+  const before = readFileOf(dir, file)
+  put(text)
+  try {
+    git.commitAll(dir, message)
+  } catch (error) {
+    put(before)
+    throw error
+  }
 }
 
 /** The body of instruction.md, which goes whole into the system prompt, or null when it is missing or empty. */
 export function readInstruction(dir = memoryDir()): string | null {
   const text = readFileOf(dir, INSTRUCTION_FILE)
   return text === null ? null : instructionBody(text).trim() || null
-}
-
-function commit(dir: string, message: string): void {
-  git.commitAll(dir, message)
 }
 
 /** Whether the working tree has no uncommitted change, which the curation job checks before it starts. */

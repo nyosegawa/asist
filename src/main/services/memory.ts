@@ -128,7 +128,7 @@ export function documentRead(file: string): string | null {
 export function documentWrite(file: string, markdown: string, base: string): MemoryDocument {
   requireOpen()
   const document = store.writeDocument(file, markdown, base)
-  reindex()
+  reindexAfterChange()
   block.invalidate()
   return document
 }
@@ -138,7 +138,7 @@ export function documentCreate(input: unknown): MemoryDocument {
   const { name } = parseMemoryPageInput(input)
   const template = fs.readFileSync(path.join(skillSourceDir(), 'assets', 'templates', 'page.md'), 'utf8')
   const document = store.createPage(name, template)
-  reindex()
+  reindexAfterChange()
   return document
 }
 
@@ -146,8 +146,24 @@ export function documentCreate(input: unknown): MemoryDocument {
 export function documentDelete(file: string): void {
   requireOpen()
   store.deleteDocument(file)
-  reindex()
+  reindexAfterChange()
   block.invalidate()
+}
+
+/**
+ * Rebuilds the index after the screen committed a change, at once, so that a vector still being computed
+ * for the old text is not stored. The change stands once it is committed: a rebuild that fails leaves the
+ * index to be rebuilt by whatever reads it next, such as the screen's list right after, which reports the
+ * failure, rather than turning the saved change into a failed save whose retry would meet its own text as
+ * someone else's.
+ */
+function reindexAfterChange(): void {
+  try {
+    reindex()
+  } catch (error) {
+    loaded = false
+    console.error('memory: the index could not be rebuilt after a change from the screen:', errMessage(error))
+  }
 }
 
 /** Searches. When embedding is available the query is embedded and memory-index.search mixes the dense scores in. */

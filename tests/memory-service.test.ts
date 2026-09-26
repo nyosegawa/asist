@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -85,6 +86,21 @@ describe('memory service', () => {
     service.documentDelete('pages/松葉軒.md')
     expect(service.list()).toEqual([])
     expect(service.documents()).toEqual([])
+  })
+
+  it('counts a committed save as done when the index cannot be rebuilt, and leaves the failure to the next read', () => {
+    service.ensureLoaded()
+    fs.writeFileSync(memoryFile('pages', '松葉軒.md'), MATSUBAKEN)
+    service.reindex()
+    // git passes over a named pipe, while the rebuild refuses to read it.
+    const pipe = memoryFile('pages', 'x.md')
+    execFileSync('mkfifo', [pipe])
+    const rewritten = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(service.documentWrite('pages/松葉軒.md', rewritten, MATSUBAKEN)).toMatchObject({ summary: '本人の行きつけの店。' })
+    expect(fs.readFileSync(memoryFile('pages', '松葉軒.md'), 'utf8')).toBe(rewritten)
+    expect(() => service.documents()).toThrow('[asist:memory.errors.notRegular')
+    fs.rmSync(pipe)
+    expect(service.list()[0]).toMatchObject({ text: '本人の行きつけの店。' })
   })
 
   it('indexes me.md like the other pages, so that the assistant recalls its own page through search', async () => {
