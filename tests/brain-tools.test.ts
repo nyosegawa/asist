@@ -581,6 +581,18 @@ describe('brain tools registry', () => {
     expect(mocks.agent.discard).toHaveBeenCalledWith('w1')
   })
 
+  it('warns before a discard that the work inside the job\'s submodules is deleted with its worktree', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'pending', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed', submodules: ['vendor/sub'] } } as never)
+    mocks.agent.discardPreview.mockReturnValueOnce({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'vendor/sub | 2 +-', submodules: ['vendor/sub'] })
+    mocks.requestConfirm.mockResolvedValueOnce(false)
+    const { executeClientTool } = await load()
+    await executeClientTool('discard_agent_job', { jobId: 'w1' }, makeCtx().ctx)
+    const request = mocks.requestConfirm.mock.calls[0][0] as { detail: string; destructive: boolean }
+    expect(request.destructive).toBe(true)
+    expect(request.detail).toContain(ja('jobs.discard.submoduleWork', { paths: 'vendor/sub' }))
+    expect(mocks.agent.discard).not.toHaveBeenCalled()
+  })
+
   it('gives the status, the summary and the log of a job whose diff cannot be read, and says why', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', summary: '直した', mergeState: 'pending', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
     mocks.agent.getLog.mockReturnValueOnce([{ t: 1, event: { kind: 'system', text: 'ログの一行' } }] as never)
@@ -624,7 +636,7 @@ describe('brain tools registry', () => {
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
-    expect(result.content).toContain(ja('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x' }))
+    expect(result.content).toContain(ja('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x', dir: '/ws/wt' }))
     expect(mocks.requestConfirm).not.toHaveBeenCalled()
     expect(mocks.agent.merge).not.toHaveBeenCalled()
   })

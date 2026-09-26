@@ -447,7 +447,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           review = agentRunner.diff(job.id)
           if (review.commit !== commit) throw new Error(errorText('jobs.worktree.reviewStale'))
           if (review.submodules.length > 0) {
-            throw new Error(errorText('jobs.merging.submodules', { paths: review.submodules.join(', '), branch: job.worktree!.branch }))
+            throw new Error(errorText('jobs.merging.submodules', { paths: review.submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir }))
           }
           if (!review.stat) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
         } catch (err) {

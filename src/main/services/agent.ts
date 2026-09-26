@@ -304,20 +304,18 @@ export function isGitRepo(cwd: string): boolean {
 }
 
 /**
- * Tidies the worktree once a job ends. Uncommitted changes are committed and left waiting to be merged;
- * a worktree with no change is removed. A failure is recorded as `error` so that the work survives.
+ * Tidies the worktree once a job ends. Uncommitted changes are committed and left waiting to be merged, or,
+ * when the job touched a submodule, left for the user to merge or discard; a worktree with no change is
+ * removed. A failure is recorded as `error` so that the work survives.
  */
 function settleWorktree(job: AgentJob): Partial<AgentJob> {
   assertWriterStopped(job)
   try {
     const settled = captureWorktree(job)
-    pushLog(job.id, 'system', t(settled.mergeState === 'unchanged'
-      ? 'jobs.worktree.unchanged'
-      : 'jobs.worktree.committed'))
-    const submodules = settled.worktree?.submodules
-    if (submodules) {
-      pushLog(job.id, 'system', t('jobs.merging.submodules', { paths: submodules.join(', '), branch: settled.worktree!.branch }))
-    }
+    const worktree = settled.worktree!
+    pushLog(job.id, 'system', worktree.submodules
+      ? t('jobs.merging.submodules', { paths: worktree.submodules.join(', '), branch: worktree.branch, dir: worktree.dir })
+      : t(settled.mergeState === 'unchanged' ? 'jobs.worktree.unchanged' : 'jobs.worktree.committed'))
     return settled
   } catch (err) {
     pushLog(job.id, 'stderr', t('jobs.worktree.settleFailed', { detail: errorMessage(err) }))

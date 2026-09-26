@@ -31,7 +31,7 @@ const expectRefused = (agent: Agent, id: string, submodules: string[], head: str
   const review = agent.diff(id)
   expect(review.submodules).toEqual(submodules)
   expect(() => agent.merge(id, review.commit, review.base)).toThrow(
-    errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: job.worktree!.branch })
+    errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
   )
   expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
   expect(fs.existsSync(job.worktree!.dir)).toBe(true)
@@ -527,6 +527,17 @@ describe('a repository with a submodule', () => {
     expect(agent.discardPreview(job.id).submodules).toEqual(['vendor/sub'])
   })
 
+  it('tells in the log of a job that touched a submodule only that the user merges or discards it, not that it waits to be merged', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    const { branch, dir } = agent.get(job.id)!.worktree!
+    const texts = agent.getLog(job.id).map((line) => ('text' in line.event ? line.event.text : ''))
+    expect(texts).toContain(ja('jobs.merging.submodules', { paths: 'vendor/sub', branch, dir }))
+    expect(texts).not.toContain(ja('jobs.worktree.committed'))
+  })
+
   it('keeps a submodule bump the user made on main when the agent merged main into its branch, and shows only the agent\'s change', async () => {
     const sub = path.join(mocks.root, 'sub')
     git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'v2')
@@ -824,8 +835,8 @@ describe('a repository with a submodule', () => {
     git(inside, 'checkout', '-q', '-b', 'later')
     git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'later work')
     git(inside, 'checkout', '-q', '-')
-    const branch = agent.get(job.id)!.worktree!.branch
-    expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch }))
+    const { branch, dir } = agent.get(job.id)!.worktree!
+    expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch, dir }))
     expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
     expect(fs.existsSync(inside)).toBe(true)
   })

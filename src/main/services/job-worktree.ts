@@ -98,7 +98,7 @@ export function assertMergeable(job: AgentJob, commit: string, base: string): vo
   if (mergeBase(worktree, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
   const submodules = sortedUnique([...touchedSubmodules(worktree, base, commit), ...git.submodulesWithWork(worktree.dir)])
   if (submodules.length > 0) {
-    throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch }))
+    throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir }))
   }
   if (!git.hasChanges(worktree.repo, base, commit)) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
 }

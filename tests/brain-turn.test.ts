@@ -723,6 +723,15 @@ describe('brain turn', () => {
     expect(notices.map((text) => text.includes('merge_agent_job'))).toEqual([true, false, false])
   })
 
+  it('tells the model which worktree holds the commits of a job that touched a submodule, and offers only the discard', async () => {
+    await loadBrain()
+    const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+    const worktree = { dir: '/w/job-1', repo: '/r', branch: 'asist/b', base: 'c', submodules: ['vendor/sub'] }
+    const text = reportNotice({ ...FINISHED_JOB, worktree, mergeState: 'pending' } as AgentJob).text
+    for (const value of ['vendor/sub', 'asist/b', '/w/job-1', 'discard_agent_job']) expect(text).toContain(value)
+    expect(text).not.toContain('merge_agent_job')
+  })
+
   it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     try {

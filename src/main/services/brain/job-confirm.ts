@@ -81,10 +81,10 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
       t('jobs.confirm.job', { title }),
       t('jobs.confirm.place', { place: target.dir }),
       t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
-      ...(target.submodules.length > 0 ? [t('jobs.merging.submodules', { paths: target.submodules.join(', '), branch: target.branch })] : []),
       ...(target.stat ? ['', target.stat] : []),
       '',
-      t('jobs.confirm.discardWarning')
+      t('jobs.confirm.discardWarning'),
+      ...(target.submodules.length > 0 ? [t('jobs.discard.submoduleWork', { paths: target.submodules.join(', ') })] : [])
     ].join('\n'),
     confirmLabel: t('jobs.confirm.discard'),
     destructive: true

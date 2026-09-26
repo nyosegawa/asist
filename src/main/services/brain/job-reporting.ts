@@ -42,8 +42,8 @@ const REPORT: Readonly<
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
   },
   submodules: {
-    ja: ` このジョブはサブモジュール({paths})を変えたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。ユーザー自身が取り込むか、捨てる(discard_agent_job)かを伝えること。`,
-    en: ` This job changed submodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Tell the user they can merge it themselves or throw it away with discard_agent_job.`
+    ja: ` このジョブはサブモジュール({paths})を変えたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。サブモジュールの中で作ったコミットはworktree({dir})の中の複製にしかないので、ユーザーのチェックアウトでgit submodule updateをしても取ってこられない。ユーザー自身がそこからpushしてブランチを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとその複製も消える。`,
+    en: ` This job changed submodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Commits made inside a submodule exist only in the copy in the worktree ({dir}), so git submodule update in the user's checkout cannot fetch them. Tell the user they can push them from there and merge the branch themselves, or throw the job away with discard_agent_job, which deletes that copy too.`
   },
   mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
   merged: { ja: ` 変更はすでに取り込んだ。`, en: ` The changes have already been taken in.` },
@@ -134,7 +134,7 @@ export function reportNotice(job: AgentJob): { notice: NoticeKind; text: string 
   const submodules = job.worktree?.submodules
   const mergeNote =
     job.mergeState === 'pending' && submodules
-      ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch })
+      ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
       : job.mergeState === 'pending'
         ? promptText(locale, REPORT.mergePending)
         : job.mergeState === 'merged'

@@ -1294,6 +1294,19 @@ export const jobs = defineMessages({
       'pt-BR': 'As alterações foram descartadas e o worktree, removido',
       'es-419': 'Se descartaron los cambios y se quitó el worktree',
       'es-ES': 'Se han descartado los cambios y se ha eliminado el worktree'
+    },
+    submoduleWork: {
+      'ja-JP': 'サブモジュール({paths})の中の作業は、この worktree にしかないことがあります。捨てると、それも元に戻せません。',
+      'en-US': 'The work inside the submodules ({paths}) may exist only in this worktree. Discarding deletes it too, and it cannot be restored.',
+      'fr-FR': "Le travail dans les sous-modules ({paths}) n'existe peut-être que dans ce worktree. L'abandonner le supprime aussi, sans retour possible.",
+      'de-DE': 'Die Arbeit in den Submodulen ({paths}) gibt es möglicherweise nur in diesem worktree. Beim Verwerfen wird sie ebenfalls gelöscht und lässt sich nicht wiederherstellen.',
+      'hi-IN': 'सबमॉड्यूल ({paths}) के अंदर का काम शायद सिर्फ़ इसी worktree में है। छोड़ने पर वह भी मिट जाएगा और वापस नहीं आएगा।',
+      'id-ID': 'Pekerjaan di dalam submodul ({paths}) mungkin hanya ada di worktree ini. Membuangnya juga menghapus pekerjaan itu, dan tidak bisa dikembalikan.',
+      'it-IT': 'Il lavoro nei sottomoduli ({paths}) potrebbe esistere solo in questo worktree. Scartandolo si cancella anche quello, senza possibilità di recupero.',
+      'ko-KR': '서브모듈({paths}) 안의 작업은 이 worktree에만 있을 수 있습니다. 버리면 그것도 지워지며 되돌릴 수 없습니다.',
+      'pt-BR': 'O trabalho dentro dos submódulos ({paths}) pode existir só neste worktree. Descartar apaga isso também, e não há como recuperar.',
+      'es-419': 'El trabajo dentro de los submódulos ({paths}) puede existir solo en este worktree. Al descartarlo también se borra, y no se puede recuperar.',
+      'es-ES': 'El trabajo dentro de los submódulos ({paths}) puede existir solo en este worktree. Al descartarlo también se borra, y no se puede recuperar.'
     }
   },
   diff: {
@@ -1631,17 +1644,17 @@ export const jobs = defineMessages({
       'es-ES': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.'
     },
     submodules: {
-      'ja-JP': 'このジョブはサブモジュール({paths})を変更したので、ASIST では取り込めません。ブランチ {branch} を自分で取り込むか、捨ててください。',
-      'en-US': 'This job changed submodules ({paths}), so ASIST cannot merge it. Merge the branch {branch} yourself, or discard it.',
-      'fr-FR': 'Ce job a modifié des sous-modules ({paths}) : ASIST ne peut pas le fusionner. Fusionnez vous-même la branche {branch}, ou abandonnez-le.',
-      'de-DE': 'Dieser Job hat Submodule geändert ({paths}), deshalb kann ASIST ihn nicht übernehmen. Übernehmen Sie den Branch {branch} selbst, oder verwerfen Sie ihn.',
-      'hi-IN': 'इस जॉब ने सबमॉड्यूल ({paths}) बदले हैं, इसलिए ASIST इसे मर्ज नहीं कर सकता। ब्रांच {branch} को खुद मर्ज करें, या इसे छोड़ दें।',
-      'id-ID': 'Pekerjaan ini mengubah submodul ({paths}), jadi ASIST tidak bisa menggabungkannya. Gabungkan branch {branch} sendiri, atau buang pekerjaan ini.',
-      'it-IT': 'Questo incarico ha modificato dei sottomoduli ({paths}), quindi ASIST non può integrarlo. Integra tu il branch {branch}, oppure scartalo.',
-      'ko-KR': '이 작업은 서브모듈({paths})을 바꿨기 때문에 ASIST가 병합할 수 없습니다. {branch} 브랜치를 직접 병합하거나 버리십시오.',
-      'pt-BR': 'Este job alterou submódulos ({paths}), então o ASIST não pode mesclá-lo. Mescle você mesmo o branch {branch}, ou descarte o job.',
-      'es-419': 'Este trabajo cambió submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo.',
-      'es-ES': 'Este trabajo ha cambiado submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo.'
+      'ja-JP': 'このジョブはサブモジュール({paths})を変更したので、ASIST では取り込めません。ブランチ {branch} を自分で取り込むか、捨ててください。サブモジュールの中で作ったコミットは worktree({dir})の中の複製にしかないため、先にそこから push しないと、あなたのチェックアウトの git submodule update では取ってこられません。',
+      'en-US': 'This job changed submodules ({paths}), so ASIST cannot merge it. Merge the branch {branch} yourself, or discard it. Commits made inside a submodule exist only in the copy in the worktree ({dir}): push them from there first, or git submodule update in your checkout cannot fetch them.',
+      'fr-FR': "Ce job a modifié des sous-modules ({paths}) : ASIST ne peut pas le fusionner. Fusionnez vous-même la branche {branch}, ou abandonnez-le. Les commits faits dans un sous-module n'existent que dans la copie du worktree ({dir}) : poussez-les d'abord depuis là, sinon git submodule update dans votre copie ne pourra pas les récupérer.",
+      'de-DE': 'Dieser Job hat Submodule geändert ({paths}), deshalb kann ASIST ihn nicht übernehmen. Übernehmen Sie den Branch {branch} selbst, oder verwerfen Sie ihn. Commits in einem Submodul gibt es nur in der Kopie im worktree ({dir}): Pushen Sie sie zuerst von dort, sonst kann git submodule update in Ihrem Checkout sie nicht holen.',
+      'hi-IN': 'इस जॉब ने सबमॉड्यूल ({paths}) बदले हैं, इसलिए ASIST इसे मर्ज नहीं कर सकता। ब्रांच {branch} को खुद मर्ज करें, या इसे छोड़ दें। सबमॉड्यूल के अंदर बने commit सिर्फ़ worktree ({dir}) की कॉपी में हैं: पहले उन्हें वहीं से push करें, वरना आपके checkout में git submodule update उन्हें नहीं ला पाएगा।',
+      'id-ID': 'Pekerjaan ini mengubah submodul ({paths}), jadi ASIST tidak bisa menggabungkannya. Gabungkan branch {branch} sendiri, atau buang pekerjaan ini. Commit yang dibuat di dalam submodul hanya ada di salinan dalam worktree ({dir}): push dulu dari sana, kalau tidak git submodule update di checkout Anda tidak bisa mengambilnya.',
+      'it-IT': 'Questo incarico ha modificato dei sottomoduli ({paths}), quindi ASIST non può integrarlo. Integra tu il branch {branch}, oppure scartalo. I commit fatti dentro un sottomodulo esistono solo nella copia del worktree ({dir}): fai prima il push da lì, altrimenti git submodule update nel tuo checkout non riesce a recuperarli.',
+      'ko-KR': '이 작업은 서브모듈({paths})을 바꿨기 때문에 ASIST가 병합할 수 없습니다. {branch} 브랜치를 직접 병합하거나 버리십시오. 서브모듈 안에서 만든 커밋은 worktree({dir}) 안의 복사본에만 있으므로, 먼저 거기서 push하지 않으면 체크아웃에서 git submodule update로 가져올 수 없습니다.',
+      'pt-BR': 'Este job alterou submódulos ({paths}), então o ASIST não pode mesclá-lo. Mescle você mesmo o branch {branch}, ou descarte o job. Os commits feitos dentro de um submódulo só existem na cópia do worktree ({dir}): faça push de lá primeiro, senão o git submodule update no seu checkout não consegue buscá-los.',
+      'es-419': 'Este trabajo cambió submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo solo existen en la copia del worktree ({dir}): haz push desde ahí primero; si no, git submodule update en tu checkout no podrá traerlos.',
+      'es-ES': 'Este trabajo ha cambiado submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo solo existen en la copia del worktree ({dir}): haz push desde ahí primero; si no, git submodule update en tu checkout no podrá traerlos.'
     }
   },
   confirm: {
