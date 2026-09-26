@@ -409,6 +409,24 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('stops at once while a session is still opening, closes it when it arrives, and reports no error', async () => {
+    let connect!: () => void
+    mocks.connected = new Promise((resolve) => (connect = resolve))
+    const { engine, sessions, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    let stopped = false
+    const stopping = engine.stop().then(() => (stopped = true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(stopped).toBe(true)
+    expect(engine.state).toBe('off')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    connect()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions[0].closed).toBe(true)
+    await stopping
+  })
+
   it('closes a session that arrives only after its opening already failed', async () => {
     let connect!: () => void
     mocks.connected = new Promise((resolve) => (connect = resolve))

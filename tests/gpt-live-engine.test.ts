@@ -232,6 +232,23 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('stops at once while a session is still opening, closes its socket and reports no error', async () => {
+    const { engine, sockets, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    let stopped = false
+    const stopping = engine.stop().then(() => (stopped = true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(stopped).toBe(true)
+    expect(sockets[0].closed).toBe(true)
+    expect(engine.state).toBe('off')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    // The session the socket starts afterwards is no longer the engine's.
+    sockets[0].started()
+    expect(engine.state).toBe('off')
+    await stopping
+  })
+
   it('reports a server error once with its message, as the failure to connect when it comes before the session started', async () => {
     const { t } = await import('../src/main/services/i18n')
     const { engine, sockets, events } = await setup()
