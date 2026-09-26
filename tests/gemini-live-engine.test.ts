@@ -200,6 +200,32 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('shows a memory again after resuming from a handle issued before the note that showed it, and not one shown before the handle', async () => {
+    const STATION: InjectableMemory = { id: 'm-station', kind: 'section', page: '行きつけ', heading: '最寄り駅', text: '中野駅の北口', date: '' }
+    const { engine, sessions, findMemories } = await setup()
+    findMemories.mockImplementation(async (text: string) => [...(text.includes('いつもの') ? [CAFE] : []), ...(text.includes('駅') ? [STATION] : [])])
+    const shown = (session: FakeSession, memory: InjectableMemory): number =>
+      session.contents.filter((content) => JSON.stringify(content).includes(memory.text)).length
+    const first = await open(engine, sessions)
+    first.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    first.message({ serverContent: { inputTranscription: { text: '駅からの道は', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shown(first, STATION)).toBe(1)
+    // The model starts generating, which the provider offers no handle for, and the connection drops.
+    first.message({ sessionResumptionUpdate: { resumable: false } })
+    first.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    const second = await open(engine, sessions)
+    expect(second.params.resumptionHandle).toBe('h1')
+    second.message({ serverContent: { inputTranscription: { text: 'いつもの店から駅まで', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shown(second, STATION)).toBe(1)
+    expect(shown(second, CAFE)).toBe(0)
+    await engine.stop()
+  })
+
   it('shows a memory again once the session has had more audio since it than its sliding window can be assumed to keep', async () => {
     const { engine, sessions } = await setup()
     const notes = (session: FakeSession): number => session.contents.filter((content) => JSON.stringify(content).includes(CAFE.text)).length

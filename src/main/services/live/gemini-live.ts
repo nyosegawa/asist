@@ -136,7 +136,12 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * opened blank, it has had the history as its context.
    */
   private owned: { session: GeminiSession | null; ready: boolean } | null = null
-  private resumption: { handle: string; at: number } | null = null
+  /**
+   * The last handle the provider offered as resumable, with the memories the session held when it
+   * arrived. A handle carries the session's state only up to the moment it was issued, and the provider
+   * offers none while it generates or runs a call, so what is sent after it is lost on a resume.
+   */
+  private resumption: { handle: string; at: number; memories: ReadonlyMap<string, number> } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
   /** The calls that still owe the model a result, waiting for their turn or running, by the id Gemini gave them. */
@@ -150,7 +155,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * The memories sent to the current session in its notes and recall results, each with the session's
    * audio seconds when it was sent, which a note does not show again while they are recent. A session
    * that opens blank is seeded with the transcript, which carries neither, so it holds none of them
-   * whatever earlier sessions were shown. A resumed session keeps its context, and the memories with it.
+   * whatever earlier sessions were shown. A resumed session holds those its handle held.
    */
   private sessionMemories = new Map<string, number>()
 
@@ -168,7 +173,8 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
       throw new Error(errorText('llmModels.errors.keyMissing', { provider: info.label, envKey: info.envKey }))
     }
     const settings = this.settings().geminiLive
-    const resume = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption.handle : null
+    const resumption = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption : null
+    const resume = resumption?.handle ?? null
     const owned: { session: GeminiSession | null; ready: boolean } = { session: null, ready: false }
     this.owned = owned
     let connected!: Promise<GeminiSession>
@@ -220,10 +226,8 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     await setup
     const session = await connected
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
-    if (!resume) {
-      this.seedHistory(session)
-      this.sessionMemories = new Map()
-    }
+    if (!resume) this.seedHistory(session)
+    this.sessionMemories = new Map(resumption?.memories)
     owned.ready = true
   }
 
@@ -307,7 +311,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
       this.running.delete(id)
     }
     if (message.sessionResumptionUpdate?.resumable && message.sessionResumptionUpdate.newHandle) {
-      this.resumption = { handle: message.sessionResumptionUpdate.newHandle, at: this.now() }
+      this.resumption = { handle: message.sessionResumptionUpdate.newHandle, at: this.now(), memories: new Map(this.sessionMemories) }
     }
     if (message.goAway) console.warn(`gemini-live: GoAway (${message.goAway.timeLeft ?? '?'})`)
   }
