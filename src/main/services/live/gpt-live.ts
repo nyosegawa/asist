@@ -384,11 +384,17 @@ export class GptLiveEngine extends LiveEngineBase {
 
   async sendText(text: string): Promise<void> {
     await this.ensureOpen()
-    this.think(`${marker(conversationLocale(), 'typedInputForVoice')} ${text}`)
-    // Typed input takes the spoken utterances before it too: left for a later delegation, they would
-    // reach brain after the typed text, though the user said them first. The turn is still marked as
-    // typed, since the typed text is what it answers.
-    this.deps.beginTurn(this.withUnhanded(text), true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
+    const locale = conversationLocale()
+    this.think(`${marker(locale, 'typedInputForVoice')} ${text}`)
+    // Typed input takes what was said before it, the utterance still being transcribed included, since
+    // the user has moved on to typing: left for a later delegation, it would reach brain after the typed
+    // text, though the user said it first.
+    const spoken = this.withUnhanded(this.takeUserUtterance())
+    // Brain's note for typed input would cover the spoken lines as well and tell brain to read them
+    // literally, so with spoken lines the note goes on the typed line alone, and the turn is not
+    // marked as typed as a whole.
+    const input = spoken ? `${spoken}\n${marker(locale, 'typedInputNote')} ${text}` : text
+    this.deps.beginTurn(input, !spoken, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
     this.touch()
   }
 

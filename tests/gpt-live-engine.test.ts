@@ -3,6 +3,7 @@ import { createTranslator } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 import type * as LiveAPI from 'openai/resources/live/live'
 import type { LiveEvent } from '@shared/ipc'
+import { marker } from '@shared/conversation-markers'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 
 /** These tests drive the GPT-Live engine end to end against a fake socket. */
@@ -410,7 +411,7 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
-  it('hands typed input the utterances said before it, ahead of the typed text', async () => {
+  it('hands typed input the utterances said before it, ahead of the typed text, which alone carries the typed note', async () => {
     const { engine, sockets, beginTurn } = await setup()
     engine.activity(true)
     await vi.advanceTimersByTimeAsync(0)
@@ -420,7 +421,30 @@ describe('GptLiveEngine', () => {
     socket.emit({ type: 'session.input_transcript.delta', delta: 'タイマーをかけたい', event_id: 'a', start_ms: 0, end_ms: 1 })
     await vi.advanceTimersByTimeAsync(1600)
     await engine.sendText('3分')
-    expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([['タイマーをかけたい\n3分', true]])
+    // The turn is not marked as typed as a whole, which would have brain read the spoken line as typed too.
+    expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([[`タイマーをかけたい\n${marker('ja-JP', 'typedInputNote')} 3分`, false]])
+    await engine.stop()
+  })
+
+  it('hands typed input the utterance still being transcribed ahead of it, closes that line, and leaves nothing of it for the next delegation', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'えっと明日の', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(300)
+    await engine.sendText('会議の予定')
+    expect(events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [e.text] : []))).toEqual(['えっと明日の'])
+    await vi.advanceTimersByTimeAsync(1600)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '教えて', event_id: 'b', start_ms: 1, end_ms: 2 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 2, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([
+      [`えっと明日の\n${marker('ja-JP', 'typedInputNote')} 会議の予定`, false],
+      ['教えて', false]
+    ])
     await engine.stop()
   })
 
