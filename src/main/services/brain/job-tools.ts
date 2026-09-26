@@ -8,6 +8,7 @@ import {
   type PromptText
 } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
+import type { JobDiff } from '@shared/ipc'
 import { resolveJobAccess } from '@shared/job-workspace'
 import {
   LOCAL_TIMEOUT_MS,
@@ -297,8 +298,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
     {
       name: 'get_agent_job',
       description: {
-        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }。reviewには確認対象のcommitと差分、取り込み先のブランチ(into)、ジョブが変えたサブモジュール(submodules)が入る。submodulesのあるジョブはASISTでは取り込めない。',
-        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }, where review holds the commit to look over, its diff, the branch a merge goes into (into), and the submodules the job changed. A job that changed any submodule cannot be merged by ASIST.'
+        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }。reviewには確認対象のcommitと差分、取り込み先のブランチ(into)、ジョブが変えたサブモジュール(submodules)が入る。submodulesのあるジョブはASISTでは取り込めない。取り込み待ちのジョブの差分を読めなかったときは、reviewの代わりにreviewUnavailableにその理由が入る。',
+        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }, where review holds the commit to look over, its diff, the branch a merge goes into (into), and the submodules the job changed. A job that changed any submodule cannot be merged by ASIST. When the diff of a job waiting to be merged cannot be read, reviewUnavailable gives the reason in place of review.'
       },
       usage: {
         ja: '特定のジョブの進捗や成果物のパスを知りたいとき、完了報告で詳細が要るとき',
@@ -313,6 +314,17 @@ export function jobTools(locale: ConversationLocale): Def[] {
         const logTail = foldJobLog(agentRunner.getLog(job.id))
           .slice(-15)
           .map((row) => `[${row.kind}] ${rowText(row, tConversation)}`)
+        let review: JobDiff | undefined
+        let reviewUnavailable: string | undefined
+        if (job.mergeState === 'pending') {
+          // The status, the summary and the log answer most questions about a job even when its diff cannot
+          // be read, as while a branch with no history in common with it is checked out.
+          try {
+            review = agentRunner.diff(job.id)
+          } catch (err) {
+            reviewUnavailable = detail(err, language)
+          }
+        }
         return {
           jobId: job.id,
           title: job.title,
@@ -323,7 +335,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
           costUsd: job.costUsd,
           artifacts: job.artifacts,
           mergeState: job.mergeState,
-          review: job.mergeState === 'pending' ? agentRunner.diff(job.id) : undefined,
+          review,
+          reviewUnavailable,
           logTail
         }
       }

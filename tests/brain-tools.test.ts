@@ -581,6 +581,21 @@ describe('brain tools registry', () => {
     expect(mocks.agent.discard).toHaveBeenCalledWith('w1')
   })
 
+  it('gives the status, the summary and the log of a job whose diff cannot be read, and says why', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', summary: '直した', mergeState: 'pending', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
+    mocks.agent.getLog.mockReturnValueOnce([{ t: 1, event: { kind: 'system', text: 'ログの一行' } }] as never)
+    mocks.agent.diff.mockImplementationOnce(() => {
+      throw new Error(errorText('jobs.merging.noCommonHistory'))
+    })
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('get_agent_job', { jobId: 'w1' }, makeCtx().ctx)
+    expect(result.isError).toBe(false)
+    const detail = JSON.parse(result.content)
+    expect(detail).toMatchObject({ jobId: 'w1', status: 'done', summary: '直した', mergeState: 'pending', reviewUnavailable: ja('jobs.merging.noCommonHistory') })
+    expect(detail.review).toBeUndefined()
+    expect(detail.logTail.join('\n')).toContain('ログの一行')
+  })
+
   it('does not ask about discarding a job the agent service would refuse, such as one already merged, and tells the model why', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'merged' } as never)
     mocks.agent.discardPreview.mockImplementationOnce(() => {
