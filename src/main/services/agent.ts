@@ -519,15 +519,25 @@ export function merge(id: string, commit: string): AgentJob {
   throw new Error(errorText('jobs.merging.failed', { detail: outcome.message }))
 }
 
+/**
+ * The worktree a discard removes. It refuses a job that has none, or whose agent may still write to it,
+ * which the conversation checks before it asks the user.
+ */
+export function discardableWorktree(id: string): NonNullable<AgentJob['worktree']> {
+  ensureLoaded()
+  const job = jobs.get(id)?.job
+  if (!job?.worktree) throw new Error(errorText('jobs.discard.noChanges', { id }))
+  assertWriterStopped(job)
+  if (!isJobTerminal(job.status)) throw new Error(errorText('jobs.discard.jobRunning'))
+  return job.worktree
+}
+
 /** Throws the worktree's changes away by deleting both the worktree and its branch. */
 export function discard(id: string): AgentJob {
-  ensureLoaded()
-  const entry = jobs.get(id)
-  if (!entry?.job.worktree) throw new Error(errorText('jobs.discard.noChanges', { id }))
-  assertWriterStopped(entry.job)
-  if (!isJobTerminal(entry.job.status)) throw new Error(errorText('jobs.discard.jobRunning'))
+  const worktree = discardableWorktree(id)
+  const entry = jobs.get(id)!
   if (entry.job.mergeState === 'merged' || entry.job.mergeState === 'discarded' || entry.job.mergeState === 'unchanged') return { ...entry.job }
-  git.worktreeRemove(entry.job.worktree.repo, entry.job.worktree.dir, entry.job.worktree.branch)
+  git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
   pushLog(id, 'system', t('jobs.discard.done'))
   update(id, { mergeState: 'discarded' })
   return { ...entry.job }

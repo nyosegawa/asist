@@ -8,7 +8,6 @@ import {
   type PromptText
 } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
-import { isJobTerminal } from '@shared/job-status'
 import { resolveJobAccess } from '@shared/job-workspace'
 import {
   LOCAL_TIMEOUT_MS,
@@ -461,18 +460,15 @@ export function jobTools(locale: ConversationLocale): Def[] {
       maxResultChars: SMALL_RESULT_MAX,
       run: async (input, _ctx, signal) => {
         const job = requireJob(input)
-        let repo: string
-        // A job with no worktree, or one still writing to it, is refused before the user is asked about
-        // changes that cannot be thrown away yet.
+        let worktree
+        // A job that cannot be discarded yet is refused before the user is asked about it.
         try {
-          if (!job.worktree) throw new Error(errorText('jobs.discard.noChanges', { id: job.id }))
-          if (!isJobTerminal(job.status)) throw new Error(errorText('jobs.discard.jobRunning'))
-          repo = job.worktree.repo
+          worktree = agentRunner.discardableWorktree(job.id)
         } catch (err) {
           throw new ToolError(TEXTS.discardFailed(detail(err, language)))
         }
-        if (!(await confirmDiscard({ title: job.title, repo }, signal))) {
-          return { discarded: false, declined: true, jobId: job.id, note: bilingual(TEXTS.discardDeclined) }
+        if (!(await confirmDiscard({ title: job.title, repo: worktree.repo }, signal))) {
+          return { discarded: false, declined: true, jobId: job.id, note: TEXTS.discardDeclined[language] }
         }
         try {
           agentRunner.discard(job.id)

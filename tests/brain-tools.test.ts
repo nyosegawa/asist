@@ -4,6 +4,7 @@ import { PANEL_CATALOG } from '@shared/panel-catalog'
 import { taskSummary } from '@shared/tasks'
 import { FETCHER_TIMEOUT_MS, LOCAL_TIMEOUT_MS, resolvePromptTexts } from '@shared/tool-registry'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 
 const ja = createTranslator('ja-JP')
 
@@ -25,7 +26,8 @@ const mocks = vi.hoisted(() => ({
     startIsolated: vi.fn(() => ({ id: 'w1', title: 'fix', cwd: '/ws/wt', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } })),
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
     diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '' })),
-    discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' }))
+    discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
+    discardableWorktree: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' }))
   },
   requestConfirm: vi.fn(async () => true),
   fetchPanel: vi.fn(),
@@ -431,14 +433,15 @@ describe('brain tools registry', () => {
     expect(mocks.agent.discard).toHaveBeenCalledWith('w1')
   })
 
-  it.each([
-    ['a job still running', { id: 'w1', title: 'fix', status: 'running', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } }],
-    ['a job without a worktree', { id: 'j1', title: 'report', status: 'done' }]
-  ])('does not ask about discarding %s, and throws nothing away', async (_name, job) => {
-    mocks.agent.userJob.mockReturnValueOnce(job as never)
+  it('does not ask about discarding a job the agent service would refuse, and throws nothing away', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'running' } as never)
+    mocks.agent.discardableWorktree.mockImplementationOnce(() => {
+      throw new Error(errorText('jobs.discard.jobRunning'))
+    })
     const { executeClientTool } = await load()
-    const result = await executeClientTool('discard_agent_job', { jobId: job.id }, makeCtx().ctx)
+    const result = await executeClientTool('discard_agent_job', { jobId: 'w1' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
+    expect(result.content).toContain(ja('jobs.discard.jobRunning'))
     expect(mocks.requestConfirm).not.toHaveBeenCalled()
     expect(mocks.agent.discard).not.toHaveBeenCalled()
   })
