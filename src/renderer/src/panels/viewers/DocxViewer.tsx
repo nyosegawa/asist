@@ -108,6 +108,18 @@ export function sanitizeDocxHtml(html: string): string {
   return out.innerHTML
 }
 
+/**
+ * The nearest box around the element that scrolls its content, below the page. The frame scrolls in a card,
+ * while in the focus view the frame shows the whole document and the view around it scrolls.
+ */
+function scrollerOf(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node)
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node
+  }
+  return null
+}
+
 async function parseDocx(bytes: ArrayBuffer): Promise<string> {
   const result = await mammoth.convertToHtml({ arrayBuffer: bytes }, { idPrefix: ID_PREFIX })
   return sanitizeDocxHtml(result.value)
@@ -124,10 +136,10 @@ export const DocxViewer: Viewer = ({ item, mode, size }) => {
       toast({ kind: 'error', title: t('files.viewer.anchorMissing') })
       return
     }
-    // scrollIntoView would also scroll the boxes around the card, even those that hide their overflow, so
-    // only the frame's own scroller moves.
-    const scroller = container.closest<HTMLElement>('.fv-scroll')!
-    scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    // scrollIntoView would also scroll the boxes further out, even those that hide their overflow, so only
+    // the nearest one that scrolls moves. With none, nothing around the document can scroll.
+    const scroller = scrollerOf(target)
+    if (scroller) scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top
   }
   return (
     <Frame mode={mode} size={size}>

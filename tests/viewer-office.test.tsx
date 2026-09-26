@@ -236,7 +236,8 @@ describe('Office viewer rendering with the demo files', () => {
     expect(picture.style.width).toBe('50.00%')
   })
 
-  it('scrolls to a place in the document, opens a mail link outside the app, and says so when either cannot be followed', async () => {
+  /** A docx with a table of contents entry, a link to a removed bookmark and a mail link. */
+  async function linkedDocx(): Promise<void> {
     const zip = new JSZip()
     zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
     zip.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
@@ -247,26 +248,54 @@ describe('Office viewer rendering with the demo files', () => {
       '<w:p><w:bookmarkStart w:id="0" w:name="_Toc1"/><w:r><w:t>The findings</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p></w:body></w:document>')
     const bytes = await zip.generateAsync({ type: 'uint8array' })
     vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }))
-    const frame = await render({ ...itemOf('docx'), url: '/linked.docx' }, 'focus')
-    const anchor = (text: string): HTMLElement => [...frame.querySelectorAll<HTMLElement>('.fv-doc a')].find((a) => a.textContent === text)!
-    const scroller = frame.querySelector<HTMLElement>('.fv-scroll')!
-    // happy-dom lays nothing out, so the places of the frame and of the bookmark are given here.
-    scroller.getBoundingClientRect = () => ({ top: 100 }) as DOMRect
-    frame.querySelector<HTMLElement>('.fv-doc [id="docx-_Toc1"]')!.getBoundingClientRect = () => ({ top: 400 }) as DOMRect
+  }
 
-    await act(async () => anchor('Findings').click())
-    expect(scroller.scrollTop).toBe(300)
-    await act(async () => anchor('Removed section').click())
+  /** happy-dom lays nothing out, so a box that scrolls is given its overflow, its sizes and its place here. */
+  function scrollable(box: HTMLElement, top: number): void {
+    box.style.overflowY = 'auto'
+    Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 2000 })
+    Object.defineProperty(box, 'clientHeight', { configurable: true, value: 400 })
+    box.getBoundingClientRect = () => ({ top }) as DOMRect
+  }
+
+  const anchorIn = (frame: HTMLElement, text: string): HTMLElement => [...frame.querySelectorAll<HTMLElement>('.fv-doc a')].find((a) => a.textContent === text)!
+  const bookmarkAt = (frame: HTMLElement, top: number): void => {
+    frame.querySelector<HTMLElement>('.fv-doc [id="docx-_Toc1"]')!.getBoundingClientRect = () => ({ top }) as DOMRect
+  }
+
+  it('scrolls the focus view to a place in the document, opens a mail link outside the app, and says so when either cannot be followed', async () => {
+    await linkedDocx()
+    const frame = await render({ ...itemOf('docx'), url: '/linked.docx' }, 'focus')
+    // In the focus view the frame shows the whole document, and the view around it scrolls.
+    scrollable(container, 100)
+    bookmarkAt(frame, 400)
+
+    await act(async () => anchorIn(frame, 'Findings').click())
+    expect(container.scrollTop).toBe(300)
+    expect(frame.querySelector<HTMLElement>('.fv-scroll')!.scrollTop).toBe(0)
+    await act(async () => anchorIn(frame, 'Removed section').click())
     expect(useToastStore.getState().toasts).toMatchObject([{ kind: 'error', title: t('files.viewer.anchorMissing') }])
     expect(openExternal).not.toHaveBeenCalled()
 
     const refused = errorText('app.links.refused', { url: 'mailto:team@example.com' })
     openExternal.mockRejectedValueOnce(new Error(`Error invoking remote method 'open-external': Error: ${refused}`))
-    await act(async () => anchor('Write to us').click())
+    await act(async () => anchorIn(frame, 'Write to us').click())
     expect(openExternal).toHaveBeenCalledWith('mailto:team@example.com')
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
       kind: 'error', title: t('app.links.openFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' })
     })
+  })
+
+  it('scrolls only the frame of a card to a place in the document, leaving the boxes around the card', async () => {
+    await linkedDocx()
+    const frame = await render({ ...itemOf('docx'), url: '/linked.docx' }, 'card')
+    const scroller = frame.querySelector<HTMLElement>('.fv-scroll')!
+    scrollable(scroller, 100)
+    scrollable(container, 0)
+    bookmarkAt(frame, 400)
+    await act(async () => anchorIn(frame, 'Findings').click())
+    expect(scroller.scrollTop).toBe(300)
+    expect(container.scrollTop).toBe(0)
   })
 
   it('shows the reason in red for a file it cannot read', async () => {
