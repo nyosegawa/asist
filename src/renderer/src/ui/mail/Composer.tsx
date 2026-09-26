@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { CornerUpLeft, X } from 'lucide-react'
-import { displayName, type MailAccount, type MailChangeInput, type MailDraft } from '@shared/mail'
+import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailDraft } from '@shared/mail'
 import type { Toast } from '@/state/stores'
 import { useDraftEditor } from './draft-editor'
 import { splitRecipients } from './format'
@@ -11,8 +11,9 @@ import { useT } from '@/i18n'
  * The composer. Both a new message and the continuation of a draft, whether the Agent wrote it or it
  * was saved from this screen, are written here. Pressing "送信" is itself the approval, so no confirm
  * sheet appears, and a new message can be left with main through "下書きに保存". A draft is saved a
- * moment after each keystroke and disappears once it has been sent. A reply draft takes its
- * recipients and its subject from the original message, so only the body is written.
+ * moment after each keystroke and disappears once it has been sent. A reply draft carries the
+ * recipients settled from the original message, shown as the addresses it is sent to, and only its
+ * body is written.
  */
 export function Composer({
   accounts,
@@ -180,10 +181,22 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
         <span className="ml-static">{account ? `${account.label} · ${account.email}` : draft.accountId}</span>
       </label>
       {draft.reply && replyValues ? (
-        <div className="ml-reply-to">
-          <CornerUpLeft size={13} />
-          {draft.reply.replyAll ? t('mail.composer.replyToAll', replyValues) : t('mail.composer.replyTo', replyValues)}
-        </div>
+        <>
+          <div className="ml-reply-to">
+            <CornerUpLeft size={13} />
+            {draft.reply.replyAll ? t('mail.composer.replyToAll', replyValues) : t('mail.composer.replyTo', replyValues)}
+          </div>
+          <div className="ml-field">
+            <span>{t('mail.fields.to')}</span>
+            <span className="ml-static">{draft.reply.to.map(formatAddress).join(', ')}</span>
+          </div>
+          {draft.reply.cc.length > 0 && (
+            <div className="ml-field">
+              <span>Cc</span>
+              <span className="ml-static">{draft.reply.cc.map(formatAddress).join(', ')}</span>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <label className="ml-field">

@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
 import { createConfirmGate } from '../src/main/services/confirm'
+import { useConfirmStore } from '../src/renderer/src/state/confirm'
 
 function setup() {
   const events: ConfirmEvent[] = []
@@ -38,5 +39,46 @@ describe('createConfirmGate', () => {
     const pending = gate.request({ title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false }, new AbortController().signal)
     gate.resolve('c1', false)
     await expect(pending).resolves.toBe(false)
+  })
+})
+
+describe('the gate wired to the renderer\'s confirmation store', () => {
+  beforeEach(() => useConfirmStore.setState({ queue: [] }))
+
+  function wired() {
+    let seq = 0
+    const store = useConfirmStore.getState
+    return createConfirmGate({
+      emit: (event) => (event.type === 'open' ? store().open(event.request) : store().close(event.id)),
+      createId: () => `c${++seq}`
+    })
+  }
+  const input = { title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false }
+
+  it('brings every request main is waiting on to the screen in turn, so that none is left unanswered', async () => {
+    const gate = wired()
+    // A save from the calendar screen waits with a signal that nothing aborts.
+    const fromScreen = gate.request(input, new AbortController().signal)
+    const fromTool = gate.request(input, new AbortController().signal)
+    expect(useConfirmStore.getState().queue[0]?.id).toBe('c1')
+    gate.resolve('c1', true)
+    await expect(fromScreen).resolves.toBe(true)
+    expect(useConfirmStore.getState().queue[0]?.id).toBe('c2')
+    gate.resolve('c2', false)
+    await expect(fromTool).resolves.toBe(false)
+    expect(useConfirmStore.getState().queue).toEqual([])
+    expect(gate.pendingIds()).toEqual([])
+  })
+
+  it('takes a waiting request off the queue when its caller aborts, before it reaches the screen', async () => {
+    const gate = wired()
+    const shown = gate.request(input, new AbortController().signal)
+    const turn = new AbortController()
+    const aborted = gate.request(input, turn.signal)
+    turn.abort()
+    await expect(aborted).resolves.toBe(false)
+    gate.resolve('c1', true)
+    await expect(shown).resolves.toBe(true)
+    expect(useConfirmStore.getState().queue).toEqual([])
   })
 })

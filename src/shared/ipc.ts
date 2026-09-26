@@ -20,12 +20,14 @@ import type {
   MailMessage,
   MailMessageBody,
   MailProbeResult,
+  MailReply,
+  MailReplySend,
   MailStatus
 } from './mail'
 import type { Task, TaskInput, TaskMove, TaskPatch } from './tasks'
 import type { AsrModel, ResolvedAsrModel } from './asr-models'
 import type { CacheMissReason } from './cache-diagnosis'
-import type { AppSettings } from './settings'
+import type { AppSettings, SettingsPatch } from './settings'
 export type { AppSettings } from './settings'
 import type { ConversationModel, LlmProvider } from './llm-catalog'
 export type { ConversationModel, LlmProvider } from './llm-catalog'
@@ -768,6 +770,8 @@ export const IpcChannel = {
   MailThread: 'mail-thread',
   MailRead: 'mail-read',
   MailChange: 'mail-change',
+  MailReplySettle: 'mail-reply-settle',
+  MailReplySend: 'mail-reply-send',
   MailSyncNow: 'mail-sync-now',
   MailOpenGuide: 'mail-open-guide',
   MailEvent: 'mail-event',
@@ -986,10 +990,15 @@ export interface RendererApi {
   /** One message with its body, fetched from the server when it was not downloaded yet. It does not mark the message read. */
   mailRead(id: string): Promise<MailMessageBody>
   /**
-   * Sends, replies, archives, trashes, marks read or stars. Pressing the button on screen is the
-   * approval for a send or a reply, while trashing goes through the confirmation screen.
+   * Sends, archives, trashes, marks read or stars. Pressing the button on screen is the approval for a
+   * send, while trashing goes through the confirmation screen. A reply goes through mailReplySettle and
+   * mailReplySend instead.
    */
   mailChange(change: MailChangeInput): Promise<MailChangeResult>
+  /** The reply main settles for the reader's reply form: the To and Cc it shows are those it is sent to. It needs the connection to the server. */
+  mailReplySettle(id: string, replyAll: boolean): Promise<MailReply>
+  /** Sends the reply mailReplySettle gave, with the body typed below it. Pressing the button is the approval. */
+  mailReplySend(input: MailReplySend): Promise<MailChangeResult>
   mailSyncNow(): Promise<void>
   mailOpenGuide(): Promise<void>
   /** A change in the connection state, a download or a change, new mail, and the full list of drafts. */
@@ -1005,7 +1014,7 @@ export interface RendererApi {
   onConfirmEvent(callback: (event: ConfirmEvent) => void): () => void
   confirmResolve(id: string, approved: boolean): Promise<void>
   getSettings(): Promise<AppSettings>
-  saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  saveSettings(patch: SettingsPatch): Promise<AppSettings>
   /** Validates the provider's API key, saves it to the .env under userData, and returns the status afterwards. */
   saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>

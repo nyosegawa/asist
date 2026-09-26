@@ -64,6 +64,7 @@ export const CARD_GROUPS: Array<{ command: string; label: string; cards: CardFix
       { type: 'mail', props: DEMO_MAIL_CARD, source: 'IMAP · 仕事 / 個人' },
       { type: 'mail-message', props: DEMO_MAIL_MESSAGE_CARD, source: 'IMAP · 仕事' },
       { type: 'mail-draft', props: { draftId: DEMO_MAIL_DRAFTS[0].id } },
+      { type: 'mail-draft', variant: 'reply', props: { draftId: DEMO_MAIL_DRAFTS[1].id } },
       { type: 'notes', props: {} },
       { type: 'agent-job', props: { jobId: DEMO_JOB.id } },
       { type: 'jobs', props: {} }

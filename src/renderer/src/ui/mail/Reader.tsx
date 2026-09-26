@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Archive, ChevronDown, ChevronRight, CornerUpLeft, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2, X } from 'lucide-react'
-import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailMessage } from '@shared/mail'
-import { useMailStore } from '@/state/stores'
+import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailMessage, type MailReply } from '@shared/mail'
+import { useMailStore, useToastStore } from '@/state/stores'
 import { fullTime, sizeLabel } from './format'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
@@ -10,7 +10,8 @@ import { useT } from '@/i18n'
  * The reader. It lays out the thread of the selected message oldest first and shows the selected one
  * expanded. That message carries reply, reply to all, archive, trash, star and mark as unread. A
  * reply is written below it in the same pane, and pressing send is itself the approval, so no
- * confirm sheet appears. A message that is unread when it opens is marked as read.
+ * confirm sheet appears; the form shows the To and Cc of the reply main settled, and that same reply
+ * is what is sent. A message that is unread when it opens is marked as read.
  */
 
 interface Loaded {
@@ -18,6 +19,14 @@ interface Loaded {
   thread: MailMessage[]
 }
 type ReplyMode = 'reply' | 'all'
+/** The reply being written. `settled` is the reply main settled for this mode, null until it arrives or when it failed. */
+interface ReplyForm {
+  id: string
+  mode: ReplyMode
+  text: string
+  settled: MailReply | null
+  error: string
+}
 
 export function Reader({
   id,
@@ -37,9 +46,11 @@ export function Reader({
   const [bodies, setBodies] = useState<Map<string, string>>(() => new Map())
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set([id]))
   const [error, setError] = useState('')
-  const [reply, setReply] = useState<{ id: string; mode: ReplyMode; text: string } | null>(null)
+  const [reply, setReply] = useState<ReplyForm | null>(null)
   const [busy, setBusy] = useState(false)
   const marked = useRef<string | null>(null)
+  const settling = useRef(0)
+  const toast = useToastStore((s) => s.push)
 
   useEffect(() => {
     let active = true
@@ -95,7 +106,33 @@ export function Reader({
       const ok = await onChange(change)
       if (!ok && flagged) patch(before.id, { starred: before.starred, unread: before.unread })
       if (ok && closeAfter) onClose()
-      if (ok && (change.operation === 'reply' || change.operation === 'send')) setReply(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+  /**
+   * Opens the reply form, or switches it between reply and reply-all while keeping what was typed. Only
+   * the answer to the latest request is taken, so the form never shows the recipients of the other mode.
+   */
+  const openReply = (target: string, mode: ReplyMode): void => {
+    const request = ++settling.current
+    setReply((current) => ({ id: target, mode, text: current?.id === target ? current.text : '', settled: null, error: '' }))
+    const settle = (patch: Partial<ReplyForm>): void => setReply((current) => (current && settling.current === request ? { ...current, ...patch } : current))
+    window.api
+      .mailReplySettle(target, mode === 'all')
+      .then((settled) => settle({ settled }))
+      .catch((err: unknown) => settle({ error: displayError(err) }))
+  }
+  const sendReply = async (form: ReplyForm): Promise<void> => {
+    if (!form.settled || !form.text.trim() || busy) return
+    setBusy(true)
+    try {
+      const result = await window.api.mailReplySend({ reply: form.settled, body: form.text })
+      if (!result.saved) throw new Error(t('mail.composer.notSent'))
+      toast({ kind: 'ok', title: t('mail.done.reply'), body: result.summary })
+      setReply(null)
+    } catch (err) {
+      toast({ kind: 'error', title: t('mail.changeFailed.reply'), body: displayError(err) })
     } finally {
       setBusy(false)
     }
@@ -174,10 +211,10 @@ export function Reader({
                   )}
                   <pre className="ml-text">{body === undefined ? t('common.loading') : body || t('mail.noBody')}</pre>
                   <div className="ml-actions" role="group" aria-label={t('mail.reader.actions')}>
-                    <button type="button" className="cal-btn" disabled={busy} onClick={() => setReply({ id: item.id, mode: 'reply', text: '' })}>
+                    <button type="button" className="cal-btn" disabled={busy} onClick={() => openReply(item.id, 'reply')}>
                       <Reply size={14} /> {t('mail.reply')}
                     </button>
-                    <button type="button" className="cal-btn" disabled={busy} onClick={() => setReply({ id: item.id, mode: 'all', text: '' })}>
+                    <button type="button" className="cal-btn" disabled={busy} onClick={() => openReply(item.id, 'all')}>
                       <ReplyAll size={14} /> {t('mail.replyAll')}
                     </button>
                     {item.folder === 'inbox' && (
@@ -201,14 +238,33 @@ export function Reader({
                       aria-label={t('mail.reply')}
                       onSubmit={(event) => {
                         event.preventDefault()
-                        if (!reply.text.trim() || busy) return
-                        void act({ operation: 'reply', id: item.id, body: reply.text, replyAll: reply.mode === 'all' })
+                        void sendReply(reply)
                       }}
                     >
                       <div className="ml-reply-to">
                         <CornerUpLeft size={13} />
-                        {reply.mode === 'all' ? t('mail.replyAll') : t('mail.reader.replyTo', { name: displayName(item.replyTo[0] ?? item.from) })}
+                        {reply.mode === 'all' ? t('mail.replyAll') : t('mail.reply')}
                       </div>
+                      {reply.settled ? (
+                        <>
+                          <div className="ml-field">
+                            <span>{t('mail.fields.to')}</span>
+                            <span className="ml-static">{reply.settled.to.map(formatAddress).join(', ')}</span>
+                          </div>
+                          {reply.settled.cc.length > 0 && (
+                            <div className="ml-field">
+                              <span>Cc</span>
+                              <span className="ml-static">{reply.settled.cc.map(formatAddress).join(', ')}</span>
+                            </div>
+                          )}
+                        </>
+                      ) : reply.error ? (
+                        <p className="ml-form-error" role="alert">
+                          {reply.error}
+                        </p>
+                      ) : (
+                        <p className="ml-reply-to">{t('common.loading')}</p>
+                      )}
                       <textarea
                         autoFocus
                         aria-label={t('mail.reader.replyBody')}
@@ -227,7 +283,7 @@ export function Reader({
                         <button type="button" className="cal-btn" onClick={() => setReply(null)}>
                           {t('common.cancel')}
                         </button>
-                        <button type="submit" className="cal-primary" disabled={busy || !reply.text.trim()}>
+                        <button type="submit" className="cal-primary" disabled={busy || !reply.settled || !reply.text.trim()}>
                           {busy ? t('mail.sending') : t('mail.send')}
                         </button>
                       </div>

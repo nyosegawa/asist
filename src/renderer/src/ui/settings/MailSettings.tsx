@@ -49,7 +49,9 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
   }, [refreshStatus])
   useEffect(() => setSyncDays(String(mail.syncDays)), [mail.syncDays])
 
-  const persist = (patch: Partial<MailSettingsValue>): void => ctx.set({ mail: { ...mail, ...patch } })
+  // Only the option that changed is sent. The accounts change through their own calls to main, and an
+  // account added while this page was drawn is not in `mail`.
+  const persist = (patch: Partial<Omit<MailSettingsValue, 'accounts'>>): void => ctx.set({ mail: patch })
   const commitSyncDays = (): void => {
     const value = Number(syncDays)
     if (!Number.isInteger(value) || value < MIN_SYNC_DAYS || value > MAX_SYNC_DAYS) {

@@ -29,7 +29,7 @@ const account = (patch: Partial<MailAccount> = {}): MailAccount => ({
 const tanaka = [{ name: '田中', address: 't@example.com' }]
 const me = [{ name: '', address: 'me@example.com' }]
 
-function setup(options: { gmail?: boolean; account?: Partial<MailAccount> } = {}) {
+function setup(options: { gmail?: boolean; account?: Partial<MailAccount>; password?: () => string } = {}) {
   const imap = new FakeImap({ gmail: options.gmail })
   imap.addFolder('Sent', { specialUse: '\\Sent' })
   imap.addFolder('Archive', { specialUse: options.gmail ? '\\All' : '\\Archive' })
@@ -41,7 +41,7 @@ function setup(options: { gmail?: boolean; account?: Partial<MailAccount> } = {}
   const server = imap.reconnectable()
   const sync = new MailAccountSync({
     account: account(options.account),
-    password: () => 'app-password',
+    password: options.password ?? (() => 'app-password'),
     cache,
     createClient: () => server.next().asClient(),
     syncDays: () => 30,
@@ -250,6 +250,87 @@ describe('MailAccountSync', () => {
     expect(sync.state).toBe('error')
     expect(sync.error).toBe(t('mail.errors.sync.folderFailed', { box: t('mail.boxes.sent'), reason: 'no such mailbox: Missing' }))
     expect(cache.list({ view: 'inbox' }).total).toBe(1)
+    await sync.stop()
+  })
+
+  it('keeps the cached folder and announces nothing again when the server rejects the search', async () => {
+    const { imap, cache, sync, arrived } = setup()
+    const mail = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const id = messageIdOf('a1', 'inbox', mail.uid)
+    expect(cache.body(id)).toBe('a')
+    imap.failSearch = true
+    await sync.syncNow()
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe(t('mail.errors.sync.folderFailed', { box: t('mail.boxes.inbox'), reason: t('mail.errors.sync.noMessageList') }))
+    expect(cache.list({ view: 'inbox' }).messages.map((m) => m.id)).toEqual([id])
+    expect(cache.body(id)).toBe('a')
+    imap.failSearch = false
+    await sync.syncNow()
+    expect(sync.state).toBe('connected')
+    expect(arrived).toEqual([])
+    await sync.stop()
+  })
+
+  it('returns to the inbox after working in another folder, so mail arriving in the inbox is still noticed', async () => {
+    const { imap, cache, sync, arrived } = setup()
+    imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    imap.put('Sent', { subject: '送った', from: me, to: tanaka, date: new Date(NOW - 2 * HOUR), text: 's' })
+    const archived = imap.put('Archive', { subject: '片付けた', from: tanaka, to: me, date: new Date(NOW - 3 * HOUR), text: 'z' })
+    sync.start()
+    // The bodies of the inbox, then of sent mail and the archive, are fetched on this tick.
+    await vi.advanceTimersByTimeAsync(300)
+    expect(cache.body(messageIdOf('a1', 'archive', archived.uid))).toBe('z')
+    imap.arrive('INBOX', { subject: '届いた', from: tanaka, to: me, date: new Date(NOW), text: 'x' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(arrived.flat().map((m) => m.subject)).toEqual(['届いた'])
+    // Opening a sent message whose body has not been fetched yet selects Sent.
+    const later = imap.put('Sent', { subject: 'また送った', from: me, to: tanaka, date: new Date(NOW), text: 't' })
+    await sync.syncNow()
+    await expect(sync.fetchBody('sent', later.uid)).resolves.toBe('t')
+    imap.arrive('INBOX', { subject: 'もう一通', from: tanaka, to: me, date: new Date(NOW), text: 'y' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(arrived.flat().map((m) => m.subject)).toEqual(['届いた', 'もう一通'])
+    await sync.stop()
+  })
+
+  it('fetches the other bodies when one cannot be downloaded or turned into text, and tries that one again when it is opened', async () => {
+    const { imap, cache, sync } = setup()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    // html-to-text recurses once per level of nesting and throws RangeError on this.
+    const deep = imap.put('INBOX', { subject: '深いHTML', from: tanaka, to: me, date: new Date(NOW - HOUR), html: '<div>'.repeat(6_000) + 'x' + '</div>'.repeat(6_000) })
+    const refused = imap.put('INBOX', { subject: '拒まれる', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: '拒まれた本文' })
+    const older = imap.put('INBOX', { subject: '週報', from: tanaka, to: me, date: new Date(NOW - 3 * HOUR), text: '普通の本文' })
+    // Its own uid, so that its download is not counted with those of the inbox.
+    const sent = imap.put('Sent', { uid: 50, subject: '送った', from: me, to: tanaka, date: new Date(NOW - 4 * HOUR), text: '送った本文' })
+    imap.failDownload.add(refused.uid)
+    sync.start()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(cache.body(messageIdOf('a1', 'inbox', older.uid))).toBe('普通の本文')
+    expect(cache.body(messageIdOf('a1', 'sent', sent.uid))).toBe('送った本文')
+    // Neither broken message is stored as having an empty body, and neither is retried pass after pass.
+    for (const uid of [deep.uid, refused.uid]) {
+      expect(cache.get(messageIdOf('a1', 'inbox', uid))?.bodyFetched).toBe(false)
+      expect(imap.calls.filter((call) => call.startsWith(`download:${uid}:`))).toHaveLength(1)
+    }
+    await expect(sync.fetchBody('inbox', deep.uid)).rejects.toThrow(RangeError)
+    imap.failDownload.delete(refused.uid)
+    await expect(sync.fetchBody('inbox', refused.uid)).resolves.toBe('拒まれた本文')
+    warn.mockRestore()
+    await sync.stop()
+  })
+
+  it('reports why it cannot connect, instead of staying in "connecting", when the password cannot be read', async () => {
+    const { sync, states } = setup({
+      password: () => {
+        throw new Error(errorText('mail.errors.account.passwordMissing'))
+      }
+    })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(states.at(-1)).toEqual(['error', t('mail.errors.account.passwordMissing')])
+    expect(sync.state).toBe('error')
     await sync.stop()
   })
 })

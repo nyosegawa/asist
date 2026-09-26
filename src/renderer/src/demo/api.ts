@@ -29,10 +29,13 @@ import {
   DEFAULT_MAIL_SETTINGS,
   mailChangeSchema,
   mailListQuerySchema,
+  parseAddress,
   parseMailInput,
-  replyRecipients,
+  parseMessageId,
   replySubject,
   mailDraftInputSchema,
+  mailReplySendSchema,
+  type MailAddress,
   type MailChangeResult,
   type MailDraft,
   type MailMessage
@@ -43,7 +46,7 @@ import { CARD_GROUPS } from './fixtures/cards'
 import { DEMO_JOB, DEMO_JOB_LOG, DEMO_JOBS } from './fixtures/jobs'
 import { DEMO_NOTES, demoNoteSummary, type DemoNote } from './fixtures/notes'
 import { DEMO_TASKS } from './fixtures/tasks'
-import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, demoMailStatus } from './fixtures/mail'
+import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from './fixtures/mail'
 import { commitDrafts, createDemoDraft, demoDraft, demoDrafts, emitMail, mailListeners } from './mail-state'
 import { DEMO_MEMORY, demoDocuments, demoPageTemplate } from './fixtures/memory'
 import { parseMemoryPageInput, validateDocument, documentOf } from '@shared/memory-page'
@@ -51,6 +54,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
 import { DEFAULT_THEME, THEMES } from '@shared/themes'
+import { mergeSettings } from '@shared/settings'
 
 /**
  * Demo mode: the mock used where window.api (preload) does not exist, that is, in a plain browser. Only
@@ -179,46 +183,45 @@ const demoMailMessage = (id: string): MailMessage => {
   if (!message) throw new Error(errorText('mail.errors.message.notFound'))
   return message
 }
+/** Puts a sent message into the Sent folder and marks the message answered, `answered`, when it is still there. */
+function demoSend(accountId: string, to: MailAddress[], cc: MailAddress[], subject: string, body: string, answered: string | null): MailChangeResult {
+  const account = DEMO_MAIL_ACCOUNTS.find((a) => a.id === accountId) ?? DEMO_MAIL_ACCOUNTS[0]
+  const original = answered === null ? null : (demoMail.find((m) => m.id === answered) ?? null)
+  const uid = Math.max(0, ...demoMail.map((m) => m.uid)) + 1
+  const sent: MailMessage = {
+    id: `${account.id}:sent:${uid}`,
+    accountId: account.id,
+    folder: 'sent',
+    uid,
+    messageId: `<${uid}@demo.example>`,
+    threadId: original?.threadId ?? `m:<${uid}@demo.example>`,
+    subject,
+    from: { name: account.name, address: account.email },
+    to,
+    cc,
+    replyTo: [],
+    date: Date.now(),
+    snippet: body.slice(0, 200),
+    unread: false,
+    starred: false,
+    answered: false,
+    attachments: [],
+    size: body.length,
+    labels: [],
+    bodyFetched: true
+  }
+  DEMO_MAIL_BODIES.set(sent.id, body)
+  commitMail([...demoMail.map((m) => (original && m.id === original.id ? { ...m, answered: true } : m)), sent], account.id)
+  const operation = answered === null ? 'send' : 'reply'
+  return { saved: true, operation, id: sent.messageId, summary: translate(operation === 'reply' ? 'mail.result.reply' : 'mail.result.send', { recipients: to.map((a) => a.address).join(', ') }) }
+}
+
 async function demoMailChange(value: Parameters<RendererApi['mailChange']>[0]): Promise<MailChangeResult> {
   const input = parseMailInput(mailChangeSchema, value)
-  if (input.operation === 'send' || input.operation === 'reply') {
-    const original = input.operation === 'reply' ? demoMailMessage(input.id) : null
-    const accountId = original ? original.accountId : input.operation === 'send' ? (input.accountId ?? 'demo-work') : 'demo-work'
-    const account = DEMO_MAIL_ACCOUNTS.find((a) => a.id === accountId) ?? DEMO_MAIL_ACCOUNTS[0]
-    const to =
-      input.operation === 'reply' && original
-        ? replyRecipients(original, account.email, input.replyAll).to
-        : input.operation === 'send'
-          ? input.to.map((address) => ({ name: '', address }))
-          : []
-    const subject = original ? replySubject(original.subject) : input.operation === 'send' ? input.subject : ''
-    const uid = Math.max(0, ...demoMail.map((m) => m.uid)) + 1
-    const sent: MailMessage = {
-      id: `${account.id}:sent:${uid}`,
-      accountId: account.id,
-      folder: 'sent',
-      uid,
-      messageId: `<${uid}@demo.example>`,
-      threadId: original?.threadId ?? `m:<${uid}@demo.example>`,
-      subject,
-      from: { name: account.name, address: account.email },
-      to,
-      cc: [],
-      replyTo: [],
-      date: Date.now(),
-      snippet: input.body.slice(0, 200),
-      unread: false,
-      starred: false,
-      answered: false,
-      attachments: [],
-      size: input.body.length,
-      labels: [],
-      bodyFetched: true
-    }
-    DEMO_MAIL_BODIES.set(sent.id, input.body)
-    commitMail([...demoMail.map((m) => (original && m.id === original.id ? { ...m, answered: true } : m)), sent], account.id)
-    return { saved: true, operation: input.operation, id: sent.messageId, summary: translate(input.operation === 'reply' ? 'mail.result.reply' : 'mail.result.send', { recipients: to.map((a) => a.address).join(', ') }) }
+  if (input.operation === 'send') {
+    return demoSend(input.accountId ?? 'demo-work', input.to.map(parseAddress), input.cc.map(parseAddress), input.subject, input.body, null)
   }
+  if (input.operation === 'reply') throw new Error('a reply from the screen is settled with mailReplySettle and sent with mailReplySend')
   if (input.operation === 'markRead') {
     const ids = new Set(input.ids)
     const targets = demoMail.filter((m) => ids.has(m.id))
@@ -611,6 +614,9 @@ export const mockApi: RendererApi = {
   mailList: async (value) => {
     const query = parseMailInput(mailListQuerySchema, value)
     const needle = query.query.toLowerCase()
+    // The order of main's cache, in which `before` names the last message of the page before.
+    const order = (a: Pick<MailMessage, 'date' | 'uid' | 'id'>, b: Pick<MailMessage, 'date' | 'uid' | 'id'>): number =>
+      b.date - a.date || b.uid - a.uid || b.id.localeCompare(a.id)
     const hits = demoMail
       .filter((m) =>
         query.view === 'starred' ? m.starred : m.folder === query.view
@@ -622,14 +628,20 @@ export const mockApi: RendererApi = {
           !needle ||
           [m.subject, m.from.name, m.from.address, m.snippet, DEMO_MAIL_BODIES.get(m.id) ?? ''].some((text) => text.toLowerCase().includes(needle))
       )
-      .sort((a, b) => b.date - a.date)
-    const page = hits.filter((m) => query.before === null || m.date < query.before).slice(0, query.limit)
+      .sort(order)
+    const { before } = query
+    const page = hits.filter((m) => before === null || order(m, before) > 0).slice(0, query.limit)
     return { messages: page.map((m) => ({ ...m })), total: hits.length, unread: hits.filter((m) => m.unread).length }
   },
   mailThread: async (accountId, threadId) =>
     demoMail.filter((m) => m.accountId === accountId && m.threadId === threadId).sort((a, b) => a.date - b.date).map((m) => ({ ...m })),
   mailRead: async (id) => ({ message: { ...demoMailMessage(id) }, text: DEMO_MAIL_BODIES.get(id) ?? '' }),
   mailChange: async (change) => demoMailChange(change),
+  mailReplySettle: async (id, replyAll) => demoReplyOf(demoMailMessage(id), replyAll),
+  mailReplySend: async (value) => {
+    const { reply, body } = parseMailInput(mailReplySendSchema, value)
+    return demoSend(parseMessageId(reply.id).accountId, reply.to, reply.cc, replySubject(reply.subject), body, reply.id)
+  },
   mailSyncNow: async () => {
     emitMail({ type: 'status', status: demoMailStatus(demoMail) })
   },
@@ -643,20 +655,13 @@ export const mockApi: RendererApi = {
   mailDraftList: async () => demoDrafts().map((draft) => ({ ...draft })),
   mailDraftCreate: async (value) => {
     const input = parseMailInput(mailDraftInputSchema, value)
-    const original = input.replyToId ? demoMailMessage(input.replyToId) : null
-    return createDemoDraft({
-      accountId: original?.accountId ?? input.accountId ?? 'demo-work',
-      to: input.to,
-      cc: input.cc,
-      subject: input.subject,
-      body: input.body,
-      reply: original ? { id: original.id, subject: original.subject, from: original.from, replyAll: input.replyAll } : null,
-      origin: 'screen'
-    })
+    return createDemoDraft({ accountId: input.accountId ?? 'demo-work', to: input.to, cc: input.cc, subject: input.subject, body: input.body, reply: null, origin: 'screen' })
   },
   mailDraftUpdate: async (id, patch) => {
     const before = demoDraft(id)
-    const next = { ...before, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)), updatedAt: Date.now() } as MailDraft
+    // As in main, a reply draft keeps its settled recipients and subject and takes only a new body.
+    const allowed = before.reply ? { body: patch.body } : patch
+    const next = { ...before, ...Object.fromEntries(Object.entries(allowed).filter(([, v]) => v !== undefined)), updatedAt: Date.now() } as MailDraft
     commitDrafts(demoDrafts().map((draft) => (draft.id === id ? next : draft)))
     return { ...next }
   },
@@ -666,11 +671,9 @@ export const mockApi: RendererApi = {
   },
   mailDraftSend: async (id) => {
     const draft = demoDraft(id)
-    const result = await demoMailChange(
-      draft.reply
-        ? { operation: 'reply', id: draft.reply.id, body: draft.body, replyAll: draft.reply.replyAll }
-        : { operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }
-    )
+    const result = draft.reply
+      ? demoSend(draft.accountId, draft.reply.to, draft.reply.cc, replySubject(draft.reply.subject), draft.body, draft.reply.id)
+      : await demoMailChange({ operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body })
     if (result.saved) commitDrafts(demoDrafts().filter((candidate) => candidate.id !== id))
     return result
   },
@@ -682,7 +685,7 @@ export const mockApi: RendererApi = {
     confirmPending.get(id)?.(approved)
   },
   getSettings: async () => settings,
-  saveSettings: async (patch) => Object.assign(settings, patch),
+  saveSettings: async (patch) => Object.assign(settings, mergeSettings(settings, patch)),
   saveApiKey: async () => mockApi.getStatus(),
   listSpeakers: async () => [],
   ttsTest: async () => ({ turnId: 0, index: 0, text: 'テスト', audio: null, phonemes: null }),
