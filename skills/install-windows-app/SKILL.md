@@ -22,7 +22,7 @@ Run everything in PowerShell from the root of the checkout on the Windows machin
    - `--build` runs `npm run dist:win`, which writes `dist\ASIST Setup <version>.exe`. Without it, the installer already in `dist\` is used.
    - `--replace-running` stops a running ASIST first. Without it, the script stops when ASIST is running. Closing the window only hides it and the tray's quit is out of a script's reach, so the app is stopped with `taskkill /F`; its agent CLIs stop with it, through the launcher's job object.
    - The installer runs with `/S`: no window, no administrator rights, into `%LOCALAPPDATA%\Programs\asist`, with a Start menu shortcut. A silent install does not start the app.
-   - `--launch` starts `ASIST.exe` with `--enable-logging` and prints where the log is (`%TEMP%\asist-<time>.log`, or `ASIST_LOG`).
+   - `--launch` starts `ASIST.exe` and prints where its launch log is (`%TEMP%\asist-<time>.log`, or `ASIST_LOG`). The launch log holds the renderer's console messages and Chromium's own output; the main process writes to the daily log in step 4. The app is started through `Start-Process`, so the command returns at once even from a shell that waits for every process holding its output.
    - `--cdp` (only with `--launch`) adds `--remote-debugging-port=9222`. While the port is open, any process on the machine can drive the app, its preload bridge included, so pass it only for a check and quit afterwards (step 5).
 4. Check it. Wait about 10 seconds after the launch and look for `ERROR` or `失敗` in the daily log, `%APPDATA%\asist\logs\<date>.log`. Drive the screen with the `visual-debugging` tools against port 9222:
 

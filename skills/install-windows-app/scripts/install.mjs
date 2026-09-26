@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync, execSync, spawn } from 'node:child_process'
+import { execFileSync, execSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
  *
  *   --build            run npm run dist:win first (without it, the installer already in dist\)
  *   --replace-running  stop a running ASIST and replace it (without it, stop when one is running)
- *   --launch           after installing, start the app with --enable-logging and print where the log is
+ *   --launch           after installing, start the app with Chromium's log in a file and print where it is
  *   --cdp              with --launch, also open the DevTools protocol on port 9222
  *   --quit             stop the running ASIST and do nothing else
  *
@@ -75,11 +75,14 @@ const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo
 console.log(`installed ${installed} from ${commit} at ${new Date().toLocaleString('sv-SE').slice(0, 16)}`)
 
 if (args.has('--launch')) {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+  const stamp = new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '-')
   const log = process.env.ASIST_LOG ?? path.join(os.tmpdir(), `asist-${stamp}.log`)
-  const out = fs.openSync(log, 'a')
-  const appArgs = ['--enable-logging', ...(args.has('--cdp') ? ['--remote-debugging-port=9222'] : [])]
-  // windowsHide would pass SW_HIDE to the app, and Windows applies it to the first window the app shows.
-  spawn(installed, appArgs, { detached: true, stdio: ['ignore', out, out], windowsHide: false }).unref()
+  const appArgs = ['--enable-logging=file', `--log-file="${log}"`, ...(args.has('--cdp') ? ['--remote-debugging-port=9222'] : [])]
+  // A process node starts inherits every inheritable handle node itself inherited, the output pipe of the
+  // shell that ran this script included, and that shell then waits until the app quits. Start-Process
+  // goes through ShellExecute, which passes the app no handle.
+  const quote = (value) => `'${value.replaceAll("'", "''")}'`
+  const command = `Start-Process -FilePath ${quote(installed)} -ArgumentList ${appArgs.map(quote).join(', ')}`
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], { stdio: 'inherit', windowsHide: true })
   console.log(`launched with logging: ${log}${args.has('--cdp') ? ' (CDP: http://127.0.0.1:9222/json)' : ''}`)
 }
