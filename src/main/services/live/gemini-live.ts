@@ -152,7 +152,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     super(info, deps)
   }
 
-  protected async openSession(): Promise<void> {
+  protected async openSession(signal: AbortSignal): Promise<void> {
     const key = this.deps.apiKey()
     if (!key) {
       const info = LLM_PROVIDER_INFO.google
@@ -169,6 +169,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         reject(error)
       }
       const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+      signal.addEventListener('abort', () => fail(signal.reason), { once: true })
       connected = this.deps.connect({
         model: settings.model,
         voice: settings.voice,

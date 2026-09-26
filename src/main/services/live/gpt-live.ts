@@ -125,7 +125,7 @@ export class GptLiveEngine extends LiveEngineBase {
     this.unsubscribeTurns()
   }
 
-  protected async openSession(): Promise<void> {
+  protected async openSession(signal: AbortSignal): Promise<void> {
     const client = this.deps.client()
     if (!client) {
       const info = LLM_PROVIDER_INFO.openai
@@ -142,6 +142,7 @@ export class GptLiveEngine extends LiveEngineBase {
         reject(error)
       }
       const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+      signal.addEventListener('abort', () => fail(signal.reason), { once: true })
       socket.on('event', (event) => {
         if (this.socket !== socket) return
         if (event.type === 'session.started') {
