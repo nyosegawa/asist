@@ -178,8 +178,9 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
             onerror: (error) => {
               if (this.owned !== owned) return
               console.error('gemini-live error:', errMessage(error))
-              this.events.emit('event', { type: 'error', message: errMessage(error) })
-              fail(error)
+              // Before the setup the error is why the session did not open, and the failure to connect reports it.
+              if (ready) this.events.emit('event', { type: 'error', message: errMessage(error) })
+              else fail(error)
             },
             onclose: (reason) => {
               if (this.owned !== owned) return
@@ -208,9 +209,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
 
   protected async closeSession(): Promise<void> {
     const session = this.session
-    this.owned = null
-    for (const controller of this.running.values()) controller.abort()
-    this.running.clear()
+    this.disown()
     if (!session) return
     try {
       session.sendRealtimeInput({ audioStreamEnd: true })
@@ -227,9 +226,20 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   }
 
   private onClosed(reason: string): void {
-    this.owned = null
+    this.disown()
     if (this.enabled) console.warn(`gemini-live: connection closed (${reason})`)
     this.sessionEnded()
+  }
+
+  /**
+   * Lets go of the session, whether the engine or the provider closed it. The calls that still owe it a
+   * result are aborted: Gemini offers no resumption handle while a call runs, so no later session knows
+   * their ids.
+   */
+  private disown(): void {
+    this.owned = null
+    for (const controller of this.running.values()) controller.abort()
+    this.running.clear()
   }
 
   private seedHistory(): void {

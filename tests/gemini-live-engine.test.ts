@@ -373,4 +373,42 @@ describe('GeminiLiveEngine', () => {
     expect(engine.state).toBe('idle')
     await engine.stop()
   })
+
+  it('reports an error once: as the failure to connect before the setup, and as an error after it', async () => {
+    const { t } = await import('../src/main/services/i18n')
+    const { engine, sessions, events } = await setup()
+    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [e.message] : []))
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sessions[0].params.callbacks.onerror(new Error('quota exceeded'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(errors()).toEqual([t('voice.live.connectFailed', { detail: 'quota exceeded' })])
+    const session = await open(engine, sessions)
+    session.params.callbacks.onerror(new Error('quota exceeded'))
+    expect(errors().slice(1)).toEqual(['quota exceeded'])
+    await engine.stop()
+  })
+
+  it('aborts the calls still running when the provider ends the session, and answers none of them to the next one', async () => {
+    const call = held()
+    let signal: AbortSignal | null = null
+    const { engine, sessions } = await setup((_name, _input, ctx) => {
+      signal = ctx.signal
+      return call.task
+    })
+    const first = await open(engine, sessions)
+    first.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    first.params.callbacks.onclose('session time limit')
+    expect(signal!.aborted).toBe(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const second = sessions[1]
+    second.message({ setupComplete: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    call.answer('approved')
+    call.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(second.toolResponses).toEqual([])
+    await engine.stop()
+  })
 })
