@@ -192,6 +192,19 @@ describe('SpeechPlayer.discardBody drops only the body of the previous turn when
   })
 })
 
+describe('SpeechPlayer.bodyQueuedAfter, which tells whether the bridge came too late', () => {
+  it('does not count the filler played while a tool runs as the answer', async () => {
+    const { player } = await createHarness()
+    const speechEnd = performance.now() - 1
+    player.beginTurn(1)
+    player.enqueue(segment(1, 998, '少々お待ちください。'))
+    expect(player.bodyQueuedAfter(speechEnd)).toBe(false)
+    player.enqueue(segment(1, 0, '明日は晴れです。'))
+    expect(player.bodyQueuedAfter(speechEnd)).toBe(true)
+    player.interrupt()
+  })
+})
+
 describe('SpeechPlayer.playClip replacing one preview with another', () => {
   it('stops the previous sample and plays the new one when a second preview starts mid-playback', async () => {
     const { player, context } = await createHarness()

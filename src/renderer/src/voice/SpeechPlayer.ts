@@ -4,6 +4,7 @@ import { speechTag } from '@shared/conversation-locale'
 import { estimateSpeechMs } from '@shared/speech-rate'
 import { conversationLocale } from '@/conversation-locale'
 import { PcmScheduler } from './pcm-scheduler'
+import { isAnswerSegment } from './answer-segment'
 import { SegmentStream } from './segment-stream'
 
 type SpeechEvents = {
@@ -64,7 +65,7 @@ export class SpeechPlayer {
   /** Lets interrupt and recover fail a wait on resume, play or decode. */
   private pendingStageCancel: ((error: Error) => void) | null = null
   private currentTurn = -1
-  /** When a body segment, one with index 0 or above, was last queued. It tells whether the bridge beat the answer. */
+  /** When a sentence of the answer was last queued. It tells whether the bridge beat the answer. */
   private bodyQueuedAt = -Infinity
   /** A decode or Web Speech callback that began before an interrupt belongs to an older generation and is ignored. */
   private playbackGeneration = 0
@@ -250,7 +251,7 @@ registerProcessor('speech-tap', TapProcessor)
 
   enqueue(segment: SpeechSegment): void {
     if (segment.turnId !== this.currentTurn) return
-    if (segment.index >= 0) this.bodyQueuedAt = performance.now()
+    if (isAnswerSegment(segment)) this.bodyQueuedAt = performance.now()
     if (segment.stream) this.segmentStreams.set(segment, new SegmentStream(segment.stream.sampleRate, segment.text))
     this.queue.push(segment)
     if (!this.playing) void this.playNext()
