@@ -1,22 +1,18 @@
 import mitt, { type Emitter } from 'mitt'
-import type { AppSettings, LiveConnection, LiveEvent, LiveUsage, TurnEvent } from '@shared/ipc'
+import type { AppSettings, LiveConnection, LiveEvent, LiveUsage } from '@shared/ipc'
 import { LiveSessionPolicy } from '@shared/live-session-policy'
 import type { LiveEngineInfo } from '@shared/voice-engine'
 import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
-import { record, turnScheduler } from '../brain/session'
 import { InputEncoder } from './audio'
 import { TranscriptTracker, type TranscriptRole } from './transcripts'
 
 /**
  * What the live engines have in common. GPT-Live and Gemini share the audio path to and from the
- * renderer, the policy for opening and closing a session (live-session-policy), the transcript assembly
- * and the conversation log, and the usage and cost estimate. How each model signals a handover (GPT-Live
- * delegation, Gemini function calling) is not shared.
- *
- * The user and assistant lines of the conversation log are written from the input and output transcripts,
- * that is from what was actually heard. A turn id is allocated per exchange, and an exchange handed to
- * brain keeps brain's turnId.
+ * renderer, the policy for opening and closing a session (live-session-policy), the assembly of the
+ * transcripts, and the usage and cost estimate. What each engine does with a transcript, which decides
+ * what the screen shows and what the conversation log keeps, and how each model signals a handover
+ * (GPT-Live delegation, Gemini function calling) are not shared.
  */
 
 export type LiveEngineEvents = {
@@ -54,18 +50,6 @@ export abstract class LiveEngineBase {
   /** Lets a close end the opening in progress at once, rather than wait for its setup or its timeout. */
   private openingAbort: AbortController | null = null
   private readonly encoder: InputEncoder
-  /** The turn id of the current exchange. The exchange closes once the assistant transcript is final. */
-  protected exchangeTurnId: number | null = null
-  /**
-   * Who emitted the started TurnEvent of this exchange, which engines that open tools or panels need:
-   * the engine itself, or brain for a turn it was handed. Whoever started a turn ends it.
-   */
-  private exchangeStartedBy: 'engine' | 'brain' | null = null
-  /**
-   * Whether a GPT-Live delegation has claimed the user's utterance in progress for brain. Until the
-   * delegation takes it, the reply's transcript neither finalizes it nor closes the exchange.
-   */
-  private userClaimed = false
   /**
    * Whether a session the provider ends reopens at once, because the user is speaking. The start of
    * speech allows one such reopen and its end withdraws it, so a provider that ends every session as
@@ -118,9 +102,6 @@ export abstract class LiveEngineBase {
     if (this.ticker) clearInterval(this.ticker)
     this.ticker = null
     this.reopenForSpeech = false
-    // A delegation ends with the engine and hands nothing to brain, so an utterance it claimed is
-    // recorded as it was heard, like any other still in progress.
-    this.userClaimed = false
     this.transcripts.flush('user')
     this.transcripts.flush('assistant')
     await this.close('stop')
@@ -264,41 +245,6 @@ export abstract class LiveEngineBase {
     this.events.emit('event', { type: 'usage', usage })
   }
 
-  /** The turn id of the current exchange, allocated on first use. */
-  protected exchange(): number {
-    this.exchangeTurnId ??= turnScheduler.allocateTurnId()
-    return this.exchangeTurnId
-  }
-
-  /**
-   * The exchange is handed to a brain turn, so later assistant transcripts are recorded under that turn.
-   * Brain started the turn and ends it when its reply is over, which can be after the voice has read the
-   * first of its sentences.
-   */
-  protected adoptTurn(turnId: number): void {
-    this.exchangeTurnId = turnId
-    this.exchangeStartedBy = 'brain'
-  }
-
-  /** Tells the renderer about this exchange's turn before any tool or panel appears. */
-  protected ensureTurnStarted(emit: (event: TurnEvent) => void): number {
-    const turnId = this.exchange()
-    if (this.exchangeStartedBy === null) {
-      this.exchangeStartedBy = 'engine'
-      emit({ type: 'started', turnId, origin: 'live' })
-    }
-    return turnId
-  }
-
-  /** Ends the exchange, emitting done only for a turn the engine started itself. */
-  protected finishExchange(emit: (event: TurnEvent) => void, fullText: string): void {
-    if (this.exchangeTurnId !== null && this.exchangeStartedBy === 'engine') {
-      emit({ type: 'done', turnId: this.exchangeTurnId, fullText })
-    }
-    this.exchangeTurnId = null
-    this.exchangeStartedBy = null
-  }
-
   protected pushTranscript(role: TranscriptRole, delta: string): void {
     if (role === 'user') {
       this.lastUserDeltaAt = this.now()
@@ -308,51 +254,8 @@ export abstract class LiveEngineBase {
     this.transcripts.push(role, delta)
   }
 
-  /** A delegation claims the user's utterance in progress for brain, until takeUserUtterance hands it over. */
-  protected claimUserUtterance(): void {
-    this.userClaimed = true
-  }
-
-  /**
-   * Hands the claimed utterance to brain. Its line on screen closes under the turn it was shown with,
-   * and it is not recorded here, because brain records the utterance it takes over.
-   */
-  protected takeUserUtterance(): string {
-    this.userClaimed = false
-    const text = this.transcripts.take('user')
-    if (text) this.events.emit('event', { type: 'userTranscript', turnId: this.exchange(), text, final: true })
-    return text
-  }
-
-  private onTranscriptDelta(role: TranscriptRole, text: string): void {
-    const turnId = this.exchange()
-    this.events.emit('event', role === 'user' ? { type: 'userTranscript', turnId, text, final: false } : { type: 'assistantTranscript', turnId, text, final: false })
-  }
-
-  private onTranscriptFinal(role: TranscriptRole, text: string): void {
-    // The input transcript can arrive after the model's reply. A pending user utterance is finalized
-    // before the reply is recorded, so that the conversation log keeps the order user then assistant.
-    // An utterance a delegation claimed is left for brain, and its exchange stays open for brain's reply.
-    if (role === 'assistant' && !this.userClaimed && this.transcripts.pending('user')) this.transcripts.flush('user')
-    const turnId = this.exchange()
-    if (role === 'user') {
-      record({ kind: 'user', turnId, text })
-      this.events.emit('event', { type: 'userTranscript', turnId, text, final: true })
-      this.onUserUtterance(turnId, text)
-      return
-    }
-    record({ kind: 'assistant', turnId, text })
-    this.events.emit('event', { type: 'assistantTranscript', turnId, text, final: true })
-    if (!this.userClaimed) this.onAssistantUtterance(turnId, text)
-  }
-
-  /** A user utterance is final in an exchange the model handles itself, without brain. It does nothing by default. */
-  protected onUserUtterance(_turnId: number, _text: string): void {}
-
-  /** An assistant utterance is final. By default this closes the exchange. */
-  protected onAssistantUtterance(_turnId: number, text: string): void {
-    this.finishExchange((event) => this.emitTurn(event), text)
-  }
-
-  protected abstract emitTurn(event: TurnEvent): void
+  /** The text of a transcript collected so far, which is not final yet. */
+  protected abstract onTranscriptDelta(role: TranscriptRole, text: string): void
+  /** A transcript is final, because it went quiet, the model signalled its end, or the engine stopped. */
+  protected abstract onTranscriptFinal(role: TranscriptRole, text: string): void
 }
