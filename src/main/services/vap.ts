@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import { app } from 'electron'
-import type { SetupProgress, VapState, VapStatus } from '@shared/ipc'
+import type { AppSettings, SetupProgress, VapState, VapStatus } from '@shared/ipc'
+import { conversationFeatures } from '@shared/conversation-locale'
 import { parseVapWorkerLine } from '@shared/vap-protocol'
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
@@ -142,6 +143,12 @@ let startInFlight: Promise<boolean> | null = null
 let prepareInFlight: Promise<{ ok: boolean; message: string }> | null = null
 let prepareController: AbortController | null = null
 let onState: ((state: VapState) => void) | null = null
+/**
+ * The worker has been running and nothing asked it to stop, so a worker that died on its own is started
+ * again. A start that fails to load clears it: loading takes several seconds of CPU, which a worker that
+ * cannot load would repeat on every watchdog tick.
+ */
+let resident = false
 let quitHookRegistered = false
 
 function runtimeDir(): string {
@@ -188,6 +195,18 @@ function registerQuitHook(): void {
   })
 }
 
+/** Whether the worker should be running: it was resident, and the setting and the conversation's language still want it. */
+export function wanted(settings: AppSettings): boolean {
+  return resident && settings.vapEnabled && conversationFeatures(settings.conversationLocale).maai
+}
+
+/** Starts a resident worker again after it stopped on its own, keeping the conversation's state handler. */
+export async function restart(): Promise<boolean> {
+  const ready = await start()
+  if (!ready) resident = false
+  return ready
+}
+
 function handleStdoutLine(line: string): void {
   const message = parseVapWorkerLine(line)
   if (message === null) {
@@ -202,7 +221,7 @@ function handleStdoutLine(line: string): void {
   }
   if (message.type === 'fatal') {
     console.warn(`vap: worker fatal: ${message.error}`)
-    stop()
+    stopWorker()
     return
   }
   onState?.(message.state)
@@ -250,7 +269,7 @@ function workerArgs(): string[] {
 
 async function startWorker(): Promise<boolean> {
   if (child && workerReady && child.exitCode === null) return true
-  stop()
+  stopWorker()
   if (!runtimeInstalled()) return false
   if (missingModels().length > 0) return false
   if (!fs.existsSync(resourcePath('vap_worker.py'))) return false
@@ -279,11 +298,12 @@ async function startWorker(): Promise<boolean> {
   // EPIPE, which becomes an uncaught exception unless the stream has a listener.
   spawned.stdin.on('error', (error) => {
     console.warn(`vap: worker input failed: ${error.message}`)
-    if (child === spawned) stop()
+    if (child === spawned) stopWorker()
   })
 
   const ready = await waitUntilReady(spawned)
-  if (!ready && child === spawned) stop()
+  if (!ready && child === spawned) stopWorker()
+  if (ready) resident = true
   return ready
 }
 
@@ -322,7 +342,13 @@ export function pushAudio(user: Float32Array, assistant: Float32Array): void {
   child.stdin.write(Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength))
 }
 
+/** Stops the worker for good, until the conversation or a preparation starts it again. */
 export function stop(): void {
+  resident = false
+  stopWorker()
+}
+
+function stopWorker(): void {
   const stale = child
   child = null
   workerReady = false
