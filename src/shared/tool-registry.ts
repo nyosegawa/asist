@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { JsonSchema, ToolSpec } from './conversation'
 import type { PromptLanguage, PromptText } from './conversation-locale'
 
@@ -45,6 +46,13 @@ export function resolvePromptTexts<T>(value: T, language: PromptLanguage): T {
   }
   return value
 }
+
+/**
+ * The JSON Schema of a zod schema for a tool's input, as the model fills it in. zod writes the parsed
+ * output by default, where a field with a default is required because parsing always fills it in, so
+ * the model would be told to write a value the description says to leave out.
+ */
+export const inputJsonSchema = (schema: z.ZodType): JsonSchema => z.toJSONSchema(schema, { io: 'input' }) as JsonSchema
 
 export interface ToolDefinition<Ctx = unknown> {
   name: string

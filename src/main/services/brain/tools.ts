@@ -1,9 +1,8 @@
 import { resolveWeatherCard } from '../weather'
 import { weatherCardKeyOf, type WeatherData } from '@shared/weather'
-import { z } from 'zod'
 import { PANEL_CATALOG, type PanelCatalogEntry } from '@shared/panel-catalog'
 import type { AgentJob, PanelEvent, TurnEvent } from '@shared/ipc'
-import type { JsonSchema, SearchSource, ToolSpec } from '@shared/conversation'
+import type { SearchSource, ToolSpec } from '@shared/conversation'
 import {
   promptLanguage,
   type ConversationLocale,
@@ -16,6 +15,7 @@ import {
   ToolError,
   createToolRegistry,
   executeTool,
+  inputJsonSchema,
   renderToolGuide,
   resolvePromptTexts,
   type ToolDefinition,
@@ -94,7 +94,7 @@ function panelTool(entry: PanelCatalogEntry, language: PromptLanguage): Def {
     name: `show_${type.replace(/-/g, '_')}`,
     description: entry.description,
     ...(PANEL_USAGE[type] ? { usage: PANEL_USAGE[type] } : {}),
-    inputSchema: z.toJSONSchema(entry.schema) as JsonSchema,
+    inputSchema: inputJsonSchema(entry.schema),
     // Showing and fetching only read, while the timer writes locally and therefore runs serially.
     parallel: !localWrite,
     timeoutMs: entry.fetch ? FETCHER_TIMEOUT_MS : LOCAL_TIMEOUT_MS,

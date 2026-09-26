@@ -117,6 +117,29 @@ describe('brain tools registry', () => {
     expect(flags('cancel_agent_job').parallel).toBe(false)
   })
 
+  it('never tells the model to write a field that the tool fills in by itself when it is left out', async () => {
+    const { tools } = await load()
+    const defaulted: string[] = []
+    const required: string[] = []
+    for (const spec of tools()) {
+      const schema = spec.inputSchema as { properties?: Record<string, object>; required?: string[] }
+      for (const [field, property] of Object.entries(schema.properties ?? {})) {
+        if (!('default' in property)) continue
+        defaulted.push(`${spec.name}.${field}`)
+        if (schema.required?.includes(field)) required.push(`${spec.name}.${field}`)
+      }
+    }
+    expect(defaulted.length).toBeGreaterThan(0)
+    expect(required).toEqual([])
+  })
+
+  it('leaves the quoted currency to the region when show_fx names only the base currency', async () => {
+    mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
+    const { executeClientTool } = await load()
+    await executeClientTool('show_fx', { base: 'USD' }, makeCtx().ctx)
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD' }, expect.any(AbortSignal))
+  })
+
   it('turns invalid panel input into a failed tool result instead of failing the turn', async () => {
     const { executeClientTool } = await load()
     const { ctx, events } = makeCtx()
