@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -583,6 +585,45 @@ describe('settings dialog while a model is prepared or memories are converted', 
     expect(statusRow.querySelector('.st-row-hint')?.textContent).toBe(
       t('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details })
     )
+  })
+
+  it('says the curation state is being checked, and offers no curation, until main has answered', async () => {
+    let answer!: (overview: MemoryOverview) => void
+    api.memoryOverview.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const view = await render()
+    await act(async () => nav(view, 'memory').click())
+    const statusRow = (): Element =>
+      [...view.querySelectorAll('.st-row')].find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status'))!
+    const curate = (): HTMLButtonElement => [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t('settingsMemory.curation.start'))!
+    expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.checking'))
+    expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.checkingState'))
+    expect(curate().disabled).toBe(true)
+
+    await act(async () => answer({ dir: '', units: 0, pages: 0, curatedThrough: null, pendingJobId: null, lastFailure: null, unavailableReason: null }))
+    expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.notRun'))
+    expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.neverRun'))
+    expect(curate().disabled).toBe(false)
+  })
+
+  it('keeps each line of a reason that spans several lines on a line of its own', async () => {
+    const style = document.head.appendChild(document.createElement('style'))
+    style.textContent = readFileSync(path.join(__dirname, '../src/renderer/src/assets/settings.css'), 'utf8')
+    try {
+      const details = 'jobs: Unrecognized key\nthrough: Invalid date'
+      api.memoryOverview.mockRejectedValueOnce(
+        new Error(errorText('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details }))
+      )
+      const view = await render()
+      await act(async () => nav(view, 'memory').click())
+      await act(async () => {})
+      const hint = [...view.querySelectorAll('.st-row')]
+        .find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status'))!
+        .querySelector<HTMLElement>('.st-row-hint')!
+      expect(hint.textContent).toContain('jobs: Unrecognized key\nthrough: Invalid date')
+      expect(['pre', 'pre-wrap', 'pre-line', 'break-spaces']).toContain(getComputedStyle(hint).whiteSpace)
+    } finally {
+      style.remove()
+    }
   })
 
   it('reads the conversion count again after semantic search is turned on, until the conversion ends', async () => {
