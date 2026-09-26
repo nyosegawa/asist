@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { ConfirmSheet } from '../src/renderer/src/ui/ConfirmSheet'
 import { askConfirm, useConfirmStore } from '../src/renderer/src/state/confirm'
+import { displayError } from '../src/renderer/src/display-error'
 
 vi.mock('motion/react', async () => {
   const { createElement, Fragment, forwardRef } = await import('react')
@@ -18,13 +19,14 @@ const api = { confirmResolve: vi.fn(async () => {}) }
 let container: HTMLDivElement
 let root: Root
 const request = { id: 'c1', title: t('mail.confirm.title'), message: 'この内容でメールを操作しますか？', detail: '仕事 の「質問」を Trash へ移します。', confirmLabel: 'この内容で実行', destructive: false }
+const later = { id: 'c2', title: t('calendar.confirm.title'), message: 'この内容で予定を保存しますか？', detail: '9月15日 10:00 打合せ', confirmLabel: t('common.save'), destructive: false }
 
 beforeEach(() => {
   vi.stubGlobal('React', React)
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   api.confirmResolve.mockClear()
-  useConfirmStore.setState({ request: null })
+  useConfirmStore.setState({ request: null, waiting: [] })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -101,7 +103,36 @@ describe('ConfirmSheet', () => {
     await act(async () => useConfirmStore.getState().open(request))
     await expect(answer).resolves.toBe(false)
     expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(request.message)
-    await expect(askConfirm({ message: 'x', confirmLabel: 'y', destructive: true })).rejects.toThrow()
+    const refused = await askConfirm({ message: 'x', confirmLabel: 'y', destructive: true }).then(
+      () => null,
+      (error: unknown) => error
+    )
+    expect(displayError(refused)).toBe(t('confirm.alreadyOpen'))
+  })
+
+  it('keeps a second request from main waiting behind the one on screen, then shows it, and answers each once', async () => {
+    await render()
+    await act(async () => useConfirmStore.getState().open(request))
+    await act(async () => useConfirmStore.getState().open(later))
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(request.message)
+    await act(async () => container.querySelector<HTMLButtonElement>('.cal-primary')!.click())
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(later.message)
+    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    expect(api.confirmResolve.mock.calls).toEqual([
+      ['c1', true],
+      ['c2', false]
+    ])
+    expect(container.querySelector('.confirm-sheet')).toBeNull()
+  })
+
+  it('drops a waiting request that main closes before it is shown', async () => {
+    await render()
+    await act(async () => useConfirmStore.getState().open(request))
+    await act(async () => useConfirmStore.getState().open(later))
+    await act(async () => useConfirmStore.getState().close(later.id))
+    await act(async () => container.querySelector<HTMLButtonElement>('.cal-btn')!.click())
+    expect(api.confirmResolve.mock.calls).toEqual([['c1', false]])
+    expect(container.querySelector('.confirm-sheet')).toBeNull()
   })
 
   it('draws the confirming button as a warning for an operation that removes something, whichever side asked', async () => {

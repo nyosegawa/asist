@@ -17,11 +17,14 @@ export function ConfirmSheet(): React.JSX.Element {
   const request = useConfirmStore((s) => s.request)
   const close = useConfirmStore((s) => s.close)
   const t = useT()
-  const [answering, setAnswering] = useState(false)
+  // The request whose answer is going out, rather than a flag. The next request waiting from main takes
+  // the screen as soon as main closes the answered one, before the IPC call returns, and the Escape
+  // handler registered on its first render would keep a flag still set then and ignore the key.
+  const [answeringId, setAnsweringId] = useState<string | null>(null)
+  const answering = request !== null && answeringId === request.id
   const cancelRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    setAnswering(false)
     if (!request) return
     cancelRef.current?.focus()
     const onKey = (event: KeyboardEvent): void => {
@@ -36,7 +39,7 @@ export function ConfirmSheet(): React.JSX.Element {
 
   const answer = async (approved: boolean): Promise<void> => {
     if (!request || answering) return
-    setAnswering(true)
+    setAnsweringId(request.id)
     try {
       if (request.resolve) request.resolve(approved)
       else await window.api.confirmResolve(request.id, approved)
