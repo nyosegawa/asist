@@ -37,9 +37,10 @@ export function inspectProcessIdentity(identity: AgentProcessIdentity): 'gone' |
   const members = processTable().filter((row) => row.pgid === identity.pid && !row.state.startsWith('Z'))
   if (members.length === 0) return 'gone'
   const leader = members.find((row) => row.pid === identity.pid)
-  if (leader && leader.startedAt !== identity.startedAt) {
-    throw new Error(errorText('jobs.process.pidReused'))
-  }
+  // macOS, like BSD, never gives a new process a PID that is still the id of a process group, so a leader
+  // that started at another time means the agent's group ended before its PID was reused. The group now
+  // belongs to that other process.
+  if (leader && leader.startedAt !== identity.startedAt) return 'gone'
   for (const member of members) {
     // The environment ps prints can contain secrets, so it is only matched against and neither the raw
     // output nor the underlying error leaves this function.

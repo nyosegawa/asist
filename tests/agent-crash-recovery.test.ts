@@ -249,7 +249,7 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
     }
   })
 
-  it.each(['token', 'startedAt'] as const)('sends no signal and does not treat the job as finished when %s differs for the same PID', async (field) => {
+  it('sends no signal and does not treat the job as finished when the token differs for the same PID', async () => {
     const token = crypto.randomUUID()
     parent = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
       detached: true, stdio: 'ignore', env: { ...process.env, [AGENT_PROCESS_TOKEN]: token }
@@ -257,12 +257,41 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
     group = parent.pid!
     const identity = captureProcessIdentity(group, token)
     const stopped = vi.fn()
-    const recovery = recoverAgentProcess({ ...identity, [field]: field === 'token' ? crypto.randomUUID() : 'different start' }, stopped)
+    const recovery = recoverAgentProcess({ ...identity, token: crypto.randomUUID() }, stopped)
     recovery.stop()
-    await expect(recovery.completion).rejects.toThrow(
-      errorText(field === 'token' ? 'jobs.process.tokenMismatch' : 'jobs.process.pidReused')
-    )
+    await expect(recovery.completion).rejects.toThrow(errorText('jobs.process.tokenMismatch'))
     expect(stopped).not.toHaveBeenCalled()
     expect(alive(group)).toBe(true)
+  })
+
+  it('treats the job as ended and sends no signal when its group PID now leads a process started at another time', async () => {
+    const token = crypto.randomUUID()
+    parent = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+      detached: true, stdio: 'ignore', env: { ...process.env, [AGENT_PROCESS_TOKEN]: token }
+    })
+    group = parent.pid!
+    const identity = captureProcessIdentity(group, token)
+    const stopped = vi.fn()
+    const recovery = recoverAgentProcess({ ...identity, startedAt: 'Thu Jan  1 09:00:00 2026' }, stopped)
+    recovery.stop()
+    await recovery.completion
+    expect(stopped).toHaveBeenCalledOnce()
+    expect(alive(group)).toBe(true)
+  })
+
+  it('settles a restored job whose group PID was reused and releases its worktree, leaving the other process alone', async () => {
+    const { job, writer } = await crashParent(false)
+    const historyFile = path.join(mocks.data, 'jobs.json')
+    const saved = JSON.parse(fs.readFileSync(historyFile, 'utf8')) as { version: number; jobs: AgentJob[] }
+    saved.jobs[0].processIdentity!.startedAt = 'Thu Jan  1 09:00:00 2026'
+    fs.writeFileSync(historyFile, JSON.stringify(saved))
+    agent = await import('../src/main/services/agent')
+    agent.list()
+    await vi.waitFor(() => expect(agent!.get(job.id)).toMatchObject({ status: 'error', mergeState: 'pending', processIdentity: undefined }), PROCESS_START)
+    // The fixture's writer is the process that now holds the PID, and it keeps writing, so the diff finds
+    // new changes; the worktree is no longer held for a running writer.
+    expect(() => agent!.diff(job.id)).not.toThrow(writerRunning)
+    expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(false)
+    expect(alive(writer)).toBe(true)
   })
 })
