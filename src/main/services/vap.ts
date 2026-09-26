@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -8,8 +7,8 @@ import type { SetupProgress, VapState, VapStatus } from '@shared/ipc'
 import { parseVapWorkerLine } from '@shared/vap-protocol'
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
-import { userAgent } from './user-agent'
 import { childEnv } from './child-env'
+import { downloadPinnedFile } from './onnx-runtime'
 import { resourcePath } from './resource-path'
 import { createEnvironment, environmentCurrent, installRequirements, recordEnvironment } from './uv'
 
@@ -329,45 +328,6 @@ export function stop(): void {
   }
 }
 
-/** Streams one file to a temporary path and renames it into place only after its sha256 has been verified. */
-async function downloadModel(
-  model: ModelFile,
-  signal: AbortSignal,
-  onBytes: (bytes: number) => void
-): Promise<void> {
-  const target = modelPath(model)
-  await fs.promises.mkdir(path.dirname(target), { recursive: true })
-  const response = await fetch(model.url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!response.ok || !response.body) {
-    throw new Error(errorText('settingsModels.preparation.downloadFailed', { file: model.file, status: response.status }))
-  }
-  const temporary = `${target}.download`
-  const hash = crypto.createHash('sha256')
-  const out = fs.createWriteStream(temporary, { mode: 0o600 })
-  try {
-    for await (const chunk of response.body) {
-      const bytes = Buffer.from(chunk)
-      hash.update(bytes)
-      onBytes(bytes.length)
-      if (!out.write(bytes)) await new Promise((resolve) => out.once('drain', resolve))
-    }
-    await new Promise<void>((resolve, reject) => {
-      out.once('error', reject)
-      out.end(resolve)
-    })
-  } catch (error) {
-    out.destroy()
-    await fs.promises.rm(temporary, { force: true })
-    throw error
-  }
-  const digest = hash.digest('hex')
-  if (digest !== model.sha256) {
-    await fs.promises.rm(temporary, { force: true })
-    throw new Error(errorText('settingsModels.preparation.checksumMismatch', { file: model.file, digest }))
-  }
-  await fs.promises.rename(temporary, target)
-}
-
 export function cancelPreparation(): boolean {
   if (!prepareController) return false
   prepareController.abort()
@@ -414,7 +374,7 @@ async function prepareOnce(
       const totalMb = missing.reduce((sum, model) => sum + model.mb, 0)
       let downloaded = 0
       for (const model of missing) {
-        await downloadModel(model, controller.signal, (bytes) => {
+        await downloadPinnedFile(model, modelPath(model), controller.signal, (bytes) => {
           downloaded += bytes
           const downloadedMb = downloaded / 1e6
           onProgress({
