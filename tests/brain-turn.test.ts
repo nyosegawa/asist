@@ -794,4 +794,20 @@ describe('brain turn', () => {
     expect(mocks.requests).toHaveLength(1)
     expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
   })
+
+  it('keeps one copy of a record written before the history was first read, after the records already in the log', async () => {
+    const { logFileName } = await import('../src/main/services/brain/conversation-log')
+    const dir = path.join(mocks.userData, 'conversations')
+    fs.mkdirSync(dir, { recursive: true })
+    const t = Date.now() - 60_000
+    fs.writeFileSync(
+      path.join(dir, logFileName(new Date())),
+      [{ t, kind: 'user', turnId: 1, text: '昨日の話' }, { t: t + 1, kind: 'assistant', turnId: 1, text: 'はい。' }].map((r) => JSON.stringify(r)).join('\n') + '\n'
+    )
+    const { history, record } = await import('../src/main/services/brain/session')
+    // Under Gemini Live the notice of a finished job is recorded by job reporting, before any turn read the history.
+    record({ kind: 'notice', turnId: 7, notice: 'job-done', text: '[システム通知] ジョブが完了した。' })
+    history.ensureLoaded()
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('昨日の話'), 'はい。', '[システム通知] ジョブが完了した。'])
+  })
 })

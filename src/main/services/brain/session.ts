@@ -100,6 +100,9 @@ export const lastActivity = (): number | null => lastActivityAt
 
 /** Appends to the conversation log and applies the same record to the history: the log is authoritative and the history is derived from it. */
 export function record(input: ConversationRecordInput): ConversationRecord {
+  // The history reads the log when it is first used. Reading it after this append would apply the
+  // record a second time, behind the older records it replays.
+  history.ensureLoaded()
   const full = conversationLog.append(input)
   history.apply(full)
   lastActivityAt = full.t
