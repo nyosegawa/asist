@@ -32,7 +32,7 @@ body,
   height: 100%;
   margin: 0;
   color: var(--color-holo-text);
-  font-family: 'Avenir Next', -apple-system, 'Hiragino Sans', 'Segoe UI Variable', 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', sans-serif;
+  font-family: 'Avenir Next', -apple-system, 'Hiragino Sans', 'Segoe UI Variable Text', 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP', sans-serif;
   overflow: hidden;
   user-select: none;
 }

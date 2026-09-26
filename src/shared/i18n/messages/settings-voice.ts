@@ -190,33 +190,19 @@ export const settingsVoice = defineMessages({
         'es-ES': 'No se encuentra {engine}. Las respuestas se leen con la voz de Windows.'
       }
     },
+    /** Shown only where Qwen3-TTS runs, which is the MLX runtime of macOS alone, so it names the macOS voice. */
     qwenNotPrepared: {
-      macos: {
-        'ja-JP': 'Qwen3-TTS のモデルを準備していません。macOS の音声合成で読み上げています。',
-        'en-US': 'The Qwen3-TTS model is not prepared. Replies are read with the macOS voice.',
-        'fr-FR': "Le modèle Qwen3-TTS n'est pas préparé. Les réponses sont lues avec la voix de macOS.",
-        'de-DE': 'Das Modell von Qwen3-TTS ist nicht vorbereitet. Antworten werden mit der macOS-Stimme vorgelesen.',
-        'hi-IN': 'Qwen3-TTS का मॉडल तैयार नहीं है। जवाब macOS की आवाज़ में पढ़े जा रहे हैं।',
-        'id-ID': 'Model Qwen3-TTS belum disiapkan. Jawaban dibacakan dengan suara macOS.',
-        'it-IT': 'Il modello di Qwen3-TTS non è pronto. Le risposte vengono lette con la sintesi vocale di macOS.',
-        'ko-KR': 'Qwen3-TTS 모델을 준비하지 않았습니다. macOS 음성 합성으로 읽어주고 있습니다.',
-        'pt-BR': 'O modelo do Qwen3-TTS não está preparado. As respostas estão sendo lidas com a voz do macOS.',
-        'es-419': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de macOS.',
-        'es-ES': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de macOS.'
-      },
-      windows: {
-        'ja-JP': 'Qwen3-TTS のモデルを準備していません。Windows の音声合成で読み上げています。',
-        'en-US': 'The Qwen3-TTS model is not prepared. Replies are read with the Windows voice.',
-        'fr-FR': "Le modèle Qwen3-TTS n'est pas préparé. Les réponses sont lues avec la voix de Windows.",
-        'de-DE': 'Das Modell von Qwen3-TTS ist nicht vorbereitet. Antworten werden mit der Windows-Stimme vorgelesen.',
-        'hi-IN': 'Qwen3-TTS का मॉडल तैयार नहीं है। जवाब Windows की आवाज़ में पढ़े जा रहे हैं।',
-        'id-ID': 'Model Qwen3-TTS belum disiapkan. Jawaban dibacakan dengan suara Windows.',
-        'it-IT': 'Il modello di Qwen3-TTS non è pronto. Le risposte vengono lette con la sintesi vocale di Windows.',
-        'ko-KR': 'Qwen3-TTS 모델을 준비하지 않았습니다. Windows 음성 합성으로 읽어주고 있습니다.',
-        'pt-BR': 'O modelo do Qwen3-TTS não está preparado. As respostas estão sendo lidas com a voz do Windows.',
-        'es-419': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de Windows.',
-        'es-ES': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de Windows.'
-      }
+      'ja-JP': 'Qwen3-TTS のモデルを準備していません。macOS の音声合成で読み上げています。',
+      'en-US': 'The Qwen3-TTS model is not prepared. Replies are read with the macOS voice.',
+      'fr-FR': "Le modèle Qwen3-TTS n'est pas préparé. Les réponses sont lues avec la voix de macOS.",
+      'de-DE': 'Das Modell von Qwen3-TTS ist nicht vorbereitet. Antworten werden mit der macOS-Stimme vorgelesen.',
+      'hi-IN': 'Qwen3-TTS का मॉडल तैयार नहीं है। जवाब macOS की आवाज़ में पढ़े जा रहे हैं।',
+      'id-ID': 'Model Qwen3-TTS belum disiapkan. Jawaban dibacakan dengan suara macOS.',
+      'it-IT': 'Il modello di Qwen3-TTS non è pronto. Le risposte vengono lette con la sintesi vocale di macOS.',
+      'ko-KR': 'Qwen3-TTS 모델을 준비하지 않았습니다. macOS 음성 합성으로 읽어주고 있습니다.',
+      'pt-BR': 'O modelo do Qwen3-TTS não está preparado. As respostas estão sendo lidas com a voz do macOS.',
+      'es-419': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de macOS.',
+      'es-ES': 'El modelo de Qwen3-TTS no está preparado. Las respuestas se leen con la voz de macOS.'
     },
     engines: {
       qwen3tts: {

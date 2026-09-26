@@ -333,7 +333,7 @@ export function SetupWizard(): React.JSX.Element | null {
       if (ttsReady) return t('setup.guide.tts.ready')
       // A saved engine this machine cannot run is offered by no choice on the screen, so it is chosen again.
       if (!ttsEngineRuns(settings.ttsEngine, capabilities.speechRuntime)) return t('setup.guide.tts.choose')
-      if (settings.ttsEngine === 'qwen3tts') return ttsChecking ? ttsDownload?.message || t('common.preparing') : t(osMessageKey('setup.guide.tts.prepareOrSystem', capabilities.os))
+      if (settings.ttsEngine === 'qwen3tts') return ttsChecking ? ttsDownload?.message || t('common.preparing') : t('setup.guide.tts.prepareOrSystem')
       return ttsChecking ? t('setup.guide.tts.verifying') : t(osMessageKey('setup.guide.tts.notConnected', capabilities.os), { engine: services?.ttsLabel ?? t('setup.steps.tts.title') })
     }
     if (step === 'mic') {

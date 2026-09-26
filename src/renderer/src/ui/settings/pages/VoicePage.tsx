@@ -123,7 +123,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
               : !ttsMissing
                 ? undefined
                 : engine === 'qwen3tts'
-                  ? t(osMessageKey('settingsVoice.speech.qwenNotPrepared', capabilities.os))
+                  ? t('settingsVoice.speech.qwenNotPrepared')
                   : t(osMessageKey('settingsVoice.speech.engineMissing', capabilities.os), { engine: ttsEngineLabel(t, engine) })
           }
         >

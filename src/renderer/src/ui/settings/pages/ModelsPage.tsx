@@ -143,7 +143,7 @@ export function ModelsPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
                 : engine === 'system'
                   ? t('settingsModels.speech.system')
                   : engine === 'qwen3tts'
-                    ? t(setup && !setup.qwenTts.recommended ? osMessageKey('settingsModels.speech.qwenTooLittleMemory', os) : 'settingsModels.speech.qwen', {
+                    ? t(setup && !setup.qwenTts.recommended ? 'settingsModels.speech.qwenTooLittleMemory' : 'settingsModels.speech.qwen', {
                         model: setup?.qwenTts.label ?? 'Qwen3-TTS'
                       })
                     : t(osMessageKey('settingsModels.speech.external', os), { engine: ttsEngineLabel(t, engine) })

@@ -55,7 +55,7 @@
 
 - いまの並びは、`'Avenir Next', -apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif` と、等幅の `ui-monospace, 'SF Mono', Menlo, monospace`、pop のテーマの `ui-rounded, 'Hiragino Maru Gothic ProN'` です。
 - Windows のフォントを足します。
-  - 本文: `'Segoe UI Variable', 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI'`
+  - 本文: `'Segoe UI Variable Text', 'Segoe UI', 'Yu Gothic UI', 'Meiryo UI'`
   - 等幅: `'Cascadia Mono', Consolas`
 - 文字が収まるかを確かめる `demo:fit` は、macOS のフォントで測っています。Windows のフォントでは折り返しが変わるので、Windows でも測る必要があります。CI の Windows の runner に日本語のフォント(Yu Gothic)が入っているかは未確認です([06-open-questions.md](../06-open-questions.md))。
 

@@ -618,33 +618,19 @@ export const setup = defineMessages({
         'es-419': 'La lectura en voz alta está lista. Continúa con Siguiente.',
         'es-ES': 'La lectura en voz alta está preparada. Continúa con “Siguiente”.'
       },
+      /** Shown only where Qwen3-TTS runs, which is the MLX runtime of macOS alone, so it names the macOS voice. */
       prepareOrSystem: {
-        macos: {
-          'ja-JP': '「モデルを準備する」を押すか、macOS の音声合成を選んでください。',
-          'en-US': 'Press Prepare the model, or choose the macOS voice.',
-          'fr-FR': 'Cliquez sur « Préparer le modèle », ou choisissez la voix de macOS.',
-          'de-DE': 'Drücken Sie „Modell vorbereiten“, oder wählen Sie die macOS-Stimme.',
-          'hi-IN': '"मॉडल तैयार करें" दबाएँ, या macOS की आवाज़ चुनें।',
-          'id-ID': 'Tekan Siapkan model, atau pilih suara macOS.',
-          'it-IT': 'Premi «Prepara il modello», oppure scegli la sintesi vocale di macOS.',
-          'ko-KR': "'모델 준비하기'를 누르거나 macOS 음성 합성을 선택하십시오.",
-          'pt-BR': 'Clique em Preparar o modelo ou escolha a voz do macOS.',
-          'es-419': 'Presiona «Preparar el modelo», o elige la voz de macOS.',
-          'es-ES': 'Pulsa “Preparar el modelo” o elige la voz de macOS.'
-        },
-        windows: {
-          'ja-JP': '「モデルを準備する」を押すか、Windows の音声合成を選んでください。',
-          'en-US': 'Press Prepare the model, or choose the Windows voice.',
-          'fr-FR': 'Cliquez sur « Préparer le modèle », ou choisissez la voix de Windows.',
-          'de-DE': 'Drücken Sie „Modell vorbereiten“, oder wählen Sie die Windows-Stimme.',
-          'hi-IN': '"मॉडल तैयार करें" दबाएँ, या Windows की आवाज़ चुनें।',
-          'id-ID': 'Tekan Siapkan model, atau pilih suara Windows.',
-          'it-IT': 'Premi «Prepara il modello», oppure scegli la sintesi vocale di Windows.',
-          'ko-KR': "'모델 준비하기'를 누르거나 Windows 음성 합성을 선택하십시오.",
-          'pt-BR': 'Clique em Preparar o modelo ou escolha a voz do Windows.',
-          'es-419': 'Presiona «Preparar el modelo», o elige la voz de Windows.',
-          'es-ES': 'Pulsa “Preparar el modelo” o elige la voz de Windows.'
-        }
+        'ja-JP': '「モデルを準備する」を押すか、macOS の音声合成を選んでください。',
+        'en-US': 'Press Prepare the model, or choose the macOS voice.',
+        'fr-FR': 'Cliquez sur « Préparer le modèle », ou choisissez la voix de macOS.',
+        'de-DE': 'Drücken Sie „Modell vorbereiten“, oder wählen Sie die macOS-Stimme.',
+        'hi-IN': '"मॉडल तैयार करें" दबाएँ, या macOS की आवाज़ चुनें।',
+        'id-ID': 'Tekan Siapkan model, atau pilih suara macOS.',
+        'it-IT': 'Premi «Prepara il modello», oppure scegli la sintesi vocale di macOS.',
+        'ko-KR': "'모델 준비하기'를 누르거나 macOS 음성 합성을 선택하십시오.",
+        'pt-BR': 'Clique em Preparar o modelo ou escolha a voz do macOS.',
+        'es-419': 'Presiona «Preparar el modelo», o elige la voz de macOS.',
+        'es-ES': 'Pulsa “Preparar el modelo” o elige la voz de macOS.'
       },
       verifying: {
         'ja-JP': '検証しています',
@@ -1396,17 +1382,17 @@ export const setup = defineMessages({
         'es-ES': 'Este Mac no tiene una voz en {language}. Añade una en Ajustes del Sistema > Accesibilidad > Contenido hablado.'
       },
       windows: {
-        'ja-JP': 'このコンピュータに{language}の声が入っていません。Windows の設定 > 時刻と言語 で追加してください。',
-        'en-US': 'This computer has no {language} voice. Add one in Windows Settings > Time & language.',
-        'fr-FR': "Cet ordinateur n'a aucune voix en {language}. Ajoutez-en une dans Paramètres Windows > Heure et langue.",
-        'de-DE': 'Auf diesem Computer fehlt eine Stimme für {language}. Fügen Sie eine unter Windows-Einstellungen > Zeit und Sprache hinzu.',
-        'hi-IN': 'इस कंप्यूटर में {language} की आवाज़ नहीं है। Windows सेटिंग्स > समय और भाषा में जाकर एक जोड़ें।',
-        'id-ID': 'Komputer ini tidak punya suara {language}. Tambahkan satu di Pengaturan Windows > Waktu & bahasa.',
-        'it-IT': 'Questo computer non ha una voce in {language}. Aggiungine una in Impostazioni di Windows > Data/ora e lingua.',
-        'ko-KR': '이 컴퓨터에는 {language} 음성이 없습니다. Windows 설정 > 시간 및 언어에서 추가하십시오.',
-        'pt-BR': 'Este computador não tem voz em {language}. Adicione uma em Configurações do Windows > Hora e idioma.',
-        'es-419': 'Esta computadora no tiene una voz en {language}. Agrega una en Configuración de Windows > Hora e idioma.',
-        'es-ES': 'Este ordenador no tiene una voz en {language}. Añade una en Configuración de Windows > Hora e idioma.'
+        'ja-JP': 'このコンピュータに{language}の声が入っていません。Windows の設定 > 時刻と言語 > 音声認識 > 音声の管理 で追加してください。',
+        'en-US': 'This computer has no {language} voice. Add one in Windows Settings > Time & language > Speech > Manage voices.',
+        'fr-FR': "Cet ordinateur n'a aucune voix en {language}. Ajoutez-en une dans Paramètres Windows > Heure et langue > Voix > Gérer les voix.",
+        'de-DE': 'Auf diesem Computer fehlt eine Stimme für {language}. Fügen Sie eine unter Windows-Einstellungen > Zeit und Sprache > Spracherkennung > Stimmen verwalten hinzu.',
+        'hi-IN': 'इस कंप्यूटर में {language} की आवाज़ नहीं है। Windows सेटिंग्स > समय और भाषा > वाक् > आवाज़ें प्रबंधित करें में जाकर एक जोड़ें।',
+        'id-ID': 'Komputer ini tidak punya suara {language}. Tambahkan satu di Pengaturan Windows > Waktu & bahasa > Ucapan > Kelola suara.',
+        'it-IT': 'Questo computer non ha una voce in {language}. Aggiungine una in Impostazioni di Windows > Data/ora e lingua > Voce > Gestisci voci.',
+        'ko-KR': '이 컴퓨터에는 {language} 음성이 없습니다. Windows 설정 > 시간 및 언어 > 음성 > 음성 관리에서 추가하십시오.',
+        'pt-BR': 'Este computador não tem voz em {language}. Adicione uma em Configurações do Windows > Hora e idioma > Fala > Gerenciar vozes.',
+        'es-419': 'Esta computadora no tiene una voz en {language}. Agrega una en Configuración de Windows > Hora e idioma > Voz > Administrar voces.',
+        'es-ES': 'Este ordenador no tiene una voz en {language}. Añade una en Configuración de Windows > Hora e idioma > Voz > Administrar voces.'
       }
     },
     groupLabel: {
@@ -1799,6 +1785,7 @@ export const setup = defineMessages({
       'es-419': 'Volver a verificar',
       'es-ES': 'Volver a comprobarlo'
     },
+    /** Hindi writes सेटिंग्स where it names the Windows app, as Hindi Windows does, and सेटिंग्ज़ for ASIST's own settings. */
     openSettings: {
       macos: {
         'ja-JP': 'システム設定を開く',
