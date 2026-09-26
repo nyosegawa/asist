@@ -458,7 +458,10 @@ function enableMic(): Promise<void> {
   return liveMode() ? liveVoice.enable() : voiceController.enable()
 }
 
-/** Turns the microphone on when the user chose to have it on at launch. */
+/**
+ * Turns the microphone on when the user chose to have it on at launch: at launch, and again once the
+ * setup or the notice of the risks that held it off has been answered.
+ */
 export function startMicAtLaunch(): void {
   if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
 }
