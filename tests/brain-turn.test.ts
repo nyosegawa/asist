@@ -544,6 +544,97 @@ describe('brain turn', () => {
     expect(mocks.requests[1].system.some((block) => block.text.includes('以前の会話の引き継ぎ'))).toBe(true)
   })
 
+  it('answers a turn at the hard limit at once, saying the history is being summarized, and never waits for the summary, even after one fails', async () => {
+    const { brain, events } = await loadBrain()
+    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    const { completeText } = await import('../src/main/services/llm')
+    history.ensureLoaded()
+    for (let i = 0; i < 50; i++) {
+      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    }
+    history.noteContextTokens(HARD_LIMIT_TOKENS + 1_000_000, history.revision)
+    let failSummary!: (error: Error) => void
+    vi.mocked(completeText).mockReturnValueOnce(new Promise((_, reject) => { failSummary = reject }))
+    const saidIn = (turnId: number): string[] => events.flatMap((e) => (e.type === 'segment' && e.turnId === turnId ? [e.segment.text] : []))
+    const sentence = createTranslator('ja-JP')('spoken.historyFull')
+
+    // The summary is still being written while both of these turns are answered.
+    expect(saidIn(await runToDone(brain, '明日の天気は'))).toEqual([sentence])
+    expect(saidIn(await runToDone(brain, 'まだですか'))).toEqual([sentence])
+    expect(completeText).toHaveBeenCalledOnce()
+    failSummary(new Error('overloaded'))
+    await history.compact('quiet')
+    // After the failure the next turn starts another summary and is answered without waiting for it either.
+    const callsBefore = vi.mocked(completeText).mock.calls.length
+    vi.mocked(completeText).mockReturnValueOnce(new Promise(() => {}))
+    expect(saidIn(await runToDone(brain, 'もう一度'))).toEqual([sentence])
+    expect(vi.mocked(completeText).mock.calls.length).toBe(callsBefore + 1)
+    expect(mocks.requests).toEqual([])
+  })
+
+  it('holds a job report while the history is at its hard limit and reports it once the summary is done, not with the sentence about the summary', async () => {
+    const { brain, events } = await loadBrain()
+    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    const { completeText } = await import('../src/main/services/llm')
+    history.ensureLoaded()
+    for (let i = 0; i < 50; i++) {
+      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    }
+    history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
+    let finishSummary!: (text: string) => void
+    vi.mocked(completeText).mockReturnValueOnce(new Promise((resolve) => { finishSummary = (text) => resolve({ text, stop: 'end' }) }))
+    mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+    const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+    const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
+    brain.events.on('event', (e) => {
+      if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
+      if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
+      if (e.type === 'done') acks.finishTurn(e.turnId)
+    })
+    initJobReporting()
+    const agent = await import('../src/main/services/agent')
+    agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+    await vi.waitFor(() => expect(completeText).toHaveBeenCalledOnce())
+    finishSummary('以前の会話の引き継ぎ')
+    await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
+    // A report counted as not delivered goes out again at once, so a second request would have started by now.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(mocks.requests).toHaveLength(1)
+    const segments = events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))
+    expect(segments).toEqual(['調査が終わりました。'])
+  })
+
+  it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      mocks.rounds.push(async (round) => {
+        // A slow model, or a tool that runs long before the first sentence.
+        await new Promise((resolve) => setTimeout(resolve, 4 * 60_000))
+        round.text('調査が終わりました。')
+        return {}
+      })
+      for (let i = 0; i < 4; i++) mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      const { brain } = await loadBrain()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
+      brain.events.on('event', (e) => {
+        if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
+        if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
+        if (e.type === 'done') acks.finishTurn(e.turnId)
+      })
+      initJobReporting()
+      const agent = await import('../src/main/services/agent')
+      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(mocks.requests).toHaveLength(1)
+      expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('returns tool results in the order of the calls, marks a failure with isError, and logs each tool name and result length', async () => {
     mocks.fetchPanel.mockRejectedValueOnce(new Error('HTTP 503'))
     mocks.rounds.push(async (round) => {

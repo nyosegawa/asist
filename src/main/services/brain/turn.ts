@@ -103,7 +103,7 @@ function jobStatusNote(locale: ConversationLocale, block: string | null, shown: 
 
 /** Ends a turn with a prepared sentence, which is said aloud and therefore read in the language of the conversation. */
 class TurnStopError extends Error {
-  constructor(readonly key: Extract<MessageKey, 'spoken.replyTooLong' | 'spoken.cannotAnswer' | 'spoken.turnStopped'>) {
+  constructor(readonly key: Extract<MessageKey, 'spoken.replyTooLong' | 'spoken.cannotAnswer' | 'spoken.turnStopped' | 'spoken.historyFull'>) {
     super(key)
     this.name = 'TurnStopError'
   }
@@ -223,6 +223,7 @@ async function runTurn(
   let toolOptions: ToolOptions
   let system: SystemLayer[]
   let compacted = false
+  let historyFull = false
   const injectionStats = { count: 0, tokens: 0, searchMs: 0 }
   let injection: MemoryInjection | null = null
   // Everything that can fail before a request is sent happens here, so that a failure ends the turn
@@ -238,23 +239,21 @@ async function runTurn(
     history.ensureLoaded()
     signal.throwIfAborted()
     const need = history.needsCompaction()
-    if (need === 'block') {
-      // Only when the context is close to the API window does the turn wait for the compaction, which
-      // happens after replaying a long log with no checkpoint. An abort cancels this turn's wait, not
-      // the compaction itself, which is shared with the maintenance job.
-      await waitWithAbort(history.compact('limit'), signal)
-      compacted = true
-    } else if (need === 'now') {
-      // Above the limit the compaction starts but this turn does not wait for it and goes on with the
-      // current history. The compaction keeps the turns recent at its start and folds the older ones
-      // into the summary, so this turn and any later one stay.
+    // Above the limit the compaction starts before the turn, which never waits for it: a summary can
+    // take minutes and can fail, and a turn waiting on it would be silent that long, again after each
+    // failure. The compaction keeps the turns recent at its start and folds the older ones into the
+    // summary, so this turn and any later one stay.
+    if (need === 'now' || need === 'block') {
       void history.compact('limit')
       compacted = true
     }
+    // Close to the API window, which replaying a long log with no checkpoint can reach, the turn is
+    // not sent until the summary has shortened the history, and says so instead.
+    historyFull = need === 'block'
     // The note is stored on the user record so that the memories shown to the model and the next
     // history agree. Memories already in the profile or shown in the recent history are left out.
     const memoryBlock = memory.promptBlock()
-    if (!input.notice) {
+    if (!input.notice && !historyFull) {
       try {
         const searchStartedAt = Date.now()
         const hits = await waitWithAbort(memory.search(userText, { limit: 8, mode: 'utterance' }, signal), signal)
@@ -512,6 +511,7 @@ async function runTurn(
   // Once the input is recorded, every way out of the turn goes through the catch below, which closes
   // the turn in the log and in the events however it ends.
   try {
+    if (historyFull) throw new TurnStopError('spoken.historyFull')
     const messages: ConversationMessage[] = history.toMessages()
     let completed = false
     let maxTokenContinuations = 0

@@ -46,6 +46,19 @@ export const spoken = defineMessages({
     'es-419': 'Esto estaba tardando demasiado, así que me detuve aquí por seguridad. ¿Puedes acotar un poco la pregunta?',
     'es-ES': 'Esto estaba tardando demasiado, así que me he parado aquí por seguridad. ¿Puedes acotar un poco la pregunta?'
   },
+  historyFull: {
+    'ja-JP': '会話が長くなったので、いま要約しています。少ししてから、もう一度話しかけてください。',
+    'en-US': "Our conversation has grown long, so I'm summarizing it now. Give me a little while, then speak to me again.",
+    'fr-FR': 'Notre conversation est devenue longue, je suis en train de la résumer. Laissez-moi un moment, puis reparlez-moi.',
+    'de-DE': 'Unser Gespräch ist lang geworden, deshalb fasse ich es gerade zusammen. Geben Sie mir einen Moment und sprechen Sie mich dann noch einmal an.',
+    'hi-IN': 'हमारी बातचीत लंबी हो गई है, इसलिए मैं अभी उसका सार बना रहा हूँ। थोड़ी देर बाद फिर बोलिए।',
+    'id-ID': 'Percakapan kita sudah panjang, jadi saya sedang merangkumnya. Tunggu sebentar, lalu bicara lagi dengan saya.',
+    'it-IT': 'La nostra conversazione è diventata lunga, così la sto riassumendo. Dammi un momento, poi parlami di nuovo.',
+    'ko-KR': '대화가 길어져서 지금 요약하고 있습니다. 잠시 뒤에 다시 말씀해 주세요.',
+    'pt-BR': 'Nossa conversa ficou longa, então estou resumindo agora. Me dá um instante e depois fala comigo de novo.',
+    'es-419': 'Nuestra conversación se hizo larga, así que la estoy resumiendo. Dame un momento y luego vuelve a hablarme.',
+    'es-ES': 'Nuestra conversación se ha hecho larga, así que la estoy resumiendo. Dame un momento y luego vuelve a hablarme.'
+  },
   ask: {
     searchResult: {
       'ja-JP': 'この検索結果について詳しく教えて: {title}',

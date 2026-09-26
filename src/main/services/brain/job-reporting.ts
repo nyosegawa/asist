@@ -8,7 +8,7 @@ import type { TurnHandle } from '@shared/turn-scheduler'
 import { conversationLocale } from '../conversation-locale'
 import * as agentRunner from '../agent'
 import { beginTurn, type TurnInput } from './index'
-import { conversationOwner, currentSpeechRoute, record, turnScheduler } from './session'
+import { conversationOwner, currentSpeechRoute, history, record, turnScheduler } from './session'
 import type { SpeechRoute } from './speech-route'
 
 /**
@@ -80,7 +80,7 @@ async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<P
   }
   // The run of beginTurn starts on a microtask, so the tracking is always registered before started or
   // segment reaches the renderer. An abort on the main side counts as not played and is queued again.
-  const delivery = playbackDeliveries.expect(handle.turnId, JOB_REPORT_PLAYBACK_TIMEOUT_MS)
+  const delivery = playbackDeliveries.expect(handle.turnId)
   const interrupted = (): void => {
     playbackDeliveries.acknowledge(handle.turnId, 'interrupted')
   }
@@ -94,6 +94,10 @@ async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<P
   } finally {
     handle.signal.removeEventListener('abort', interrupted)
   }
+  // The renderer answers when the turn is done, or when the report it queued starts playing, so the
+  // wait for it starts here. Started with the turn, it could run out while the turn is still going to
+  // speak, and the report would be said again.
+  playbackDeliveries.expire(handle.turnId, JOB_REPORT_PLAYBACK_TIMEOUT_MS)
   return delivery
 }
 
@@ -160,6 +164,15 @@ export function initJobReporting(): void {
         // loop keeps waiting until an idle-only start succeeds.
         for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
           await waitForIdle()
+          // At the hard limit a turn only says that the history is being summarized, which would pass
+          // for the report, so the report waits for the summary. A summary that fails uses up an attempt.
+          if (history.needsCompaction() === 'block') {
+            await history.compact('limit')
+            if (history.needsCompaction() === 'block') {
+              console.warn(`job report waits for the history to be summarized; retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`)
+              continue
+            }
+          }
           const route = currentSpeechRoute()
           const handle = beginTurn(notice, {}, 'interject', true, { route })
           if (!handle) {
