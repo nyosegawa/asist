@@ -49,6 +49,7 @@ const settings = {
   calendar: { enabled: false, readCalendarIds: [], writeCalendarId: null },
   mail: { accounts: [], defaultAccountId: null },
   agentCwd: '/Users/demo',
+  fileRoots: ['/Users/demo/Desktop'],
   agentEngine: 'codex',
   agentMode: 'auto',
   micAutoStart: false,
@@ -149,6 +150,13 @@ async function render(): Promise<HTMLElement> {
   return container.querySelector<HTMLElement>('[aria-label="SETTINGS"]')!
 }
 const nav = (view: HTMLElement, page: string): HTMLButtonElement => view.querySelector<HTMLButtonElement>(`.st-nav[data-page="${page}"]`)!
+/** Writes into a field the way a keystroke does. React tracks changes through its own value setter, so the native one writes the value. */
+const type = (field: HTMLInputElement | HTMLTextAreaElement, value: string): void => {
+  const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(field, value)
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+}
+const leave = (field: HTMLElement): void => void field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
 const title = (view: HTMLElement): string | null | undefined => view.querySelector('.st-page > header h2')?.textContent
 
 describe('settings dialog', () => {
@@ -305,6 +313,63 @@ describe('settings dialog', () => {
     expect(view.querySelector('input[aria-label="OPENAI_API_KEY"]')).toBeNull()
     await act(async () => view.querySelector<HTMLButtonElement>('.st-key[data-provider="openai"] .st-btn')!.click())
     expect(view.querySelector('input[aria-label="OPENAI_API_KEY"]')).not.toBeNull()
+  })
+})
+
+describe('settings fields that are saved once the user leaves them', () => {
+  it('keeps every key typed into the working folder while main has not answered, and saves the folder once the field is left', async () => {
+    // Main answers a save a moment later, and the settings on screen change only then.
+    const answers: Array<() => void> = []
+    api.saveSettings.mockImplementationOnce((patch) => new Promise((resolve) => answers.push(() => resolve({ ...settings, ...patch }))))
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    expect(folder.value).toBe('/Users/demo')
+    await act(async () => type(folder, '/Users/demo/a'))
+    await act(async () => type(folder, '/Users/demo/ab'))
+    expect(folder.value).toBe('/Users/demo/ab')
+    expect(api.saveSettings).not.toHaveBeenCalled()
+
+    await act(async () => leave(folder))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/ab' }]])
+    expect(folder.value).toBe('/Users/demo/ab')
+    await act(async () => answers.splice(0).forEach((answer) => answer()))
+    expect(folder.value).toBe('/Users/demo/ab')
+  })
+
+  it('lets a second readable folder be typed on a new line, and saves the list without blank lines once the field is left', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+    expect(roots.value).toBe('/Users/demo/Desktop')
+    await act(async () => type(roots, '/Users/demo/Desktop\n'))
+    expect(roots.value).toBe('/Users/demo/Desktop\n')
+    await act(async () => type(roots, '/Users/demo/Desktop\n\n /Users/demo/Documents \n'))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+
+    await act(async () => leave(roots))
+    expect(api.saveSettings.mock.calls).toEqual([[{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents'] }]])
+    expect(roots.value).toBe('/Users/demo/Desktop\n/Users/demo/Documents')
+  })
+
+  it('saves the days conversation logs are kept only once the field is left, and puts the saved days back for a field left empty', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    expect(days.value).toBe('90')
+    days.focus()
+    // Two Backspaces, then 3 and 0. Main deletes the logs older than the saved days at the change of day,
+    // so a value on the way, such as 9, must never be saved.
+    for (const value of ['9', '', '3', '30']) await act(async () => type(days, value))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => void days.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 30 }]])
+
+    await act(async () => type(days, ''))
+    expect(days.value).toBe('')
+    await act(async () => leave(days))
+    expect(days.value).toBe('30')
+    expect(api.saveSettings).toHaveBeenCalledTimes(1)
   })
 })
 

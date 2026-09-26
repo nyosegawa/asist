@@ -18,6 +18,7 @@ import { HoloSwitch } from '@/components/ui/switch'
 import { useMailStore, useSettingsStore, useToastStore } from '@/state/stores'
 import { askConfirm } from '@/state/confirm'
 import type { SettingsContext } from './context'
+import { useFieldDraft } from './field-draft'
 import { Btn, Chip, Group, Row, type ChipTone } from './primitives'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
@@ -43,23 +44,21 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
   const toast = useToastStore((s) => s.push)
   const t = useT()
   const [adding, setAdding] = useState(false)
-  const [syncDays, setSyncDays] = useState(String(mail.syncDays))
   useEffect(() => {
     void refreshStatus()
   }, [refreshStatus])
-  useEffect(() => setSyncDays(String(mail.syncDays)), [mail.syncDays])
 
   // Only the option that changed is sent. The accounts change through their own calls to main, and an
   // account added while this page was drawn is not in `mail`.
   const persist = (patch: Partial<Omit<MailSettingsValue, 'accounts'>>): void => ctx.set({ mail: patch })
-  const commitSyncDays = (): void => {
-    const value = Number(syncDays)
-    if (!Number.isInteger(value) || value < MIN_SYNC_DAYS || value > MAX_SYNC_DAYS) {
-      setSyncDays(String(mail.syncDays))
-      return
-    }
-    if (value !== mail.syncDays) persist({ syncDays: value })
-  }
+  const syncDays = useFieldDraft(mail.syncDays, {
+    format: String,
+    parse: (text) => {
+      const days = Number(text)
+      return Number.isInteger(days) && days >= MIN_SYNC_DAYS && days <= MAX_SYNC_DAYS ? days : null
+    },
+    save: (days) => persist({ syncDays: days })
+  })
   const afterAccountChange = async (): Promise<void> => {
     await reloadSettings()
     await refreshStatus()
@@ -134,12 +133,7 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           style={{ width: 80 }}
           min={MIN_SYNC_DAYS}
           max={MAX_SYNC_DAYS}
-          value={syncDays}
-          onChange={(event) => setSyncDays(event.target.value)}
-          onBlur={commitSyncDays}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
-          }}
+          {...syncDays}
         />
       </Row>
       <Row label={t('settingsMail.notify')} hint={t('settingsMail.notifyHint')}>
