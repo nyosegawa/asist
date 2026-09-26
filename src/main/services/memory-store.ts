@@ -11,7 +11,7 @@ import {
   classifyFile,
   documentKindOf,
   documentOf,
-  parseFrontmatter,
+  instructionBody,
   parseMemoryPageInput,
   parsePage,
   unitsOfJournal,
@@ -241,26 +241,10 @@ export function deleteDocument(file: string, dir = memoryDir()): void {
   commit(dir, written('deleted', { file }))
 }
 
-function readText(dir: string, file: string): string | null {
-  return readFileOf(dir, file)?.trim() || null
-}
-
-/** The body with the frontmatter and the top-level "# " headings removed. */
-function bodyOf(text: string | null): string | null {
-  if (!text) return null
-  const lines = text.split('\n')
-  const { bodyStart } = parseFrontmatter(lines)
-  const body = lines
-    .slice(bodyStart)
-    .filter((line) => !/^# /.test(line))
-    .join('\n')
-    .trim()
-  return body || null
-}
-
 /** The body of instruction.md, which goes whole into the system prompt, or null when it is missing or empty. */
 export function readInstruction(dir = memoryDir()): string | null {
-  return bodyOf(readText(dir, INSTRUCTION_FILE))
+  const text = readFileOf(dir, INSTRUCTION_FILE)
+  return text === null ? null : instructionBody(text).trim() || null
 }
 
 function commit(dir: string, message: string): void {

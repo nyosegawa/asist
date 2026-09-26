@@ -843,6 +843,19 @@ export const memory = defineMessages({
       'pt-BR': '{file}: o nome do arquivo precisa ser YYYY-MM-DD.md',
       'es-419': '{file}: el nombre del archivo debe ser YYYY-MM-DD.md',
       'es-ES': '{file}: el nombre del archivo debe ser YYYY-MM-DD.md'
+    },
+    duplicateHeading: {
+      'ja-JP': '{file}: {line} 行目、見出し「{heading}」が {first} 行目にもあります。同じ見出しは一つにまとめます',
+      'en-US': '{file}: line {line}, the heading "{heading}" is also on line {first}; merge the two into one',
+      'fr-FR': '{file} : ligne {line}, le titre « {heading} » figure aussi à la ligne {first} ; regroupez-les en un seul',
+      'de-DE': '{file}: Zeile {line}, die Überschrift „{heading}“ steht auch in Zeile {first}; fassen Sie beide zu einer zusammen',
+      'hi-IN': '{file}: पंक्ति {line}, शीर्षक "{heading}" पंक्ति {first} में भी है; दोनों को एक में मिलाएँ',
+      'id-ID': '{file}: baris {line}, judul “{heading}” juga ada di baris {first}; gabungkan keduanya jadi satu',
+      'it-IT': "{file}: riga {line}, il titolo «{heading}» c'è anche alla riga {first}; uniscili in uno solo",
+      'ko-KR': '{file}: {line}번째 줄, 제목 “{heading}”이(가) {first}번째 줄에도 있습니다. 같은 제목은 하나로 합칩니다',
+      'pt-BR': '{file}: linha {line}, o título “{heading}” também está na linha {first}; junte os dois em um só',
+      'es-419': '{file}: línea {line}, el encabezado «{heading}» también está en la línea {first}; júntalos en uno solo',
+      'es-ES': '{file}: línea {line}, el encabezado “{heading}” también está en la línea {first}; júntalos en uno solo'
     }
   },
   curation: {
