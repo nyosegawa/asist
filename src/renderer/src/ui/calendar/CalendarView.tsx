@@ -315,7 +315,7 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
         const rect = el.getBoundingClientRect()
         const pad = (n: number): string => String(n).padStart(2, '0')
         openEditor(
-          newDraft(day, { start: `${pad(hour)}:00`, end: hour === 23 ? '23:59' : `${pad(hour + 1)}:00` }),
+          newDraft(day, { startTime: `${pad(hour)}:00`, endTime: hour === 23 ? '23:59' : `${pad(hour + 1)}:00` }),
           anchorOf(el, new DOMRect(rect.left, rect.top + hour * HOUR_PX, rect.width, HOUR_PX))
         )
       }}
@@ -409,7 +409,7 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
         {popover?.type === 'editor' && (
           <Card anchor={popover.anchor} kind="editor">
             <EditorCard
-              key={popover.draft.eventId ?? popover.draft.date}
+              key={popover.draft.eventId ?? popover.draft.startDate}
               initial={popover.draft}
               calendarLabel={editorCalendarLabel(popover.draft, events, status, writeCalendar)}
               onSubmit={(draft) => {

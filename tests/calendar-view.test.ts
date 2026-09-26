@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '../src/shared/i18n'
 import type { CalendarEvent } from '../src/shared/calendar'
 import type { AppSettings } from '../src/shared/settings'
 import { CalendarView } from '../src/renderer/src/ui/calendar/CalendarView'
+import { EditorCard, changeFromDraft, draftFromEvent, moveStartDate } from '../src/renderer/src/ui/calendar/cards'
 import { useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 
@@ -134,6 +135,55 @@ it('sends the new event to main for confirmation and reloads the range after it 
   expect(calendarEvents).toHaveBeenCalledTimes(2)
   expect(useToastStore.getState().toasts[0]).toMatchObject({ kind: 'ok', title: t('calendar.saved.create') })
   expect(container.querySelector('.cal-pop')).toBeNull()
+})
+
+it('edits an event that crosses midnight with its end day shown, and saves it with its whole length', async () => {
+  const overnight = event({ title: '夜間作業', start: day(15, 22), end: day(16, 2) })
+  calendarEvents.mockResolvedValue([overnight])
+  calendarChange.mockResolvedValue({ saved: true, operation: 'update', event: overnight, sync: 'macOSに保存しました' })
+  await render()
+  await act(async () => container.querySelector<HTMLButtonElement>(`[data-event-id="${overnight.id}"]`)!.click())
+  await act(async () => container.querySelector<HTMLButtonElement>(`[aria-label="${t('calendar.event.edit')}"]`)!.click())
+  const form = container.querySelector<HTMLFormElement>('.cal-create-form')!
+  expect([...form.querySelectorAll<HTMLInputElement>('input[type=date]')].map((input) => input.value)).toEqual(['2026-09-15', '2026-09-16'])
+  await act(async () => form.requestSubmit())
+  expect(calendarChange).toHaveBeenCalledWith({
+    operation: 'update',
+    eventId: overnight.id,
+    event: expect.objectContaining({ start: new Date(overnight.start).toISOString(), end: new Date(overnight.end).toISOString() })
+  })
+})
+
+describe('the draft of the event editor', () => {
+  it('saves a multi-day all-day event and an event with times over several days without changing their length', () => {
+    const trip = event({ allDay: true, start: day(15), end: day(18) })
+    const tour = event({ start: day(15, 10), end: day(17, 12) })
+    for (const original of [trip, tour]) {
+      const change = changeFromDraft(draftFromEvent(original))
+      expect(change?.operation === 'update' && [Date.parse(change.event.start), Date.parse(change.event.end)]).toEqual([original.start, original.end])
+    }
+  })
+
+  it('shows only the start day for an event that begins and ends on the same day', async () => {
+    const draft = draftFromEvent(event({ allDay: true, start: day(15), end: day(16) }))
+    expect([draft.startDate, draft.endDate]).toEqual(['2026-09-15', '2026-09-15'])
+    await act(async () =>
+      root.render(React.createElement(EditorCard, { initial: draft, calendarLabel: 'Google / 仕事', onSubmit: vi.fn(), onClose: vi.fn() }))
+    )
+    expect(container.querySelectorAll('input[type=date]')).toHaveLength(1)
+  })
+
+  it('moves the end day along with the start day, so that the event keeps its length', () => {
+    const draft = draftFromEvent(event({ allDay: true, start: day(15), end: day(18) }))
+    expect(moveStartDate(draft, '2026-09-29')).toMatchObject({ startDate: '2026-09-29', endDate: '2026-10-01' })
+  })
+
+  it('cannot be saved while a date or a time is cleared', () => {
+    const draft = draftFromEvent(event({ title: '打合せ' }))
+    expect(changeFromDraft(draft)).not.toBeNull()
+    expect(changeFromDraft(moveStartDate(draft, ''))).toBeNull()
+    expect(changeFromDraft({ ...draft, endTime: '' })).toBeNull()
+  })
 })
 
 it('loads no events while the calendar integration is off and points to the settings screen', async () => {
