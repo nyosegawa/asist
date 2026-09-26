@@ -1023,6 +1023,7 @@ export interface RendererApi {
   saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>
   ttsTest(): Promise<SpeechSegment>
+  /** Opens a web page in the browser or a mail address in the mail app, and refuses any other link. */
   openExternal(url: string): Promise<void>
   /** Reveals a file in Finder. Only paths belonging to a job are allowed. */
   revealPath(path: string): Promise<void>

@@ -28,6 +28,7 @@ import { getSettings } from './services/settings'
 import { createTranslator } from '@shared/i18n'
 import { initMail } from './services/mail'
 import { isAppPage } from '@shared/app-page'
+import { isExternalLink } from '@shared/external-link'
 
 let mainWindow: BrowserWindow | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -67,17 +68,17 @@ function createWindow(): void {
   // A Google link inside the map card's iframe, such as the one that opens the larger map, goes to the
   // default browser instead of a window inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    if (isExternalLink(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
   // The preload bridge is exposed to whatever page this window shows, so the window never leaves the
   // app's page: a link clicked in a document or a file dropped on the window would otherwise hand the
-  // whole API to that page. A web link opens in the default browser instead.
+  // whole API to that page. A web or mail link opens in its own app instead.
   mainWindow.webContents.on('will-navigate', (event) => {
     if (isAppPage(event.url, appPage)) return
     event.preventDefault()
-    if (/^https?:\/\//.test(event.url)) void shell.openExternal(event.url)
+    if (isExternalLink(event.url)) void shell.openExternal(event.url)
   })
 
   // Electron grants every permission by default, including to the map's iframe.

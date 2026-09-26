@@ -64,6 +64,7 @@ import { completeSetup } from './services/setup-completion'
 import { isPathAllowed } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
 import { isAppPage } from '@shared/app-page'
+import { isExternalLink } from '@shared/external-link'
 import { reportOpenMiniApp } from './services/mini-app-view'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { conversationLocale } from './services/conversation-locale'
@@ -557,9 +558,10 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     }
   })
 
-  handle(IpcChannel.OpenExternal, (_e, url: string) => {
-    if (/^https?:\/\//.test(url)) return shell.openExternal(url)
-    return Promise.resolve()
+  handle(IpcChannel.OpenExternal, (_e, url: unknown) => {
+    const target = String(url)
+    if (!isExternalLink(target)) throw new Error(errorText('app.links.refused', { url: target }))
+    return shell.openExternal(target)
   })
 
   handle(IpcChannel.RevealPath, (_e, target: string) => {

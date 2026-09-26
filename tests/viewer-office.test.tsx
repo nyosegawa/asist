@@ -2,15 +2,18 @@
 import { createTranslator } from '@shared/i18n'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import JSZip from 'jszip'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { errorText } from '@shared/i18n/error-text'
 import type { FileItem } from '@shared/files'
 import { DEMO_OFFICE_ITEMS } from '@/demo/fixtures/files-office'
 import { sanitizeDocxHtml } from '@/panels/viewers/DocxViewer'
 import { sheetToRows } from '@/panels/viewers/XlsxViewer'
 import { fontSizeCqw, parsePresentation, parseRels, parseSlide, placeholderFrames, resolveTarget } from '@/panels/viewers/pptx-model'
 import { FileViewer } from '@/panels/viewers'
+import { useToastStore } from '@/state/stores'
 
 /**
  * The Office viewers. The pure logic (cleaning the HTML, a sheet into rows, pptx XML into shapes and positions)
@@ -23,7 +26,7 @@ const itemOf = (kind: FileItem['kind']): FileItem => DEMO_OFFICE_ITEMS.find((ite
 
 let container: HTMLDivElement
 let root: Root
-const openExternal = vi.fn(async () => {})
+const openExternal = vi.fn(async (_url: string) => {})
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -33,6 +36,8 @@ beforeEach(() => {
     return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
   })
   vi.stubGlobal('window', Object.assign(window, { api: { openExternal } }))
+  openExternal.mockClear()
+  useToastStore.setState({ toasts: [] })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -63,7 +68,17 @@ describe('cleaning the docx HTML', () => {
       '<table><tr><td colspan="2" bgcolor="red">セル</td></tr></table><iframe></iframe>'
     const out = sanitizeDocxHtml(html)
     expect(out).toBe(
-      '<h1>題</h1><p>本文 <strong>太字</strong> 囲み</p><a>危険</a><a href="https://example.com/a">安全</a><img><img src="data:image/png;base64,AAAA" alt="図"><table><tbody><tr><td colspan="2">セル</td></tr></tbody></table>'
+      '<h1>題</h1><p>本文 <strong>太字</strong> 囲み</p>危険<a href="https://example.com/a">安全</a><img><img src="data:image/png;base64,AAAA" alt="図"><table><tbody><tr><td colspan="2">セル</td></tr></tbody></table>'
+    )
+  })
+
+  it('keeps mail links, links to places in the document and the ids they point to, but no id of the page around it', () => {
+    const html =
+      '<a href="mailto:team@example.com">mail</a><a href="#docx-_Toc1">toc</a><a id="docx-_Toc1"></a>' +
+      '<ol><li id="docx-footnote-1">note</li></ol><a href="#root">app</a><p id="root">page</p><a href="file:///etc/passwd">file</a>'
+    expect(sanitizeDocxHtml(html)).toBe(
+      '<a href="mailto:team@example.com">mail</a><a href="#docx-_Toc1">toc</a><a id="docx-_Toc1"></a>' +
+      '<ol><li id="docx-footnote-1">note</li></ol>app<p>page</p>file'
     )
   })
 })
@@ -219,6 +234,39 @@ describe('Office viewer rendering with the demo files', () => {
     expect(picture.src).toMatch(/^data:image\/png;base64,iVBOR/)
     expect(picture.style.left).toBe('12.50%')
     expect(picture.style.width).toBe('50.00%')
+  })
+
+  it('scrolls to a place in the document, opens a mail link outside the app, and says so when either cannot be followed', async () => {
+    const zip = new JSZip()
+    zip.file('[Content_Types].xml', '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
+    zip.file('_rels/.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+    zip.file('word/_rels/document.xml.rels', '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="mailto:team@example.com" TargetMode="External"/></Relationships>')
+    const link = (attributes: string, text: string): string => `<w:p><w:hyperlink ${attributes}><w:r><w:t>${text}</w:t></w:r></w:hyperlink></w:p>`
+    zip.file('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
+      link('w:anchor="_Toc1"', 'Findings') + link('w:anchor="_Toc9"', 'Removed section') + link('r:id="rId1"', 'Write to us') +
+      '<w:p><w:bookmarkStart w:id="0" w:name="_Toc1"/><w:r><w:t>The findings</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p></w:body></w:document>')
+    const bytes = await zip.generateAsync({ type: 'uint8array' })
+    vi.stubGlobal('fetch', async () => ({ ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }))
+    const frame = await render({ ...itemOf('docx'), url: '/linked.docx' }, 'focus')
+    const anchor = (text: string): HTMLElement => [...frame.querySelectorAll<HTMLElement>('.fv-doc a')].find((a) => a.textContent === text)!
+    const scroller = frame.querySelector<HTMLElement>('.fv-scroll')!
+    // happy-dom lays nothing out, so the places of the frame and of the bookmark are given here.
+    scroller.getBoundingClientRect = () => ({ top: 100 }) as DOMRect
+    frame.querySelector<HTMLElement>('.fv-doc [id="docx-_Toc1"]')!.getBoundingClientRect = () => ({ top: 400 }) as DOMRect
+
+    await act(async () => anchor('Findings').click())
+    expect(scroller.scrollTop).toBe(300)
+    await act(async () => anchor('Removed section').click())
+    expect(useToastStore.getState().toasts).toMatchObject([{ kind: 'error', title: t('files.viewer.anchorMissing') }])
+    expect(openExternal).not.toHaveBeenCalled()
+
+    const refused = errorText('app.links.refused', { url: 'mailto:team@example.com' })
+    openExternal.mockRejectedValueOnce(new Error(`Error invoking remote method 'open-external': Error: ${refused}`))
+    await act(async () => anchor('Write to us').click())
+    expect(openExternal).toHaveBeenCalledWith('mailto:team@example.com')
+    expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
+      kind: 'error', title: t('files.viewer.linkFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' })
+    })
   })
 
   it('shows the reason in red for a file it cannot read', async () => {
