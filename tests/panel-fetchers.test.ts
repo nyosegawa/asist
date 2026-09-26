@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
+import { REGIONS, regionCurrency } from '@shared/conversation-locale'
 import { formatMessage } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 
@@ -101,11 +102,25 @@ describe('the requests a card makes for the conversation language and the region
     expect((await fetchPanel('fx', { base: 'USD' })).props).toMatchObject({ quote: 'BRL', rate: 5.2 })
   })
 
-  it('says it does not know the currency of a region rather than quoting the rate against the yen', async () => {
+  it('quotes a rate asked for without its quote in every region the settings offer, never against the base itself', async () => {
+    const currencies = [...new Set(REGIONS.map((code) => regionCurrency(code)!)), 'USD', 'EUR']
+    respond({ result: 'success', rates: Object.fromEntries(currencies.map((code) => [code, 1.5])), time_last_update_utc: 'now' }, [])
+    const unquoted: string[] = []
+    for (const code of REGIONS) {
+      mocks.region = code
+      for (const base of ['USD', regionCurrency(code)]) {
+        const { props } = await fetchPanel('fx', { base })
+        if (typeof props.quote !== 'string' || props.quote === base) unquoted.push(`${code} ${base}/${String(props.quote)}`)
+      }
+    }
+    expect(unquoted).toEqual([])
+  })
+
+  it('says it does not know the currency of a region outside the list rather than quoting the rate against the yen', async () => {
     const urls: string[] = []
     respond({ result: 'success', rates: { JPY: 150 }, time_last_update_utc: 'now' }, urls)
-    mocks.region = 'AT'
-    await expect(fetchPanel('fx', { base: 'USD' })).rejects.toThrow('[asist:panels.errors.currencyUnknown {"region":"AT"}]')
+    mocks.region = 'XK'
+    await expect(fetchPanel('fx', { base: 'USD' })).rejects.toThrow('[asist:panels.errors.currencyUnknown {"region":"XK"}]')
     // A currency the user named is still quoted, whatever the region is.
     expect((await fetchPanel('fx', { base: 'USD', quote: 'JPY' })).props).toMatchObject({ quote: 'JPY' })
   })

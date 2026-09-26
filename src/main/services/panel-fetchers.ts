@@ -1,5 +1,5 @@
 import { errorText } from '@shared/i18n/error-text'
-import { languageOf } from '@shared/conversation-locale'
+import { languageOf, regionCurrency } from '@shared/conversation-locale'
 import { conversationLocale, region } from './conversation-locale'
 import { weatherPanelProps } from './weather'
 import { withTimeoutSignal } from '@shared/abort'
@@ -92,30 +92,25 @@ const clock: Fetcher = async (props, signal) => {
 }
 
 /**
- * The currency a rate is quoted in when the user names only the other side, for the regions a
- * conversation language starts from. A region outside the table has no obvious currency, so the card
- * says so rather than quoting a rate against a country the user never chose.
- */
-const REGION_CURRENCIES: Record<string, string> = {
-  JP: 'JPY', US: 'USD', FR: 'EUR', DE: 'EUR', IN: 'INR', ID: 'IDR',
-  IT: 'EUR', KR: 'KRW', BR: 'BRL', MX: 'MXN', ES: 'EUR'
-}
-
-/**
  * The props a card is keyed and fetched with, once the main process has filled in what only it knows:
  * an exchange rate asked for without the currency it is quoted in takes the region's. show_ tools make
- * the key of the card from these, so asking again with that currency named lands on the same card.
+ * the key of the card from these, so asking again with that currency named lands on the same card. A
+ * rate of a currency against itself is always 1, so when the region's currency is the base, the rate
+ * is quoted against the other of the two most traded currencies. A region outside the list of the
+ * settings has no currency to take, and the card says so rather than quoting against a country the user
+ * never chose.
  */
 export function completePanelProps(type: string, props: Props): Props {
   if (type !== 'fx' || props.quote != null) return props
   const home = region()
-  const currency = REGION_CURRENCIES[home]
+  const currency = regionCurrency(home)
   if (!currency) throw new Error(errorText('panels.errors.currencyUnknown', { region: home }))
-  return { ...props, quote: currency }
+  const base = String(props.base).toUpperCase()
+  return { ...props, quote: currency !== base ? currency : base === 'USD' ? 'EUR' : 'USD' }
 }
 
 const fx: Fetcher = async (props, signal) => {
-  const base = String(props.base ?? 'USD').toUpperCase()
+  const base = String(props.base).toUpperCase()
   const quote = String(props.quote).toUpperCase()
   const data = await json<{ result: string; rates: Record<string, number>; time_last_update_utc: string }>(
     `https://open.er-api.com/v6/latest/${base}`,
