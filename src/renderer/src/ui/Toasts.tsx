@@ -12,6 +12,10 @@ const KIND_STYLE: Record<string, string> = {
  * The toasts at the top right. A body shows two lines, and the toast the pointer or the keyboard rests on
  * shows the whole of it and stays up until it is left, so that a long error can be read to the end.
  * A click dismisses it.
+ *
+ * A heading is a sentence, not a label. With the HUD labels' letter spacing (0.16em) in a 320 px column, 85
+ * headings over the eleven languages wrapped; with 0.04em in 384 px, 9 do, all longer than 55 characters
+ * (measured in the demo on 2026-09-26).
  */
 export function Toasts(): React.JSX.Element {
   const toasts = useToastStore((s) => s.toasts)
