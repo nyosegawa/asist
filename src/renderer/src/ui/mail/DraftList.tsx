@@ -1,5 +1,5 @@
 import { CornerUpLeft, PenLine } from 'lucide-react'
-import { displayName, parseAddress, type MailDraft } from '@shared/mail'
+import { displayName, parseAddress, replySubject, type MailDraft } from '@shared/mail'
 import { listTime } from './format'
 import { useT } from '@/i18n'
 
@@ -49,7 +49,7 @@ export function DraftList({ drafts, query, selectedId, now, onSelect }: { drafts
             >
               <span className="ml-row-from">{`To: ${(draft.reply ? draft.reply.to.map(displayName) : draft.to.map(shortName)).join(', ') || t('mail.noRecipient')}`}</span>
               <span className="ml-row-text">
-                <span className="ml-row-subject">{draft.reply ? `Re: ${draft.reply.subject || t('mail.noSubject')}` : draft.subject || t('mail.noSubject')}</span>
+                <span className="ml-row-subject">{draft.reply ? replySubject(draft.reply.subject || t('mail.noSubject')) : draft.subject || t('mail.noSubject')}</span>
                 {draft.body.trim() && <span className="ml-row-snippet"> — {draft.body.replace(/\s+/g, ' ').trim().slice(0, 120)}</span>}
               </span>
               <span className="ml-row-aside">

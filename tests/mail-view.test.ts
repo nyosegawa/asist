@@ -207,6 +207,7 @@ describe('composing and Escape', () => {
     const view = await render()
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.drafts')))!.click())
     expect(view.querySelector('.ml-view[aria-pressed="true"]')?.textContent).toContain(`${t('mail.boxes.drafts')}${DEMO_MAIL_DRAFTS.length}`)
+    // The reply answers a message whose subject already starts with "Re:", and the row shows the subject it is sent with.
     expect(texts('.ml-row-subject')).toEqual(['季節のご挨拶', 'Re: 採用面談の候補日'])
     // A reply's row names where it goes, which Reply-To moved away from the sender of the original.
     expect(texts('.ml-row-from')[1]).toBe('To: 採用チーム')
@@ -221,7 +222,7 @@ describe('composing and Escape', () => {
     // Opening the screen from a draft card opens the composer on that draft.
     await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: DEMO_MAIL_DRAFTS[1].id }))
     expect(view.querySelector('.ml-composer h2')?.textContent).toBe(t('mail.composer.replyDraft'))
-    expect(view.querySelector('.ml-composer .ml-reply-to')?.textContent).toContain(t('mail.composer.replyToAll', { name: '鈴木 花', subject: '採用面談の候補日' }))
+    expect(view.querySelector('.ml-composer .ml-reply-to')?.textContent).toContain(t('mail.composer.replyToAll', { name: '鈴木 花', subject: 'Re: 採用面談の候補日' }))
     // The addresses shown before the send are the ones the draft is sent to: Reply-To and the reply-all's Cc, not the sender.
     expect(texts('.ml-composer .ml-field .ml-static').slice(1)).toEqual(['採用チーム <recruiting@example.co.jp>', '田中 誠 <tanaka@example.co.jp>'])
   })

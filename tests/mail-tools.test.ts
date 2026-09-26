@@ -177,10 +177,10 @@ describe('mail tools', () => {
     }
   })
 
-  it('tells the model where a reply draft goes after an edit: the addresses it was settled with, not the sender of the original', async () => {
+  it('tells the model where a reply draft goes after an edit, and with which subject: the addresses it was settled with, and one "Re:"', async () => {
     const reply = {
       id: 'a1:inbox:5',
-      subject: '打合せ',
+      subject: 'Re: 打合せ',
       from: { name: '田中', address: 't@example.com' },
       replyAll: false,
       to: [{ name: '事務局', address: 'office@example.com' }],
@@ -192,7 +192,7 @@ describe('mail tools', () => {
     mocks.service.draftUpdate.mockReturnValueOnce({ id: 'd2', to: [], cc: [], subject: '', body: 'では。', reply })
     const { executeClientTool } = await load()
     const updated = await executeClientTool('update_mail_draft', { draftId: 'd2', body: 'では。' }, ctx())
-    expect(JSON.parse(updated.content)).toMatchObject({ draftId: 'd2', to: ['事務局 <office@example.com>'], body: 'では。' })
+    expect(JSON.parse(updated.content)).toMatchObject({ draftId: 'd2', subject: 'Re: 打合せ', to: ['事務局 <office@example.com>'], body: 'では。' })
   })
 
   it('points at the settings screen when mail is not configured', async () => {

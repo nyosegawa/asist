@@ -8,7 +8,7 @@ import {
   resolvePromptTexts,
   type ToolDefinition
 } from '@shared/tool-registry'
-import { MAIL_VIEWS, mailChangeSchema, mailDate, mailDraftPatchSchema, mailListQuerySchema, mailSummary, formatAddress } from '@shared/mail'
+import { MAIL_VIEWS, mailChangeSchema, mailDate, mailDraftPatchSchema, mailListQuerySchema, mailSummary, formatAddress, replySubject } from '@shared/mail'
 import { catalogByType } from '@shared/panel-catalog'
 import { getMailService } from '../mail'
 import type { ToolContext } from './tools'
@@ -281,7 +281,7 @@ export function mailTools(language: PromptLanguage): ToolDefinition<ToolContext>
         try {
           const draft = getMailService().draftUpdate(String(draftId ?? ''), parsed.data)
           showDraftCard(ctx, draft.id)
-          return { draftId: draft.id, subject: draft.reply ? `Re: ${draft.reply.subject}` : draft.subject, to: draft.reply ? draft.reply.to.map(formatAddress) : draft.to, body: draft.body }
+          return { draftId: draft.id, subject: draft.reply ? replySubject(draft.reply.subject) : draft.subject, to: draft.reply ? draft.reply.to.map(formatAddress) : draft.to, body: draft.body }
         } catch (err) {
           throw new ToolError(TEXTS.draftFailed(detail(err, language)))
         }

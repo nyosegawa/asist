@@ -642,7 +642,7 @@ describe('mail draft card', () => {
 
   it('shows for a reply draft the message it answers and the full addresses it is sent to, edits only the body, removes it in main on discard, and opens the draft in the mail screen', async () => {
     const card = await renderAt(spec('mail-draft', { draftId: reply.id }), S)
-    expect(card.querySelector('.md-reply')?.textContent).toContain(t('mailCards.draft.replyToAll', { name: '鈴木 花', subject: '採用面談の候補日' }))
+    expect(card.querySelector('.md-reply')?.textContent).toContain(t('mailCards.draft.replyToAll', { name: '鈴木 花', subject: 'Re: 採用面談の候補日' }))
     // Reply-To sends the reply to the team address instead of the sender, and the reply-all adds the Cc.
     expect([...card.querySelectorAll('.md-static')].map((field) => field.textContent)).toEqual(['採用チーム <recruiting@example.co.jp>', '田中 誠 <tanaka@example.co.jp>'])
     expect(card.querySelector(`[aria-label="${t('mail.fields.to')}"]`)).toBeNull()

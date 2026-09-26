@@ -81,7 +81,7 @@ const SEEDS: Seed[] = [
     to: [me],
     cc: [tanaka],
     replyTo: [recruiting],
-    subject: '採用面談の候補日',
+    subject: 'Re: 採用面談の候補日',
     at: ago(2),
     unread: true,
     starred: true,
