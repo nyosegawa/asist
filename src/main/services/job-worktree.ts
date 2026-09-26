@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import type { AgentJob, JobDiff } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { isJobTerminal } from '@shared/job-status'
@@ -18,6 +19,16 @@ function jobBase(worktree: Worktree, commit: string): string {
 }
 
 /**
+ * Refuses to work on a worktree whose folder is gone, deleted by hand, with a reason the user can act on:
+ * git would otherwise fail to start in the missing folder, which reads as if git itself were missing.
+ */
+export function assertWorktreePresent(worktree: Worktree): void {
+  if (!fs.existsSync(worktree.dir)) {
+    throw new Error(errorText('jobs.worktree.gone', { dir: worktree.dir, branch: worktree.branch }))
+  }
+}
+
+/**
  * Settles the output after the process has ended. On failure the caller keeps the worktree. The commit holds
  * the worktree as the agent left it, and the submodules it touched or holds work in are recorded: a job with
  * any is never merged by ASIST, and its worktree stays until the user discards it, since a commit made inside
@@ -26,6 +37,7 @@ function jobBase(worktree: Worktree, commit: string): string {
  */
 export function captureWorktree(job: AgentJob): Pick<AgentJob, 'worktree' | 'mergeState'> {
   const worktree = job.worktree!
+  assertWorktreePresent(worktree)
   git.commitAll(worktree.dir, `asist: ${job.title}`)
   const commit = git.headCommit(worktree.dir)
   const base = jobBase(worktree, commit)
@@ -69,6 +81,7 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
   if (!worktree || job.mergeState !== 'pending' || !commit || commit !== worktree.commit) {
     throw new Error(errorText('jobs.worktree.reviewStale'))
   }
+  assertWorktreePresent(worktree)
   if (!git.isSettled(worktree.dir)) throw new Error(errorText('jobs.worktree.uncommitted'))
   if (git.headCommit(worktree.dir) !== commit || git.headCommit(worktree.repo, worktree.branch) !== commit) {
     throw new Error(errorText('jobs.worktree.commitChanged'))

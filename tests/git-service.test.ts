@@ -354,6 +354,16 @@ describe('git service with an isolated worktree', () => {
     expect(git.diffStat(repo, base, 'asist/shown')).toContain('a.txt')
   })
 
+  it.each([false, true])('removes the branch of a worktree whose folder was deleted by hand, pruned by git: %s', (pruned) => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/deleted')
+    fs.rmSync(wt, { recursive: true, force: true })
+    if (pruned) run(repo, ['worktree', 'prune'])
+    git.worktreeRemove(repo, wt, 'asist/deleted')
+    expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
+    expect(run(repo, ['worktree', 'list', '--porcelain'])).not.toContain('asist/deleted')
+  })
+
   it('reports a dirty working tree before a merge', () => {
     fs.writeFileSync(path.join(repo, 'a.txt'), 'dirty\n')
     expect(git.isClean(repo)).toBe(false)

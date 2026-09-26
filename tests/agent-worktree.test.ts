@@ -411,6 +411,38 @@ it('keeps and offers a job that only added a new file although status.showUntrac
   expect(fs.existsSync(path.join(job.cwd, 'notes.md'))).toBe(true)
 })
 
+it('says that a worktree deleted by hand is gone, settles it only once, and discards the job with its branch', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  const { dir, branch } = agent.get(job.id)!.worktree!
+  fs.rmSync(dir, { recursive: true, force: true })
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('error')
+  const gone = errorText('jobs.worktree.gone', { dir, branch })
+  expect(() => agent.diff(job.id)).toThrow(gone)
+  expect(() => agent.diff(job.id)).toThrow(gone)
+  const failures = agent.getLog(job.id).filter(({ event }) => event.kind === 'stderr' && event.text === ja('jobs.worktree.settleFailed', { detail: ja('jobs.worktree.gone', { dir, branch }) }))
+  expect(failures).toHaveLength(1)
+  agent.discard(job.id)
+  expect(agent.get(job.id)?.mergeState).toBe('discarded')
+  expect(git(repo, 'branch', '--list', branch)).toBe('')
+})
+
+it('discards a job waiting to be merged whose worktree was deleted by hand and pruned', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const { dir, branch } = agent.get(job.id)!.worktree!
+  fs.rmSync(dir, { recursive: true, force: true })
+  git(repo, 'worktree', 'prune')
+  expect(() => agent.diff(job.id)).toThrow(errorText('jobs.worktree.gone', { dir, branch }))
+  expect(agent.discardPreview(job.id).stat).toContain('new.txt')
+  agent.discard(job.id)
+  expect(git(repo, 'branch', '--list', branch)).toBe('')
+})
+
 describe('a repository with a submodule', () => {
   beforeEach(() => {
     const sub = path.join(mocks.root, 'sub')

@@ -18,7 +18,7 @@ import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
 import type { AgentProcess } from './agent-process-lifetime'
 import { recoverAgentProcess } from './agent-process-identity'
-import { assertMergeable, assertWorktreeReview, captureWorktree, discardStat, readWorktreeDiff } from './job-worktree'
+import { assertMergeable, assertWorktreePresent, assertWorktreeReview, captureWorktree, discardStat, readWorktreeDiff } from './job-worktree'
 import * as projectIndex from './project-index'
 import { installSkill } from './memory-curation-skill'
 import * as git from './git'
@@ -579,7 +579,11 @@ export function diff(id: string): JobDiff {
   if (!entry?.job.worktree) throw new Error(errorText('jobs.diff.none', { id }))
   assertWriterStopped(entry.job)
   if (!isJobTerminal(entry.job.status)) throw new Error(errorText('jobs.worktree.jobRunning'))
-  if (entry.job.mergeState === 'error') update(id, settleWorktree(entry.job))
+  if (entry.job.mergeState === 'error') {
+    // A worktree that is gone cannot be settled, and trying again on every look would only log it again.
+    assertWorktreePresent(entry.job.worktree)
+    update(id, settleWorktree(entry.job))
+  }
   return readWorktreeDiff(entry.job)
 }
 

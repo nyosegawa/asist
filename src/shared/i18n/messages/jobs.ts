@@ -1227,6 +1227,19 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível arrumar o worktree: {detail}',
       'es-419': 'No se pudo limpiar el worktree: {detail}',
       'es-ES': 'No se ha podido limpiar el worktree: {detail}'
+    },
+    gone: {
+      'ja-JP': 'worktree({dir})がありません。手で消されたようです。ブランチ {branch} は残っているので、自分で取り込むか、ジョブを捨ててブランチも消してください。',
+      'en-US': 'The worktree ({dir}) is gone; it seems to have been deleted by hand. Its branch {branch} is still there: merge it yourself, or discard the job to remove the branch too.',
+      'fr-FR': 'Le worktree ({dir}) a disparu ; il semble avoir été supprimé à la main. Sa branche {branch} existe toujours : fusionnez-la vous-même, ou abandonnez le job pour supprimer aussi la branche.',
+      'de-DE': 'Der worktree ({dir}) ist nicht mehr da; er wurde wohl von Hand gelöscht. Sein Branch {branch} existiert noch: Übernehmen Sie ihn selbst, oder verwerfen Sie den Job, um auch den Branch zu entfernen.',
+      'hi-IN': 'worktree ({dir}) मौजूद नहीं है; लगता है इसे हाथ से मिटा दिया गया। इसकी ब्रांच {branch} अब भी है: इसे खुद मर्ज करें, या ब्रांच भी हटाने के लिए जॉब छोड़ दें।',
+      'id-ID': 'worktree ({dir}) sudah tidak ada; sepertinya dihapus secara manual. Branch {branch} masih ada: gabungkan sendiri, atau buang pekerjaan ini agar branch-nya ikut terhapus.',
+      'it-IT': "Il worktree ({dir}) non c'è più: sembra sia stato eliminato a mano. Il suo branch {branch} esiste ancora: integralo tu, oppure scarta l'incarico per rimuovere anche il branch.",
+      'ko-KR': 'worktree({dir})가 없습니다. 직접 지운 것 같습니다. {branch} 브랜치는 남아 있으므로 직접 병합하거나, 작업을 버려 브랜치도 지우십시오.',
+      'pt-BR': 'O worktree ({dir}) não existe mais; parece que foi apagado à mão. O branch {branch} continua lá: mescle você mesmo, ou descarte o job para remover o branch também.',
+      'es-419': 'El worktree ({dir}) ya no está; parece que se borró a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para quitar también la rama.',
+      'es-ES': 'El worktree ({dir}) ya no está; parece que se ha borrado a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para eliminar también la rama.'
     }
   },
   discard: {

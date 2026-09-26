@@ -111,9 +111,12 @@ function worktreeOn(repo: string, branch: string): string | null {
  * Removes the worktree and its branch together with whatever the worktree still holds. git refuses to
  * remove a worktree in which a submodule was initialized unless it is forced, so a caller removes one only
  * when nothing in it is left to lose: its changes are merged, there were none, or the user threw them away.
+ * A worktree whose folder was deleted by hand is only forgotten, since `worktree remove` refuses a path that
+ * is no longer a working tree, and its branch is removed all the same.
  */
 export function worktreeRemove(repo: string, path: string, branch: string): void {
-  git(repo, ['worktree', 'remove', '--force', path])
+  if (fs.existsSync(path)) git(repo, ['worktree', 'remove', '--force', path])
+  else git(repo, ['worktree', 'prune'])
   git(repo, ['branch', '-D', branch])
 }
 
