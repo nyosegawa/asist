@@ -291,6 +291,11 @@ registerProcessor('speech-tap', TapProcessor)
     })
   }
 
+  /** Drops the clips of this role that still wait in the queue. One that has started plays to its end. */
+  dropWaitingClips(role: ClipRole): void {
+    this.queue = this.queue.filter((s) => s.clip !== role)
+  }
+
   /** Drops the preview playing and any preview waiting, leaving aizuchi and body segments alone. */
   private cancelPreview(): void {
     const rest = this.queue.filter((s) => s.clip !== 'preview')

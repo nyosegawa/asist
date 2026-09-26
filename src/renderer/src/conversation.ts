@@ -108,7 +108,8 @@ const opening = new TurnOpening({
   play: (clip, role) => speechPlayer.playClip(clip.audio, clip.text, { role }),
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
-  onBridgeOutcome: noteBridgeOutcome
+  onBridgeOutcome: noteBridgeOutcome,
+  withdrawBridge: () => speechPlayer.dropWaitingClips('bridge')
 })
 const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
@@ -608,6 +609,7 @@ async function finishUserTurnStart(requestId: string, turnId: number): Promise<b
 
 function failUserTurnStart(requestId: string, error: unknown): void {
   if (pendingRequestId !== requestId && activeRequestId !== requestId) return
+  opening.withdraw()
   pendingRequestId = null
   activeRequestId = null
   turnMetrics.discardRequest(requestId)
@@ -814,6 +816,7 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'error': {
       interjectPlayback.finishTurn(event.turnId)
+      opening.withdraw()
       useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyFailed'), body: event.message })
       feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message.slice(0, 120) } } })
       break

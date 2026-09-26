@@ -15,7 +15,9 @@ import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-class
  *
  * An utterance is identified by startedAt, the time capture began. A speech that yields no turn,
  * because its transcription failed, meant nothing or was dropped as echo, cancels it, and an
- * utterance that finishes first has begin replace it.
+ * utterance that finishes first has begin replace it. A bridge promises that an answer follows, so
+ * one that has not started sounding is withdrawn when no answer will: the speech is cancelled, or
+ * its turn fails.
  */
 
 /** No aizuchi opens a turn this soon after one played while the user was speaking, because "うん。なるほど。" back to back sounds wrong. */
@@ -42,6 +44,8 @@ export interface OpeningPorts {
   bodyQueuedAfter(speechEndAt: number): boolean
   /** Records in the measurements why the bridge did not play, as late or failed. */
   onBridgeOutcome(patch: TurnTimings): void
+  /** Drops a bridge handed to play that has not started yet. */
+  withdrawBridge(): void
 }
 
 interface Opening {
@@ -147,7 +151,16 @@ export class TurnOpening {
 
   /** Called when the speech yields no turn. The aizuchi has already been heard, so the record goes and no bridge plays. */
   cancel(startedAt: number): void {
-    if (this.current?.startedAt === startedAt) this.current = null
+    if (this.current?.startedAt !== startedAt) return
+    this.current = null
+    this.ports.withdrawBridge()
+  }
+
+  /** Called when the turn the opening was claimed for fails, which leaves no answer for its bridge to lead into. */
+  withdraw(): void {
+    if (!this.claimed) return
+    this.claimed = null
+    this.ports.withdrawBridge()
   }
 
   /** The user talked over the turn, so nothing more of its opening plays. */

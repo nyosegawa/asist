@@ -96,6 +96,7 @@ vi.mock('@/voice/SpeechPlayer', async () => {
       mocks.playing = true
     }),
     discardBody: vi.fn(),
+    dropWaitingClips: vi.fn(),
     beginTurn: vi.fn(),
     enqueue: vi.fn(),
     interrupt: vi.fn(),
@@ -245,6 +246,35 @@ describe('the opening of a speech that never becomes a turn', () => {
     await flush()
     // The final transcription fails while the bridge is being synthesized.
     voice().events.emit('speechdropped', { startedAt })
+    synthesized({ text: '会議の件ですね。', audio: 'eA==' })
+    await flush()
+
+    const roles = player().playClip.mock.calls.map((call) => ((call as unknown[])[2] as { role: string }).role)
+    expect(roles).toContain('aizuchi')
+    expect(roles).not.toContain('bridge')
+  })
+})
+
+describe('the opening of a turn that fails at once', () => {
+  it('does not play the bridge whose synthesis finishes after the turn reported its error', async () => {
+    let synthesized!: (clip: { text: string; audio: string }) => void
+    const conversation = await start({
+      aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })),
+      bridgePlan: vi.fn(async () => ({ bridge: '会議の件ですね。' })),
+      bridgeSynthesize: vi.fn(() => new Promise((resolve) => (synthesized = resolve))),
+      turnStart: vi.fn(async () => 42)
+    })
+
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', '昨日の会議の件なんですけど')
+    await flush()
+    const end = speechEnd(performance.now() - 3000, '昨日の会議の件なんですけど')
+    await flush()
+    utterance(end, '昨日の会議の件なんですけど')
+    await flush()
+    // Brain fails before it says anything, for instance while it prepares the request.
+    conversation.handleTurnEvent({ type: 'error', turnId: 42, message: 'no key' })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '' })
     synthesized({ text: '会議の件ですね。', audio: 'eA==' })
     await flush()
 

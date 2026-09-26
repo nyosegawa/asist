@@ -16,7 +16,9 @@ const input = {
 }
 
 function setup(picked: AizuchiClip | null = clip) {
-  const play = vi.fn()
+  /** The clips handed to the player that are still to sound, as far as the opening can withdraw them. */
+  const waiting: Array<{ text: string; role: string }> = []
+  const play = vi.fn((played: { text: string }, role: string) => { waiting.push({ text: played.text, role }) })
   const pickAizuchi = vi.fn(() => picked)
   const resolvers: Array<(bridge: BridgeClip) => void> = []
   const rejecters: Array<(error: Error) => void> = []
@@ -34,9 +36,12 @@ function setup(picked: AizuchiClip | null = clip) {
     play,
     synthesizeBridge,
     bodyQueuedAfter: () => bodyQueued.after,
-    onBridgeOutcome
+    onBridgeOutcome,
+    withdrawBridge: () => {
+      waiting.splice(0, waiting.length, ...waiting.filter((waitingClip) => waitingClip.role !== 'bridge'))
+    }
   })
-  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, onBridgeOutcome }
+  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, onBridgeOutcome, waiting }
 }
 
 const flush = async (): Promise<void> => {
@@ -184,5 +189,38 @@ describe('TurnOpening', () => {
     resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
     await flush()
     expect(play.mock.calls.filter(([, role]) => role === 'bridge')).toHaveLength(0)
+  })
+
+  it('withdraws its bridge when the claimed turn fails, whether the bridge waits to play or is still being synthesized', async () => {
+    const { opening, resolvers, waiting } = setup()
+    const bridge = { text: '会議の件ですね。', audio: 'YQ==' }
+    opening.begin(input)
+    await flush()
+    opening.claim(10)
+    resolvers[0](bridge)
+    await flush()
+    expect(waiting.map((waitingClip) => waitingClip.role)).toEqual(['aizuchi', 'bridge'])
+    opening.withdraw()
+    expect(waiting.map((waitingClip) => waitingClip.role)).toEqual(['aizuchi'])
+
+    opening.begin({ ...input, startedAt: 20, speechEndAt: 2000 })
+    await flush()
+    opening.claim(20)
+    opening.withdraw()
+    resolvers[1](bridge)
+    await flush()
+    expect(waiting.map((waitingClip) => waitingClip.role)).toEqual(['aizuchi', 'aizuchi'])
+  })
+
+  it('withdraws the bridge of a speech that yields no turn, and keeps it for a cancel of another utterance', async () => {
+    const { opening, resolvers, waiting } = setup()
+    opening.begin(input)
+    await flush()
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    opening.cancel(99)
+    expect(waiting.map((waitingClip) => waitingClip.role)).toEqual(['aizuchi', 'bridge'])
+    opening.cancel(10)
+    expect(waiting.map((waitingClip) => waitingClip.role)).toEqual(['aizuchi'])
   })
 })
