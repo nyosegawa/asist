@@ -92,7 +92,7 @@ jobs:
           path: |
             resources/git
             resources/uv
-          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-git.sh', 'scripts/fetch-uv.sh') }}
+          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/prepare-resources.mjs', 'scripts/resources/**') }}
       - uses: ./.github/actions/setup-app
       - run: npm run dist:mac:unsigned
       - name: Run the git and uv inside the app
