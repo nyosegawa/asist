@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   /** Runs once every chunk has been read, before the stream ends. */
   atEnd: null as (() => void) | null,
   params: [] as Array<Record<string, unknown>>,
-  clients: [] as Array<{ baseURL?: string }>
+  clients: [] as Array<{ baseURL?: string }>,
+  /** The body of a request made without streaming. */
+  response: null as unknown
 }))
 
 vi.mock('openai', () => ({
@@ -21,6 +23,7 @@ vi.mock('openai', () => ({
       completions: {
         create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
           mocks.params.push(params)
+          if (!params.stream) return mocks.response
           return (async function* () {
             for (const chunk of mocks.chunks) {
               // The openai package ends a stream quietly once its request is aborted.
@@ -51,6 +54,9 @@ const request = (over: Partial<ConversationRequest> = {}): ConversationRequest =
 })
 
 const delta = (value: Record<string, unknown>, finish: string | null = null): unknown => ({ choices: [{ delta: value, finish_reason: finish }] })
+const USAGE = { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105 }
+/** The last chunk as Cerebras documents it: the finish reason and the usage of the whole response ride on it together. */
+const last = (value: Record<string, unknown>, finish: string): unknown => ({ ...(delta(value, finish) as object), usage: USAGE })
 
 async function open(over: Partial<ConversationRequest> = {}) {
   const { cerebrasAdapter } = await import('../src/main/services/llm/cerebras')
@@ -67,6 +73,7 @@ beforeEach(() => {
   mocks.atEnd = null
   mocks.params.length = 0
   mocks.clients.length = 0
+  mocks.response = null
 })
 
 describe('toChatMessages', () => {
@@ -98,7 +105,7 @@ describe('toChatMessages', () => {
 
 describe('the Cerebras stream', () => {
   it('sends to the Cerebras endpoint and drops the leading newlines left after the reasoning, across chunks, while keeping newlines inside the text', async () => {
-    mocks.chunks = [delta({ reasoning: '考え中' }), delta({ content: '\n' }), delta({ content: '\n晴天' }), delta({ content: 'です。\n明日も。' }, 'stop')]
+    mocks.chunks = [delta({ reasoning: '考え中' }), delta({ content: '\n' }), delta({ content: '\n晴天' }), last({ content: 'です。\n明日も。' }, 'stop')]
     const { stream, seen } = await open()
     const result = await stream.final()
     expect(mocks.clients[0].baseURL).toBe('https://api.cerebras.ai/v1')
@@ -127,7 +134,7 @@ describe('the Cerebras stream', () => {
   })
 
   it('reports max_tokens for a reply cut off by the output limit and fails when web search is requested, which it does not have', async () => {
-    mocks.chunks = [delta({ content: '長い' }, 'length')]
+    mocks.chunks = [last({ content: '長い' }, 'length')]
     expect((await (await open()).stream.final()).stop).toBe('max_tokens')
     await expect((await open({ webSearch: true })).stream.final()).rejects.toThrow('no built-in web search')
     expect(mocks.params).toHaveLength(1)
@@ -148,6 +155,12 @@ describe('the Cerebras stream', () => {
     expect(isTransientApiError(error)).toBe(true)
   })
 
+  it('fails as a transient error on a stream that ended after its finish reason but before its usage, instead of counting no tokens', async () => {
+    mocks.chunks = [delta({ content: '要約です。' }, 'stop')]
+    const error = await (await open()).stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
   it('keeps an answer whose finish reason arrived before the timeout of the round fired', async () => {
     mocks.chunks = [delta({ content: '要約です。' }, 'stop'), { choices: [], usage: { prompt_tokens: 100, completion_tokens: 5 } }]
     const controller = new AbortController()
@@ -155,5 +168,20 @@ describe('the Cerebras stream', () => {
     const result = await (await open({ signal: controller.signal })).stream.final()
     expect(result.stop).toBe('end')
     expect(result.message.parts).toEqual([{ type: 'text', text: '要約です。' }])
+  })
+})
+
+describe('the Cerebras JSON call', () => {
+  it('reads the usage of the response and fails on a response that carries none, instead of counting no tokens', async () => {
+    const { cerebrasAdapter } = await import('../src/main/services/llm/cerebras')
+    const call = () =>
+      cerebrasAdapter.completeJson(
+        { model: request().model, system: 's', user: 'u', schema: { type: 'object' }, maxTokens: 100, signal: new AbortController().signal },
+        'key'
+      )
+    mocks.response = { choices: [{ message: { content: '{"bridge":"x"}' } }], usage: USAGE }
+    expect(await call()).toEqual({ value: { bridge: 'x' }, usage: { input: 100, cacheRead: 0, cacheCreation: 0, output: 5, webSearches: 0 } })
+    mocks.response = { choices: [{ message: { content: '{"bridge":"x"}' } }] }
+    await expect(call()).rejects.toThrow()
   })
 })

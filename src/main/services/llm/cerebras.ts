@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import type { ChatCompletionCreateParamsStreaming, ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/chat/completions'
+import type { CompletionUsage } from 'openai/resources/completions'
 import type { ConversationMessage, ConversationRequest, ConversationResult, StopReason } from '@shared/conversation'
 import type { RoundUsage } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
@@ -95,7 +96,7 @@ class CerebrasStream extends AdapterStream {
     let open: number | null = null
     let leading = true
     let finish: string | null = null
-    let usage: CerebrasUsage | null = null
+    let usage: CompletionUsage | null = null
     const confirm = (index: number): void => {
       const draft = drafts.get(index)
       if (!draft) return
@@ -122,7 +123,9 @@ class CerebrasStream extends AdapterStream {
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
-    if (finish === null) streamCutOff(request.signal, 'Cerebras')
+    // Cerebras puts the usage on the final chunk of every stream (the README of its SDK), so a stream
+    // that ended without it was cut off even when its finish reason arrived.
+    if (finish === null || usage === null) streamCutOff(request.signal, 'Cerebras')
     if (open !== null) confirm(open)
     this.closeText()
 
@@ -131,15 +134,13 @@ class CerebrasStream extends AdapterStream {
   }
 }
 
-type CerebrasUsage = { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null }
-
-function roundUsage(usage: CerebrasUsage | null | undefined): RoundUsage {
-  const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0
+function roundUsage(usage: CompletionUsage): RoundUsage {
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? 0
   return {
-    input: Math.max((usage?.prompt_tokens ?? 0) - cachedTokens, 0),
+    input: Math.max(usage.prompt_tokens - cachedTokens, 0),
     cacheRead: cachedTokens,
     cacheCreation: 0,
-    output: usage?.completion_tokens ?? 0,
+    output: usage.completion_tokens,
     webSearches: 0
   }
 }
@@ -162,6 +163,7 @@ export const cerebrasAdapter: ProviderAdapter = {
       },
       { signal: request.signal }
     )
+    if (!response.usage) throw new Error('Cerebras: the response carried no usage')
     return { value: JSON.parse(response.choices[0]?.message.content ?? ''), usage: roundUsage(response.usage) }
   },
 
