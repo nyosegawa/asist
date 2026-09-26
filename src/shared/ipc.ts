@@ -529,8 +529,8 @@ export interface JobDiff {
   base: string
   /**
    * The branch checked out in the repository when the diff was read, which the merge goes into, or the
-   * abbreviated commit when HEAD is detached. A branch cut from the same commit keeps the merge base, so
-   * the merge does not refuse it, and the user reads here where the changes go.
+   * commit when HEAD is detached. The merge refuses to go on once another branch is checked out, or once a
+   * detached HEAD points at another commit, since a branch cut from the same commit keeps the merge base.
    */
   into: string
   stat: string
@@ -538,6 +538,9 @@ export interface JobDiff {
   /** The submodules the job touched, which keep ASIST from merging it (see `AgentJob.worktree.submodules`). */
   submodules: string[]
 }
+
+/** What the user saw and approved in a review, which a merge carries so that main merges only that. */
+export type ReviewedMerge = Pick<JobDiff, 'commit' | 'base' | 'into'>
 
 /**
  * One line of a job log. A CLI event is kept in its own shape and only the display side turns it into
@@ -977,7 +980,7 @@ export interface RendererApi {
 
   jobCancel(id: string): Promise<void>
   /** Merges the worktree's changes into the user's repository, or discards them. The diff is what the user reviews before merging. */
-  jobMerge(id: string, commit: string, base: string): Promise<void>
+  jobMerge(id: string, reviewed: ReviewedMerge): Promise<void>
   jobDiscard(id: string): Promise<void>
   jobDiff(id: string): Promise<JobDiff>
   jobList(): Promise<AgentJob[]>

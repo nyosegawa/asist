@@ -307,8 +307,9 @@ export function mergeBase(repo: string, commit: string): string | null {
 }
 
 /**
- * What a merge into repo goes into: the branch checked out there, or the abbreviated commit when HEAD is
- * detached, since the merge moves whatever HEAD is at the time.
+ * What a merge into repo goes into: the branch checked out there, or the commit when HEAD is detached, since
+ * the merge moves whatever HEAD is at the time. The commit is the whole id: an abbreviated one grows as the
+ * repository gains objects, and would then no longer equal the one a review showed.
  */
 export function checkedOut(repo: string): string {
   try {
@@ -316,7 +317,7 @@ export function checkedOut(repo: string): string {
   } catch (error) {
     // With --quiet, symbolic-ref exits with 1 and prints nothing when HEAD is detached.
     if ((error as { status?: number }).status !== 1) throw error
-    return git(repo, ['rev-parse', '--short', 'HEAD']).trim()
+    return headCommit(repo)
   }
 }
 

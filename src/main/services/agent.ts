@@ -5,7 +5,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import mitt, { type Emitter } from 'mitt'
-import type { AgentJob, JobDiff, JobEvent, JobLogEvent, JobLogLine } from '@shared/ipc'
+import type { AgentJob, JobDiff, JobEvent, JobLogEvent, JobLogLine, ReviewedMerge } from '@shared/ipc'
 import { artifactPaths, type AgentStreamEvent } from '@shared/agent-stream'
 import { buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
 import { formatJobContextBlock, resolveJobAccess, workspaceDirName, worktreeBranchName } from '@shared/job-workspace'
@@ -487,19 +487,19 @@ export function relocateArtifacts(artifacts: string[] | undefined, worktreeDir: 
 
 /**
  * Merges the worktree's changes into the user's repository. A conflict aborts the merge and keeps the
- * worktree. It asks nobody: the caller has shown the diff counted from `base` and had it approved, or, for
- * the memory curation, checked that the diff stays inside the memory folder.
+ * worktree. It asks nobody: the caller has shown the review and had it approved, or, for the memory
+ * curation, checked that the diff stays inside the memory folder.
  */
-export function merge(id: string, commit: string, base: string): AgentJob {
+export function merge(id: string, reviewed: ReviewedMerge): AgentJob {
   ensureLoaded()
   const entry = jobs.get(id)
   if (!entry?.job.worktree) throw new Error(errorText('jobs.merging.noChanges', { id }))
   assertWriterStopped(entry.job)
-  assertWorktreeReview(entry.job, commit)
+  assertWorktreeReview(entry.job, reviewed.commit)
   const wt = entry.job.worktree
-  assertMergeable(entry.job, commit, base)
+  assertMergeable(entry.job, reviewed)
   if (!git.isClean(wt.repo)) throw new Error(errorText('jobs.merging.dirtyRepo'))
-  const outcome = git.mergeNoFf(wt.repo, commit, `asist: ${entry.job.title} (${id})`)
+  const outcome = git.mergeNoFf(wt.repo, reviewed.commit, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
     pushLog(id, 'system', t('jobs.merging.done', { repo: wt.repo }))
     // The worktree is about to be removed, so artifact paths inside it are moved to the merge target

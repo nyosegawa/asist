@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import type { AgentJob, JobDiff } from '@shared/ipc'
+import type { AgentJob, JobDiff, ReviewedMerge } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { isJobTerminal } from '@shared/job-status'
 import * as git from './git'
@@ -89,13 +89,19 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
 }
 
 /**
- * Refuses a merge that would apply more than the review counted from `base` showed, one of a job that
- * touched submodules, which the user merges or discards, and one with nothing to merge. The submodules are
- * looked into again, since the merge removes the worktree and whatever work appeared in them since it settled.
+ * Refuses a merge that is not the one the review showed: into another branch or commit than the one checked
+ * out then, or of more than the diff counted from its base. A branch cut from the same commit keeps the
+ * merge base, so the base alone would let the merge land where the user did not approve it. It also refuses
+ * one of a job that touched submodules, which the user merges or discards, and one with nothing to merge. The
+ * submodules are looked into again, since the merge removes the worktree and whatever work appeared in them
+ * since it settled.
  */
-export function assertMergeable(job: AgentJob, commit: string, base: string): void {
+export function assertMergeable(job: AgentJob, reviewed: ReviewedMerge): void {
   const worktree = job.worktree!
-  if (mergeBase(worktree, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
+  const { commit, base } = reviewed
+  if (git.checkedOut(worktree.repo) !== reviewed.into || mergeBase(worktree, commit) !== base) {
+    throw new Error(errorText('jobs.merging.baseChanged'))
+  }
   const submodules = sortedUnique([...touchedSubmodules(worktree, base, commit), ...git.submodulesWithWork(worktree.dir)])
   if (submodules.length > 0) {
     throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir }))

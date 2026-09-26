@@ -458,7 +458,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         }
         let merged
         try {
-          merged = agentRunner.merge(job.id, commit, review.base)
+          merged = agentRunner.merge(job.id, review)
         } catch (err) {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
         }

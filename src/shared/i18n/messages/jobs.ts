@@ -1618,17 +1618,17 @@ export const jobs = defineMessages({
       'es-ES': "Ha habido un conflicto y la fusión se ha detenido. El worktree sigue ahí\n{detail}"
     },
     baseChanged: {
-      'ja-JP': '差分を見たあとでリポジトリの履歴が変わり、いま取り込むと、見せた差分とは違う変更が入ります。新しい差分を確かめてから取り込んでください。',
-      'en-US': "The repository's history changed after the diff was shown, and a merge now would not bring in what it showed. Check the new diff before merging.",
-      'fr-FR': "L'historique du dépôt a changé depuis l'affichage des modifications, et une fusion maintenant n'apporterait pas ce qui était affiché. Vérifiez les nouvelles modifications avant de fusionner.",
-      'de-DE': 'Der Verlauf des Repositorys hat sich geändert, seit die Änderungen angezeigt wurden, und eine Übernahme würde jetzt nicht das Angezeigte bringen. Sehen Sie sich die neuen Änderungen an, bevor Sie übernehmen.',
-      'hi-IN': 'बदलाव दिखाए जाने के बाद रिपॉज़िटरी का इतिहास बदल गया, इसलिए अभी मर्ज करने पर वह नहीं आएगा जो दिखाया गया था। मर्ज करने से पहले नए बदलाव देखें।',
-      'id-ID': 'Riwayat repositori berubah setelah perubahannya ditampilkan, sehingga penggabungan sekarang tidak membawa yang tadi ditampilkan. Periksa perubahan yang baru sebelum menggabungkan.',
-      'it-IT': 'La cronologia del repository è cambiata dopo che le modifiche sono state mostrate, e integrarle ora non porterebbe ciò che era mostrato. Controlla le nuove modifiche prima di integrarle.',
-      'ko-KR': '변경을 보여 준 뒤에 저장소의 기록이 바뀌어서, 지금 병합하면 보여 준 것과 다른 변경이 들어갑니다. 새 변경을 확인한 뒤에 병합하십시오.',
-      'pt-BR': 'O histórico do repositório mudou depois que as alterações foram mostradas, e mesclar agora não traria o que foi mostrado. Confira as novas alterações antes de mesclar.',
-      'es-419': 'El historial del repositorio cambió después de mostrar los cambios, y fusionar ahora no traería lo que se mostró. Revisa los cambios nuevos antes de fusionar.',
-      'es-ES': 'El historial del repositorio ha cambiado después de mostrar los cambios, y fusionar ahora no traería lo que se mostró. Revisa los cambios nuevos antes de fusionar.'
+      'ja-JP': '差分を見たあとで、リポジトリで開いているブランチかその履歴が変わりました。取り込み先と新しい差分を確かめてから取り込んでください。',
+      'en-US': 'The branch checked out in the repository, or its history, changed after the diff was shown. Check where the changes go and the new diff before merging.',
+      'fr-FR': "La branche active du dépôt, ou son historique, a changé depuis l'affichage des modifications. Vérifiez la destination et les nouvelles modifications avant de fusionner.",
+      'de-DE': 'Der ausgecheckte Branch des Repositorys oder sein Verlauf hat sich geändert, seit die Änderungen angezeigt wurden. Prüfen Sie das Ziel und die neuen Änderungen, bevor Sie übernehmen.',
+      'hi-IN': 'बदलाव दिखाए जाने के बाद रिपॉज़िटरी में खुली ब्रांच या उसका इतिहास बदल गया। मर्ज करने से पहले देखें कि बदलाव कहाँ जाएँगे और नए बदलाव क्या हैं।',
+      'id-ID': 'Branch yang dibuka di repositori, atau riwayatnya, berubah setelah perubahannya ditampilkan. Periksa tujuan dan perubahan yang baru sebelum menggabungkan.',
+      'it-IT': 'Il branch attivo nel repository, o la sua cronologia, è cambiato dopo che le modifiche sono state mostrate. Controlla la destinazione e le nuove modifiche prima di integrarle.',
+      'ko-KR': '변경을 보여 준 뒤에 저장소에서 체크아웃한 브랜치나 그 기록이 바뀌었습니다. 병합할 곳과 새 변경을 확인한 뒤에 병합하십시오.',
+      'pt-BR': 'O branch aberto no repositório, ou o histórico dele, mudou depois que as alterações foram mostradas. Confira o destino e as novas alterações antes de mesclar.',
+      'es-419': 'La rama activa del repositorio, o su historial, cambió después de mostrar los cambios. Revisa el destino y los cambios nuevos antes de fusionar.',
+      'es-ES': 'La rama activa del repositorio, o su historial, ha cambiado después de mostrar los cambios. Revisa el destino y los cambios nuevos antes de fusionar.'
     },
     noCommonHistory: {
       'ja-JP': 'リポジトリで開いているブランチには、このジョブと共通の履歴がありません。ジョブを始めたブランチを開いてから取り込んでください。',

@@ -11,6 +11,7 @@ import {
   type AgentJob,
   type AppStatus,
   type PanelEvent,
+  type ReviewedMerge,
   type SetupStatus,
   type TtsEngine,
   type TurnPlaybackAckStatus,
@@ -407,8 +408,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.TtsPrepareCancel, () => qwenTts.cancelPreparation())
 
   handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
-  handle(IpcChannel.JobMerge, (_e, id: string, commit: string, base: string) => {
-    agent.merge(String(id), String(commit), String(base))
+  handle(IpcChannel.JobMerge, (_e, id: string, reviewed: ReviewedMerge) => {
+    agent.merge(String(id), { commit: String(reviewed.commit), base: String(reviewed.base), into: String(reviewed.into) })
   })
   handle(IpcChannel.JobDiscard, (_e, id: string) => {
     agent.discard(String(id))

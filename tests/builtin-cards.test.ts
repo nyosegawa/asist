@@ -449,7 +449,7 @@ describe('agent job card', () => {
     expect(card.querySelector('.aj-diff')?.textContent).toContain('1 file changed')
     expect(card.querySelector('.aj-path')?.textContent).toBe(t('jobs.card.merge.path', { branch: 'asist/x', into: 'main', repo: '/r' }))
     await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
-    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, 'abc', 'a0c')
+    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, { commit: 'abc', base: 'a0c', into: 'main' })
     expect(card.querySelector('.aj-summary')).toBeNull()
     expect(card.querySelector('.aj-log')).toBeNull()
     expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')

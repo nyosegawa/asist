@@ -8,20 +8,29 @@ import { errorText } from '@shared/i18n/error-text'
 
 const ja = createTranslator('ja-JP')
 
-const mocks = vi.hoisted(() => ({ root: '', launch: vi.fn() }))
+const mocks = vi.hoisted(() => ({ root: '', launch: vi.fn(), requestConfirm: vi.fn() }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
 vi.mock('../src/main/services/agent-process', () => ({ findCli: () => '/test/agent', launchAgentProcess: mocks.launch }))
 vi.mock('../src/main/services/settings', () => ({
-  getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: mocks.root, uiLocale: 'ja-JP' })
+  getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: mocks.root, uiLocale: 'ja-JP', conversationLocale: 'ja-JP' })
 }))
 vi.mock('../src/main/services/project-index', () => ({ noteUsed: vi.fn(), recent: () => [] }))
+vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm }))
+vi.mock('../src/main/services/memory', () => ({ search: vi.fn() }))
 
 let repo: string
 type Agent = typeof import('../src/main/services/agent')
 /** Merges what the job's review shows, as the card and merge_agent_job do. */
 const mergeReviewed = (agent: Agent, id: string): void => {
   const review = agent.diff(id)
-  agent.merge(id, review.commit, review.base)
+  agent.merge(id, review)
+}
+
+/** Calls merge_agent_job as the conversation model does, after the review it read gave the commit. */
+const mergeThroughTool = async (id: string, commit: string): Promise<unknown> => {
+  const { jobTools } = await import('../src/main/services/brain/job-tools')
+  const tool = jobTools('ja-JP').find((definition) => definition.name === 'merge_agent_job')!
+  return tool.run({ jobId: id, commit }, {} as never, new AbortController().signal)
 }
 
 /** A job that touched submodules waits with its worktree, and no merge of it changes the user's branch. */
@@ -30,7 +39,7 @@ const expectRefused = (agent: Agent, id: string, submodules: string[], head: str
   expect(job.mergeState).toBe('pending')
   const review = agent.diff(id)
   expect(review.submodules).toEqual(submodules)
-  expect(() => agent.merge(id, review.commit, review.base)).toThrow(
+  expect(() => agent.merge(id, review)).toThrow(
     errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
   )
   expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
@@ -43,6 +52,7 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.resetModules()
   mocks.launch.mockReset()
+  mocks.requestConfirm.mockReset()
   mocks.launch.mockImplementation((_job, _args, handlers) => {
     let resolve!: () => void
     const completion = new Promise<void>((done) => { resolve = done })
@@ -74,7 +84,7 @@ it('commits uncommitted tracked and untracked output on restart and merges the d
   const review = restored.diff(job.id)
   expect(review.patch).toContain('+changed')
   expect(review.patch).toContain('+new')
-  restored.merge(job.id, review.commit, review.base)
+  restored.merge(job.id, review)
   expect(fs.readFileSync(path.join(repo, 'untracked.txt'), 'utf8')).toBe('new\n')
   expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('changed\n')
   expect(fs.existsSync(job.cwd)).toBe(false)
@@ -87,7 +97,7 @@ it('refuses to merge and keeps the worktree when uncommitted changes appear afte
   mocks.launch.mock.calls[0][2].onExit(0)
   const review = agent.diff(job.id)
   fs.writeFileSync(path.join(job.cwd, 'late.txt'), 'not reviewed\n')
-  expect(() => agent.merge(job.id, review.commit, review.base)).toThrow()
+  expect(() => agent.merge(job.id, review)).toThrow()
   expect(fs.existsSync(path.join(job.cwd, 'late.txt'))).toBe(true)
   expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false)
 })
@@ -112,11 +122,11 @@ it('keeps output whose commit failed instead of offering it for merge, until the
   vi.spyOn(operations, 'commitAll').mockImplementationOnce(() => { throw new Error('disk error') })
   mocks.launch.mock.calls[0][2].onExit(0)
   expect(agent.get(job.id)?.mergeState).toBe('error')
-  expect(() => agent.merge(job.id, 'unconfirmed', 'unconfirmed')).toThrow()
+  expect(() => agent.merge(job.id, { commit: 'unconfirmed', base: 'unconfirmed', into: 'main' })).toThrow()
   expect(fs.readFileSync(path.join(job.cwd, 'new.txt'), 'utf8')).toBe('preserved\n')
   const review = agent.diff(job.id)
   expect(review.patch).toContain('+preserved')
-  agent.merge(job.id, review.commit, review.base)
+  agent.merge(job.id, review)
   expect(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8')).toBe('preserved\n')
 })
 
@@ -129,7 +139,7 @@ it('does not merge when the commit was replaced after the review', async () => {
   const review = agent.diff(job.id)
   fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'changed after review\n')
   operations.commitAll(job.cwd, 'changed')
-  expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.worktree.commitChanged'))
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.worktree.commitChanged'))
   expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false)
   expect(fs.readFileSync(path.join(job.cwd, 'new.txt'), 'utf8')).toBe('changed after review\n')
 })
@@ -157,7 +167,7 @@ it('reports a failure to remove the worktree after a merge, and keeps both the m
   mocks.launch.mock.calls[0][2].onExit(0)
   const review = agent.diff(job.id)
   vi.spyOn(operations, 'worktreeRemove').mockImplementationOnce(() => { throw new Error('permission denied') })
-  expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.removeFailed', { detail: 'permission denied' }))
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.removeFailed', { detail: 'permission denied' }))
   expect(agent.get(job.id)?.mergeState).toBe('merged')
   expect(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8')).toBe('merged\n')
   expect(fs.existsSync(job.cwd)).toBe(true)
@@ -174,12 +184,12 @@ it('blocks worktree operations on the parent while a continuation runs, and refu
   const child = await agent.continueJob(parent.id, 'テストも足す')
   fs.writeFileSync(path.join(child.cwd, 'child.txt'), 'child\n')
   expect(() => agent.discard(parent.id)).toThrow()
-  expect(() => agent.merge(parent.id, review.commit, review.base)).toThrow()
+  expect(() => agent.merge(parent.id, review)).toThrow()
   await expect(agent.continueJob(parent.id, 'もう一つ')).rejects.toThrow()
   expect(fs.readFileSync(path.join(child.cwd, 'child.txt'), 'utf8')).toBe('child\n')
   mocks.launch.mock.calls[1][2].onExit(0)
   const childReview = agent.diff(child.id)
-  agent.merge(child.id, childReview.commit, childReview.base)
+  agent.merge(child.id, childReview)
   expect(fs.readFileSync(path.join(repo, 'parent.txt'), 'utf8')).toBe('parent\n')
   expect(fs.readFileSync(path.join(repo, 'child.txt'), 'utf8')).toBe('child\n')
 })
@@ -331,7 +341,7 @@ it.each([
   expect(() => agent.discard(job.id)).toThrow(nothing)
 })
 
-it('names the branch checked out in the repository as the one a merge goes into, as when one was cut from the same commit after the review', async () => {
+it('names the branch checked out in the repository as the one a merge goes into, and merges into a branch cut from the same commit once it was reviewed there', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })
   fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
@@ -341,7 +351,7 @@ it('names the branch checked out in the repository as the one a merge goes into,
   git(repo, 'switch', '-q', '-c', 'hotfix')
   const review = agent.diff(job.id)
   expect(review.into).toBe('hotfix')
-  agent.merge(job.id, review.commit, review.base)
+  agent.merge(job.id, review)
   expect(git(repo, 'show', 'hotfix:new.txt')).toBe('from job')
   expect(git(repo, 'rev-parse', 'main')).toBe(main)
 })
@@ -352,9 +362,59 @@ it('names the commit a merge moves when the repository has no branch checked out
   fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
   mocks.launch.mock.calls[0][2].onExit(0)
   git(repo, 'switch', '-q', '--detach')
-  const { into } = agent.diff(job.id)
-  expect(into.length).toBeGreaterThanOrEqual(7)
-  expect(git(repo, 'rev-parse', 'HEAD').startsWith(into)).toBe(true)
+  expect(agent.diff(job.id).into).toBe(git(repo, 'rev-parse', 'HEAD'))
+})
+
+it('refuses the merge the card sends when a branch cut from the same commit was checked out after the review, and leaves that branch as it was', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  expect(review.into).toBe('main')
+  git(repo, 'switch', '-q', '-c', 'hotfix')
+  const hotfix = git(repo, 'rev-parse', 'hotfix')
+  const shown = { commit: review.commit, base: review.base, into: review.into }
+  expect(() => agent.merge(job.id, shown)).toThrow(errorText('jobs.merging.baseChanged'))
+  expect(git(repo, 'rev-parse', 'hotfix')).toBe(hotfix)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
+  expect(fs.existsSync(job.cwd)).toBe(true)
+})
+
+it('refuses merge_agent_job when a branch cut from the same commit is checked out while its confirmation is open', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const { commit } = agent.diff(job.id)
+  mocks.requestConfirm.mockImplementationOnce(async (request: { detail: string }) => {
+    expect(request.detail).toContain(ja('jobs.confirm.mergeInto', { into: 'main', repo }))
+    git(repo, 'switch', '-q', '-c', 'hotfix')
+    return true
+  })
+  await expect(mergeThroughTool(job.id, commit)).rejects.toThrow(ja('jobs.merging.baseChanged'))
+  expect(mocks.requestConfirm).toHaveBeenCalledTimes(1)
+  expect(git(repo, 'rev-parse', 'hotfix')).toBe(git(repo, 'rev-parse', 'main'))
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
+})
+
+it('refuses merge_agent_job when the detached HEAD moves to another commit with the same merge base while its confirmation is open', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  git(repo, 'switch', '-q', '--detach')
+  const review = agent.diff(job.id)
+  let moved = ''
+  mocks.requestConfirm.mockImplementationOnce(async () => {
+    git(repo, 'commit', '-q', '--allow-empty', '-m', 'on the detached HEAD')
+    moved = git(repo, 'rev-parse', 'HEAD')
+    return true
+  })
+  await expect(mergeThroughTool(job.id, review.commit)).rejects.toThrow(ja('jobs.merging.baseChanged'))
+  expect(git(repo, 'merge-base', 'HEAD', review.commit)).toBe(review.base)
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(moved)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
 })
 
 it('refuses to discard a job that changed nothing', async () => {
@@ -400,7 +460,7 @@ it('refuses a merge once another branch is checked out than the one its diff was
   const review = agent.diff(job.id)
   expect(review.stat).not.toContain('main-only.txt')
   git(repo, 'checkout', '-q', 'old')
-  expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.baseChanged'))
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.baseChanged'))
   expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false)
   expect(agent.diff(job.id).stat).toContain('main-only.txt')
 })
@@ -433,7 +493,7 @@ it('keeps and offers a job that only added a new file although status.showUntrac
   expect(review.stat).toContain('new-feature.ts')
   // A file that appears in the worktree after the review is not merged, and the merge is refused.
   fs.writeFileSync(path.join(job.cwd, 'notes.md'), 'written after the review\n')
-  expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.worktree.uncommitted'))
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.worktree.uncommitted'))
   expect(fs.existsSync(path.join(job.cwd, 'notes.md'))).toBe(true)
 })
 
@@ -557,7 +617,7 @@ describe('a repository with a submodule', () => {
     expect(review.patch).not.toContain('Subproject commit')
     expect(review.stat).toContain('tracked.txt')
     expect(review.submodules).toEqual([])
-    agent.merge(job.id, review.commit, review.base)
+    agent.merge(job.id, review)
     expect(git(repo, 'rev-parse', 'HEAD:vendor/sub')).toBe(bumped)
     expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
   })
@@ -575,7 +635,7 @@ describe('a repository with a submodule', () => {
     const review = agent.diff(job.id)
     expect(review.stat).not.toContain('.gitmodules')
     expect(review.submodules).toEqual([])
-    agent.merge(job.id, review.commit, review.base)
+    agent.merge(job.id, review)
     expect(fs.readFileSync(path.join(repo, '.gitmodules'), 'utf8')).toBe(gitmodules)
     expect(git(repo, 'ls-tree', '--name-only', 'HEAD', 'vendor/added')).toBe('vendor/added')
     expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
@@ -836,7 +896,7 @@ describe('a repository with a submodule', () => {
     git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'later work')
     git(inside, 'checkout', '-q', '-')
     const { branch, dir } = agent.get(job.id)!.worktree!
-    expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch, dir }))
+    expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch, dir }))
     expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
     expect(fs.existsSync(inside)).toBe(true)
   })

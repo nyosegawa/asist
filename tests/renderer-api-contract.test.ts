@@ -31,11 +31,12 @@ describe('renderer preload bridge contract', () => {
     const diff = { commit: 'reviewed-commit', base: 'merge-base', into: 'main', patch: '+change', stat: '1 file changed', submodules: [] }
     mocks.invoke.mockResolvedValueOnce(diff)
     expect(await api.jobDiff('worktree-job')).toEqual(diff)
-    await api.jobMerge('worktree-job', diff.commit, diff.base)
+    const reviewed = { commit: diff.commit, base: diff.base, into: diff.into }
+    await api.jobMerge('worktree-job', reviewed)
     expect(mocks.invoke.mock.calls).toEqual([
       [IpcChannel.JobCancel, 'running-job'],
       [IpcChannel.JobDiff, 'worktree-job'],
-      [IpcChannel.JobMerge, 'worktree-job', diff.commit, diff.base]
+      [IpcChannel.JobMerge, 'worktree-job', reviewed]
     ])
   })
 

@@ -151,10 +151,9 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
           <Action
             tone="primary"
             disabled={busy || !diff?.stat || diff.submodules.length > 0}
-            // The diff on the card is out of date once the merge base has moved, as when a branch that parts from
-            // the job at another commit is checked out, and main refuses the merge then, so the card shows the
-            // current one beside the reason.
-            onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit, diff.base), loadDiff)}
+            // The diff on the card is out of date once another branch is checked out or the merge base has
+            // moved, and main refuses the merge then, so the card shows the current one beside the reason.
+            onClick={() => diff && act(() => window.api.jobMerge(job.id, { commit: diff.commit, base: diff.base, into: diff.into }), loadDiff)}
           >
             {t('jobs.card.merge.merge')}
           </Action>

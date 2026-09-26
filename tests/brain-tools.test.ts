@@ -552,7 +552,7 @@ describe('brain tools registry', () => {
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     const merged = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, ctx)
     expect(JSON.parse(merged.content)).toEqual({ merged: true, jobId: 'w1', repo: '/repo' })
-    expect(mocks.agent.merge).toHaveBeenCalledWith('w1', 'reviewed', 'merge-base')
+    expect(mocks.agent.merge).toHaveBeenCalledWith('w1', expect.objectContaining({ commit: 'reviewed', base: 'merge-base', into: 'hotfix' }))
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     mocks.agent.merge.mockReturnValueOnce({ id: 'w1', mergeState: 'conflict' } as never)
     const conflict = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, ctx)
