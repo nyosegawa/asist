@@ -11,8 +11,12 @@ on:
 permissions:
   contents: read
 
+# A new commit on a pull request cancels the run for the one before it, whose result no longer counts.
+# A push to main has a group of its own and is always checked to the end. In a group shared by main, a
+# merge within minutes of another cancels the earlier commit's run, so that commit is never checked and
+# its result job reports the cancellation as a failure.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 # The app's checks run as separate jobs at the same time. In one job they took seven and a half minutes

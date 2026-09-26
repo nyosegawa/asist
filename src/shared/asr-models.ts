@@ -9,6 +9,11 @@ export const QWEN_MLX_MODEL = Object.freeze({
   id: 'mlx-community/Qwen3-ASR-1.7B-8bit',
   revision: 'a8379a2e2f9e313c9292cdf1af4055ab56d50d55',
   label: 'Qwen3-ASR 1.7B 8-bit MLX',
+  files: [
+    '.gitattributes', 'README.md', 'chat_template.json', 'config.json', 'generation_config.json', 'merges.txt',
+    'model.safetensors', 'model.safetensors.index.json', 'preprocessor_config.json', 'tokenizer_config.json',
+    'vocab.json'
+  ],
   weightSizeGb: 2.3,
   peakMemoryGb: 4.13
 })
@@ -17,6 +22,11 @@ export const WHISPER_MLX_MODEL = Object.freeze({
   id: 'mlx-community/whisper-large-v3-turbo-asr-fp16',
   revision: '624c19c9af5603fa73b83bce14d4aeea96156d18',
   label: 'Whisper large-v3-turbo fp16 MLX',
+  files: [
+    '.gitattributes', 'README.md', 'added_tokens.json', 'config.json', 'generation_config.json', 'merges.txt',
+    'model.safetensors', 'model.safetensors.index.json', 'normalizer.json', 'preprocessor_config.json',
+    'special_tokens_map.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.json'
+  ],
   weightSizeGb: 1.5,
   peakMemoryGb: 2.3
 })

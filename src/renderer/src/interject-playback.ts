@@ -1,4 +1,5 @@
 import type { SpeechSegment, TurnPlaybackAckStatus } from '@shared/ipc'
+import { isAnswerSegment } from '@/voice/answer-segment'
 
 const ACK_RETRY_DELAYS_MS = [250, 1_000]
 
@@ -16,7 +17,7 @@ export class InterjectPlaybackAcks {
 
   /** Records that a body segment of this turn is queued and still waiting to start playing. */
   markSegmentQueued(segment: SpeechSegment): boolean {
-    if (segment.index < 0 || segment.index === 998) return false
+    if (!isAnswerSegment(segment)) return false
     const delivery = this.pending.get(segment.turnId)
     if (!delivery) return false
     delivery.bodyQueued = true
@@ -25,7 +26,7 @@ export class InterjectPlaybackAcks {
 
   /** Counts as delivered only when the body of the report actually starts playing, not when a working filler does. */
   markSegmentStarted(segment: SpeechSegment): boolean {
-    if (segment.index < 0 || segment.index === 998 || !this.pending.delete(segment.turnId)) {
+    if (!isAnswerSegment(segment) || !this.pending.delete(segment.turnId)) {
       return false
     }
     this.sendWithRetry(segment.turnId, 'started')

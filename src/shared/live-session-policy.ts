@@ -1,3 +1,5 @@
+import type { AppSettings } from './settings'
+
 /**
  * When a live session opens and closes. GPT-Live bills for the time a session is open and Gemini for
  * the minutes of audio sent, so the session is not held open for as long as the microphone is on: it
@@ -7,6 +9,24 @@
  * conversation does not count as quiet while the assistant is speaking, while the brain is still
  * producing the reply or while a function call is still running.
  */
+
+/**
+ * Whether a change of settings stops a running live engine: the engine is built from the voice
+ * engine, the live model and voice, and how long a quiet session stays open. The main process stops
+ * the engine on this change, and the renderer turns the microphone off on the same one, so that the
+ * button never says LIVE over an engine that is gone.
+ */
+export function stopsLiveEngine(
+  before: Pick<AppSettings, 'voiceEngine' | 'gptLive' | 'geminiLive' | 'liveIdleSeconds'>,
+  after: Pick<AppSettings, 'voiceEngine' | 'gptLive' | 'geminiLive' | 'liveIdleSeconds'>
+): boolean {
+  return (
+    before.voiceEngine !== after.voiceEngine ||
+    JSON.stringify(before.gptLive) !== JSON.stringify(after.gptLive) ||
+    JSON.stringify(before.geminiLive) !== JSON.stringify(after.geminiLive) ||
+    before.liveIdleSeconds !== after.liveIdleSeconds
+  )
+}
 
 export interface LiveSessionPolicyOptions {
   idleMs: number

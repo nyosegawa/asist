@@ -13,8 +13,9 @@ import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-class
  * corrections, greetings and unfinished sentences. If the answer's own text got queued first, the
  * bridge does not play and the outcome is recorded in the measurements.
  *
- * An utterance is identified by startedAt, the time capture began. A transcript dropped as echo
- * cancels it, and an utterance that finishes first has begin replace it.
+ * An utterance is identified by startedAt, the time capture began. A speech that yields no turn,
+ * because its transcription failed, meant nothing or was dropped as echo, cancels it, and an
+ * utterance that finishes first has begin replace it.
  */
 
 /** No aizuchi opens a turn this soon after one played while the user was speaking, because "うん。なるほど。" back to back sounds wrong. */
@@ -144,8 +145,14 @@ export class TurnOpening {
     }
   }
 
-  /** Called when the transcript was dropped, for instance as echo. The aizuchi has already been heard, so the record goes and no bridge plays. */
+  /** Called when the speech yields no turn. The aizuchi has already been heard, so the record goes and no bridge plays. */
   cancel(startedAt: number): void {
     if (this.current?.startedAt === startedAt) this.current = null
+  }
+
+  /** The user talked over the turn, so nothing more of its opening plays. */
+  interrupt(): void {
+    this.current = null
+    this.claimed = null
   }
 }

@@ -1,11 +1,16 @@
 import * as asr from './asr'
 import * as tts from './tts'
 import * as aizuchi from './aizuchi'
+import * as aizuchiClassifier from './aizuchi-classifier'
+import * as embedding from './embedding'
+import * as memory from './memory'
+import { getSettings } from './settings'
 
 /**
  * Health monitoring for the speech recognition and TTS engine sidecars, which tries to restart one that has
- * died. onChange runs only when the snapshot differs from the previous one, because the renderer treats
- * every call as a status change to push.
+ * died. It also restarts the aizuchi classifier and the memory embedding worker, which nothing else starts
+ * again after a timeout or a crash. onChange runs only when the snapshot differs from the previous one,
+ * because the renderer treats every call as a status change to push.
  */
 
 const INTERVAL_MS = 30_000
@@ -24,6 +29,12 @@ export function start(onChange: (snap: HealthSnapshot) => void): void {
   running = true
 
   const tick = async (): Promise<void> => {
+    // These run ahead of the guard below, which skips whole ticks while a speech recognition model loads
+    // for minutes. Neither spawns anything while its model is not prepared.
+    if (aizuchiClassifier.wanted(getSettings())) void aizuchiClassifier.ensureStarted()
+    if (!embedding.running()) {
+      void memory.startEmbeddingIfEnabled().catch((error) => console.error('memory embedding:', error))
+    }
     if (inflight) return
     inflight = true
     try {

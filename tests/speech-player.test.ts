@@ -192,6 +192,19 @@ describe('SpeechPlayer.discardBody drops only the body of the previous turn when
   })
 })
 
+describe('SpeechPlayer.bodyQueuedAfter, which tells whether the bridge came too late', () => {
+  it('does not count the filler played while a tool runs as the answer', async () => {
+    const { player } = await createHarness()
+    const speechEnd = performance.now() - 1
+    player.beginTurn(1)
+    player.enqueue(segment(1, 998, '少々お待ちください。'))
+    expect(player.bodyQueuedAfter(speechEnd)).toBe(false)
+    player.enqueue(segment(1, 0, '明日は晴れです。'))
+    expect(player.bodyQueuedAfter(speechEnd)).toBe(true)
+    player.interrupt()
+  })
+})
+
 describe('SpeechPlayer.playClip replacing one preview with another', () => {
   it('stops the previous sample and plays the new one when a second preview starts mid-playback', async () => {
     const { player, context } = await createHarness()
@@ -292,6 +305,43 @@ describe('SpeechPlayer generations and queue ordering', () => {
       'decode timeout'
     ])
     player.interrupt()
+  })
+
+  it('reports the turn it stopped when a barge-in interrupts the reply', async () => {
+    const { player, context } = await createHarness()
+    const idle: number[] = []
+    player.events.on('idle', ({ turnId }) => idle.push(turnId))
+    player.beginTurn(4)
+    player.playClip('eA==', 'はい。', { role: 'aizuchi' })
+    player.enqueue(segment(4, 0, '明日は晴れです。', 'eA=='))
+    // Only the clip sounds at first, so no reply is being read yet.
+    expect(player.readingTurn).toBe(-1)
+    context.decodeResolvers[0]({ duration: 0.3 } as AudioBuffer)
+    await flushMicrotasks()
+    context.sources[0].onended?.()
+    await flushMicrotasks()
+    context.decodeResolvers[1]({ duration: 2 } as AudioBuffer)
+    await flushMicrotasks()
+    expect(player.readingTurn).toBe(4)
+
+    player.interrupt()
+
+    expect(idle).toEqual([4])
+    expect(player.readingTurn).toBe(-1)
+  })
+
+  it('does not read a listening aizuchi aloud through the system voice when its audio fails, and moves on', async () => {
+    vi.useFakeTimers()
+    const { player, synthesis } = await createHarness()
+    const idle = vi.fn()
+    player.events.on('idle', idle)
+
+    player.playClip('eA==', 'うん', { role: 'listening', volume: 0.4 })
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(synthesis.speak).not.toHaveBeenCalled()
+    expect(idle).toHaveBeenCalledOnce()
+    expect(player.isPlaying).toBe(false)
   })
 
   it('advances the queue when AudioBufferSource onended is lost', async () => {

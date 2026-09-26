@@ -8,6 +8,12 @@ export const QWEN_TTS_MODEL = Object.freeze({
   id: 'mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit',
   revision: '049ef77fe8816b536193c0c25f9a214d17921282',
   label: 'Qwen3-TTS 0.6B 8-bit MLX',
+  files: [
+    '.gitattributes', 'README.md', 'config.json', 'generation_config.json', 'merges.txt', 'model.safetensors',
+    'model.safetensors.index.json', 'preprocessor_config.json', 'speech_tokenizer/config.json',
+    'speech_tokenizer/configuration.json', 'speech_tokenizer/model.safetensors',
+    'speech_tokenizer/preprocessor_config.json', 'tokenizer_config.json', 'vocab.json'
+  ],
   weightSizeGb: 1.9,
   residentMemoryGb: 2.1
 })
