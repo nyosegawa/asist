@@ -416,19 +416,46 @@ export class MailService {
     if (this.sendingDrafts.has(id)) throw new Error(errorText('mail.errors.draft.sending'))
   }
 
-  /** Sends a draft. The user's press is the approval, so no confirmation is shown, and the draft is removed once the send succeeds. */
+  /**
+   * Sends a draft. The user's press is the approval, so no confirmation is shown, and the draft is removed
+   * once the send succeeds. The start of the send is written to the draft file before the message leaves:
+   * removing the draft can fail after the message went out, and only a record made beforehand keeps the
+   * draft from being sent twice, in this session and after a restart.
+   */
   async draftSend(id: string, signal: AbortSignal): Promise<MailChangeResult> {
     this.requireIdle(id)
     this.sendingDrafts.add(id)
     try {
       const draft = this.deps.drafts.require(id)
+      if (draft.sendStartedAt !== null) throw new Error(errorText('mail.errors.draft.sendStarted'))
       signal.throwIfAborted()
       if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
       if (!draft.body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
-      const result = draft.reply
-        ? await this.sendReply(this.accountOf(draft.accountId), draft.reply, draft.body)
-        : await this.plan({ operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }).perform()
-      this.deps.drafts.remove(id)
+      const account = this.accountOf(draft.accountId)
+      const reply = draft.reply
+      const send = reply
+        ? () => this.sendReply(account, reply, draft.body)
+        : this.plan({ operation: 'send', accountId: account.id, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }).perform
+      this.deps.drafts.setSendStartedAt(id, this.now())
+      let result: MailChangeResult
+      try {
+        result = await send()
+      } catch (error) {
+        // The message provably did not leave, or the error asks the user to look in the Sent folder before
+        // sending again, so the draft can be sent again.
+        try {
+          this.deps.drafts.setSendStartedAt(id, null)
+        } catch (release) {
+          throw new Error(errorText('mail.errors.draft.lockedAfterFailure', { error: errorMessage(error), reason: errorMessage(release) }))
+        }
+        throw error
+      }
+      try {
+        this.deps.drafts.remove(id)
+      } catch (error) {
+        const note = t('mail.result.draftNotRemoved', { reason: errorMessage(error) })
+        return result.saved ? { ...result, summary: `${result.summary}\n${note}` } : result
+      }
       return result
     } finally {
       this.sendingDrafts.delete(id)

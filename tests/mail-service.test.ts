@@ -50,7 +50,7 @@ function memorySecrets(initial: Record<string, string> = {}): MailSecretStore & 
   }
 }
 
-async function setup(options: { provider?: MailAccount['provider']; enabled?: boolean } = {}) {
+async function setup(options: { provider?: MailAccount['provider']; enabled?: boolean; draftsFile?: string } = {}) {
   const provider = options.provider ?? 'gmail'
   const imap = new FakeImap({ gmail: provider === 'gmail' })
   imap.addFolder('Sent', { specialUse: '\\Sent' })
@@ -68,7 +68,8 @@ async function setup(options: { provider?: MailAccount['provider']; enabled?: bo
     settings = next
   })
   const cache = new MailCache(':memory:')
-  const drafts = new MailDraftStore({ filePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'asist-drafts-')), 'mail-drafts.json'), onChanged: (list) => events.push({ type: 'drafts', drafts: list }) })
+  const draftsFile = options.draftsFile ?? path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'asist-drafts-')), 'mail-drafts.json')
+  const drafts = new MailDraftStore({ filePath: draftsFile, onChanged: (list) => events.push({ type: 'drafts', drafts: list }) })
   const server = imap.reconnectable()
   const service = new MailService({
     settings: () => settings,
@@ -93,7 +94,7 @@ async function setup(options: { provider?: MailAccount['provider']; enabled?: bo
   }
   const signal = new AbortController()
   const outgoing = (): OutgoingMail => smtp.send.mock.calls[0][2] as OutgoingMail
-  return { imap, cache, drafts, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
+  return { imap, cache, drafts, draftsFile, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
 }
 
 /** What the reader's reply form does: main settles the reply the form shows, and the same reply is sent. */
@@ -106,6 +107,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('the approval gate', () => {
@@ -438,6 +440,62 @@ describe('drafts', () => {
     expect(f.smtp.send).toHaveBeenCalledOnce()
     expect(f.outgoing().text).toBe('y')
     expect(f.drafts.get(draft.id)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('never sends a draft again once it went out, even when removing it fails, and says in the result that it is left', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
+    // The disk fails once the message has gone out.
+    const rename = vi.spyOn(fs, 'renameSync')
+    f.smtp.send.mockImplementationOnce(async () => {
+      rename.mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+      return { messageId: '<sent-1@me>', raw: Buffer.from('raw') }
+    })
+    const sent = await f.service.draftSend(draft.id, f.signal.signal)
+    expect(sent).toMatchObject({ saved: true, operation: 'send' })
+    expect((sent as { summary: string }).summary).toContain(t('mail.result.draftNotRemoved', { reason: 'disk full' }))
+    expect(f.drafts.get(draft.id)).not.toBeNull()
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    await f.service.stop()
+    // The app starts again with the same drafts file.
+    const restarted = await setup({ draftsFile: f.draftsFile })
+    await expect(restarted.service.draftSend(draft.id, restarted.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    expect(restarted.smtp.send).not.toHaveBeenCalled()
+    restarted.service.draftRemove(draft.id)
+    expect(restarted.service.draftList()).toEqual([])
+    expect(f.smtp.send).toHaveBeenCalledOnce()
+    await restarted.service.stop()
+  })
+
+  it('lets a draft be sent again after a send that failed before sending or whose outcome is unknown', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
+    f.smtp.send.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'EAUTH' }))
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
+    f.smtp.send.mockRejectedValueOnce(new Error('connection reset after DATA'))
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendUnknown', { reason: 'connection reset after DATA' }))
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).resolves.toMatchObject({ saved: true, operation: 'send' })
+    expect(f.smtp.send).toHaveBeenCalledTimes(3)
+    expect(f.drafts.get(draft.id)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('refuses a draft whose failed send could not be recorded as failed, and says why', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
+    const rename = vi.spyOn(fs, 'renameSync')
+    f.smtp.send.mockImplementationOnce(async () => {
+      rename.mockImplementationOnce(() => {
+        throw new Error('disk full')
+      })
+      throw Object.assign(new Error('Invalid login'), { code: 'EAUTH' })
+    })
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(/mail\.errors\.draft\.lockedAfterFailure .*disk full/)
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    expect(f.smtp.send).toHaveBeenCalledOnce()
     await f.service.stop()
   })
 

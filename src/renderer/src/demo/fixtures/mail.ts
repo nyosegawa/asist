@@ -270,7 +270,8 @@ export const DEMO_MAIL_DRAFTS: MailDraft[] = [
     reply: null,
     origin: 'agent',
     createdAt: ago(0.1),
-    updatedAt: ago(0.1)
+    updatedAt: ago(0.1),
+    sendStartedAt: null
   },
   {
     id: 'draft-reply-interview',
@@ -282,7 +283,8 @@ export const DEMO_MAIL_DRAFTS: MailDraft[] = [
     reply: demoReplyOf(interview, true),
     origin: 'agent',
     createdAt: ago(1),
-    updatedAt: ago(1)
+    updatedAt: ago(1),
+    sendStartedAt: null
   }
 ]
 

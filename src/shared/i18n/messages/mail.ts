@@ -1826,6 +1826,32 @@ export const mail = defineMessages({
         'pt-BR': 'Este rascunho está sendo enviado.',
         'es-419': 'Este borrador se está enviando.',
         'es-ES': 'Este borrador se está enviando.'
+      },
+      sendStarted: {
+        'ja-JP': 'この下書きは一度送信を始めたので、もう送れません。送信済みフォルダを確かめてから、下書きを捨ててください。',
+        'en-US': "A send of this draft has already started, so it can't be sent again. Check the Sent folder, then discard the draft.",
+        'fr-FR': "L'envoi de ce brouillon a déjà commencé, il ne peut donc plus être envoyé. Vérifiez le dossier Envoyés, puis abandonnez le brouillon.",
+        'de-DE': 'Das Senden dieses Entwurfs wurde bereits begonnen, deshalb kann er nicht erneut gesendet werden. Sehen Sie im Ordner „Gesendet“ nach und verwerfen Sie dann den Entwurf.',
+        'hi-IN': 'इस ड्राफ़्ट को भेजना पहले ही शुरू हो चुका है, इसलिए इसे दोबारा नहीं भेजा जा सकता। "भेजी गई" फ़ोल्डर देखें, फिर ड्राफ़्ट छोड़ दें।',
+        'id-ID': 'Pengiriman draf ini sudah dimulai, jadi draf ini tidak bisa dikirim lagi. Periksa folder Terkirim, lalu buang drafnya.',
+        'it-IT': "L'invio di questa bozza è già iniziato, quindi non può essere inviata di nuovo. Controlla la cartella «Inviate», poi scarta la bozza.",
+        'ko-KR': '이 임시 저장 메일은 이미 보내기를 시작했으므로 다시 보낼 수 없습니다. 보낸 편지함을 확인한 뒤 임시 저장 메일을 버리십시오.',
+        'pt-BR': 'O envio deste rascunho já começou, então ele não pode ser enviado de novo. Verifique a pasta Enviados e depois descarte o rascunho.',
+        'es-419': 'El envío de este borrador ya comenzó, así que no se puede volver a enviar. Revisa la carpeta Enviados y luego descarta el borrador.',
+        'es-ES': 'El envío de este borrador ya ha empezado, así que no se puede volver a enviar. Comprueba la carpeta Enviados y después descarta el borrador.'
+      },
+      lockedAfterFailure: {
+        'ja-JP': '{error}。また、下書きを送れる状態に戻せなかったため、この下書きはもう送れません({reason})',
+        'en-US': '{error}. The draft could not be made sendable again, so it can no longer be sent ({reason})',
+        'fr-FR': "{error}. Le brouillon n'a pas pu être rendu de nouveau envoyable, il ne peut donc plus être envoyé ({reason})",
+        'de-DE': '{error}. Der Entwurf ließ sich nicht wieder zum Senden freigeben und kann deshalb nicht mehr gesendet werden ({reason})',
+        'hi-IN': '{error}। ड्राफ़्ट को फिर से भेजने लायक नहीं बनाया जा सका, इसलिए इसे अब नहीं भेजा जा सकता ({reason})',
+        'id-ID': '{error}. Draf tidak bisa dibuat siap dikirim lagi, jadi draf ini tidak bisa dikirim lagi ({reason})',
+        'it-IT': '{error}. Non è stato possibile rendere di nuovo inviabile la bozza, quindi non può più essere inviata ({reason})',
+        'ko-KR': '{error}. 임시 저장 메일을 다시 보낼 수 있는 상태로 되돌리지 못해 이 메일은 더 이상 보낼 수 없습니다({reason})',
+        'pt-BR': '{error}. Não foi possível deixar o rascunho pronto para envio de novo, então ele não pode mais ser enviado ({reason})',
+        'es-419': '{error}. No se pudo dejar el borrador listo para enviar otra vez, así que ya no se puede enviar ({reason})',
+        'es-ES': '{error}. No se ha podido dejar el borrador listo para enviar otra vez, así que ya no se puede enviar ({reason})'
       }
     },
     change: {
@@ -2463,6 +2489,19 @@ export const mail = defineMessages({
       'pt-BR': 'Não foi possível marcar a original como respondida ({reason})',
       'es-419': 'No se pudo marcar el mensaje original como respondido ({reason})',
       'es-ES': 'No se ha podido marcar el mensaje original como respondido ({reason})'
+    },
+    draftNotRemoved: {
+      'ja-JP': '下書きを消せませんでした。この下書きはもう送れないので、捨ててください({reason})',
+      'en-US': "Couldn't remove the draft. It can't be sent again, so discard it ({reason})",
+      'fr-FR': 'Impossible de supprimer le brouillon. Il ne peut plus être envoyé, abandonnez-le ({reason})',
+      'de-DE': 'Der Entwurf ließ sich nicht entfernen. Er kann nicht erneut gesendet werden, verwerfen Sie ihn ({reason})',
+      'hi-IN': 'ड्राफ़्ट हटाया नहीं जा सका। इसे दोबारा नहीं भेजा जा सकता, इसलिए इसे छोड़ दें ({reason})',
+      'id-ID': 'Tidak bisa menghapus draf. Draf ini tidak bisa dikirim lagi, jadi buang saja ({reason})',
+      'it-IT': 'Impossibile rimuovere la bozza. Non può essere inviata di nuovo, quindi scartala ({reason})',
+      'ko-KR': '임시 저장 메일을 지우지 못했습니다. 다시 보낼 수 없으니 버리십시오({reason})',
+      'pt-BR': 'Não foi possível remover o rascunho. Ele não pode ser enviado de novo, então descarte-o ({reason})',
+      'es-419': 'No se pudo quitar el borrador. No se puede volver a enviar, así que descártalo ({reason})',
+      'es-ES': 'No se ha podido quitar el borrador. No se puede volver a enviar, así que descártalo ({reason})'
     }
   },
   notify: {

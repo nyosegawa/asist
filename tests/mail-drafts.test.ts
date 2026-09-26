@@ -61,7 +61,31 @@ describe('MailDraftStore', () => {
     const v1Reply = { id: 'd2', accountId: 'a1', to: [], cc: [], subject: '', body: '了解です。', reply: { id: 'a1:inbox:1', subject: '見積もりの相談', from: { name: '田中', address: 't@example.com' }, replyAll: true }, origin: 'agent', createdAt: 1, updatedAt: 2 }
     const v1New = { ...seed, id: 'd1', createdAt: 1, updatedAt: 1 }
     fs.writeFileSync(file, JSON.stringify({ drafts: [v1New, v1Reply] }))
-    expect(new MailDraftStore({ filePath: file }).list()).toEqual([v1New, { ...v1Reply, subject: 'Re: 見積もりの相談', reply: null }])
+    expect(new MailDraftStore({ filePath: file }).list()).toEqual([
+      { ...v1New, sendStartedAt: null },
+      { ...v1Reply, subject: 'Re: 見積もりの相談', reply: null, sendStartedAt: null }
+    ])
+  })
+
+  it('opens a version 2 file, taking every draft in it as not sent', () => {
+    const file = fileIn()
+    const v2 = { ...seed, id: 'd1', createdAt: 1, updatedAt: 1 }
+    fs.writeFileSync(file, JSON.stringify({ version: 2, drafts: [v2] }))
+    expect(new MailDraftStore({ filePath: file }).list()).toEqual([{ ...v2, sendStartedAt: null }])
+  })
+
+  it('keeps the start of a send in the file, apart from the time of the last edit', () => {
+    const file = fileIn()
+    let now = 1_000
+    const store = new MailDraftStore({ filePath: file, now: () => now })
+    const draft = store.create(seed)
+    expect(draft.sendStartedAt).toBeNull()
+    now = 2_000
+    store.setSendStartedAt(draft.id, 2_000)
+    expect(new MailDraftStore({ filePath: file }).get(draft.id)).toMatchObject({ sendStartedAt: 2_000, updatedAt: 1_000 })
+    store.setSendStartedAt(draft.id, null)
+    expect(new MailDraftStore({ filePath: file }).get(draft.id)?.sendStartedAt).toBeNull()
+    expect(() => store.setSendStartedAt('missing', 1)).toThrow(errorText('mail.errors.draft.gone'))
   })
 
   it('refuses a draft beyond the limit, reports an unreadable file, and surfaces a failed write', () => {
