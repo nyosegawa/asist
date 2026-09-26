@@ -294,6 +294,29 @@ describe('SpeechPlayer generations and queue ordering', () => {
     player.interrupt()
   })
 
+  it('reports the turn it stopped when a barge-in interrupts the reply', async () => {
+    const { player, context } = await createHarness()
+    const idle: number[] = []
+    player.events.on('idle', ({ turnId }) => idle.push(turnId))
+    player.beginTurn(4)
+    player.playClip('eA==', 'はい。', { role: 'aizuchi' })
+    player.enqueue(segment(4, 0, '明日は晴れです。', 'eA=='))
+    // Only the clip sounds at first, so no reply is being read yet.
+    expect(player.readingTurn).toBe(-1)
+    context.decodeResolvers[0]({ duration: 0.3 } as AudioBuffer)
+    await flushMicrotasks()
+    context.sources[0].onended?.()
+    await flushMicrotasks()
+    context.decodeResolvers[1]({ duration: 2 } as AudioBuffer)
+    await flushMicrotasks()
+    expect(player.readingTurn).toBe(4)
+
+    player.interrupt()
+
+    expect(idle).toEqual([4])
+    expect(player.readingTurn).toBe(-1)
+  })
+
   it('does not read a listening aizuchi aloud through the system voice when its audio fails, and moves on', async () => {
     vi.useFakeTimers()
     const { player, synthesis } = await createHarness()

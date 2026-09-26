@@ -208,6 +208,12 @@ registerProcessor('speech-tap', TapProcessor)
     return this.playing && segment !== null && segment.index === -1
   }
 
+  /** The turn whose reply is sounding, or about to, or -1 while only a clip or nothing plays. */
+  get readingTurn(): number {
+    const segment = this.current?.segment ?? this.starting
+    return this.playing && segment !== null && segment.index >= 0 ? segment.turnId : -1
+  }
+
   /**
    * The text of the segment being read and how far through it is, from 0 to 1, for the karaoke
    * subtitle. An aizuchi clip, which has index -1, is not included.
@@ -325,10 +331,10 @@ registerProcessor('speech-tap', TapProcessor)
     this.masterGain.gain.setTargetAtTime(1, t, DUCK_RAMP_S)
   }
 
-  /** Stops at once and drops the queue, for a barge-in. */
+  /** Stops at once and drops the queue, for a barge-in. The idle it reports carries the turn that was stopped. */
   interrupt(): void {
-    this.currentTurn = -1
     this.stopPlayback()
+    this.currentTurn = -1
   }
 
   /**
@@ -337,14 +343,15 @@ registerProcessor('speech-tap', TapProcessor)
    * aizuchi that started at the end of speech belongs to that new input, so it keeps playing.
    */
   discardBody(): void {
-    this.currentTurn = -1
     this.bodyQueuedAt = -Infinity
     const clips = this.queue.filter((s) => s.index === -1)
     if (this.isPlayingClip) {
+      this.currentTurn = -1
       this.queue = clips
       return
     }
     this.stopPlayback()
+    this.currentTurn = -1
     this.queue = clips
     if (clips.length > 0) void this.playNext()
   }

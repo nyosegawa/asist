@@ -73,7 +73,7 @@ type VoiceEvents = {
    * utterance or one of these, with the same startedAt.
    */
   speechdropped: { startedAt: number }
-  /** The user started speaking over the assistant. */
+  /** The user started speaking over the assistant. Playback stops right after this event. */
   bargein: undefined
   /** A short sound from the user during playback was taken as an aizuchi and let pass; the reading continues. */
   userBackchannel: undefined
@@ -267,8 +267,10 @@ export class VoiceController {
     if (verdict === 'bargein') {
       this.overlap = 'none'
       this.captureIsBackchannel = false
-      speechPlayer.interrupt()
+      // The event goes out while the interrupted reply is still playing, so that it is counted
+      // against the turn being read before the stop closes that turn's measurements.
       this.events.emit('bargein')
+      speechPlayer.interrupt()
       return
     }
     if (this.overlap === 'backchannel') return

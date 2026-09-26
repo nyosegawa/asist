@@ -116,6 +116,15 @@ const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
 /** What the speaker played and when, which tells what can have leaked back into the microphone during a capture. */
 const playback = new PlaybackLog()
 
+/**
+ * The turn that takes the barge-ins and the user's aizuchi counted while it sounds: the turn under
+ * way, or once brain has reported it done, the one whose reply is still being read.
+ */
+function heardTurn(): number {
+  const active = useTurnStore.getState().activeTurnId
+  return active >= 0 ? active : speechPlayer.readingTurn
+}
+
 export function initConversation(): Promise<void> {
   if (initialization) return initialization
   const operation = initializeConversation().catch((error) => {
@@ -234,12 +243,20 @@ async function initializeConversation(): Promise<void> {
   })
 
   voiceController.events.on('bargein', () => {
-    // The VoiceController has just dropped the playback queue, so interjections that never played
-    // are returned to main.
+    // The VoiceController drops the playback queue right after this, so interjections that never
+    // played are returned to main and nothing more of the opening plays.
     interjectPlayback.interruptPending()
+    opening.interrupt()
+    const heard = heardTurn()
+    if (heard >= 0) turnMetrics.increment(heard, 'bargeIns')
+    // A request still waiting for its turn id is given up, so that finishUserTurnStart aborts the
+    // turn once the id arrives instead of reading the reply the user talked over.
+    if (pendingRequestId !== null) {
+      turnMetrics.discardRequest(pendingRequestId)
+      pendingRequestId = null
+    }
     const active = useTurnStore.getState().activeTurnId
     if (active >= 0) {
-      turnMetrics.increment(active, 'bargeIns')
       usePanelStore.getState().dismissLoadingOwnedBy(active)
       void window.api.turnAbort(active)
     }
@@ -248,9 +265,9 @@ async function initializeConversation(): Promise<void> {
   // A "うん" or "はい" spoken during playback was taken as an aizuchi, so playback keeps going
   // instead of stopping.
   voiceController.events.on('userBackchannel', () => {
-    const turn = useTurnStore.getState()
-    turn.setRouterNote(translate('hud.router.heardAsBackchannel'))
-    if (turn.activeTurnId >= 0) turnMetrics.increment(turn.activeTurnId, 'userBackchannels')
+    useTurnStore.getState().setRouterNote(translate('hud.router.heardAsBackchannel'))
+    const heard = heardTurn()
+    if (heard >= 0) turnMetrics.increment(heard, 'userBackchannels')
   })
 
   // Listening aizuchi: a quiet "うん" or "なるほど" at a break in a long user utterance, which does
@@ -420,7 +437,10 @@ async function initializeConversation(): Promise<void> {
   speechPlayer.events.on('idle', ({ turnId }) => {
     playback.stopped(performance.now())
     const t = useTurnStore.getState()
-    if (t.phase === 'speak') t.setPhase('idle')
+    // A turn that ended while only its opening clip was sounding left the phase on think until now.
+    if (t.phase === 'speak' || (t.phase === 'think' && t.activeTurnId < 0 && pendingRequestId === null)) {
+      t.setPhase('idle')
+    }
     // A turn whose playback has finished is closed after the events counted during playback are
     // appended to it.
     turnMetrics.playbackIdle(turnId)

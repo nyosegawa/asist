@@ -313,3 +313,75 @@ describe('echo of what the speaker played', () => {
     expect((turnStart.mock.calls[0] as unknown[])[0]).toBe('昨日の資料なんですけど')
   })
 })
+
+describe('a barge-in', () => {
+  it('aborts the turn whose request was still waiting for its id instead of reading its reply', async () => {
+    let answer!: (turnId: number) => void
+    const turnStart = vi.fn(() => new Promise<number>((resolve) => (answer = resolve)))
+    const turnAbort = vi.fn(async () => {})
+    await start({ turnStart, turnAbort })
+
+    speak('明日の天気を教えて')
+    await flush()
+    // The user carries on over the opening "はい。", and the voice controller confirms a barge-in.
+    voice().events.emit('bargein', undefined)
+    answer(42)
+    await flush()
+
+    expect(turnAbort).toHaveBeenCalledWith(42)
+    expect(player().beginTurn).not.toHaveBeenCalledWith(42, expect.anything())
+    expect(mocks.turn.activeTurnId).toBe(-1)
+  })
+
+  it('is counted against a reply that is still being read after brain reported it done', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    const conversation = await start({ turnStart: vi.fn(async () => 42), metricsLog })
+    mocks.turn.timings = { vadMs: 350 }
+    speak('明日の天気を教えて')
+    await flush()
+    mocks.playing = true
+    mocks.readingTurn = 42
+    player().events.emit('segmentstart', {
+      segment: { turnId: 42, index: 0, text: '明日は晴れです。', audio: 'eA==', phonemes: null },
+      durationMs: 3000
+    })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '明日は晴れです。' })
+
+    // The voice controller reports the barge-in, then the player stops and reports the turn it stopped.
+    voice().events.emit('bargein', undefined)
+    mocks.playing = false
+    mocks.readingTurn = -1
+    player().events.emit('idle', { turnId: 42 })
+    await flush()
+
+    const payloads = metricsLog.mock.calls.map((call) => call[0])
+    expect(payloads.at(-1)).toMatchObject({ bargeIns: 1 })
+  })
+})
+
+describe('the phase shown after a turn', () => {
+  it('leaves think once the opening clip of a turn that already ended finishes', async () => {
+    const conversation = await start({ turnStart: vi.fn(async () => 42) })
+    speak('明日の予定を登録して')
+    await flush()
+    expect(mocks.turn.phase).toBe('think')
+
+    // The turn fails at once, for instance without an API key, while "はい。" still sounds.
+    conversation.handleTurnEvent({ type: 'error', turnId: 42, message: 'no key' })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '' })
+    mocks.playing = false
+    player().events.emit('idle', { turnId: 42 })
+
+    expect(mocks.turn.phase).toBe('idle')
+  })
+
+  it('stays on think while the turn is still under way after its opening clip ends', async () => {
+    await start({ turnStart: vi.fn(async () => 42) })
+    speak('明日の予定を登録して')
+    await flush()
+    mocks.playing = false
+    player().events.emit('idle', { turnId: 42 })
+
+    expect(mocks.turn.phase).toBe('think')
+  })
+})

@@ -149,4 +149,10 @@ export class TurnOpening {
   cancel(startedAt: number): void {
     if (this.current?.startedAt === startedAt) this.current = null
   }
+
+  /** The user talked over the turn, so nothing more of its opening plays. */
+  interrupt(): void {
+    this.current = null
+    this.claimed = null
+  }
 }

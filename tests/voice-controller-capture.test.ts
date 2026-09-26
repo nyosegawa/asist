@@ -181,21 +181,20 @@ describe('VoiceController with barge-in off', () => {
 })
 
 describe('VoiceController when the reply starts while the user is already speaking', () => {
-  it('ducks the reply and stops it once the voice holds', () => {
+  it('ducks the reply and stops it once the voice holds, announcing the barge-in while the reply still plays', () => {
     const controller = listening()
     controller.bargeIn = true
+    const order: string[] = []
     const duck = vi.spyOn(speechPlayer, 'duck').mockImplementation(() => {})
-    const interrupt = vi.spyOn(speechPlayer, 'interrupt').mockImplementation(() => {})
-    let bargein = false
-    controller.events.on('bargein', () => (bargein = true))
+    vi.spyOn(speechPlayer, 'interrupt').mockImplementation(() => order.push('interrupt'))
+    controller.events.on('bargein', () => order.push('bargein'))
 
     feed(controller, 10, loud)
     startPlaying(reply)
     expect(duck).toHaveBeenCalled()
     feed(controller, 50, loud)
 
-    expect(interrupt).toHaveBeenCalled()
-    expect(bargein).toBe(true)
+    expect(order).toEqual(['bargein', 'interrupt'])
   })
 
   it('treats the start of its own listening aizuchi as no overlap', () => {
