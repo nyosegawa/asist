@@ -4,7 +4,7 @@ import path from 'node:path'
 import { app } from 'electron'
 import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
-import type { AgentJob } from '@shared/ipc'
+import type { AgentJob, ReviewedMerge } from '@shared/ipc'
 import { localDateKey } from '@shared/local-date'
 import {
   buildCurationPrompt,
@@ -15,6 +15,7 @@ import {
 } from '@shared/memory-curation'
 import * as agentRunner from './agent'
 import * as git from './git'
+import { mergeBase } from './job-worktree'
 import { conversationLocale } from './conversation-locale'
 import { installSkill } from './memory-curation-skill'
 import { conversationLog } from './brain/session'
@@ -145,20 +146,21 @@ const MEMORY_FILE_MODES = new Set(['100644', '100755', '000000'])
  * in a path the Agent added to .gitignore, reaches the check that follows, whose reader refuses anything
  * but a regular file.
  */
-function assertInsideMemory(job: AgentJob): string {
+function assertInsideMemory(job: AgentJob): ReviewedMerge {
   const worktree = job.worktree
   if (!worktree?.commit) throw new Error(errorText('memory.errors.commitMissing'))
   if (fs.realpathSync(worktree.repo) !== fs.realpathSync(store.memoryDir())) {
     throw new Error(errorText('memory.errors.outsideMemory', { files: worktree.repo }))
   }
+  const base = mergeBase(worktree, worktree.commit)
   const outside = git
-    .diffEntries(worktree.repo, worktree.base, worktree.commit)
+    .diffEntries(worktree.repo, base, worktree.commit)
     .filter((entry) => !MEMORY_FILE_MODES.has(entry.mode))
     .map((entry) => entry.path)
   if (outside.length > 0) {
     throw new Error(errorText('memory.errors.outsideMemory', { files: outside.slice(0, 10).join('\n') }))
   }
-  return worktree.commit
+  return { commit: worktree.commit, base, into: git.checkedOut(worktree.repo) }
 }
 
 /** Events overlap, so a job is locked only while it is being processed. A failure is retried from the last saved step. */
@@ -168,10 +170,10 @@ function processJob(job: AgentJob): void {
   processing.add(job.id)
   try {
     if (job.mergeState === 'pending') {
-      const commit = assertInsideMemory(job)
+      const checked = assertInsideMemory(job)
       const { errors } = store.readAll(job.cwd)
       if (errors.length > 0) throw new Error(errorText('memory.errors.checkFailed', { errors: errors.slice(0, 10).join('\n') }))
-      agentRunner.merge(job.id, commit)
+      agentRunner.merge(job.id, checked)
       // The update that merge emits is synchronous, so the job in hand is already stale and is read again.
       job = agentRunner.get(job.id)!
     }

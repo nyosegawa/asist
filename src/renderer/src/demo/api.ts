@@ -574,10 +574,14 @@ export const mockApi: RendererApi = {
   jobCancel: async () => {},
   jobMerge: async () => {},
   jobDiscard: async () => {},
+  jobDiscardPreview: async () => ({ repo: '/Users/demo/repo', dir: '/Users/demo/repo/.asist-worktrees/asist-readme', branch: 'asist/readme-note', stat: '', submodules: [] }),
   jobDiff: async () => ({
     commit: 'abc',
+    base: 'a0c',
+    into: 'main',
     stat: ' README.md | 3 +++\n 1 file changed, 3 insertions(+)',
-    patch: '+## 注意\n+\n+設定ファイルの形式は変わることがあります。'
+    patch: '+## 注意\n+\n+設定ファイルの形式は変わることがあります。',
+    submodules: []
   }),
   jobList: async () => DEMO_JOBS.map((job) => ({ ...job })),
   jobLog: async (id) => (id === DEMO_JOB.id ? DEMO_JOB_LOG.map((event, i) => ({ t: Date.now() - (DEMO_JOB_LOG.length - i) * 1000, event })) : []),

@@ -5,6 +5,7 @@ import type { AgentJob, JobDiff, JobStatus } from '@shared/ipc'
 import { isJobTerminal } from '@shared/job-status'
 import { currentStep, foldJobLog } from '@shared/job-log-view'
 import { useT } from '@/i18n'
+import { askConfirm } from '@/state/confirm'
 import { useJobStore, usePanelStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 import { openFiles } from '../open-files'
@@ -74,22 +75,47 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const conflict = job.mergeState === 'conflict'
-  useEffect(() => {
+  const loadDiff = (): void => {
     setDiff(null)
-    setError(null)
-    if (conflict) return
     void window.api
       .jobDiff(job.id)
       .then(setDiff)
       .catch((err: unknown) => setError(cleanError(err)))
+  }
+  useEffect(() => {
+    setError(null)
+    if (conflict) {
+      setDiff(null)
+      return
+    }
+    loadDiff()
   }, [job.id, conflict, job.mergeState, job.worktree?.commit])
-  const act = (run: () => Promise<void>): void => {
+  const worktree = job.worktree!
+  const act = (run: () => Promise<void>, onFailure?: () => void): void => {
     setBusy(true)
     setError(null)
     void run()
-      .catch((err: unknown) => setError(cleanError(err)))
+      .catch((err: unknown) => {
+        setError(cleanError(err))
+        onFailure?.()
+      })
       .finally(() => setBusy(false))
   }
+  // Commits made inside a submodule of the worktree may have no other copy and the diff does not show them,
+  // so a discard asks first when main finds possible work in a submodule. Every other change is in the diff.
+  const discard = (): void =>
+    act(async () => {
+      const { submodules } = await window.api.jobDiscardPreview(job.id)
+      const approved =
+        submodules.length === 0 ||
+        (await askConfirm({
+          message: t('jobs.confirm.discardMessage'),
+          detail: t('jobs.discard.submoduleWork', { paths: submodules.join(', ') }),
+          confirmLabel: t('jobs.card.merge.discard'),
+          destructive: true
+        }))
+      if (approved) await window.api.jobDiscard(job.id)
+    })
   return (
     <Box
       title={t(conflict ? 'jobs.merge.conflict' : 'jobs.card.merge.title')}
@@ -98,8 +124,16 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
     >
       <p className="aj-text">{t(conflict ? 'jobs.card.merge.conflictText' : 'jobs.card.merge.text')}</p>
       <p className="aj-path">
-        {job.worktree?.branch} → {job.worktree?.repo}
+        {diff?.into
+          ? t('jobs.card.merge.path', { branch: worktree.branch, into: diff.into, repo: worktree.repo })
+          : `${worktree.branch} → ${worktree.repo}`}
       </p>
+      {diff && diff.into === null && <p className="aj-text">{t('jobs.merging.detached')}</p>}
+      {diff && diff.submodules.length > 0 && (
+        <p className="aj-text">
+          {t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: worktree.branch, dir: worktree.dir })}
+        </p>
+      )}
       {diff && (
         <pre className="aj-diff">
           {diff.stat || t('jobs.card.merge.noDiff')}
@@ -113,11 +147,17 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       )}
       <Actions>
         {!conflict && (
-          <Action tone="primary" disabled={busy || !diff} onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit))}>
+          <Action
+            tone="primary"
+            disabled={busy || !diff?.stat || diff.submodules.length > 0}
+            // The diff on the card is out of date once another branch is checked out or the merge base has
+            // moved, and main refuses the merge then, so the card shows the current one beside the reason.
+            onClick={() => diff && act(() => window.api.jobMerge(job.id, { commit: diff.commit, base: diff.base, into: diff.into }), loadDiff)}
+          >
             {t('jobs.card.merge.merge')}
           </Action>
         )}
-        <Action tone="danger" disabled={busy} onClick={() => act(() => window.api.jobDiscard(job.id))}>
+        <Action tone="danger" disabled={busy} onClick={discard}>
           {t('jobs.card.merge.discard')}
         </Action>
       </Actions>

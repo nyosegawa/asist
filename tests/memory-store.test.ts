@@ -189,6 +189,21 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(before + 1)
   })
 
+  it('leaves nothing staged when a commit fails after the file was staged, so that a curation can still start', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'page'])
+    // A lock on the branch fails the commit only after the change is staged, where a lock on the index fails it before.
+    const lock = path.join(dir, '.git', 'refs', 'heads', 'main.lock')
+    fs.writeFileSync(lock, '')
+    const draft = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(() => store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)).toThrow()
+    fs.rmSync(lock)
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    expect(store.isClean()).toBe(true)
+  })
+
   it('refuses a named pipe at once instead of waiting for a writer, since git never shows one in a curation worktree', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)

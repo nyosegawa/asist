@@ -666,6 +666,19 @@ export const jobs = defineMessages({
         'pt-BR': 'Descartar',
         'es-419': 'Descartar',
         'es-ES': 'Descartar'
+      },
+      path: {
+        'ja-JP': '{branch} → {into}({repo})',
+        'en-US': '{branch} → {into} ({repo})',
+        'fr-FR': '{branch} → {into} ({repo})',
+        'de-DE': '{branch} → {into} ({repo})',
+        'hi-IN': '{branch} → {into} ({repo})',
+        'id-ID': '{branch} → {into} ({repo})',
+        'it-IT': '{branch} → {into} ({repo})',
+        'ko-KR': '{branch} → {into}({repo})',
+        'pt-BR': '{branch} → {into} ({repo})',
+        'es-419': '{branch} → {into} ({repo})',
+        'es-ES': '{branch} → {into} ({repo})'
       }
     },
     artifacts: {
@@ -1190,17 +1203,17 @@ export const jobs = defineMessages({
       'es-ES': 'El commit del worktree ha cambiado después de que lo miraras. Vuelve a revisarlo con un trabajo posterior.'
     },
     unchanged: {
-      'ja-JP': '変更がなかったので worktree を片付けました',
-      'en-US': 'There were no changes, so the worktree was removed',
-      'fr-FR': "Il n'y avait aucune modification : le worktree a été supprimé",
-      'de-DE': 'Es gab keine Änderungen, deshalb wurde der worktree entfernt',
-      'hi-IN': 'कोई बदलाव नहीं था, इसलिए worktree हटा दिया',
-      'id-ID': 'Tidak ada perubahan, jadi worktree-nya dihapus',
-      'it-IT': "Non c'erano modifiche, quindi il worktree è stato rimosso",
-      'ko-KR': '변경이 없어서 worktree를 정리했습니다',
-      'pt-BR': 'Não houve alterações, então o worktree foi removido',
-      'es-419': 'No hubo cambios, así que se quitó el worktree',
-      'es-ES': 'No había cambios, así que se ha eliminado el worktree'
+      'ja-JP': '取り込む変更がなかったので worktree を片付けました',
+      'en-US': 'There was nothing to merge, so the worktree was removed',
+      'fr-FR': "Il n'y avait rien à fusionner : le worktree a été supprimé",
+      'de-DE': 'Es gab nichts zu übernehmen, deshalb wurde der worktree entfernt',
+      'hi-IN': 'मर्ज करने को कुछ नहीं था, इसलिए worktree हटा दिया',
+      'id-ID': 'Tidak ada yang perlu digabungkan, jadi worktree-nya dihapus',
+      'it-IT': "Non c'era niente da integrare, quindi il worktree è stato rimosso",
+      'ko-KR': '병합할 변경이 없어서 worktree를 정리했습니다',
+      'pt-BR': 'Não havia nada para mesclar, então o worktree foi removido',
+      'es-419': 'No había nada por fusionar, así que se quitó el worktree',
+      'es-ES': 'No había nada que fusionar, así que se ha eliminado el worktree'
     },
     committed: {
       'ja-JP': '成果物を commit して取り込み待ちにしました',
@@ -1227,6 +1240,19 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível arrumar o worktree: {detail}',
       'es-419': 'No se pudo limpiar el worktree: {detail}',
       'es-ES': 'No se ha podido limpiar el worktree: {detail}'
+    },
+    gone: {
+      'ja-JP': 'worktree({dir})がありません。手で消されたようです。ブランチ {branch} は残っているので、自分で取り込むか、ジョブを捨ててブランチも消してください。',
+      'en-US': 'The worktree ({dir}) is gone; it seems to have been deleted by hand. Its branch {branch} is still there: merge it yourself, or discard the job to remove the branch too.',
+      'fr-FR': 'Le worktree ({dir}) a disparu ; il semble avoir été supprimé à la main. Sa branche {branch} existe toujours : fusionnez-la vous-même, ou abandonnez le job pour supprimer aussi la branche.',
+      'de-DE': 'Der worktree ({dir}) ist nicht mehr da; er wurde wohl von Hand gelöscht. Sein Branch {branch} existiert noch: Übernehmen Sie ihn selbst, oder verwerfen Sie den Job, um auch den Branch zu entfernen.',
+      'hi-IN': 'worktree ({dir}) मौजूद नहीं है; लगता है इसे हाथ से मिटा दिया गया। इसकी ब्रांच {branch} अब भी है: इसे खुद मर्ज करें, या ब्रांच भी हटाने के लिए जॉब छोड़ दें।',
+      'id-ID': 'worktree ({dir}) sudah tidak ada; sepertinya dihapus secara manual. Branch {branch} masih ada: gabungkan sendiri, atau buang pekerjaan ini agar branch-nya ikut terhapus.',
+      'it-IT': "Il worktree ({dir}) non c'è più: sembra sia stato eliminato a mano. Il suo branch {branch} esiste ancora: integralo tu, oppure scarta l'incarico per rimuovere anche il branch.",
+      'ko-KR': 'worktree({dir})가 없습니다. 직접 지운 것 같습니다. {branch} 브랜치는 남아 있으므로 직접 병합하거나, 작업을 버려 브랜치도 지우십시오.',
+      'pt-BR': 'O worktree ({dir}) não existe mais; parece que foi apagado à mão. O branch {branch} continua lá: mescle você mesmo, ou descarte o job para remover o branch também.',
+      'es-419': 'El worktree ({dir}) ya no está; parece que se borró a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para quitar también la rama.',
+      'es-ES': 'El worktree ({dir}) ya no está; parece que se ha borrado a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para eliminar también la rama.'
     }
   },
   discard: {
@@ -1268,6 +1294,19 @@ export const jobs = defineMessages({
       'pt-BR': 'As alterações foram descartadas e o worktree, removido',
       'es-419': 'Se descartaron los cambios y se quitó el worktree',
       'es-ES': 'Se han descartado los cambios y se ha eliminado el worktree'
+    },
+    submoduleWork: {
+      'ja-JP': 'サブモジュール({paths})の中の作業は、この worktree にしかないことがあります。捨てると、それも元に戻せません。',
+      'en-US': 'The work inside the submodules ({paths}) may exist only in this worktree. Discarding deletes it too, and it cannot be restored.',
+      'fr-FR': "Le travail dans les sous-modules ({paths}) n'existe peut-être que dans ce worktree. L'abandonner le supprime aussi, sans retour possible.",
+      'de-DE': 'Die Arbeit in den Submodulen ({paths}) gibt es möglicherweise nur in diesem worktree. Beim Verwerfen wird sie ebenfalls gelöscht und lässt sich nicht wiederherstellen.',
+      'hi-IN': 'सबमॉड्यूल ({paths}) के अंदर का काम शायद सिर्फ़ इसी worktree में है। छोड़ने पर वह भी मिट जाएगा और वापस नहीं आएगा।',
+      'id-ID': 'Pekerjaan di dalam submodul ({paths}) mungkin hanya ada di worktree ini. Membuangnya juga menghapus pekerjaan itu, dan tidak bisa dikembalikan.',
+      'it-IT': 'Il lavoro nei sottomoduli ({paths}) potrebbe esistere solo in questo worktree. Scartandolo si cancella anche quello, senza possibilità di recupero.',
+      'ko-KR': '서브모듈({paths}) 안의 작업은 이 worktree에만 있을 수 있습니다. 버리면 그것도 지워지며 되돌릴 수 없습니다.',
+      'pt-BR': 'O trabalho dentro dos submódulos ({paths}) pode existir só neste worktree. Descartar apaga isso também, e não há como recuperar.',
+      'es-419': 'El trabajo dentro de los submódulos ({paths}) puede existir solo en este worktree. Al descartarlo también se borra, y no se puede recuperar.',
+      'es-ES': 'El trabajo dentro de los submódulos ({paths}) puede existir solo en este worktree. Al descartarlo también se borra, y no se puede recuperar.'
     }
   },
   diff: {
@@ -1577,6 +1616,58 @@ export const jobs = defineMessages({
       'pt-BR': "A mesclagem deu conflito e parou. O worktree continua ali\n{detail}",
       'es-419': "La fusión tuvo conflictos y se detuvo. El worktree sigue ahí\n{detail}",
       'es-ES': "Ha habido un conflicto y la fusión se ha detenido. El worktree sigue ahí\n{detail}"
+    },
+    baseChanged: {
+      'ja-JP': '差分を見たあとで、リポジトリで開いているブランチかその履歴が変わりました。取り込み先と新しい差分を確かめてから取り込んでください。',
+      'en-US': 'The branch checked out in the repository, or its history, changed after the diff was shown. Check where the changes go and the new diff before merging.',
+      'fr-FR': "La branche active du dépôt, ou son historique, a changé depuis l'affichage des modifications. Vérifiez la destination et les nouvelles modifications avant de fusionner.",
+      'de-DE': 'Der ausgecheckte Branch des Repositorys oder sein Verlauf hat sich geändert, seit die Änderungen angezeigt wurden. Prüfen Sie das Ziel und die neuen Änderungen, bevor Sie übernehmen.',
+      'hi-IN': 'बदलाव दिखाए जाने के बाद रिपॉज़िटरी में खुली ब्रांच या उसका इतिहास बदल गया। मर्ज करने से पहले देखें कि बदलाव कहाँ जाएँगे और नए बदलाव क्या हैं।',
+      'id-ID': 'Branch yang dibuka di repositori, atau riwayatnya, berubah setelah perubahannya ditampilkan. Periksa tujuan dan perubahan yang baru sebelum menggabungkan.',
+      'it-IT': 'Il branch attivo nel repository, o la sua cronologia, è cambiato dopo che le modifiche sono state mostrate. Controlla la destinazione e le nuove modifiche prima di integrarle.',
+      'ko-KR': '변경을 보여 준 뒤에 저장소에서 체크아웃한 브랜치나 그 기록이 바뀌었습니다. 병합할 곳과 새 변경을 확인한 뒤에 병합하십시오.',
+      'pt-BR': 'O branch aberto no repositório, ou o histórico dele, mudou depois que as alterações foram mostradas. Confira o destino e as novas alterações antes de mesclar.',
+      'es-419': 'La rama activa del repositorio, o su historial, cambió después de mostrar los cambios. Revisa el destino y los cambios nuevos antes de fusionar.',
+      'es-ES': 'La rama activa del repositorio, o su historial, ha cambiado después de mostrar los cambios. Revisa el destino y los cambios nuevos antes de fusionar.'
+    },
+    noCommonHistory: {
+      'ja-JP': 'リポジトリで開いているブランチには、このジョブと共通の履歴がありません。ジョブを始めたブランチを開いてから取り込んでください。',
+      'en-US': 'The branch checked out in the repository shares no history with this job. Check out the branch the job started from before merging.',
+      'fr-FR': "La branche active du dépôt n'a aucun historique en commun avec ce job. Passez sur la branche d'où le job est parti avant de fusionner.",
+      'de-DE': 'Der ausgecheckte Branch des Repositorys hat keinen gemeinsamen Verlauf mit diesem Job. Checken Sie vor dem Übernehmen den Branch aus, von dem der Job ausging.',
+      'hi-IN': 'रिपॉज़िटरी में खुली ब्रांच का इस जॉब के साथ कोई साझा इतिहास नहीं है। मर्ज करने से पहले वह ब्रांच खोलें जिससे जॉब शुरू हुई थी।',
+      'id-ID': 'Branch yang sedang dibuka di repositori tidak punya riwayat yang sama dengan pekerjaan ini. Buka branch tempat pekerjaan ini dimulai sebelum menggabungkan.',
+      'it-IT': "Il branch attivo nel repository non ha storia in comune con questo incarico. Passa al branch da cui è partito l'incarico prima di integrare.",
+      'ko-KR': '저장소에서 체크아웃한 브랜치에는 이 작업과 공통된 기록이 없습니다. 작업을 시작한 브랜치를 체크아웃한 뒤에 병합하십시오.',
+      'pt-BR': 'O branch aberto no repositório não tem histórico em comum com este job. Abra o branch de onde o job partiu antes de mesclar.',
+      'es-419': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.',
+      'es-ES': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.'
+    },
+    submodules: {
+      'ja-JP': 'このジョブはサブモジュールか .gitmodules({paths})に触れたので、ASIST では取り込めません。ブランチ {branch} を自分で取り込むか、捨ててください。サブモジュールの中で作ったコミットは worktree({dir})の中の複製にしかないことがあり、その場合は先にそこから push しないと、あなたのチェックアウトの git submodule update では取ってこられません。',
+      'en-US': 'This job touched submodules or .gitmodules ({paths}), so ASIST cannot merge it. Merge the branch {branch} yourself, or discard it. Commits made inside a submodule may exist only in the copy in the worktree ({dir}); if so, push them from there first, or git submodule update in your checkout cannot fetch them.',
+      'fr-FR': "Ce job a touché des sous-modules ou .gitmodules ({paths}) : ASIST ne peut pas le fusionner. Fusionnez vous-même la branche {branch}, ou abandonnez-le. Les commits faits dans un sous-module n'existent peut-être que dans la copie du worktree ({dir}) : dans ce cas, poussez-les d'abord depuis là, sinon git submodule update dans votre copie ne pourra pas les récupérer.",
+      'de-DE': 'Dieser Job hat Submodule oder .gitmodules berührt ({paths}), deshalb kann ASIST ihn nicht übernehmen. Übernehmen Sie den Branch {branch} selbst, oder verwerfen Sie ihn. Commits in einem Submodul gibt es möglicherweise nur in der Kopie im worktree ({dir}): Pushen Sie sie dann zuerst von dort, sonst kann git submodule update in Ihrem Checkout sie nicht holen.',
+      'hi-IN': 'इस जॉब ने सबमॉड्यूल या .gitmodules ({paths}) को छुआ है, इसलिए ASIST इसे मर्ज नहीं कर सकता। ब्रांच {branch} को खुद मर्ज करें, या इसे छोड़ दें। सबमॉड्यूल के अंदर बने commit शायद सिर्फ़ worktree ({dir}) की कॉपी में हों: ऐसा हो तो पहले उन्हें वहीं से push करें, वरना आपके checkout में git submodule update उन्हें नहीं ला पाएगा।',
+      'id-ID': 'Pekerjaan ini menyentuh submodul atau .gitmodules ({paths}), jadi ASIST tidak bisa menggabungkannya. Gabungkan branch {branch} sendiri, atau buang pekerjaan ini. Commit yang dibuat di dalam submodul mungkin hanya ada di salinan dalam worktree ({dir}): jika begitu, push dulu dari sana, kalau tidak git submodule update di checkout Anda tidak bisa mengambilnya.',
+      'it-IT': 'Questo incarico ha toccato sottomoduli o .gitmodules ({paths}), quindi ASIST non può integrarlo. Integra tu il branch {branch}, oppure scartalo. I commit fatti dentro un sottomodulo potrebbero esistere solo nella copia del worktree ({dir}): in quel caso fai prima il push da lì, altrimenti git submodule update nel tuo checkout non riesce a recuperarli.',
+      'ko-KR': '이 작업은 서브모듈이나 .gitmodules({paths})를 건드렸기 때문에 ASIST가 병합할 수 없습니다. {branch} 브랜치를 직접 병합하거나 버리십시오. 서브모듈 안에서 만든 커밋은 worktree({dir}) 안의 복사본에만 있을 수 있으며, 그 경우 먼저 거기서 push하지 않으면 체크아웃에서 git submodule update로 가져올 수 없습니다.',
+      'pt-BR': 'Este job mexeu em submódulos ou no .gitmodules ({paths}), então o ASIST não pode mesclá-lo. Mescle você mesmo o branch {branch}, ou descarte o job. Os commits feitos dentro de um submódulo podem existir só na cópia do worktree ({dir}): nesse caso, faça push de lá primeiro, senão o git submodule update no seu checkout não consegue buscá-los.',
+      'es-419': 'Este trabajo tocó submódulos o .gitmodules ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo pueden existir solo en la copia del worktree ({dir}); en ese caso, haz push desde ahí primero, o git submodule update en tu checkout no podrá traerlos.',
+      'es-ES': 'Este trabajo ha tocado submódulos o .gitmodules ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo pueden existir solo en la copia del worktree ({dir}); en ese caso, haz push desde ahí primero, o git submodule update en tu checkout no podrá traerlos.'
+    },
+    detached: {
+      'ja-JP': 'リポジトリの HEAD がブランチを指していないので、取り込めません。取り込み先のブランチをチェックアウトしてから取り込んでください。',
+      'en-US': "The repository's HEAD is not on a branch, so nothing can be merged. Check out the branch to merge into, then merge.",
+      'fr-FR': 'Le HEAD du dépôt ne pointe sur aucune branche : rien ne peut être fusionné. Extrayez la branche dans laquelle fusionner, puis fusionnez.',
+      'de-DE': 'Der HEAD des Repositorys steht auf keinem Branch, deshalb lässt sich nichts übernehmen. Checken Sie den Branch aus, in den übernommen werden soll, und übernehmen Sie dann.',
+      'hi-IN': 'रिपॉज़िटरी का HEAD किसी ब्रांच पर नहीं है, इसलिए कुछ भी मर्ज नहीं हो सकता। जिस ब्रांच में मर्ज करना है उसे checkout करें, फिर मर्ज करें।',
+      'id-ID': 'HEAD repositori tidak berada di branch mana pun, jadi tidak ada yang bisa digabungkan. Checkout branch tujuan penggabungan, lalu gabungkan.',
+      'it-IT': "L'HEAD del repository non è su un branch, quindi non si può integrare nulla. Fai il checkout del branch in cui integrare, poi integra.",
+      'ko-KR': '저장소의 HEAD가 브랜치를 가리키지 않아서 병합할 수 없습니다. 병합할 브랜치를 체크아웃한 뒤에 병합하십시오.',
+      'pt-BR': 'O HEAD do repositório não está em um branch, então nada pode ser mesclado. Faça checkout do branch onde mesclar e depois mescle.',
+      'es-419': 'El HEAD del repositorio no está en una rama, así que no se puede fusionar nada. Haz checkout de la rama donde fusionar y luego fusiona.',
+      'es-ES': 'El HEAD del repositorio no está en una rama, así que no se puede fusionar nada. Haz checkout de la rama donde fusionar y luego fusiona.'
     }
   },
   confirm: {
@@ -1802,17 +1893,17 @@ export const jobs = defineMessages({
       'es-ES': '¿Fusionar estos cambios en el repositorio?'
     },
     mergeInto: {
-      'ja-JP': '取り込み先: {repo}',
-      'en-US': 'Repository: {repo}',
-      'fr-FR': 'Dépôt : {repo}',
-      'de-DE': 'Repository: {repo}',
-      'hi-IN': 'रिपॉज़िटरी: {repo}',
-      'id-ID': 'Repositori: {repo}',
-      'it-IT': 'Repository: {repo}',
-      'ko-KR': '저장소: {repo}',
-      'pt-BR': 'Repositório: {repo}',
-      'es-419': 'Repositorio: {repo}',
-      'es-ES': 'Repositorio: {repo}'
+      'ja-JP': '取り込み先: {into}({repo})',
+      'en-US': 'Merge into: {into} ({repo})',
+      'fr-FR': 'Fusionner dans : {into} ({repo})',
+      'de-DE': 'Übernehmen in: {into} ({repo})',
+      'hi-IN': 'इसमें मर्ज करें: {into} ({repo})',
+      'id-ID': 'Digabungkan ke: {into} ({repo})',
+      'it-IT': 'Integra in: {into} ({repo})',
+      'ko-KR': '병합할 곳: {into}({repo})',
+      'pt-BR': 'Mesclar em: {into} ({repo})',
+      'es-419': 'Fusionar en: {into} ({repo})',
+      'es-ES': 'Fusionar en: {into} ({repo})'
     },
     merge: {
       'ja-JP': '変更を取り込む',

@@ -110,6 +110,18 @@ describe('job history reads', () => {
     }
   })
 
+  it('reads a worktree job that version 3 kept as waiting to be merged as not settled yet, so that it is checked for submodules again', () => {
+    const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'stored', 'jobs.v3.json'), 'utf8')
+    fs.writeFileSync(path.join(locations.root, 'jobs.json'), sample)
+    const saved = (JSON.parse(sample) as { jobs: AgentJob[] }).jobs
+    const read = readJobHistory()
+    expect(saved.some((entry) => entry.worktree && entry.mergeState === 'pending')).toBe(true)
+    for (const entry of saved) {
+      const expected = entry.worktree && entry.mergeState === 'pending' ? undefined : entry.mergeState
+      expect(read.find((job) => job.id === entry.id)?.mergeState).toBe(expected)
+    }
+  })
+
   it('reads an empty history only when the file is missing, and throws on any other read error', () => {
     expect(readJobHistory()).toEqual([])
     vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => { throw Object.assign(new Error('permission denied'), { code: 'EACCES' }) })

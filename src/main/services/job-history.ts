@@ -31,7 +31,8 @@ const jobSchema: z.ZodType<AgentJob> = z.object({
   sessionId: z.string().optional(),
   parentId: z.string().optional(),
   worktree: z.object({
-    repo: z.string().min(1), dir: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional()
+    repo: z.string().min(1), dir: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional(),
+    submodules: z.array(z.string().min(1)).optional()
   }).passthrough().optional(),
   mergeState: z.enum(['pending', 'merged', 'discarded', 'unchanged', 'conflict', 'error']).optional(),
   memoryCuration: z.object({ through: z.iso.date().nullable(), applied: z.boolean() }).optional()
@@ -48,7 +49,7 @@ const historySchema = z.array(jobSchema).superRefine((jobs, context) => {
 
 export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
   name: JOBS_FILE,
-  version: 3,
+  version: 4,
   upgrades: {
     // Version 1 was the bare list of jobs; version 2 is an object, which is what can carry the version.
     1: (content) => ({ jobs: content }),
@@ -61,6 +62,22 @@ export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
         ...rest,
         jobs: jobs.map((job: { cwd?: unknown; worktree?: object }) =>
           job?.worktree ? { ...job, worktree: { ...job.worktree, dir: job.cwd } } : job)
+      }
+    },
+    // Version 4 records the submodules a job touched, and ASIST does not merge a job that touched any. A job
+    // of version 3 waiting to be merged was settled without that check, and its commit can point a submodule
+    // at a commit that only its worktree holds, so it loses its merge state and is settled again when the
+    // history is read.
+    3: (content) => {
+      const { jobs, ...rest } = content as { jobs?: unknown }
+      if (!Array.isArray(jobs)) return content
+      return {
+        ...rest,
+        jobs: jobs.map((job: { worktree?: object; mergeState?: unknown }) => {
+          if (!job?.worktree || job.mergeState !== 'pending') return job
+          const { mergeState: _unsettled, ...unsettled } = job
+          return unsettled
+        })
       }
     }
   },

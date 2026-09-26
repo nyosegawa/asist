@@ -85,6 +85,15 @@ describe('starting an agent', () => {
     expect(agent.get(signalled.id)?.summary).toBeUndefined()
   })
 
+  it('leaves the exit code out of a cancelled job, so that the card says it was cancelled', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.start('調査する', options)
+    agent.cancel(job.id)
+    mocks.launch.mock.calls[0][2].onExit(143)
+    expect(agent.get(job.id)?.status).toBe('cancelled')
+    expect(agent.get(job.id)?.summary).toBeUndefined()
+  })
+
   it('waits for the previous process to close before continuing, and carries on even when the caller gives up during that wait', async () => {
     let close!: () => void
     mocks.launch.mockImplementation((_job, _args, handlers) => ({

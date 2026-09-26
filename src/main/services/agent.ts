@@ -5,7 +5,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import mitt, { type Emitter } from 'mitt'
-import type { AgentJob, JobDiff, JobEvent, JobLogEvent, JobLogLine } from '@shared/ipc'
+import type { AgentJob, DiscardPreview, JobDiff, JobEvent, JobLogEvent, JobLogLine, ReviewedMerge } from '@shared/ipc'
 import { artifactPaths, type AgentStreamEvent } from '@shared/agent-stream'
 import { buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
 import { formatJobContextBlock, resolveJobAccess, workspaceDirName, worktreeBranchName } from '@shared/job-workspace'
@@ -18,7 +18,15 @@ import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
 import type { AgentProcess } from './agent-process-lifetime'
 import { recoverAgentProcess } from './agent-process-identity'
-import { assertWorktreeReview, captureWorktree, readWorktreeDiff } from './job-worktree'
+import {
+  assertMergeable,
+  assertWorktreePresent,
+  assertWorktreeReview,
+  captureWorktree,
+  discardStat,
+  readWorktreeDiff,
+  submodulesAtRisk
+} from './job-worktree'
 import * as projectIndex from './project-index'
 import { installSkill } from './memory-curation-skill'
 import * as git from './git'
@@ -304,20 +312,22 @@ export function isGitRepo(cwd: string): boolean {
 }
 
 /**
- * Tidies the worktree once a job ends. Uncommitted changes are committed and left waiting to be merged;
- * a worktree with no change is removed. A failure is recorded as `error` so that the work survives.
+ * Tidies the worktree once a job ends. Uncommitted changes are committed and left waiting to be merged, or,
+ * when the job touched a submodule, left for the user to merge or discard; a worktree with no change is
+ * removed. A failure is recorded as `error` so that the work survives.
  */
 function settleWorktree(job: AgentJob): Partial<AgentJob> {
   assertWriterStopped(job)
   try {
-    const captured = captureWorktree(job)
-    pushLog(job.id, 'system', t(captured.mergeState === 'unchanged'
-      ? 'jobs.worktree.unchanged'
-      : 'jobs.worktree.committed'))
-    return captured
+    const settled = captureWorktree(job)
+    const worktree = settled.worktree!
+    pushLog(job.id, 'system', worktree.submodules
+      ? t('jobs.merging.submodules', { paths: worktree.submodules.join(', '), branch: worktree.branch, dir: worktree.dir })
+      : t(settled.mergeState === 'unchanged' ? 'jobs.worktree.unchanged' : 'jobs.worktree.committed'))
+    return settled
   } catch (err) {
     pushLog(job.id, 'stderr', t('jobs.worktree.settleFailed', { detail: errorMessage(err) }))
-    return { worktree: { ...job.worktree!, commit: undefined }, mergeState: 'error' }
+    return { worktree: { ...job.worktree!, commit: undefined, submodules: undefined }, mergeState: 'error' }
   }
 }
 
@@ -437,7 +447,9 @@ function launch(job: AgentJob, args: string[] = buildStartArgs(job)): void {
         entry.process = null
         if (!isJobExecuting(entry.job.status)) return
         const stopped = entry.job.status === 'stopping'
-        const failed = code !== 0 || Boolean(entry.processError) || entry.result?.ok === false
+        const failed = !stopped && (code !== 0 || Boolean(entry.processError) || entry.result?.ok === false)
+        // A CLI that handles the SIGTERM of a stop exits with a code of its own, which says nothing more
+        // than the cancellation the card already shows.
         update(id, {
           status: stopped ? 'cancelled' : failed ? 'error' : 'done',
           processIdentity: undefined,
@@ -483,18 +495,19 @@ export function relocateArtifacts(artifacts: string[] | undefined, worktreeDir: 
 
 /**
  * Merges the worktree's changes into the user's repository. A conflict aborts the merge and keeps the
- * worktree. It asks nobody: the caller has shown the diff and had it approved, or, for the memory
+ * worktree. It asks nobody: the caller has shown the review and had it approved, or, for the memory
  * curation, checked that the diff stays inside the memory folder.
  */
-export function merge(id: string, commit: string): AgentJob {
+export function merge(id: string, reviewed: ReviewedMerge): AgentJob {
   ensureLoaded()
   const entry = jobs.get(id)
   if (!entry?.job.worktree) throw new Error(errorText('jobs.merging.noChanges', { id }))
   assertWriterStopped(entry.job)
-  assertWorktreeReview(entry.job, commit)
+  assertWorktreeReview(entry.job, reviewed.commit)
   const wt = entry.job.worktree
+  assertMergeable(entry.job, reviewed)
   if (!git.isClean(wt.repo)) throw new Error(errorText('jobs.merging.dirtyRepo'))
-  const outcome = git.mergeNoFf(wt.repo, commit, `asist: ${entry.job.title} (${id})`)
+  const outcome = git.mergeNoFf(wt.repo, reviewed.commit, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
     pushLog(id, 'system', t('jobs.merging.done', { repo: wt.repo }))
     // The worktree is about to be removed, so artifact paths inside it are moved to the merge target
@@ -534,19 +547,21 @@ function discardableWorktree(id: string): NonNullable<AgentJob['worktree']> {
   return job.worktree
 }
 
-/** What a discard of a job would remove, which the conversation shows the user before asking. */
-export interface DiscardPreview {
-  repo: string
-  dir: string
-  branch: string
-  /** The changes the branch holds against the commit the job started from, as git's stat. */
-  stat: string
-}
-
-/** It refuses as discard does, so that the user is never asked about a discard that cannot happen. */
+/**
+ * What a discard of a job would delete, which the card and discard_agent_job show the user before asking. It
+ * refuses as discard does, so that the user is never asked about a discard that cannot happen. The
+ * submodules are looked into now rather than read from the job, since work can appear in them after it
+ * settled and a job whose settling failed has none recorded.
+ */
 export function discardPreview(id: string): DiscardPreview {
   const worktree = discardableWorktree(id)
-  return { repo: worktree.repo, dir: worktree.dir, branch: worktree.branch, stat: git.diffStat(worktree.repo, worktree.base, worktree.branch) }
+  return {
+    repo: worktree.repo,
+    dir: worktree.dir,
+    branch: worktree.branch,
+    stat: discardStat(worktree),
+    submodules: submodulesAtRisk(worktree)
+  }
 }
 
 /** Throws the worktree's changes away by deleting both the worktree and its branch. */
@@ -564,7 +579,11 @@ export function diff(id: string): JobDiff {
   if (!entry?.job.worktree) throw new Error(errorText('jobs.diff.none', { id }))
   assertWriterStopped(entry.job)
   if (!isJobTerminal(entry.job.status)) throw new Error(errorText('jobs.worktree.jobRunning'))
-  if (entry.job.mergeState === 'error') update(id, settleWorktree(entry.job))
+  if (entry.job.mergeState === 'error') {
+    // A worktree that is gone cannot be settled, and trying again on every look would only log it again.
+    assertWorktreePresent(entry.job.worktree)
+    update(id, settleWorktree(entry.job))
+  }
   return readWorktreeDiff(entry.job)
 }
 
@@ -611,7 +630,7 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
     sessionId: parent.sessionId,
     parentId,
     ...(parent.memoryCuration ? { memoryCuration: { through: parent.memoryCuration.through, applied: false } } : {}),
-    ...(transferWorktree ? { worktree: { ...parent.worktree!, commit: undefined } } : {})
+    ...(transferWorktree ? { worktree: { ...parent.worktree!, commit: undefined, submodules: undefined } } : {})
   }
   // A worktree job whose changes are already merged or cleaned up continues in a fresh worktree cut
   // from the repository, in the same folder inside it.

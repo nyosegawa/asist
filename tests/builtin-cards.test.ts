@@ -9,6 +9,7 @@ import type { FileItem } from '@shared/files'
 import { dayKeyOf, type Task, type TaskStatus } from '@shared/tasks'
 import { usePanelStore, useJobStore, useMailStore, useNoteStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
+import { useConfirmStore } from '@/state/confirm'
 import type { AppSettings } from '@shared/settings'
 import { DEMO_MAIL_ACCOUNTS } from '@/demo/fixtures/mail'
 import { Dock } from '@/ui/Dock'
@@ -89,9 +90,10 @@ const api = {
   taskUpdate: vi.fn(async (id: string): Promise<Task> => taskOf(id, id, 'done', 0)),
   notesList: vi.fn(async () => []),
   jobLog: vi.fn(async () => []),
-  jobDiff: vi.fn(async () => ({ commit: 'abc', stat: '1 file changed', patch: '' })),
+  jobDiff: vi.fn(async () => ({ commit: 'abc', base: 'a0c', into: 'main', stat: '1 file changed', patch: '', submodules: [] as string[] })),
   jobMerge: vi.fn(async () => {}),
   jobDiscard: vi.fn(async () => {}),
+  jobDiscardPreview: vi.fn(async () => ({ repo: '/r', dir: '/w', branch: 'asist/x', stat: '', submodules: [] as string[] })),
   panelFetch: vi.fn(async (_type: string, props: Record<string, unknown>) => ({ props: { ...props, items: demoFileItems(props.paths as string[]) }, source: 'files' })),
   mailDraftList: vi.fn(async () => DEMO_MAIL_DRAFTS),
   mailDraftUpdate: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ ...DEMO_MAIL_DRAFTS.find((d) => d.id === id)!, ...patch })),
@@ -446,11 +448,66 @@ describe('agent job card', () => {
     expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('merge')
     expect(api.jobDiff).toHaveBeenCalledWith(DEMO_JOB.id)
     expect(card.querySelector('.aj-diff')?.textContent).toContain('1 file changed')
+    expect(card.querySelector('.aj-path')?.textContent).toBe(t('jobs.card.merge.path', { branch: 'asist/x', into: 'main', repo: '/r' }))
     await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
-    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, 'abc')
+    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, { commit: 'abc', base: 'a0c', into: 'main' })
     expect(card.querySelector('.aj-summary')).toBeNull()
     expect(card.querySelector('.aj-log')).toBeNull()
     expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')
+  })
+
+  it('offers no merge for a job that touched submodules, says why and where its commits are, and asks before discarding them', async () => {
+    useConfirmStore.setState({ queue: [] })
+    useJobStore.setState({
+      jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main', submodules: ['vendor/sub'] } }],
+      logs: {}
+    })
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'a0c', into: 'main', stat: ' vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    expect(card.querySelector('.aj-merge')?.textContent).toContain(t('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x', dir: '/w' }))
+    const [merge, discard] = [...card.querySelectorAll<HTMLButtonElement>('.aj-merge .card-action')]
+    expect(merge.textContent).toBe(t('jobs.card.merge.merge'))
+    expect(merge.disabled).toBe(true)
+
+    api.jobDiscardPreview.mockResolvedValueOnce({ repo: '/r', dir: '/w', branch: 'asist/x', stat: '', submodules: ['vendor/sub'] })
+    await act(async () => discard.click())
+    const [question] = useConfirmStore.getState().queue
+    expect(question).toMatchObject({ destructive: true, detail: t('jobs.discard.submoduleWork', { paths: 'vendor/sub' }) })
+    expect(api.jobDiscard).not.toHaveBeenCalled()
+    await act(async () => question.resolve!(true))
+    expect(api.jobDiscard).toHaveBeenCalledWith(DEMO_JOB.id)
+    useConfirmStore.setState({ queue: [] })
+  })
+
+  it('shows the current diff beside the reason when main refuses a merge because the repository moved to another branch', async () => {
+    useJobStore.setState({
+      jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],
+      logs: {}
+    })
+    api.jobMerge.mockRejectedValueOnce(new Error(errorText('jobs.merging.baseChanged')))
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'b1d', into: 'main', stat: '2 files changed', patch: '', submodules: [] })
+    await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
+    expect(api.jobDiff).toHaveBeenCalledTimes(2)
+    expect(card.querySelector('.aj-diff')?.textContent).toContain('2 files changed')
+    expect(card.querySelector('[role="alert"]')?.textContent).toBe(t('jobs.merging.baseChanged'))
+  })
+
+  it('asks before discarding a job whose settling failed when main finds possible work in its submodules', async () => {
+    useConfirmStore.setState({ queue: [] })
+    useJobStore.setState({
+      jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'error', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],
+      logs: {}
+    })
+    api.jobDiscardPreview.mockResolvedValueOnce({ repo: '/r', dir: '/w', branch: 'asist/x', stat: '', submodules: ['vendor/sub'] })
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    const discard = [...card.querySelectorAll<HTMLButtonElement>('.aj-merge .card-action')].find((el) => el.textContent === t('jobs.card.merge.discard'))!
+    await act(async () => discard.click())
+    const [question] = useConfirmStore.getState().queue
+    expect(question).toMatchObject({ destructive: true, detail: t('jobs.discard.submoduleWork', { paths: 'vendor/sub' }) })
+    await act(async () => question.resolve!(false))
+    expect(api.jobDiscard).not.toHaveBeenCalled()
+    useConfirmStore.setState({ queue: [] })
   })
 
   it('offers only discarding a job whose merge conflicted, without showing an error for a diff it cannot merge', async () => {
@@ -462,6 +519,9 @@ describe('agent job card', () => {
     expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('merge')
     expect(card.querySelector('[role="alert"]')).toBeNull()
     expect([...card.querySelectorAll('.aj-merge .card-action')].map((el) => el.textContent)).toEqual([t('jobs.card.merge.discard')])
+    await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
+    expect(useConfirmStore.getState().queue).toEqual([])
+    expect(api.jobDiscard).toHaveBeenCalledWith(DEMO_JOB.id)
   })
 
   it('reads the whole log from main when the card appears, even when a line of it already arrived as an event', async () => {

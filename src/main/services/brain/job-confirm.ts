@@ -1,6 +1,5 @@
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
-import type { AgentEngine, JobDiff } from '@shared/ipc'
-import type { DiscardPreview } from '../agent'
+import type { AgentEngine, DiscardPreview, JobDiff } from '@shared/ipc'
 import { requestConfirm, type ConfirmInput } from '../confirm'
 import { t } from '../i18n'
 
@@ -58,11 +57,19 @@ export function jobConfirmation(plan: JobPlan): ConfirmInput {
   }
 }
 
-export function mergeConfirmation(job: { title: string; repo: string }, review: JobDiff): ConfirmInput {
+/** The job's title, and the repository and the branch the merge goes into. */
+type MergeTarget = { title: string; repo: string; into: string }
+
+export function mergeConfirmation(job: MergeTarget, review: JobDiff): ConfirmInput {
   return {
     title: t('jobs.confirm.mergeTitle'),
     message: t('jobs.confirm.mergeMessage'),
-    detail: [t('jobs.confirm.job', { title: job.title }), t('jobs.confirm.mergeInto', { repo: job.repo }), '', review.stat].join('\n'),
+    detail: [
+      t('jobs.confirm.job', { title: job.title }),
+      t('jobs.confirm.mergeInto', { into: job.into, repo: job.repo }),
+      '',
+      review.stat
+    ].join('\n'),
     confirmLabel: t('jobs.confirm.merge'),
     destructive: false
   }
@@ -78,7 +85,8 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
       t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
       ...(target.stat ? ['', target.stat] : []),
       '',
-      t('jobs.confirm.discardWarning')
+      t('jobs.confirm.discardWarning'),
+      ...(target.submodules.length > 0 ? [t('jobs.discard.submoduleWork', { paths: target.submodules.join(', ') })] : [])
     ].join('\n'),
     confirmLabel: t('jobs.confirm.discard'),
     destructive: true
@@ -88,7 +96,7 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
 export const confirmJob = (plan: JobPlan, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(jobConfirmation(plan), signal)
 
-export const confirmMerge = (job: { title: string; repo: string }, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
+export const confirmMerge = (job: MergeTarget, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(mergeConfirmation(job, review), signal)
 
 export const confirmDiscard = (title: string, target: DiscardPreview, signal: AbortSignal): Promise<boolean> =>

@@ -26,7 +26,7 @@ const HISTORY_ROOM_POLL_MS = 5_000
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
 const REPORT: Readonly<
-  Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'merged' | 'discarded' | 'noSummary' | 'noReason', PromptText>
+  Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'submodules' | 'mergeUnchanged' | 'merged' | 'discarded' | 'noSummary' | 'noReason', PromptText>
 > = {
   done: {
     ja: `{notice} ジョブ「{title}」(jobId: {jobId})が完了した。結果の要約: {summary}{artifactNote}{mergeNote}`,
@@ -40,6 +40,10 @@ const REPORT: Readonly<
   mergePending: {
     ja: ` 変更はworktreeにあり取り込み待ち。差分は画面のジョブパネルで見られる。取り込むか捨てるかを聞くこと(「取り込んで」でmerge_agent_job、「捨てて」でdiscard_agent_job)。`,
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
+  },
+  submodules: {
+    ja: ` このジョブはサブモジュールか.gitmodules({paths})に触れたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。サブモジュールの中で作ったコミットはworktree({dir})の中の複製にしかないことがあり、その場合はユーザーのチェックアウトでgit submodule updateをしても取ってこられない。ユーザー自身が必要ならそこからpushしてブランチを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとその複製も消える。`,
+    en: ` This job touched submodules or .gitmodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Commits made inside a submodule may exist only in the copy in the worktree ({dir}), and if so git submodule update in the user's checkout cannot fetch them. Tell the user they can push them from there if needed and merge the branch themselves, or throw the job away with discard_agent_job, which deletes that copy too.`
   },
   mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
   merged: { ja: ` 変更はすでに取り込んだ。`, en: ` The changes have already been taken in.` },
@@ -127,16 +131,19 @@ export function reportNotice(job: AgentJob): { notice: NoticeKind; text: string 
   const locale = conversationLocale()
   const artifacts = (job.artifacts ?? []).slice(-5)
   const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
+  const submodules = job.worktree?.submodules
   const mergeNote =
-    job.mergeState === 'pending'
-      ? promptText(locale, REPORT.mergePending)
-      : job.mergeState === 'merged'
-        ? promptText(locale, REPORT.merged)
-        : job.mergeState === 'discarded'
-          ? promptText(locale, REPORT.discarded)
-          : job.worktree && job.mergeState === 'unchanged'
-            ? promptText(locale, REPORT.mergeUnchanged)
-            : ''
+    job.mergeState === 'pending' && submodules
+      ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
+      : job.mergeState === 'pending'
+        ? promptText(locale, REPORT.mergePending)
+        : job.mergeState === 'merged'
+          ? promptText(locale, REPORT.merged)
+          : job.mergeState === 'discarded'
+            ? promptText(locale, REPORT.discarded)
+            : job.worktree && job.mergeState === 'unchanged'
+              ? promptText(locale, REPORT.mergeUnchanged)
+              : ''
   const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
   return job.status === 'done'
     ? {

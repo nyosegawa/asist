@@ -507,10 +507,12 @@ export interface AgentJob {
   parentId?: string
   /**
    * Where a job writing into a git repository is isolated, so the user's repository is untouched until the merge.
-   * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it.
+   * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it. `base` is
+   * the commit the job started from. `submodules` are the submodules, with .gitmodules, that the job touched,
+   * as found when it settled; ASIST does not merge such a job, and its worktree waits for the user.
    */
-  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string }
-  /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and changed nothing. */
+  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string; submodules?: string[] }
+  /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and left nothing a merge would take in. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
   memoryCuration?: { through: string | null; applied: boolean }
@@ -520,8 +522,38 @@ export type JobMergeState = 'pending' | 'merged' | 'discarded' | 'unchanged' | '
 
 export interface JobDiff {
   commit: string
+  /**
+   * The merge base with the repository's HEAD the diff counts from. The merge refuses to go on when it has
+   * changed, since it would then apply changes the diff did not show.
+   */
+  base: string
+  /**
+   * The branch checked out in the repository when the diff was read, which the merge goes into, or null when
+   * HEAD is not on a branch, while nothing can be merged. The merge refuses to go on once another branch is
+   * checked out, since a branch cut from the same commit keeps the merge base.
+   */
+  into: string | null
   stat: string
   patch: string
+  /** The submodules the job touched, which keep ASIST from merging it (see `AgentJob.worktree.submodules`). */
+  submodules: string[]
+}
+
+/** What the user saw and approved in a review, which a merge carries so that main merges only that. */
+export type ReviewedMerge = Pick<JobDiff, 'commit' | 'base' | 'into'>
+
+/** What a discard of a job would delete, read when it is asked about. */
+export interface DiscardPreview {
+  repo: string
+  dir: string
+  branch: string
+  /** What a merge of the branch would have brought in, as git's stat. */
+  stat: string
+  /**
+   * The submodules whose work in the worktree the discard may delete, as submodulesWithWork finds them now.
+   * Empty when the worktree's folder is gone.
+   */
+  submodules: string[]
 }
 
 /**
@@ -724,6 +756,7 @@ export const IpcChannel = {
   JobCancel: 'job-cancel',
   JobMerge: 'job-merge',
   JobDiscard: 'job-discard',
+  JobDiscardPreview: 'job-discard-preview',
   JobDiff: 'job-diff',
   JobList: 'job-list',
   JobLog: 'job-log',
@@ -962,8 +995,10 @@ export interface RendererApi {
 
   jobCancel(id: string): Promise<void>
   /** Merges the worktree's changes into the user's repository, or discards them. The diff is what the user reviews before merging. */
-  jobMerge(id: string, commit: string): Promise<void>
+  jobMerge(id: string, reviewed: ReviewedMerge): Promise<void>
   jobDiscard(id: string): Promise<void>
+  /** What jobDiscard would delete, so that a screen can ask before throwing away work it does not show. */
+  jobDiscardPreview(id: string): Promise<DiscardPreview>
   jobDiff(id: string): Promise<JobDiff>
   jobList(): Promise<AgentJob[]>
   jobLog(id: string): Promise<JobLogLine[]>

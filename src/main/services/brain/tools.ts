@@ -23,6 +23,7 @@ import {
   type ToolGuideEntry,
   type ToolRegistry
 } from '@shared/tool-registry'
+import { askingFrom } from '../confirm'
 import { conversationLocale } from '../conversation-locale'
 import { t } from '../i18n'
 import * as agentRunner from '../agent'
@@ -302,14 +303,24 @@ export function toolGuide({ webSearch: withSearch }: ToolOptions = ALL_TOOLS): s
   return guide
 }
 
-/** Runs a client tool. A failure or a timeout comes back as a result marked isError rather than as an exception. */
+/**
+ * Runs a client tool. A failure or a timeout comes back as a result marked isError rather than as an
+ * exception. A confirmation the tool opens calls `onAsk` (see askingFrom), and its approval tells the
+ * execution that the operation has started.
+ */
 export function executeClientTool(
   name: string,
   input: Record<string, unknown>,
-  ctx: ToolContext
+  ctx: ToolContext,
+  onAsk: () => boolean = () => false
 ): ToolExecutionTask {
   const locale = conversationLocale()
-  return executeTool(toolRegistry(locale), name, input, ctx, ctx.signal, promptLanguage(locale))
+  // The approval comes from the user long after this returns, so the task is there by then.
+  let task: ToolExecutionTask | undefined
+  task = askingFrom({ onAsk, onApprove: () => task?.operationStarted() }, () =>
+    executeTool(toolRegistry(locale), name, input, ctx, ctx.signal, promptLanguage(locale))
+  )
+  return task
 }
 
 type SearchResult = { title: string; url: string; site?: string; cited?: boolean; snippet?: string }

@@ -16,16 +16,20 @@ import { errorText } from '@shared/i18n/error-text'
 export type ConfirmInput = Omit<ConfirmRequest, 'id' | 'holdsConversation'>
 
 /**
- * The conversation turn a confirmation is asked from, carried along the asynchronous calls of its tools.
- * The mail and calendar services ask with nothing but a signal, so the turn cannot be handed down as an
- * argument; a turn runs its tools inside askingFrom and is asked to wait when one of them opens a
- * confirmation. It answers whether it does, because whatever a tool starts, such as a job's process,
- * carries the same context on after the turn has moved past that tool.
+ * The tool a confirmation is asked from, carried along its asynchronous calls. The mail and calendar
+ * services ask with nothing but a signal, so the tool cannot be handed down as an argument; a tool runs
+ * inside askingFrom. `onAsk` asks the conversation turn behind the tool to wait for the answer and says
+ * whether it does, because whatever a tool starts, such as a job's process, carries the same context on
+ * after the turn has moved past that tool. `onApprove` hears that the user approved, as the operation starts.
  */
-const askingTurn = new AsyncLocalStorage<() => boolean>()
+export interface ConfirmAsker {
+  onAsk: () => boolean
+  onApprove: () => void
+}
 
-/** Runs `run` so that a confirmation it opens first calls `onAsk`, which tells whether a conversation turn waits for the answer. */
-export const askingFrom = <T>(onAsk: () => boolean, run: () => T): T => askingTurn.run(onAsk, run)
+const asking = new AsyncLocalStorage<ConfirmAsker>()
+
+export const askingFrom = <T>(asker: ConfirmAsker, run: () => T): T => asking.run(asker, run)
 
 export interface ConfirmGate {
   request(input: ConfirmInput, signal: AbortSignal): Promise<boolean>
@@ -42,12 +46,14 @@ export function createConfirmGate(options: { emit: (event: ConfirmEvent) => void
       if (signal.aborted) return Promise.resolve(false)
       const id = options.createId?.() ?? randomUUID()
       options.beforeOpen?.()
-      const request: ConfirmRequest = { id, ...input, holdsConversation: askingTurn.getStore()?.() ?? false }
+      const asker = asking.getStore()
+      const request: ConfirmRequest = { id, ...input, holdsConversation: asker?.onAsk() ?? false }
       return new Promise<boolean>((resolve) => {
         const finish = (approved: boolean): void => {
           pending.delete(id)
           signal.removeEventListener('abort', onAbort)
           options.emit({ type: 'close', id })
+          if (approved) asker?.onApprove()
           resolve(approved)
         }
         const onAbort = (): void => finish(false)

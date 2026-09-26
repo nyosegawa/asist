@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { conversationLocale } from './conversation-locale'
@@ -30,8 +32,14 @@ export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
 }
 
-function git(cwd: string, args: string[], maxBuffer = 4 * 1024 * 1024): string {
-  return execFileSync(gitPath(), args, { cwd, encoding: 'utf8', maxBuffer, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() })
+function git(cwd: string, args: string[], options: { maxBuffer?: number; env?: NodeJS.ProcessEnv } = {}): string {
+  return execFileSync(gitPath(), args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: options.maxBuffer ?? 4 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...gitEnv(), ...options.env }
+  })
 }
 
 /** The top level of the repository dir sits in, or null when it is not inside one. */
@@ -89,48 +97,311 @@ export function worktreeAdd(repo: string, path: string, branch: string): void {
   }
 }
 
+/** The worktrees git has registered for repo, the main one included, with the branch each has checked out. */
+function listWorktrees(repo: string): Array<{ path: string; branch?: string }> {
+  const worktrees: Array<{ path: string; branch?: string }> = []
+  for (const line of git(repo, ['worktree', 'list', '--porcelain', '-z']).split('\0')) {
+    if (line.startsWith('worktree ')) worktrees.push({ path: line.slice('worktree '.length) })
+    else if (line.startsWith('branch refs/heads/')) worktrees[worktrees.length - 1].branch = line.slice('branch refs/heads/'.length)
+  }
+  return worktrees
+}
+
 /** The path of the worktree that has the branch checked out, or null when none has. */
 function worktreeOn(repo: string, branch: string): string | null {
-  let path: string | null = null
-  for (const line of git(repo, ['worktree', 'list', '--porcelain', '-z']).split('\0')) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
+  return listWorktrees(repo).find((worktree) => worktree.branch === branch)?.path ?? null
+}
+
+/**
+ * The path with its symbolic links resolved as far as it exists, which is how git records a worktree and
+ * finds one by its path: one made under /tmp is listed under /private/tmp on macOS, and a worktree's folder
+ * may be gone.
+ */
+function resolvedAsFarAsExists(file: string): string {
+  const missing: string[] = []
+  let existing = path.resolve(file)
+  while (!fs.existsSync(existing) && path.dirname(existing) !== existing) {
+    missing.unshift(path.basename(existing))
+    existing = path.dirname(existing)
   }
-  return null
+  return path.join(fs.realpathSync(existing), ...missing)
 }
 
 /**
  * Removes the worktree and its branch together with whatever the worktree still holds. git refuses to
  * remove a worktree in which a submodule was initialized unless it is forced, so a caller removes one only
  * when nothing in it is left to lose: its changes are merged, there were none, or the user threw them away.
+ * `worktree remove --force` also forgets a worktree whose folder was deleted by hand, and refuses one that git
+ * no longer lists, as after a prune by the user or by gc, so only such a worktree is left alone before its
+ * branch goes. A repository-wide `worktree prune` is never run: it would also forget the user's own worktrees
+ * whose folders are missing at that moment, such as one on an external disk that is not mounted.
  */
-export function worktreeRemove(repo: string, path: string, branch: string): void {
-  git(repo, ['worktree', 'remove', '--force', path])
+export function worktreeRemove(repo: string, dir: string, branch: string): void {
+  const target = resolvedAsFarAsExists(dir)
+  const listed = listWorktrees(repo).some((worktree) => resolvedAsFarAsExists(worktree.path) === target)
+  // A folder git does not list is not left behind in silence: git refuses to remove it and says why.
+  if (listed || fs.existsSync(dir)) git(repo, ['worktree', 'remove', '--force', dir])
   git(repo, ['branch', '-D', branch])
 }
 
-/** Commits every uncommitted change inside the worktree, and returns false when there is nothing to commit. */
-export function commitAll(worktree: string, message: string): boolean {
-  const status = git(worktree, ['status', '--porcelain']).trim()
-  if (!status) return false
-  git(worktree, ['add', '-A'])
-  git(worktree, [
-    '-c',
-    'user.name=ASIST',
-    '-c',
-    'user.email=asist@localhost',
-    'commit',
-    '-q',
-    '-m',
-    message,
-    '--no-verify'
-  ])
-  return true
+const GITMODULES = '.gitmodules'
+const SUBMODULE_MODE = '160000'
+
+/** A pathspec that names exactly this path and whatever lies under it. */
+const literal = (file: string): string => `:(literal)${file}`
+
+/**
+ * For output that grows with the number of changed paths. A job that adds a large package passes the default
+ * 4 MB, and git would then be stopped on every attempt to settle the job: 14,000 new paths of 200 characters
+ * made a raw diff of 4.4 MB (2026-09-26).
+ */
+const WHOLE = { maxBuffer: Infinity }
+
+/**
+ * What ASIST reads to settle, review or merge a job is the exact change, whatever the repository's settings
+ * for showing changes say, and only the command line overrides those. `submodule.<name>.ignore` in .gitmodules
+ * or the configuration, and `diff.ignoreSubmodules`, hide a moved submodule from git diff and git status, so
+ * a job that only moved one looked unchanged and its worktree was removed with the only copy of the commit;
+ * `status.showUntrackedFiles=no` hides new files the same way; and `diff.external`, a textconv driver or
+ * `color.diff` replace what git diff prints, so the patch under review would not be the change.
+ */
+const EXACT_DIFF = ['--no-color', '--no-ext-diff', '--no-textconv', '--no-relative', '--ignore-submodules=none']
+const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
+
+/**
+ * Commits every uncommitted change in dir as it is, and returns false when there is nothing to commit.
+ *
+ * The commit is built by write-tree and commit-tree from a copy of the index in a folder of its own, so no
+ * hook of the repository runs and ASIST holds no lock of the repository between git's commands: git commit
+ * runs prepare-commit-msg even with --no-verify, and a lock left by a crash would stop every later commit.
+ * The index is brought up to the commit by git itself once the branch has moved, and when that fails the
+ * branch goes back, so that a commit that fails leaves the index and the branch as they were.
+ */
+export function commitAll(dir: string, message: string): boolean {
+  if (git(dir, ['status', '--porcelain', ...EXACT_STATUS], WHOLE).trim() === '') return false
+  const head = hasHead(dir) ? headCommit(dir) : null
+  const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
+  const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
+  try {
+    const staging = path.join(scratch, 'index')
+    if (fs.existsSync(index)) fs.copyFileSync(index, staging)
+    const env = { GIT_INDEX_FILE: staging }
+    git(dir, ['add', '-A'], { env })
+    const tree = git(dir, ['write-tree'], { env }).trim()
+    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) {
+      // Nothing is left to commit, but the index can still disagree with HEAD: a change staged and then
+      // undone on disk, or a commit whose index was never brought up to it before a crash. Left so, the
+      // job would never count as settled.
+      git(dir, ['add', '-A'])
+      return false
+    }
+    const commit = git(dir, [
+      '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
+    ]).trim()
+    git(dir, ['update-ref', '-m', message, 'HEAD', commit, head ?? ''])
+    try {
+      git(dir, ['add', '-A'])
+    } catch (error) {
+      git(dir, head ? ['update-ref', 'HEAD', head, commit] : ['update-ref', '-d', 'HEAD', commit])
+      throw error
+    }
+    return true
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true })
+  }
 }
 
-/** A summary of the changes from base to the branch. An empty string means nothing changed. */
-export function diffStat(repo: string, base: string, branch: string): string {
-  return git(repo, ['diff', '--stat', `${base}..${branch}`]).trim()
+interface RawEntry {
+  path: string
+  oldMode: string
+  newMode: string
+}
+
+/** The entries of a raw diff made with -z and --no-renames, where a field of modes and ids is followed by a field with the path. */
+function rawEntries(raw: string): RawEntry[] {
+  const fields = raw.split('\0')
+  const entries: RawEntry[] = []
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [oldMode, newMode] = fields[i].slice(1).split(' ')
+    entries.push({ path: fields[i + 1], oldMode, newMode })
+  }
+  return entries
+}
+
+/**
+ * The submodules the changes from base to commit touch, with .gitmodules when it changed: a submodule moved
+ * to another commit, added or removed, or a path turned into a submodule or out of one.
+ */
+export function submoduleEntryChanges(repo: string, base: string, commit: string): string[] {
+  return rawEntries(git(repo, ['diff', ...EXACT_DIFF, '--raw', '-z', '--no-renames', base, commit], WHOLE))
+    .filter((entry) => entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES)
+    .map((entry) => entry.path)
+}
+
+/**
+ * The submodules of dir that may hold work no commit of dir carries, which is deleted with the worktree: one
+ * whose folder holds anything, or whose repository is kept in the worktree's git folder. In a new worktree
+ * the folder of a submodule is empty, so anything in it was put there by the job: its repository after an
+ * init, or files written into it, which git status does not show while the submodule is not initialized. The
+ * repository of a submodule initialized in a worktree lives in the worktree's git folder and outlasts a
+ * `deinit`. Whether its commits exist anywhere else cannot be told from here, since a tag, a shallow clone or
+ * a branch deleted upstream look the same as a commit made by the job, so any such repository counts.
+ * Changes that git status shows, such as a staged move of a submodule, count as well.
+ */
+export function submodulesWithWork(dir: string): string[] {
+  const found = new Set<string>()
+  const submodules = gitlinks(dir)
+  if (submodules.length > 0) {
+    // With -z an entry of the second porcelain format is one field, and its path is all that follows the
+    // fixed fields, spaces included. Without renames no entry carries a second path.
+    const fixedFields: Record<string, number> = { '1': 8, u: 10 }
+    const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)], WHOLE)
+    for (const entry of status.split('\0')) {
+      const count = fixedFields[entry[0]]
+      if (count === undefined) continue
+      const fields = entry.split(' ')
+      if (fields[2].startsWith('S')) found.add(fields.slice(count).join(' '))
+    }
+    for (const file of submodules) if (holdsAnything(path.join(dir, file))) found.add(file)
+  }
+  const modules = moduleRepositories(dir)
+  if (modules.length > 0) {
+    const paths = submodulePaths(dir)
+    for (const name of modules) found.add(paths.get(name) ?? name)
+  }
+  return [...found].sort()
+}
+
+/**
+ * The paths of the submodule entries in dir's index. .gitmodules does not list a repository that was added
+ * without `git submodule add`, and can still name a path that holds ordinary files by now, so the index,
+ * which git itself reads, is what counts. Listing it took a median of 19 ms for 100,000 entries, an output
+ * of 8.3 MB, with the bundled git 2.55 on an Apple M5 (2026-09-26).
+ */
+function gitlinks(dir: string): string[] {
+  return git(dir, ['ls-files', '--stage', '-z'], WHOLE)
+    .split('\0')
+    .filter((entry) => entry.startsWith(`${SUBMODULE_MODE} `))
+    .map((entry) => entry.slice(entry.indexOf('\t') + 1))
+}
+
+function holdsAnything(folder: string): boolean {
+  try {
+    return fs.readdirSync(folder).length > 0
+  } catch (error) {
+    // A folder that is gone or replaced by a file shows in git status already.
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false
+    throw error
+  }
+}
+
+/**
+ * The names of the submodule repositories kept in the git folder of the worktree dir, under `modules/`. A
+ * name may hold slashes, so folders are looked into until one that is a repository, whose own `modules/`
+ * belongs to it.
+ */
+function moduleRepositories(dir: string): string[] {
+  const root = path.join(git(dir, ['rev-parse', '--absolute-git-dir']).trim(), 'modules')
+  const names: string[] = []
+  const walk = (folder: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(folder, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    if (entries.some((entry) => entry.name === 'HEAD' && entry.isFile())) {
+      names.push(path.relative(root, folder).split(path.sep).join('/'))
+      return
+    }
+    for (const entry of entries) if (entry.isDirectory()) walk(path.join(folder, entry.name))
+  }
+  walk(root)
+  return names
+}
+
+/** The path of each submodule by its name, as the .gitmodules of dir gives them. */
+function submodulePaths(dir: string): Map<string, string> {
+  const paths = new Map<string, string>()
+  const file = path.join(dir, GITMODULES)
+  if (!fs.existsSync(file)) return paths
+  let listed: string
+  try {
+    listed = git(dir, ['config', '--file', file, '--null', '--get-regexp', '^submodule\\..*\\.path$'])
+  } catch (error) {
+    // config exits with 1 when nothing matches.
+    if ((error as { status?: number }).status === 1) return paths
+    throw error
+  }
+  // With --null each entry is the key, a newline and the value.
+  for (const entry of listed.split('\0')) {
+    const newline = entry.indexOf('\n')
+    if (newline < 0) continue
+    paths.set(entry.slice('submodule.'.length, newline - '.path'.length), entry.slice(newline + 1))
+  }
+  return paths
+}
+
+/**
+ * Whether dir holds no change that commitAll would commit, new files included whatever
+ * status.showUntrackedFiles says. It does not look inside submodules, whose changes no commit of dir carries
+ * and which submodulesWithWork finds instead.
+ */
+export function isSettled(dir: string): boolean {
+  return git(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], WHOLE).trim() === ''
+}
+
+/**
+ * The commit a merge of `commit` into the repository's HEAD starts from, or null when they share no history,
+ * as with a branch made by `checkout --orphan`, or when HEAD has no commit yet.
+ */
+export function mergeBase(repo: string, commit: string): string | null {
+  if (!hasHead(repo)) return null
+  try {
+    return git(repo, ['merge-base', 'HEAD', commit]).trim()
+  } catch (error) {
+    // merge-base exits with 1 and prints nothing when the two have no common ancestor.
+    if ((error as { status?: number }).status === 1) return null
+    throw error
+  }
+}
+
+/**
+ * The branch checked out in repo, which a merge moves, or null when HEAD is not on a branch: detached, as
+ * during a bisect, at a stop of a rebase or after checking out a tag, or pointing outside refs/heads. The
+ * full name is read, since the short one of a branch that shares its name with a tag is `heads/<name>`.
+ */
+export function checkedOut(repo: string): string | null {
+  let ref: string
+  try {
+    ref = git(repo, ['symbolic-ref', '--quiet', 'HEAD']).trim()
+  } catch (error) {
+    // With --quiet, symbolic-ref exits with 1 and prints nothing when HEAD is detached.
+    if ((error as { status?: number }).status === 1) return null
+    throw error
+  }
+  return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null
+}
+
+/** Whether anything changed from base to commit. */
+export function hasChanges(repo: string, base: string, commit: string): boolean {
+  try {
+    git(repo, ['diff', ...EXACT_DIFF, '--quiet', base, commit])
+    return false
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return true
+    throw error
+  }
+}
+
+/**
+ * A summary of the changes from base to commit, listing at most the first 500 files before its total line.
+ * An empty string means nothing changed.
+ */
+export function diffStat(repo: string, base: string, commit: string): string {
+  return git(repo, ['diff', ...EXACT_DIFF, '--stat', '--stat-count=500', base, commit]).trim()
 }
 
 export interface DiffEntry {
@@ -139,28 +410,22 @@ export interface DiffEntry {
   mode: string
 }
 
-/** Every path the changes from base to the branch touch, with its mode afterwards. Renames count as a deletion and an addition. */
-export function diffEntries(repo: string, base: string, branch: string): DiffEntry[] {
-  const fields = git(repo, ['diff', '--raw', '-z', '--no-renames', `${base}..${branch}`]).split('\0')
-  const entries: DiffEntry[] = []
-  for (let i = 0; i + 1 < fields.length; i += 2) {
-    const [, mode] = fields[i].slice(1).split(' ')
-    entries.push({ path: fields[i + 1], mode })
-  }
-  return entries
+/** Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an addition. */
+export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
+  return rawEntries(git(repo, ['diff', ...EXACT_DIFF, '--raw', '-z', '--no-renames', base, commit], WHOLE))
+    .map((entry) => ({ path: entry.path, mode: entry.newMode }))
 }
 
 /**
- * The diff from base to the branch, cut at the limit. git is stopped once its output passes four bytes
- * for each character kept, so a diff of any size is read only that far; a character takes at most three
- * bytes of UTF-8, so what was read always reaches past the limit. The note on the cut is part of the
- * patch, which the merge view shows and the LLM reads in get_agent_job, so it is written in the language
- * of the conversation.
+ * The diff from base to commit, cut at the limit. git is stopped once its output passes four bytes for each
+ * character kept, so a diff of any size is read only that far; a character takes at most three bytes of
+ * UTF-8, so what was read always reaches past the limit. The note on the cut is part of the patch, which the
+ * merge view shows and the LLM reads in get_agent_job, so it is written in the language of the conversation.
  */
-export function diffPatch(repo: string, base: string, branch: string, maxChars = 60_000): string {
+export function diffPatch(repo: string, base: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = git(repo, ['diff', `${base}..${branch}`], maxChars * 4)
+    patch = git(repo, ['diff', ...EXACT_DIFF, base, commit], { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }

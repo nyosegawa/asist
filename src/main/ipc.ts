@@ -11,6 +11,7 @@ import {
   type AgentJob,
   type AppStatus,
   type PanelEvent,
+  type ReviewedMerge,
   type SetupStatus,
   type TtsEngine,
   type TurnPlaybackAckStatus,
@@ -121,7 +122,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   agent.events.on('event', (event) => {
     if (agent.userJob(event.type === 'update' ? event.job.id : event.id)) send(IpcChannel.JobEvent, event)
   })
-  // A job that comes to wait for a merge or that finishes pushes its card straight away, without waiting for an LLM call.
+  // A job that starts, comes to wait for a merge or finishes pushes its card straight away, without waiting for an LLM call.
   const jobPhases = new Map<string, AgentJob>()
   agent.events.on('event', (event) => {
     if (event.type !== 'update') return
@@ -407,12 +408,14 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.TtsPrepareCancel, () => qwenTts.cancelPreparation())
 
   handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
-  handle(IpcChannel.JobMerge, (_e, id: string, commit: string) => {
-    agent.merge(String(id), commit)
+  handle(IpcChannel.JobMerge, (_e, id: string, reviewed: ReviewedMerge) => {
+    const into = reviewed.into === null ? null : String(reviewed.into)
+    agent.merge(String(id), { commit: String(reviewed.commit), base: String(reviewed.base), into })
   })
   handle(IpcChannel.JobDiscard, (_e, id: string) => {
     agent.discard(String(id))
   })
+  handle(IpcChannel.JobDiscardPreview, (_e, id: string) => agent.discardPreview(String(id)))
   handle(IpcChannel.JobDiff, (_e, id: string) => agent.diff(String(id)))
   handle(IpcChannel.JobList, () => agent.userJobs())
   handle(IpcChannel.JobLog, (_e, id: string) => agent.getLog(id))

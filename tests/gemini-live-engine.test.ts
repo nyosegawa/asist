@@ -56,7 +56,7 @@ const CAFE: InjectableMemory = { id: 'm-cafe', kind: 'section', page: '行きつ
 const CAFE_NOTE = buildMemoryInjection([CAFE], { locale: 'ja-JP' })!.text
 
 /** A tool call whose answer and work have both ended. */
-const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve() })
+const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve(), operationStarted: () => {} })
 
 async function setup(execute?: ExecuteTool): Promise<{
   engine: import('../src/main/services/live/gemini-live').GeminiLiveEngine
@@ -65,12 +65,14 @@ async function setup(execute?: ExecuteTool): Promise<{
   turnEvents: TurnEvent[]
   executeTool: ReturnType<typeof vi.fn>
   findMemories: ReturnType<typeof vi.fn>
+  recordTool: ReturnType<typeof vi.fn>
 }> {
   const { GeminiLiveEngine } = await import('../src/main/services/live/gemini-live')
   const sessions: FakeSession[] = []
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
   const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
+  const recordTool = vi.fn()
   const findMemories = vi.fn(async (text: string): Promise<InjectableMemory[]> => (text.includes('いつもの') ? [CAFE] : []))
   const engine = new GeminiLiveEngine(LIVE_ENGINE_INFO['gemini-live'], {
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
@@ -86,7 +88,7 @@ async function setup(execute?: ExecuteTool): Promise<{
     executeTool: executeTool as never,
     // The show_ tools only read, as in the registry; every other name stands for a tool that writes.
     isParallel: (name) => name.startsWith('show_'),
-    recordTool: vi.fn(),
+    recordTool,
     findMemories,
     memoryBlock: () => '',
     recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
@@ -96,7 +98,7 @@ async function setup(execute?: ExecuteTool): Promise<{
   })
   engine.events.on('event', (event) => events.push(event))
   await engine.start()
-  return { engine, sessions, events, turnEvents, executeTool, findMemories }
+  return { engine, sessions, events, turnEvents, executeTool, findMemories, recordTool }
 }
 
 /** A tool call that runs until the test ends it, as one waiting for approval does. `finish` ends its work as well. */
@@ -105,7 +107,7 @@ function held(): { task: ToolExecutionTask; answer: (content: string) => void; f
   let finish!: () => void
   const response = new Promise<ToolExecution>((resolve) => (answer = (content) => resolve(result(content))))
   const completion = new Promise<void>((resolve) => (finish = resolve))
-  return { task: Object.assign(response, { completion }), answer, finish }
+  return { task: Object.assign(response, { completion, operationStarted: () => {} }), answer, finish }
 }
 
 const responseIds = (session: FakeSession): string[] =>
@@ -426,6 +428,24 @@ describe('GeminiLiveEngine', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(executeTool).toHaveBeenCalledTimes(1)
     expect(responseIds(session)).toEqual(['a'])
+    await engine.stop()
+  })
+
+  it('records a call Gemini cancels after the user approved it, and tells Gemini that its operation started', async () => {
+    const unfinished = { ...result('change_mail は承認されて実行を始めたが、結果を待つのを打ち切った。'), isError: true, unfinished: true }
+    const { engine, sessions, recordTool } = await setup((_name, _input, ctx) =>
+      Object.assign(new Promise<ToolExecution>((resolve) => ctx.signal.addEventListener('abort', () => resolve(unfinished))), {
+        completion: new Promise<void>(() => {}),
+        operationStarted: () => {}
+      }))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'change_mail', args: { operation: 'archive' } }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    session.message({ toolCallCancellation: { ids: ['a'] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(recordTool).toHaveBeenCalledWith(expect.any(Number), 'change_mail', { operation: 'archive' }, unfinished)
+    expect(session.toolResponses).toEqual([])
+    expect(JSON.stringify(session.contents.at(-1))).toContain(unfinished.content)
     await engine.stop()
   })
 
