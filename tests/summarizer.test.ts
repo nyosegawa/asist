@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { StopReason } from '@shared/conversation'
+import { effortOptions, type ConversationModel } from '@shared/llm-catalog'
 
 type Completion = { text: string; stop: StopReason }
 const written = (text: string): Completion => ({ text, stop: 'end' })
@@ -9,13 +10,14 @@ const mocks = vi.hoisted(() => ({
     async (_model: unknown, _locale: string, _system: string, _user: string, _maxTokens: number, _signal: AbortSignal, _purpose: string): Promise<Completion> =>
       ({ text: 'SUMMARY', stop: 'end' })
   ),
-  conversationLocale: 'ja-JP' as 'ja-JP' | 'ko-KR' | 'en-US'
+  conversationLocale: 'ja-JP' as 'ja-JP' | 'ko-KR' | 'en-US',
+  conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' } as ConversationModel
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 vi.mock('../src/main/services/llm', () => ({ completeText: mocks.completeText }))
 vi.mock('../src/main/services/settings', () => ({
-  getSettings: () => ({ conversationLocale: mocks.conversationLocale, conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' } })
+  getSettings: () => ({ conversationLocale: mocks.conversationLocale, conversationModel: mocks.conversationModel })
 }))
 
 afterEach(() => {
@@ -81,6 +83,25 @@ describe('the handover summary', () => {
     }
     expect(await compactWith(ofLength(budget))).toBe(ofLength(budget))
     expect(await compactWith(ofLength(10 * budget))).toBe('')
+  })
+
+  it.each([
+    { provider: 'anthropic', id: 'claude-opus-5', effort: 'max' },
+    { provider: 'openai', id: 'gpt-5.6-sol', effort: 'high' },
+    { provider: 'anthropic', id: 'claude-haiku-4-5' }
+  ] as ConversationModel[])('writes a summary on $id at the shallowest depth it takes, with room for one twice its budget', async (configured) => {
+    mocks.conversationLocale = 'ja-JP'
+    mocks.conversationModel = configured
+    try {
+      const { SUMMARY_BUDGET, summarizeHandoff } = await import('../src/main/services/brain/summarizer')
+      await summarizeHandoff('', 'LOG')
+      const [model, , , , maxTokens] = mocks.completeText.mock.lastCall!
+      expect(model).toEqual({ ...configured, effort: effortOptions(configured)[0] })
+      // Twice the Japanese budget in Claude's tokens, at 1.028 characters a token (Legalscape, September 2026), before any thinking.
+      expect(maxTokens).toBeGreaterThan(Math.ceil((2 * SUMMARY_BUDGET.ja) / 1.028))
+    } finally {
+      mocks.conversationModel = { provider: 'anthropic', id: 'claude-sonnet-5' }
+    }
   })
 
   it('refuses a summary the output limit cut off before its last headings, and keeps the one before it', async () => {

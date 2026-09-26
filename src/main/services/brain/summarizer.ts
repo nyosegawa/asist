@@ -7,6 +7,7 @@ import {
   type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
+import { effortOptions, type ConversationModel } from '@shared/llm-catalog'
 import { estimateTokens } from '@shared/token-estimate'
 import { completeText } from '../llm'
 import { conversationLocale } from '../conversation-locale'
@@ -71,10 +72,15 @@ export const handoffSystem = (locale: ConversationLocale): string =>
   })
 
 /**
- * The output limit in tokens, with enough room that the length the prompt asks for is not cut off. The
- * text itself is never truncated: a summary that comes back too long is refused instead.
+ * The output limit in tokens. Every provider counts thinking against it, so it has to hold the longest
+ * summary accepted, twice the budget, and the thinking before it, or a summary within its budget could
+ * be cut off and refused every time. Twice the Japanese budget is about 9,700 tokens on Claude's
+ * tokenizer, the one that spends the most tokens on a Japanese character of those measured (1.028
+ * characters a token; Legalscape, September 2026). That leaves over 6,600 tokens for thinking at the
+ * shallowest depth, where the summary runs, more than six times the thousand tokens Claude 5 thought
+ * before a voice reply at its default depth, which is high (measured on 2026-09-20).
  */
-export const SUMMARY_MAX_TOKENS = 8192
+export const SUMMARY_MAX_TOKENS = 16_384
 
 /**
  * How long a summary of an input of this size may take. No turn waits for it, so the limit only has
@@ -85,8 +91,8 @@ export const SUMMARY_MAX_TOKENS = 8192
  *   Opus 5 takes 0.218 at every length (Epoch AI, September 2026). estimateTokens counts Japanese about
  *   a quarter lower than Claude's tokenizer does, which the gap between those two costs covers.
  * - Writing goes at three quarters of 59.6 tokens a second, the median of the slowest model, Claude
- *   Opus 5 at low effort (Artificial Analysis, over 72 hours, checked 2026-09-26), because half of the
- *   calls run slower than a median. A summary at its Japanese budget, about 4,900 tokens on Claude,
+ *   Opus 5 at low effort, the depth the summary runs at (Artificial Analysis, over 72 hours, checked
+ *   2026-09-26), because half of the calls run slower than a median. A summary at its Japanese budget, about 4,900 tokens on Claude,
  *   takes 85 seconds at the median itself.
  * - 3 seconds go before the first token, where that model takes 2.8 on a short input.
  *
@@ -110,7 +116,11 @@ export async function summarizeHandoff(existingSummary: string, log: string): Pr
   const user = fillPrompt(template, { existing: existingSummary, log })
   const system = handoffSystem(locale)
   const signal = AbortSignal.timeout(summaryTimeoutMs(estimateTokens(system + user)))
-  const { text, stop } = await completeText(getSettings().conversationModel, locale, system, user, SUMMARY_MAX_TOKENS, signal, 'summary')
+  const configured = getSettings().conversationModel
+  // The summary thinks at the shallowest depth the model takes, the first of its options, whatever the
+  // conversation uses: deep thinking could spend the output limit before the summary is written.
+  const model: ConversationModel = { ...configured, effort: effortOptions(configured).at(0) }
+  const { text, stop } = await completeText(model, locale, system, user, SUMMARY_MAX_TOKENS, signal, 'summary')
   if (stop !== 'end') throw new Error(`summary did not end on its own: ${stop}`)
   const summary = text.trim()
   if (!summary) throw new Error('summary is empty')
