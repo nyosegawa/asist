@@ -11,6 +11,16 @@ function deferred<T>() {
 
 class FakeTrack {
   readonly stop = vi.fn()
+  private readonly endedListeners: Array<() => void> = []
+
+  addEventListener(type: string, listener: () => void): void {
+    if (type === 'ended') this.endedListeners.push(listener)
+  }
+
+  /** What the browser does when the device is unplugged or the permission is withdrawn. */
+  end(): void {
+    for (const listener of this.endedListeners.splice(0)) listener()
+  }
 }
 
 function fakeStream(track: FakeTrack): MediaStream {
@@ -72,7 +82,7 @@ describe('MicCapture start generations', () => {
     vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: () => media.promise } })
     const mic = new MicCapture()
     let finished = false
-    const starting = mic.start(() => {}).then(() => { finished = true })
+    const starting = mic.start(() => {}, () => {}).then(() => { finished = true })
     mic.stop()
     await flush()
     await flush()
@@ -92,7 +102,7 @@ describe('MicCapture start generations', () => {
     vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: async () => fakeStream(track) } })
     const mic = new MicCapture()
     let finished = false
-    const starting = mic.start(() => {}).then(() => { finished = true })
+    const starting = mic.start(() => {}, () => {}).then(() => { finished = true })
     await flush()
     mic.stop()
     await flush()
@@ -112,8 +122,8 @@ describe('MicCapture start generations', () => {
     vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } })
     const mic = new MicCapture()
 
-    const first = mic.start(() => {})
-    const second = mic.start(() => {})
+    const first = mic.start(() => {}, () => {})
+    const second = mic.start(() => {}, () => {})
 
     expect(second).toBe(first)
     await first
@@ -139,13 +149,13 @@ describe('MicCapture start generations', () => {
     const secondTrack = new FakeTrack()
     const mic = new MicCapture()
 
-    const obsolete = mic.start(() => {})
+    const obsolete = mic.start(() => {}, () => {})
     firstMedia.resolve(fakeStream(firstTrack))
     await flush()
     expect(FakeAudioContext.instances).toHaveLength(1)
 
     mic.stop()
-    const current = mic.start(() => {})
+    const current = mic.start(() => {}, () => {})
     secondMedia.resolve(fakeStream(secondTrack))
     await flush()
     expect(FakeAudioContext.instances).toHaveLength(2)
@@ -164,5 +174,33 @@ describe('MicCapture start generations', () => {
     mic.stop()
     expect(secondTrack.stop).toHaveBeenCalledOnce()
     expect(FakeAudioContext.instances[1].close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('MicCapture when the device goes away', () => {
+  it('reports a track that ends while it captures', async () => {
+    const track = new FakeTrack()
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: async () => fakeStream(track) } })
+    const mic = new MicCapture()
+    const onEnded = vi.fn()
+    await mic.start(() => {}, onEnded)
+
+    track.end()
+
+    expect(onEnded).toHaveBeenCalledOnce()
+    mic.stop()
+  })
+
+  it('reports nothing for a track of a capture that has been stopped', async () => {
+    const track = new FakeTrack()
+    vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: async () => fakeStream(track) } })
+    const mic = new MicCapture()
+    const onEnded = vi.fn()
+    await mic.start(() => {}, onEnded)
+    mic.stop()
+
+    track.end()
+
+    expect(onEnded).not.toHaveBeenCalled()
   })
 })

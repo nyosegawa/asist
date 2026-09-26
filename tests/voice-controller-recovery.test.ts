@@ -414,6 +414,35 @@ describe('VoiceController ASR recovery', () => {
     expect(events[0]).toBe('speechend')
   })
 
+  it('builds capture again when the microphone goes away, and reports it when no microphone is left', async () => {
+    const controller = new VoiceController()
+    controller.nativeMicPreferred = false
+    const state = internals(controller)
+    let deviceGone!: () => void
+    const mic = {
+      start: vi
+        .fn()
+        .mockImplementationOnce(async (_feed: unknown, onEnded: () => void) => {
+          deviceGone = onEnded
+        })
+        .mockImplementationOnce(async () => {
+          throw new DOMException('Requested device not found', 'NotFoundError')
+        }),
+      stop: vi.fn()
+    }
+    state.mic = mic
+    const errors: string[] = []
+    controller.events.on('error', (message) => errors.push(message))
+    await controller.enable()
+    expect(controller.current).toBe('listening')
+
+    deviceGone()
+
+    await vi.waitFor(() => expect(controller.current).toBe('off'))
+    expect(mic.start).toHaveBeenCalledTimes(2)
+    expect(errors).toHaveLength(1)
+  })
+
   it('drops a partial transcription that belongs to an obsolete capture', async () => {
     const controller = new VoiceController()
     const state = internals(controller)

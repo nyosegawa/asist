@@ -431,7 +431,9 @@ export class VoiceController {
         this.nativeActive = nativeActive
       }
       if (!this.nativeActive) {
-        await this.mic.start(feed)
+        // A microphone that goes away is looked for again, as when the native helper dies; with
+        // none left, enable fails and reports it.
+        await this.mic.start(feed, () => void this.recover())
         // Each start releases its own resources. Calling the shared stop from an older start
         // would also stop a recording that an off-then-on cycle has already begun.
         if (!current()) return
