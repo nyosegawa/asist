@@ -21,7 +21,7 @@ import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
 import * as memory from './services/memory'
 import { initMemoryCuration } from './services/memory-curation'
-import { allowedFileRoots, shutdown as shutdownAgents } from './services/agent'
+import { allowedFileRoots } from './services/agent'
 import { handleFileScheme, registerFileScheme } from './file-protocol'
 import { errorMessage, t } from './services/i18n'
 import { getSettings } from './services/settings'
@@ -119,22 +119,6 @@ if (!hasSingleInstanceLock) {
   // one quits.
   app.quit()
 } else {
-  let agentsStopped = false
-  let shutdownPending = false
-  app.on('before-quit', (event) => {
-    if (agentsStopped) return
-    event.preventDefault()
-    if (shutdownPending) return
-    shutdownPending = true
-    void shutdownAgents().then(() => {
-      agentsStopped = true
-      app.quit()
-    }).catch((error) => {
-      shutdownPending = false
-      dialog.showErrorBox(t('app.startup.agentStopFailed'), errorMessage(error))
-    })
-  })
-
   app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -191,9 +175,10 @@ if (!hasSingleInstanceLock) {
     initMemoryCuration()
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
 
+    // The window only hides when it is closed and is destroyed only by a quit, so it is never created a second
+    // time, which would register the IPC handlers again.
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else mainWindow?.show()
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
     })
   }).catch((error: unknown) => {
     showStartupFailure(error)
