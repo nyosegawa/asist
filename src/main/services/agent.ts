@@ -37,7 +37,6 @@ export const events: Emitter<Events> = mitt<Events>()
 
 interface JobEntry {
   job: AgentJob
-  log: JobLogLine[]
   process: AgentProcess | null
   recovering?: boolean
   result?: Extract<AgentStreamEvent, { kind: 'result' }>
@@ -76,7 +75,7 @@ function ensureLoaded(): void {
   const restored = readJobHistory().map((job) =>
     recoverAgentJob(job, Date.now(), language())
   )
-  for (const job of restored) jobs.set(job.id, { job, log: [], process: null })
+  for (const job of restored) jobs.set(job.id, { job, process: null })
   jobsLoaded = true
   try {
     for (const { job } of jobs.values()) {
@@ -145,12 +144,10 @@ export function userJob(id: string): AgentJob | undefined {
   return job && !isBackgroundJob(job) ? job : undefined
 }
 
+/** The last 2000 lines of the job's log, read from its file, which is the only place that holds all of them. */
 export function getLog(id: string): JobLogLine[] {
   ensureLoaded()
-  const entry = jobs.get(id)
-  if (!entry) return []
-  if (entry.log.length === 0) entry.log = readJsonl<JobLogLine>(logFile(id), 2000)
-  return entry.log
+  return jobs.has(id) ? readJsonl<JobLogLine>(logFile(id), 2000) : []
 }
 
 export function get(id: string): AgentJob | undefined {
@@ -164,11 +161,8 @@ function pushLog(id: string, kind: 'system' | 'stderr', text: string): void {
 }
 
 function pushEvent(id: string, event: JobLogEvent): void {
-  const entry = jobs.get(id)
-  if (!entry) return
+  if (!jobs.has(id)) return
   const line: JobLogLine = { t: Date.now(), event }
-  entry.log.push(line)
-  if (entry.log.length > 2000) entry.log.splice(0, entry.log.length - 2000)
   try {
     appendJsonl(logFile(id), line)
   } catch {
@@ -381,7 +375,7 @@ function createJob(prompt: string, options: StartOptions, isolate = false): Agen
     ...(worktree ? { worktree } : {}),
     ...(options.memoryCuration ? { memoryCuration: { ...options.memoryCuration, applied: false } } : {})
   }
-  jobs.set(id, { job, log: [], process: null })
+  jobs.set(id, { job, process: null })
   persistJobs()
   events.emit('event', { type: 'update', job: { ...job } })
   pushLog(id, 'system', displayCommand(job))
@@ -414,7 +408,8 @@ function launch(job: AgentJob, args: string[] = buildStartArgs(job)): void {
           status: stopped ? 'cancelled' : failed ? 'error' : 'done',
           processIdentity: undefined,
           endedAt: Date.now(),
-          summary: entry.processError ?? entry.job.summary ?? (failed ? `exit code ${code}` : undefined)
+          summary: entry.processError ?? entry.job.summary ??
+            (failed && code !== null ? t('jobs.log.exitCode', { code }) : undefined)
         })
       }
     })
@@ -577,7 +572,7 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
   }
   const parentWorktree = parent.worktree
   const parentMergeState = parent.mergeState
-  jobs.set(id, { job, log: [], process: null })
+  jobs.set(id, { job, process: null })
   if (transferWorktree) {
     delete parent.worktree
     delete parent.mergeState
@@ -618,42 +613,51 @@ export function completeMemoryCuration(id: string): void {
   events.emit('event', { type: 'update', job: { ...job } })
 }
 
-/** Folds an engine-independent event into the log and the job state. Formatting belongs to the view. */
+/**
+ * Folds an engine-independent event into the log and the job state. Formatting belongs to the view. The
+ * events arrive in a listener on the CLI's output, where a throw would become an uncaught exception of
+ * the main process, so a job state that cannot be saved is reported in the job's log instead.
+ */
 function handleEvent(id: string, event: AgentStreamEvent): void {
   const entry = jobs.get(id)
   if (!entry) return
   if (event.kind === 'result' && !isJobExecuting(entry.job.status)) return
   if (event.kind === 'raw' && !event.text.trim()) return
   pushEvent(id, event)
-  switch (event.kind) {
-    case 'init':
-      if (event.sessionId) update(id, { sessionId: event.sessionId })
-      break
-    case 'assistant-text':
-      entry.lastAssistantText = event.text
-      break
-    case 'file-change': {
-      let changed = false
-      for (const p of artifactPaths(event)) if (addArtifact(entry, p)) changed = true
-      if (changed) {
-        persistJobs()
-        events.emit('event', { type: 'update', job: { ...entry.job } })
+  try {
+    switch (event.kind) {
+      case 'init':
+        if (event.sessionId) update(id, { sessionId: event.sessionId })
+        break
+      case 'assistant-text':
+        entry.lastAssistantText = event.text
+        break
+      case 'file-change': {
+        let changed = false
+        for (const p of artifactPaths(event)) if (addArtifact(entry, p)) changed = true
+        if (changed) {
+          persistJobs()
+          events.emit('event', { type: 'update', job: { ...entry.job } })
+        }
+        break
       }
-      break
-    }
-    case 'result': {
-      entry.result = event
-      const summary = event.summary || entry.lastAssistantText || ''
-      update(id, {
-        summary: summary.slice(0, 300) || undefined,
-        numTurns: event.numTurns,
-        costUsd: event.costUsd
-      })
-      if (event.costUsd !== undefined && entry.job.engine === 'claude') {
-        recordUsage({ kind: 'agent', engine: 'claude', jobs: 1, costUsd: event.costUsd })
+      case 'result': {
+        entry.result = event
+        const summary = event.summary || entry.lastAssistantText || ''
+        update(id, {
+          summary: summary.slice(0, 300) || undefined,
+          numTurns: event.numTurns,
+          costUsd: event.costUsd
+        })
+        if (event.costUsd !== undefined && entry.job.engine === 'claude') {
+          recordUsage({ kind: 'agent', engine: 'claude', jobs: 1, costUsd: event.costUsd })
+        }
+        break
       }
-      break
     }
+  } catch (error) {
+    console.error('cannot save the state of agent job', id, error)
+    pushLog(id, 'stderr', t('jobs.log.saveFailed', { detail: errorMessage(error) }))
   }
 }
 

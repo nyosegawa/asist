@@ -321,6 +321,58 @@ export const jobs = defineMessages({
       'pt-BR': { one: '{text}… ({count} caractere no total)', other: '{text}… ({count} caracteres no total)' },
       'es-419': { one: '{text}… ({count} carácter en total)', other: '{text}… ({count} caracteres en total)' },
       'es-ES': { one: '{text}… ({count} carácter en total)', other: '{text}… ({count} caracteres en total)' }
+    },
+    session: {
+      'ja-JP': 'セッション開始 · モデル {model}',
+      'en-US': 'session ready · model {model}',
+      'fr-FR': 'session prête · modèle {model}',
+      'de-DE': 'Sitzung bereit · Modell {model}',
+      'hi-IN': 'सेशन तैयार · मॉडल {model}',
+      'id-ID': 'sesi siap · model {model}',
+      'it-IT': 'sessione pronta · modello {model}',
+      'ko-KR': '세션 준비됨 · 모델 {model}',
+      'pt-BR': 'sessão pronta · modelo {model}',
+      'es-419': 'sesión lista · modelo {model}',
+      'es-ES': 'sesión lista · modelo {model}'
+    },
+    sessionWithId: {
+      'ja-JP': 'セッション開始 · モデル {model} · セッション {session}',
+      'en-US': 'session ready · model {model} · session {session}',
+      'fr-FR': 'session prête · modèle {model} · session {session}',
+      'de-DE': 'Sitzung bereit · Modell {model} · Sitzung {session}',
+      'hi-IN': 'सेशन तैयार · मॉडल {model} · सेशन {session}',
+      'id-ID': 'sesi siap · model {model} · sesi {session}',
+      'it-IT': 'sessione pronta · modello {model} · sessione {session}',
+      'ko-KR': '세션 준비됨 · 모델 {model} · 세션 {session}',
+      'pt-BR': 'sessão pronta · modelo {model} · sessão {session}',
+      'es-419': 'sesión lista · modelo {model} · sesión {session}',
+      'es-ES': 'sesión lista · modelo {model} · sesión {session}'
+    },
+    exitCode: {
+      'ja-JP': '終了コード {code} で終了しました',
+      'en-US': 'Exited with code {code}',
+      'fr-FR': 'Terminé avec le code {code}',
+      'de-DE': 'Mit Code {code} beendet',
+      'hi-IN': 'कोड {code} के साथ बंद हुआ',
+      'id-ID': 'Berhenti dengan kode {code}',
+      'it-IT': 'Terminato con il codice {code}',
+      'ko-KR': '종료 코드 {code}로 끝났습니다',
+      'pt-BR': 'Encerrado com o código {code}',
+      'es-419': 'Terminó con el código {code}',
+      'es-ES': 'Ha terminado con el código {code}'
+    },
+    saveFailed: {
+      'ja-JP': 'ジョブの状態を保存できませんでした: {detail}',
+      'en-US': "Couldn't save the job's state: {detail}",
+      'fr-FR': "Impossible d'enregistrer l'état du job : {detail}",
+      'de-DE': 'Der Zustand des Jobs ließ sich nicht speichern: {detail}',
+      'hi-IN': 'जॉब की स्थिति सेव नहीं हो सकी: {detail}',
+      'id-ID': 'Tidak bisa menyimpan status pekerjaan: {detail}',
+      'it-IT': "Impossibile salvare lo stato dell'incarico: {detail}",
+      'ko-KR': '작업 상태를 저장하지 못했습니다: {detail}',
+      'pt-BR': 'Não foi possível salvar o estado do job: {detail}',
+      'es-419': 'No se pudo guardar el estado del trabajo: {detail}',
+      'es-ES': 'No se ha podido guardar el estado del trabajo: {detail}'
     }
   },
   elapsed: {

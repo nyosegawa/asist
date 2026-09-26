@@ -39,16 +39,21 @@ describe('foldJobLog', () => {
     ])
   })
 
-  it('shows init and raw as system text, and a result as its summary or as done or failed', () => {
+  it('words init from the dictionary, shows raw as system text, and a result as its summary or as done or failed', () => {
     const rows = foldJobLog([
       at(1, { kind: 'init', model: 'codex', sessionId: 't1' }),
-      at(2, { kind: 'raw', text: 'notice' }),
-      at(3, { kind: 'stderr', text: 'warn' }),
-      at(4, { kind: 'file-change', paths: ['/w/a.md'] }),
-      at(5, { kind: 'result', ok: true, summary: '' }),
-      at(6, { kind: 'result', ok: false, summary: '' })
+      at(2, { kind: 'init', model: 'codex' }),
+      at(3, { kind: 'raw', text: 'notice' }),
+      at(4, { kind: 'stderr', text: 'warn' }),
+      at(5, { kind: 'file-change', paths: ['/w/a.md'] }),
+      at(6, { kind: 'result', ok: true, summary: '' }),
+      at(7, { kind: 'result', ok: false, summary: '' })
     ])
-    expect(rows.map((row) => rowText(row, t))).toEqual(['session ready · model: codex · session: t1', 'notice', 'warn', '✎ /w/a.md', t('jobs.log.done'), t('jobs.log.failed')])
+    expect(rows.map((row) => rowText(row, t))).toEqual([
+      t('jobs.log.sessionWithId', { model: 'codex', session: 't1' }),
+      t('jobs.log.session', { model: 'codex' }),
+      'notice', 'warn', '✎ /w/a.md', t('jobs.log.done'), t('jobs.log.failed')
+    ])
   })
 })
 

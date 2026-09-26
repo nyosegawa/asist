@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import type { AppTimer, PanelSpec } from '@shared/ipc'
 import { dayKeyOf, type Task, type TaskStatus } from '@shared/tasks'
 import { usePanelStore, useJobStore, useMailStore, useNoteStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
@@ -115,6 +116,7 @@ beforeEach(() => {
   vi.stubGlobal('window', Object.assign(window, { api }))
   observers.length = 0
   for (const fn of Object.values(api)) fn.mockClear()
+  api.jobLog.mockResolvedValue([])
   sendTypedMessage.mockClear()
   usePanelStore.setState({ panels: [], focusedKey: null })
   useJobStore.setState({ jobs: [], logs: {} })
@@ -367,7 +369,8 @@ describe('timer card', () => {
 describe('agent job card', () => {
   it('shows the tail of the log while the job runs, cut to six rows at size s', async () => {
     const lines = Array.from({ length: 10 }, (_, i) => ({ t: i, event: { kind: 'assistant-text' as const, text: `行${i}` } }))
-    useJobStore.setState({ jobs: [DEMO_JOB], logs: { [DEMO_JOB.id]: lines } })
+    api.jobLog.mockResolvedValue(lines as never)
+    useJobStore.setState({ jobs: [DEMO_JOB], logs: {} })
     const large = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
     expect(large.querySelectorAll('.aj-log > .jl-row')).toHaveLength(10)
     expect(large.querySelector('.aj-stop')).not.toBeNull()
@@ -377,7 +380,8 @@ describe('agent job card', () => {
   })
 
   it('folds each command into a single row while the job runs and puts the command in flight at the top', async () => {
-    useJobStore.setState({ jobs: [DEMO_JOB], logs: { [DEMO_JOB.id]: DEMO_JOB_LOG.map((event) => ({ t: 1, event })) } })
+    api.jobLog.mockResolvedValue(DEMO_JOB_LOG.map((event) => ({ t: 1, event })) as never)
+    useJobStore.setState({ jobs: [DEMO_JOB], logs: {} })
     const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
     const rows = [...card.querySelectorAll('.aj-log > .jl-row')]
     // A command that emits a start and an end event becomes one row, and consecutive Reads become one row.
@@ -404,6 +408,25 @@ describe('agent job card', () => {
     expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')
   })
 
+  it('offers only discarding a job whose merge conflicted, without showing an error for a diff it cannot merge', async () => {
+    // main refuses a merge review for any job not waiting to be merged, as it does for this one.
+    api.jobDiff.mockRejectedValueOnce(new Error(errorText('jobs.worktree.reviewStale')))
+    const conflicted = { ...DEMO_JOB, status: 'done' as const, endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'conflict' as const, worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }
+    useJobStore.setState({ jobs: [conflicted], logs: {} })
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('merge')
+    expect(card.querySelector('[role="alert"]')).toBeNull()
+    expect([...card.querySelectorAll('.aj-merge .card-action')].map((el) => el.textContent)).toEqual([t('jobs.card.merge.discard')])
+  })
+
+  it('reads the whole log from main when the card appears, even when a line of it already arrived as an event', async () => {
+    const lines = Array.from({ length: 4 }, (_, i) => ({ t: i, event: { kind: 'assistant-text' as const, text: `行${i}` } }))
+    api.jobLog.mockResolvedValue(lines as never)
+    useJobStore.setState({ jobs: [DEMO_JOB], logs: { [DEMO_JOB.id]: lines.slice(-1) } })
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    expect([...card.querySelectorAll('.aj-log > .jl-row')].map((el) => el.textContent)).toEqual(['行0', '行1', '行2', '行3'])
+  })
+
   it('shows the summary, the artifacts and the number of turns once the job is done, and opens a files card that fetches the contents when an artifact is pressed', async () => {
     const done = DEMO_JOBS.find((job) => job.id === 'demo-job-done')!
     useJobStore.setState({ jobs: [done], logs: {} })
@@ -425,7 +448,8 @@ describe('agent job card', () => {
 
   it('shows the reason and the tail of the log when the job failed', async () => {
     const failed = DEMO_JOBS.find((job) => job.id === 'demo-job-failed')!
-    useJobStore.setState({ jobs: [failed], logs: { [failed.id]: DEMO_JOB_LOG.map((event) => ({ t: 1, event })) } })
+    api.jobLog.mockResolvedValue(DEMO_JOB_LOG.map((event) => ({ t: 1, event })) as never)
+    useJobStore.setState({ jobs: [failed], logs: {} })
     const card = await renderAt(spec('agent-job', { jobId: failed.id }), L)
     expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('failed')
     expect(card.querySelector('.aj-failed .aj-summary')?.textContent).toContain('rate limit')

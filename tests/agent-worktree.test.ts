@@ -3,7 +3,10 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
+
+const ja = createTranslator('ja-JP')
 
 const mocks = vi.hoisted(() => ({ root: '', launch: vi.fn() }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
@@ -205,4 +208,28 @@ it('returns ownership to the parent and starts no continuation process when the 
   expect(mocks.launch).toHaveBeenCalledOnce()
   expect(agent.list()).toHaveLength(1)
   expect(agent.diff(parent.id).patch).toContain('+parent')
+})
+
+it('keeps the whole log readable after a restart that appended a line to it', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  mocks.launch.mock.calls[0][2].onEvent({ kind: 'assistant-text', text: '再起動の前' })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'x\n')
+  const before = agent.getLog(job.id)
+  // The restart settles the worktree the process left behind, which adds a line before anyone reads the log.
+  vi.resetModules()
+  const restored = await import('../src/main/services/agent')
+  expect(restored.get(job.id)?.mergeState).toBe('pending')
+  const after = restored.getLog(job.id)
+  expect(after.slice(0, before.length)).toEqual(before)
+  expect(after.length).toBeGreaterThan(before.length)
+})
+
+it('reports a job state that cannot be saved while the agent runs in its log instead of throwing into the output listener', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw new Error('disk full') })
+  expect(() => mocks.launch.mock.calls[0][2].onEvent({ kind: 'init', model: 'codex', sessionId: 'session' })).not.toThrow()
+  const texts = agent.getLog(job.id).map((line) => ('text' in line.event ? line.event.text : ''))
+  expect(texts).toContain(ja('jobs.log.saveFailed', { detail: 'disk full' }))
 })

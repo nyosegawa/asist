@@ -1,4 +1,4 @@
-import type { JobLogRow } from '@shared/job-log-view'
+import { rowText, type JobLogRow } from '@shared/job-log-view'
 import { useT, useFormatLocale } from '@/i18n'
 import './job-log.css'
 
@@ -65,6 +65,13 @@ export function JobLogRowView({ row, time }: { row: JobLogRow; time?: boolean })
         <div className="jl-row" data-kind="result" data-status={row.ok ? 'ok' : 'error'}>
           {stamp}
           <span className="jl-text">{row.text || t(row.ok ? 'jobs.log.done' : 'jobs.log.failed')}</span>
+        </div>
+      )
+    case 'session':
+      return (
+        <div className="jl-row" data-kind="system">
+          {stamp}
+          <span className="jl-text">{rowText(row, t)}</span>
         </div>
       )
     default:
