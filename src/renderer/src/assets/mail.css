@@ -637,6 +637,7 @@
 .ml-static {
   font-size: 12.5px;
   color: var(--color-holo-text);
+  overflow-wrap: anywhere;
 }
 .ml-form-error {
   font-size: 12px;

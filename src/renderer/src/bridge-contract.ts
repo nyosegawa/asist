@@ -107,6 +107,8 @@ export const rendererApiMethods = [
   'mailThread',
   'mailRead',
   'mailChange',
+  'mailReplySettle',
+  'mailReplySend',
   'mailSyncNow',
   'mailOpenGuide',
   'onMailEvent',

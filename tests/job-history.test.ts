@@ -32,7 +32,7 @@ describe('job history retention', () => {
         mergeState: 'merged', memoryCuration: { through: '2026-09-11', applied: false }
       }),
       ...(['pending', 'conflict', 'error', undefined] as const).map((mergeState, index) =>
-        job(`worktree-${index}`, index + 4, { mergeState, worktree: { repo: '/repo', branch: 'branch', base: 'base' } })
+        job(`worktree-${index}`, index + 4, { mergeState, worktree: { repo: '/repo', dir: '/worktree', branch: 'branch', base: 'base' } })
       )
     ]
     fs.mkdirSync(path.join(locations.root, 'joblogs'))
@@ -51,12 +51,17 @@ describe('job history retention', () => {
     expect(fs.existsSync(path.join(locations.root, jobLogFile('done-1')))).toBe(true)
   })
 
-  it('keeps a finished worktree job until its directory is confirmed to be gone', () => {
+  it('keeps a finished worktree job until its worktree is confirmed to be gone', () => {
+    const worktreeJob = (id: string, index: number, mergeState: AgentJob['mergeState']): AgentJob => {
+      const dir = path.join(locations.root, id)
+      // The job ran in a folder inside its worktree, which the agent may have removed itself.
+      return job(id, index, { mergeState, cwd: path.join(dir, 'packages', 'web'), worktree: { repo: '/repo', dir, branch: 'branch', base: 'base' } })
+    }
     const worktrees = (['merged', 'discarded', 'unchanged'] as const).flatMap((mergeState, index) => [
-      job(`${mergeState}-present`, index, { mergeState, worktree: { repo: '/repo', branch: 'branch', base: 'base' } }),
-      job(`${mergeState}-removed`, index, { mergeState, worktree: { repo: '/repo', branch: 'branch', base: 'base' } })
+      worktreeJob(`${mergeState}-present`, index, mergeState),
+      worktreeJob(`${mergeState}-removed`, index, mergeState)
     ])
-    for (const saved of worktrees.filter((entry) => entry.id.endsWith('-present'))) fs.mkdirSync(saved.cwd)
+    for (const saved of worktrees.filter((entry) => entry.id.endsWith('-present'))) fs.mkdirSync(saved.worktree!.dir)
     const removed = writeJobHistory([...worktrees, ...completed()])
     for (const saved of worktrees) {
       expect(removed.includes(saved.id)).toBe(saved.id.endsWith('-removed'))
@@ -94,6 +99,16 @@ describe('job history retention', () => {
 })
 
 describe('job history reads', () => {
+  it('reads a worktree job saved before a job could run in a folder of its worktree as one that ran at its top', () => {
+    const sample = fs.readFileSync(path.join(__dirname, 'fixtures', 'stored', 'jobs.v2.json'), 'utf8')
+    fs.writeFileSync(path.join(locations.root, 'jobs.json'), sample)
+    const saved = (JSON.parse(sample) as { jobs: AgentJob[] }).jobs
+    for (const read of readJobHistory()) {
+      const before = saved.find((entry) => entry.id === read.id)!
+      expect(read.worktree).toEqual(before.worktree ? { ...before.worktree, dir: before.cwd } : undefined)
+    }
+  })
+
   it('reads an empty history only when the file is missing, and throws on any other read error', () => {
     expect(readJobHistory()).toEqual([])
     vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => { throw Object.assign(new Error('permission denied'), { code: 'EACCES' }) })

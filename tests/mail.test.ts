@@ -15,8 +15,9 @@ import {
   parseMessageId,
   parseReferences,
   presetFor,
-  quotedBody,
+  quotation,
   replyRecipients,
+  replyReferences,
   replySubject,
   snippetOf,
   syncSince,
@@ -69,9 +70,16 @@ describe('replies', () => {
       cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }]
     })
   })
-  it('puts the date and sender line and the quoted original below the new body', () => {
-    const quoted = quotedBody('了解です。', { date: Date.UTC(2026, 8, 15, 1, 0), from: message.from, text: '一行目\r\n\r\n二行目\n' }, 'Asia/Tokyo')
-    expect(quoted).toBe('了解です。\n\n2026/09/15 10:00 田中 <t@example.com>:\n> 一行目\n>\n> 二行目\n')
+  it('quotes the original below a line with its date and sender', () => {
+    const quote = quotation({ date: Date.UTC(2026, 8, 15, 1, 0), from: message.from, text: '一行目\r\n\r\n二行目\n' }, 'Asia/Tokyo')
+    expect(quote).toBe('2026/09/15 10:00 田中 <t@example.com>:\n> 一行目\n>\n> 二行目\n')
+  })
+  it('chains the parent References and Message-ID, falling back to a single In-Reply-To, as RFC 5322 3.6.4 has it', () => {
+    expect(replyReferences({ messageId: '<p2@x>', inReplyTo: '<p1@x>', references: ['<root@x>', '<p1@x>'] })).toEqual(['<root@x>', '<p1@x>', '<p2@x>'])
+    expect(replyReferences({ messageId: '<p2@x>', inReplyTo: '<p1@x>', references: [] })).toEqual(['<p1@x>', '<p2@x>'])
+    expect(replyReferences({ messageId: '<p2@x>', inReplyTo: '<a@x> <b@x>', references: [] })).toEqual(['<p2@x>'])
+    expect(replyReferences({ messageId: '', inReplyTo: '', references: ['<root@x>'] })).toEqual(['<root@x>'])
+    expect(replyReferences({ messageId: '', inReplyTo: '', references: [] })).toEqual([])
   })
 })
 
@@ -142,7 +150,7 @@ describe('settings validation', () => {
     expect(mailChangeSchema.safeParse({ operation: 'markRead', ids: ['a:inbox:1', 'a:inbox:2'], read: true }).success).toBe(true)
     expect(mailChangeSchema.safeParse({ operation: 'delete', id: 'a:inbox:1' }).success).toBe(false)
     expect(mailListQuerySchema.parse({})).toEqual({ view: 'inbox', accountId: null, query: '', unreadOnly: false, limit: 50, before: null })
-    expect(mailDraftInputSchema.parse({})).toEqual({ accountId: null, to: [], cc: [], subject: '', body: '', replyToId: null, replyAll: false })
+    expect(mailDraftInputSchema.parse({})).toEqual({ accountId: null, to: [], cc: [], subject: '', body: '' })
     expect(mailDraftPatchSchema.safeParse({}).success).toBe(false)
     expect(mailDraftPatchSchema.safeParse({ body: 'x' }).success).toBe(true)
   })

@@ -1,5 +1,5 @@
 import { CornerUpLeft, PenLine } from 'lucide-react'
-import { displayName, parseAddress, type MailDraft } from '@shared/mail'
+import { displayName, parseAddress, replySubject, type MailDraft } from '@shared/mail'
 import { listTime } from './format'
 import { useT } from '@/i18n'
 
@@ -13,9 +13,9 @@ const shortName = (recipient: string): string => {
 }
 
 /**
- * The list of drafts, each showing the recipient, or the original sender for a reply, the subject,
- * the beginning of the body and the time of the last edit. Pressing one continues it in the
- * composer.
+ * The list of drafts, each showing the recipients, which for a reply are the ones settled from the
+ * message it answers, the subject, the beginning of the body and the time of the last edit. Pressing
+ * one continues it in the composer.
  */
 export function DraftList({ drafts, query, selectedId, now, onSelect }: { drafts: MailDraft[]; query: string; selectedId: string | null; now: number; onSelect: (draft: MailDraft) => void }): React.JSX.Element {
   const t = useT()
@@ -47,9 +47,9 @@ export function DraftList({ drafts, query, selectedId, now, onSelect }: { drafts
                   : t('mail.drafts.open', { subject: draft.subject || t('mail.noSubject') })
               }
             >
-              <span className="ml-row-from">{draft.reply ? `Re: ${displayName(draft.reply.from)}` : `To: ${draft.to.map(shortName).join(', ') || t('mail.noRecipient')}`}</span>
+              <span className="ml-row-from">{`To: ${(draft.reply ? draft.reply.to.map(displayName) : draft.to.map(shortName)).join(', ') || t('mail.noRecipient')}`}</span>
               <span className="ml-row-text">
-                <span className="ml-row-subject">{draft.reply ? `Re: ${draft.reply.subject || t('mail.noSubject')}` : draft.subject || t('mail.noSubject')}</span>
+                <span className="ml-row-subject">{draft.reply ? replySubject(draft.reply.subject || t('mail.noSubject')) : draft.subject || t('mail.noSubject')}</span>
                 {draft.body.trim() && <span className="ml-row-snippet"> — {draft.body.replace(/\s+/g, ' ').trim().slice(0, 120)}</span>}
               </span>
               <span className="ml-row-aside">

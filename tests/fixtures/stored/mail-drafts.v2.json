@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "drafts": [
+    {
+      "id": "draft-2",
+      "accountId": "account-1",
+      "to": [],
+      "cc": [],
+      "subject": "",
+      "body": "9/25(木) 11:00 でお願いします。",
+      "reply": {
+        "id": "account-1:inbox:1040",
+        "subject": "Re: 採用面談の候補日",
+        "from": { "name": "鈴木 花", "address": "hana.suzuki@example.co.jp" },
+        "replyAll": true,
+        "to": [{ "name": "採用チーム", "address": "recruiting@example.co.jp" }],
+        "cc": [{ "name": "田中 誠", "address": "tanaka@example.co.jp" }],
+        "inReplyTo": "<1040@example.co.jp>",
+        "references": ["<1039@example.co.jp>", "<1040@example.co.jp>"],
+        "quote": "2026/09/18 10:00 鈴木 花 <hana.suzuki@example.co.jp>:\n> 候補日を3つ挙げました。\n"
+      },
+      "origin": "agent",
+      "createdAt": 1790000000000,
+      "updatedAt": 1790000000000
+    },
+    { "id": "draft-1", "accountId": "account-1", "to": ["Tanaka, Taro <taro@example.com>"], "cc": [], "subject": "明日の件", "body": "よろしくお願いします。", "reply": null, "origin": "screen", "createdAt": 1790000000000, "updatedAt": 1790000000000 }
+  ]
+}

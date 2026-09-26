@@ -64,20 +64,25 @@ export const elapsedLabel = (t: Translate, ms: number): string => {
 const cleanError = (err: unknown): string =>
   displayError(err)
 
-/** Merging the changes a job kept isolated in a worktree, once its diff has been reviewed. */
+/**
+ * Merging the changes a job kept isolated in a worktree, once its diff has been reviewed. A job whose
+ * merge conflicted can only be discarded or continued, and main gives no diff to merge for it.
+ */
 function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
   const t = useT()
   const [diff, setDiff] = useState<JobDiff | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const conflict = job.mergeState === 'conflict'
   useEffect(() => {
     setDiff(null)
     setError(null)
+    if (conflict) return
     void window.api
       .jobDiff(job.id)
       .then(setDiff)
       .catch((err: unknown) => setError(cleanError(err)))
-  }, [job.id, job.mergeState, job.worktree?.commit])
+  }, [job.id, conflict, job.mergeState, job.worktree?.commit])
   const act = (run: () => Promise<void>): void => {
     setBusy(true)
     setError(null)
@@ -85,7 +90,6 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       .catch((err: unknown) => setError(cleanError(err)))
       .finally(() => setBusy(false))
   }
-  const conflict = job.mergeState === 'conflict'
   return (
     <Box
       title={t(conflict ? 'jobs.merge.conflict' : 'jobs.card.merge.title')}
@@ -175,10 +179,11 @@ function AgentJobBody({ spec, size }: CardContext): React.JSX.Element {
   const [now, setNow] = useState(Date.now)
   const live = job !== undefined && !isJobTerminal(job.status)
 
+  // The lines the store received as events are not the whole log, so the log is read from main whenever
+  // a card for the job appears.
   useEffect(() => {
-    if (log.length === 0) void loadLog(jobId)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId])
+    void loadLog(jobId)
+  }, [jobId, loadLog])
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight })

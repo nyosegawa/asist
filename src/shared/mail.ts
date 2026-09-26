@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isoWithOffset } from './calendar'
 import { errorText } from './i18n/error-text'
 
 /**
@@ -306,10 +307,39 @@ export type MailChangeResult =
    */
   | { drafted: true; saved: false; draftId: string; summary: string }
 
+const addressSchema = z.strictObject({ name: z.string(), address: z.string().min(1) })
+
+/**
+ * A reply as it will go out, settled by main from the message it answers when the reply is made. The
+ * recipients shown before the send button is pressed are these, and so are the ones it is sent to; the
+ * message answered is not needed again, so the reply still goes out after that message was archived or
+ * left the range that is fetched.
+ */
+export const mailReplySchema = z.strictObject({
+  /** The message answered, as it was named when the reply was made. It is marked answered after the send while it is still there. */
+  id: idSchema,
+  /** The subject and the sender of the message answered, which name that message on screen. */
+  subject: z.string(),
+  from: addressSchema,
+  replyAll: z.boolean(),
+  to: z.array(addressSchema).min(1),
+  cc: z.array(addressSchema),
+  /** The Message-ID of the message answered, or an empty string when it has none. */
+  inReplyTo: z.string(),
+  references: z.array(z.string()),
+  /** The line naming the original and the quoted original body, appended below the reply's body. */
+  quote: z.string()
+})
+export type MailReply = z.infer<typeof mailReplySchema>
+
+/** A reply from the reader of the mail screen: the reply main settled and the screen showed, and the body. */
+export const mailReplySendSchema = z.strictObject({ reply: mailReplySchema, body: bodySchema })
+export type MailReplySend = z.infer<typeof mailReplySendSchema>
+
 /**
  * A draft. Both what the Agent composed and what the user is still writing on screen are held in the
- * main process. For a reply, the recipients and the subject are decided from the original message at
- * the moment it is sent, and the quotation is appended below the body.
+ * main process. A reply draft carries the reply settled from the original message, and only its body
+ * can be edited.
  */
 export interface MailDraft {
   id: string
@@ -319,22 +349,20 @@ export interface MailDraft {
   cc: string[]
   subject: string
   body: string
-  reply: { id: string; subject: string; from: MailAddress; replyAll: boolean } | null
+  reply: MailReply | null
   origin: 'agent' | 'screen'
   createdAt: number
   updatedAt: number
 }
 
+/** A new message saved as a draft. A reply draft is made only by change_mail's reply. */
 export const mailDraftInputSchema = z.strictObject({
   /** Omitting it uses the default sender. */
   accountId: z.string().min(1).nullable().default(null),
   to: recipientsSchema.default([]),
   cc: recipientsSchema.default([]),
   subject: z.string().trim().max(MAX_SUBJECT_LENGTH).default(''),
-  body: bodySchema.default(''),
-  /** For a reply, the id of the message being replied to. */
-  replyToId: idSchema.nullable().default(null),
-  replyAll: z.boolean().default(false)
+  body: bodySchema.default('')
 })
 export type MailDraftInput = z.input<typeof mailDraftInputSchema>
 
@@ -344,8 +372,7 @@ export const mailDraftPatchSchema = z
     to: recipientsSchema.optional(),
     cc: recipientsSchema.optional(),
     subject: z.string().trim().max(MAX_SUBJECT_LENGTH).optional(),
-    body: bodySchema.optional(),
-    replyAll: z.boolean().optional()
+    body: bodySchema.optional()
   })
   .refine((patch) => Object.values(patch).some((value) => value !== undefined), errorText('mail.errors.form.noChanges'))
 export type MailDraftPatch = z.input<typeof mailDraftPatchSchema>
@@ -423,7 +450,7 @@ export function replyRecipients(message: Pick<MailMessage, 'from' | 'to' | 'cc' 
  * The quotation appended below a reply: one line with the date and the sender, then the original
  * body with every line prefixed by "> ".
  */
-export function quotedBody(body: string, original: { date: number; from: MailAddress; text: string }, timeZone?: string): string {
+export function quotation(original: { date: number; from: MailAddress; text: string }, timeZone?: string): string {
   const stamp = new Intl.DateTimeFormat('ja-JP', { timeZone, dateStyle: 'medium', timeStyle: 'short' }).format(original.date)
   const quoted = original.text
     .replace(/\r\n/g, '\n')
@@ -431,13 +458,24 @@ export function quotedBody(body: string, original: { date: number; from: MailAdd
     .split('\n')
     .map((line) => (line ? `> ${line}` : '>'))
     .join('\n')
-  return `${body.trimEnd()}\n\n${stamp} ${formatAddress(original.from)}:\n${quoted}\n`
+  return `${stamp} ${formatAddress(original.from)}:\n${quoted}\n`
 }
 
 /** Extracts the Message-IDs from the raw value of a References header. */
 export function parseReferences(raw: string | undefined): string[] {
   if (!raw) return []
   return [...raw.matchAll(/<[^<>\s]+>/g)].map((match) => match[0])
+}
+
+/**
+ * The References of a reply, as RFC 5322 3.6.4 has it: the parent's References, or its In-Reply-To when
+ * the parent has no References and that names a single message, followed by the parent's Message-ID.
+ * Other programs group a thread by these, and threadIdOf groups by their first entry.
+ */
+export function replyReferences(parent: { messageId: string; inReplyTo: string; references: readonly string[] }): string[] {
+  const inReplyTo = parseReferences(parent.inReplyTo)
+  const before = parent.references.length ? [...parent.references] : inReplyTo.length === 1 ? inReplyTo : []
+  return parent.messageId ? [...before, parent.messageId] : before
 }
 
 /**
@@ -470,6 +508,13 @@ export function syncSince(now: Date, syncDays: number): Date {
 
 export const isRecent = (date: number, now: number): boolean => now - date <= RECENT_WINDOW_MS
 
+/**
+ * The date of a message as the conversation reads it: local time with its offset, the form the calendar
+ * tools use. The utterance carries local time, so a UTC stamp puts mail that arrived before 9 a.m. in
+ * Japan on the previous day.
+ */
+export const mailDate = (at: number): string => isoWithOffset(at, Intl.DateTimeFormat().resolvedOptions().timeZone)
+
 /** One row of the list in the shape handed to the conversation. The body comes from read_mail. */
 export function mailSummary(message: MailMessage, accountLabel: string): Record<string, unknown> {
   return {
@@ -477,7 +522,7 @@ export function mailSummary(message: MailMessage, accountLabel: string): Record<
     account: accountLabel,
     from: formatAddress(message.from),
     subject: message.subject,
-    date: new Date(message.date).toISOString(),
+    date: mailDate(message.date),
     unread: message.unread,
     starred: message.starred,
     ...(message.attachments.length ? { attachments: message.attachments.map((item) => item.filename) } : {}),

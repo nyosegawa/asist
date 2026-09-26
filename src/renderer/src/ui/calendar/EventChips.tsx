@@ -6,6 +6,12 @@ import { fmtTime, fmtTimeRange } from './format'
 
 export type OpenEvent = (event: CalendarEvent, el: HTMLElement) => void
 
+/**
+ * What tells one occurrence of an event from the others. EventKit gives every occurrence of a
+ * repeating event the same id, so the id alone would open the first occurrence whichever was pressed.
+ */
+export const occurrenceKey = (event: CalendarEvent): string => `${event.id}@${event.start}`
+
 const tinted = (color: string, style?: CSSProperties): CSSProperties =>
   ({ ...style, '--c': color }) as CSSProperties
 
@@ -27,7 +33,7 @@ export function TimedChip({
   return (
     <button
       className="cal-ev is-timed"
-      data-event-id={event.id}
+      data-occurrence={occurrenceKey(event)}
       style={tinted(color, style)}
       title={`${event.title} ${range}`}
       onClick={(e) => {
@@ -57,7 +63,7 @@ export function BarChip({
   return (
     <button
       className={`cal-ev is-bar${bar.contLeft ? ' is-cont-left' : ''}${bar.contRight ? ' is-cont-right' : ''}`}
-      data-event-id={bar.event.id}
+      data-occurrence={occurrenceKey(bar.event)}
       style={tinted(color, style)}
       title={bar.event.title}
       onClick={(e) => {
@@ -83,7 +89,7 @@ export function RowChip({
   const t = useT()
   const locale = useFormatLocale()
   return (
-    <button className="cal-ev is-row" data-event-id={event.id} style={tinted(color)} onClick={(e) => onOpen(event, e.currentTarget)}>
+    <button className="cal-ev is-row" data-occurrence={occurrenceKey(event)} style={tinted(color)} onClick={(e) => onOpen(event, e.currentTarget)}>
       <i className="cal-ev-dot" />
       <time>
         {event.allDay

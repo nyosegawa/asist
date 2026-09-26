@@ -37,7 +37,6 @@ export const events: Emitter<Events> = mitt<Events>()
 
 interface JobEntry {
   job: AgentJob
-  log: JobLogLine[]
   process: AgentProcess | null
   recovering?: boolean
   result?: Extract<AgentStreamEvent, { kind: 'result' }>
@@ -76,7 +75,7 @@ function ensureLoaded(): void {
   const restored = readJobHistory().map((job) =>
     recoverAgentJob(job, Date.now(), language())
   )
-  for (const job of restored) jobs.set(job.id, { job, log: [], process: null })
+  for (const job of restored) jobs.set(job.id, { job, process: null })
   jobsLoaded = true
   try {
     for (const { job } of jobs.values()) {
@@ -145,12 +144,10 @@ export function userJob(id: string): AgentJob | undefined {
   return job && !isBackgroundJob(job) ? job : undefined
 }
 
+/** The last 2000 lines of the job's log, read from its file, which is the only place that holds all of them. */
 export function getLog(id: string): JobLogLine[] {
   ensureLoaded()
-  const entry = jobs.get(id)
-  if (!entry) return []
-  if (entry.log.length === 0) entry.log = readJsonl<JobLogLine>(logFile(id), 2000)
-  return entry.log
+  return jobs.has(id) ? readJsonl<JobLogLine>(logFile(id), 2000) : []
 }
 
 export function get(id: string): AgentJob | undefined {
@@ -164,11 +161,8 @@ function pushLog(id: string, kind: 'system' | 'stderr', text: string): void {
 }
 
 function pushEvent(id: string, event: JobLogEvent): void {
-  const entry = jobs.get(id)
-  if (!entry) return
+  if (!jobs.has(id)) return
   const line: JobLogLine = { t: Date.now(), event }
-  entry.log.push(line)
-  if (entry.log.length > 2000) entry.log.splice(0, entry.log.length - 2000)
   try {
     appendJsonl(logFile(id), line)
   } catch {
@@ -335,7 +329,37 @@ function accessLabel(job: AgentJob): string {
     : t('jobs.log.access.approved')
 }
 
-/** Creates and registers the job record without spawning anything. With `isolate`, a git worktree becomes its cwd. */
+/** Adds a job about to start to the history. A job whose record cannot be saved is dropped again, since nothing was started for it. */
+function register(job: AgentJob): void {
+  jobs.set(job.id, { job, process: null })
+  try {
+    persistJobs()
+  } catch (error) {
+    jobs.delete(job.id)
+    throw error
+  }
+}
+
+/** Removes the worktree cut for a job that failed to start. The error that stopped the start is the one the caller throws. */
+function removeUnstartedWorktree(repo: string, dir: string, branch: string): void {
+  try {
+    git.worktreeRemove(repo, dir, branch)
+  } catch (error) {
+    console.error('cannot remove the worktree of a job that did not start:', dir, error)
+  }
+}
+
+/**
+ * The folder at the same place inside a new worktree as `folder` in the repository. A folder that is not
+ * committed does not exist in the worktree, and the job is not started somewhere else instead.
+ */
+function folderInWorktree(dir: string, folder: string, named: string): string {
+  const cwd = path.join(dir, folder)
+  if (!fs.existsSync(cwd)) throw new Error(errorText('jobs.start.folderNotCommitted', { path: named }))
+  return cwd
+}
+
+/** Creates and registers the job record without spawning anything. With `isolate`, it runs in a git worktree. */
 function createJob(prompt: string, options: StartOptions, isolate = false): AgentJob {
   ensureLoaded()
   if (shuttingDown) throw new Error(errorText('jobs.start.shuttingDown'))
@@ -344,7 +368,7 @@ function createJob(prompt: string, options: StartOptions, isolate = false): Agen
   const cli = findCli(engine)
   if (!cli) throw new Error(errorText('jobs.start.cliMissing', { engine }))
   const title = options.title || prompt.slice(0, 40)
-  let cwd = options.cwd || createWorkspace(title)
+  const cwd = options.cwd || createWorkspace(title)
   if (!fs.existsSync(cwd)) throw new Error(errorText('jobs.start.cwdMissing', { path: cwd }))
   // An explicit location is recorded in the index, so that the more a place is used the more places
   // the user can name by voice.
@@ -357,20 +381,8 @@ function createJob(prompt: string, options: StartOptions, isolate = false): Agen
     defaultReadonly: settings.agentMode === 'readonly',
     gitRepo: isolate
   })
-  let worktree: AgentJob['worktree']
-  if (isolate) {
-    const repo = git.toplevel(cwd)
-    if (!repo) throw new Error(errorText('jobs.start.notGitRepo', { path: cwd }))
-    const target = worktreePath(title, options.worktreeRoot)
-    const branch = worktreeBranchName(path.basename(target))
-    git.worktreeAdd(repo, target, branch)
-    options.prepareWorktree?.(target)
-    worktree = { repo, branch, base: git.headCommit(repo) }
-    cwd = target
-  }
-  const id = crypto.randomUUID().slice(0, 8)
   const job: AgentJob = {
-    id,
+    id: crypto.randomUUID().slice(0, 8),
     title,
     prompt,
     cwd,
@@ -378,14 +390,30 @@ function createJob(prompt: string, options: StartOptions, isolate = false): Agen
     engine,
     status: 'running',
     startedAt: Date.now(),
-    ...(worktree ? { worktree } : {}),
     ...(options.memoryCuration ? { memoryCuration: { ...options.memoryCuration, applied: false } } : {})
   }
-  jobs.set(id, { job, log: [], process: null })
-  persistJobs()
+  if (isolate) {
+    const repo = git.toplevel(cwd)
+    if (!repo) throw new Error(errorText('jobs.start.notGitRepo', { path: cwd }))
+    const folder = git.pathInRepo(cwd)
+    const dir = worktreePath(title, options.worktreeRoot)
+    const branch = worktreeBranchName(path.basename(dir))
+    git.worktreeAdd(repo, dir, branch)
+    try {
+      options.prepareWorktree?.(dir)
+      job.worktree = { repo, dir, branch, base: git.headCommit(repo) }
+      job.cwd = folderInWorktree(dir, folder, cwd)
+      register(job)
+    } catch (error) {
+      removeUnstartedWorktree(repo, dir, branch)
+      throw error
+    }
+  } else {
+    register(job)
+  }
   events.emit('event', { type: 'update', job: { ...job } })
-  pushLog(id, 'system', displayCommand(job))
-  pushLog(id, 'system', t('jobs.log.start', { engine, cwd, access: accessLabel(job) }))
+  pushLog(job.id, 'system', displayCommand(job))
+  pushLog(job.id, 'system', t('jobs.log.start', { engine, cwd: job.cwd, access: accessLabel(job) }))
   return job
 }
 
@@ -414,7 +442,8 @@ function launch(job: AgentJob, args: string[] = buildStartArgs(job)): void {
           status: stopped ? 'cancelled' : failed ? 'error' : 'done',
           processIdentity: undefined,
           endedAt: Date.now(),
-          summary: entry.processError ?? entry.job.summary ?? (failed ? `exit code ${code}` : undefined)
+          summary: entry.processError ?? entry.job.summary ??
+            (failed && code !== null ? t('jobs.log.exitCode', { code }) : undefined)
         })
       }
     })
@@ -471,9 +500,9 @@ export function merge(id: string, commit: string): AgentJob {
     // The worktree is about to be removed, so artifact paths inside it are moved to the merge target
     // and stay openable from the completion card and from show_files. The paths are saved before the
     // removal, because the merge is already done even if the removal fails.
-    update(id, { mergeState: 'merged', artifacts: relocateArtifacts(entry.job.artifacts, entry.job.cwd, wt.repo) })
+    update(id, { mergeState: 'merged', artifacts: relocateArtifacts(entry.job.artifacts, wt.dir, wt.repo) })
     try {
-      git.worktreeRemove(wt.repo, entry.job.cwd, wt.branch)
+      git.worktreeRemove(wt.repo, wt.dir, wt.branch)
     } catch (error) {
       const detail = errorMessage(error)
       pushLog(id, 'stderr', t('jobs.merging.removeFailed', { detail }))
@@ -498,7 +527,7 @@ export function discard(id: string): AgentJob {
   assertWriterStopped(entry.job)
   if (!isJobTerminal(entry.job.status)) throw new Error(errorText('jobs.discard.jobRunning'))
   if (entry.job.mergeState === 'merged' || entry.job.mergeState === 'discarded' || entry.job.mergeState === 'unchanged') return { ...entry.job }
-  git.worktreeRemove(entry.job.worktree.repo, entry.job.cwd, entry.job.worktree.branch, true)
+  git.worktreeRemove(entry.job.worktree.repo, entry.job.worktree.dir, entry.job.worktree.branch)
   pushLog(id, 'system', t('jobs.discard.done'))
   update(id, { mergeState: 'discarded' })
   return { ...entry.job }
@@ -542,30 +571,14 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
   signal?.throwIfAborted()
   if (shuttingDown) throw new Error(errorText('jobs.start.shuttingDown'))
   assertNoContinuation()
-  // A worktree job whose changes are already merged or cleaned up continues in a fresh worktree cut
-  // from the repository.
-  let cwd = parent.cwd
   const transferWorktree = Boolean(parent.worktree &&
     (parent.mergeState === 'pending' || parent.mergeState === 'conflict' || parent.mergeState === 'error'))
-  let worktree = transferWorktree ? { ...parent.worktree!, commit: undefined } : undefined
-  if (parent.worktree && !worktree) {
-    const repo = parent.worktree.repo
-    if (!fs.existsSync(repo)) throw new Error(errorText('jobs.start.repoMissing', { path: repo }))
-    const target = worktreePath(parent.title)
-    const branch = worktreeBranchName(path.basename(target))
-    git.worktreeAdd(repo, target, branch)
-    worktree = { repo, branch, base: git.headCommit(repo), commit: undefined }
-    cwd = target
-  }
-  if (!fs.existsSync(cwd)) throw new Error(errorText('jobs.start.cwdMissing', { path: cwd }))
-  if (parent.memoryCuration) installSkill(cwd)
-  const id = crypto.randomUUID().slice(0, 8)
   const job: AgentJob = {
-    id,
+    id: crypto.randomUUID().slice(0, 8),
     // The title names the worktree directory and the commit message git writes, so it is data.
     title: `${parent.title}${say(MODEL_TEXTS.continued)}`,
     prompt,
-    cwd,
+    cwd: parent.cwd,
     readonly: parent.readonly,
     engine: parent.engine,
     status: 'running',
@@ -573,30 +586,49 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
     sessionId: parent.sessionId,
     parentId,
     ...(parent.memoryCuration ? { memoryCuration: { through: parent.memoryCuration.through, applied: false } } : {}),
-    ...(worktree ? { worktree } : {})
+    ...(transferWorktree ? { worktree: { ...parent.worktree!, commit: undefined } } : {})
+  }
+  // A worktree job whose changes are already merged or cleaned up continues in a fresh worktree cut
+  // from the repository, in the same folder inside it.
+  let fresh: { repo: string; dir: string; branch: string } | undefined
+  if (parent.worktree && !transferWorktree) {
+    const repo = parent.worktree.repo
+    if (!fs.existsSync(repo)) throw new Error(errorText('jobs.start.repoMissing', { path: repo }))
+    const dir = worktreePath(parent.title)
+    fresh = { repo, dir, branch: worktreeBranchName(path.basename(dir)) }
+    git.worktreeAdd(repo, dir, fresh.branch)
   }
   const parentWorktree = parent.worktree
   const parentMergeState = parent.mergeState
-  jobs.set(id, { job, log: [], process: null })
-  if (transferWorktree) {
-    delete parent.worktree
-    delete parent.mergeState
-  }
   try {
-    persistJobs()
+    if (fresh) {
+      const folder = path.relative(parentWorktree!.dir, parent.cwd)
+      job.worktree = { ...fresh, base: git.headCommit(fresh.repo) }
+      job.cwd = folderInWorktree(fresh.dir, folder, path.join(fresh.repo, folder))
+    } else if (!fs.existsSync(job.cwd)) {
+      throw new Error(errorText('jobs.start.cwdMissing', { path: job.cwd }))
+    }
+    if (parent.memoryCuration) installSkill(job.worktree?.dir ?? job.cwd)
+    if (transferWorktree) {
+      delete parent.worktree
+      delete parent.mergeState
+    }
+    register(job)
   } catch (error) {
-    jobs.delete(id)
-    parent.worktree = parentWorktree
-    parent.mergeState = parentMergeState
+    if (transferWorktree) {
+      parent.worktree = parentWorktree
+      parent.mergeState = parentMergeState
+    }
+    if (fresh) removeUnstartedWorktree(fresh.repo, fresh.dir, fresh.branch)
     throw error
   }
   if (transferWorktree) events.emit('event', { type: 'update', job: { ...parent } })
   events.emit('event', { type: 'update', job: { ...job } })
-  pushLog(id, 'system', displayCommand(parent, prompt))
-  pushLog(id, 'system', t('jobs.log.startContinued', {
+  pushLog(job.id, 'system', displayCommand(parent, prompt))
+  pushLog(job.id, 'system', t('jobs.log.startContinued', {
     engine: job.engine, cwd: job.cwd, access: accessLabel(job), parentId
   }))
-  launch(job, buildResumeArgs({ ...parent, cwd }, prompt))
+  launch(job, buildResumeArgs({ ...parent, cwd: job.cwd }))
   return { ...job }
 }
 
@@ -618,42 +650,51 @@ export function completeMemoryCuration(id: string): void {
   events.emit('event', { type: 'update', job: { ...job } })
 }
 
-/** Folds an engine-independent event into the log and the job state. Formatting belongs to the view. */
+/**
+ * Folds an engine-independent event into the log and the job state. Formatting belongs to the view. The
+ * events arrive in a listener on the CLI's output, where a throw would become an uncaught exception of
+ * the main process, so a job state that cannot be saved is reported in the job's log instead.
+ */
 function handleEvent(id: string, event: AgentStreamEvent): void {
   const entry = jobs.get(id)
   if (!entry) return
   if (event.kind === 'result' && !isJobExecuting(entry.job.status)) return
   if (event.kind === 'raw' && !event.text.trim()) return
   pushEvent(id, event)
-  switch (event.kind) {
-    case 'init':
-      if (event.sessionId) update(id, { sessionId: event.sessionId })
-      break
-    case 'assistant-text':
-      entry.lastAssistantText = event.text
-      break
-    case 'file-change': {
-      let changed = false
-      for (const p of artifactPaths(event)) if (addArtifact(entry, p)) changed = true
-      if (changed) {
-        persistJobs()
-        events.emit('event', { type: 'update', job: { ...entry.job } })
+  try {
+    switch (event.kind) {
+      case 'init':
+        if (event.sessionId) update(id, { sessionId: event.sessionId })
+        break
+      case 'assistant-text':
+        entry.lastAssistantText = event.text
+        break
+      case 'file-change': {
+        let changed = false
+        for (const p of artifactPaths(event)) if (addArtifact(entry, p)) changed = true
+        if (changed) {
+          persistJobs()
+          events.emit('event', { type: 'update', job: { ...entry.job } })
+        }
+        break
       }
-      break
-    }
-    case 'result': {
-      entry.result = event
-      const summary = event.summary || entry.lastAssistantText || ''
-      update(id, {
-        summary: summary.slice(0, 300) || undefined,
-        numTurns: event.numTurns,
-        costUsd: event.costUsd
-      })
-      if (event.costUsd !== undefined && entry.job.engine === 'claude') {
-        recordUsage({ kind: 'agent', engine: 'claude', jobs: 1, costUsd: event.costUsd })
+      case 'result': {
+        entry.result = event
+        const summary = event.summary || entry.lastAssistantText || ''
+        update(id, {
+          summary: summary.slice(0, 300) || undefined,
+          numTurns: event.numTurns,
+          costUsd: event.costUsd
+        })
+        if (event.costUsd !== undefined && entry.job.engine === 'claude') {
+          recordUsage({ kind: 'agent', engine: 'claude', jobs: 1, costUsd: event.costUsd })
+        }
+        break
       }
-      break
     }
+  } catch (error) {
+    console.error('cannot save the state of agent job', id, error)
+    pushLog(id, 'stderr', t('jobs.log.saveFailed', { detail: errorMessage(error) }))
   }
 }
 

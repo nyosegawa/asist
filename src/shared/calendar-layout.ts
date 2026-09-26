@@ -4,10 +4,11 @@ import type { CalendarEvent } from './calendar'
  * Layout for the calendar screen, following Google Calendar: in the month view an all-day event is one
  * bar spanning days within a week row, and in the week view events that overlap in time are split into
  * side-by-side columns. Every date is handled in local time, so the time zone of a displayed event is
- * whatever macOS is set to.
+ * whatever macOS is set to. A day is found by moving the date, never by adding 24 hours, because the
+ * day daylight saving time starts or ends has 23 or 25.
  */
 
-export const DAY_MS = 86_400_000
+const DAY_MS = 86_400_000
 /** The height in pixels of one hour in the week view. */
 export const HOUR_PX = 48
 /** The height in pixels of the date header at the top of a month-view cell. */
@@ -23,6 +24,7 @@ export const firstOfMonth = (d: Date): Date => new Date(d.getFullYear(), d.getMo
 export const daysInMonth = (d: Date): number => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
 /** The week starts on Monday. */
 export const mondayOf = (d: Date): Date => addDays(startOfDay(d), -((d.getDay() + 6) % 7))
+/** Rounding absorbs the hour a day gains or loses to daylight saving time. */
 export const daysBetween = (a: Date, b: Date): number =>
   Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / DAY_MS)
 export const sameMonth = (a: Date, b: Date): boolean =>
@@ -61,10 +63,17 @@ export function visibleRange(
   return { from: weeks[0], until: addDays(weeks[weeks.length - 1], 7) }
 }
 
+/**
+ * The instant whose day is the last day an event covers. An end is exclusive, so an event that ends at
+ * midnight, as every all-day event does, ends on the day before; an event without length covers the
+ * day it starts on.
+ */
+export const lastInstant = (event: Pick<CalendarEvent, 'start' | 'end'>): number => Math.max(event.start, event.end - 1)
+
 /** The events overlapping that day, all-day ones first and the rest by start time. */
 export function eventsOn(events: CalendarEvent[], date: Date): CalendarEvent[] {
   const from = startOfDay(date).getTime()
-  const until = from + DAY_MS
+  const until = addDays(date, 1).getTime()
   return events
     .filter((e) => e.start < until && e.end > from)
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start - b.start)
@@ -106,7 +115,7 @@ export function weekLayout(weekStart: Date, events: CalendarEvent[]): WeekLayout
     .map((event) => ({
       event,
       c0: Math.max(0, daysBetween(weekStart, new Date(event.start))),
-      c1: Math.min(6, daysBetween(weekStart, new Date(event.end - 1))),
+      c1: Math.min(6, daysBetween(weekStart, new Date(lastInstant(event)))),
       contLeft: event.start < from,
       contRight: event.end > until,
       lane: 0
@@ -122,7 +131,7 @@ export function weekLayout(weekStart: Date, events: CalendarEvent[]): WeekLayout
   const days: DayPlan[] = Array.from({ length: 7 }, (_, i) => {
     const date = addDays(weekStart, i)
     const dayFrom = date.getTime()
-    const dayUntil = dayFrom + DAY_MS
+    const dayUntil = addDays(date, 1).getTime()
     const timed = events
       .filter((e) => !e.allDay && e.start < dayUntil && e.end > dayFrom)
       .sort((a, b) => a.start - b.start)
@@ -172,13 +181,17 @@ export interface Block {
  */
 export function layoutBlocks(events: CalendarEvent[], date: Date): Block[] {
   const dayFrom = startOfDay(date).getTime()
+  const dayUntil = addDays(date, 1).getTime()
+  // The grid is a clock face of 24 hours, so a time is placed by the clock rather than by the time
+  // elapsed since midnight, which is an hour off on the day daylight saving time starts or ends.
+  const clockMinute = (at: number): number => new Date(at).getHours() * 60 + new Date(at).getMinutes()
   const items: Block[] = events
     .filter((e) => !e.allDay)
     .sort((a, b) => a.start - b.start)
     .map((event) => ({
       event,
-      startMin: Math.max(0, (event.start - dayFrom) / 60_000),
-      endMin: Math.min(1440, (event.end - dayFrom) / 60_000),
+      startMin: event.start <= dayFrom ? 0 : clockMinute(event.start),
+      endMin: event.end >= dayUntil ? 1440 : clockMinute(event.end),
       col: 0,
       cols: 1
     }))

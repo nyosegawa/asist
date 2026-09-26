@@ -2,9 +2,9 @@ import { useLayoutEffect, useRef, useState, type CSSProperties, type FormEvent }
 import { AlignLeft, CalendarDays, Clock, Lock, MapPin, Pencil, Repeat, Trash2, Users, X } from 'lucide-react'
 import type { Translate } from '@shared/i18n'
 import type { CalendarChange, CalendarEvent } from '@shared/calendar'
-import { addDays, dayKey, eventsOn, parseDayKey } from '@shared/calendar-layout'
+import { addDays, dayKey, daysBetween, eventsOn, lastInstant, parseDayKey } from '@shared/calendar-layout'
 import { useT, useFormatLocale } from '@/i18n'
-import { BarChip, TimedChip, type OpenEvent } from './EventChips'
+import { BarChip, TimedChip, occurrenceKey, type OpenEvent } from './EventChips'
 import { dayClasses, fmtDateFull, fmtTime, fmtTimeRange, weekdayNames } from './format'
 import { colorOf, type CalendarAccount } from './palette'
 
@@ -74,7 +74,7 @@ function CloseButton({ onClose }: { onClose: () => void }): React.JSX.Element {
 
 function whenText(t: Translate, locale: string, event: CalendarEvent): string {
   const start = new Date(event.start)
-  const last = new Date(event.end - 1)
+  const last = new Date(lastInstant(event))
   const sameDay = dayKey(start) === dayKey(last)
   if (event.allDay)
     return sameDay
@@ -213,13 +213,13 @@ export function DayCard({
         {list.map((event) =>
           event.allDay ? (
             <BarChip
-              key={event.id}
+              key={occurrenceKey(event)}
               bar={{ event, c0: 0, c1: 0, contLeft: false, contRight: false, lane: 0 }}
               color={colorOf(colors, event.calendarId)}
               onOpen={onOpenEvent}
             />
           ) : (
-            <TimedChip key={event.id} event={event} color={colorOf(colors, event.calendarId)} onOpen={onOpenEvent} />
+            <TimedChip key={occurrenceKey(event)} event={event} color={colorOf(colors, event.calendarId)} onOpen={onOpenEvent} />
           )
         )}
       </div>
@@ -227,25 +227,35 @@ export function DayCard({
   )
 }
 
-/** The input of the create and edit card. The date and the times are held as local-time strings. */
+/**
+ * The input of the create and edit card, held as the local-time strings of the date and time inputs.
+ * `endDate` is the day the event ends on: for an all-day event its last day, and for an event with a
+ * time the day of its end, so an event that crosses midnight or lasts several days keeps its length.
+ */
 export interface Draft {
   eventId?: string
   title: string
-  date: string
-  start: string
-  end: string
+  startDate: string
+  startTime: string
+  endDate: string
+  endTime: string
   allDay: boolean
   location: string
   notes: string
   timeZone: string
 }
 
+/**
+ * A draft of a new event on that day from 10:00 to 11:00. An all-day event being edited keeps these
+ * times too, and they apply once "all day" is turned off.
+ */
 export function newDraft(day: string, patch: Partial<Draft> = {}): Draft {
   return {
     title: '',
-    date: day,
-    start: '10:00',
-    end: '11:00',
+    startDate: day,
+    startTime: '10:00',
+    endDate: day,
+    endTime: '11:00',
     allDay: false,
     location: '',
     notes: '',
@@ -261,32 +271,71 @@ function timeValue(at: number): string {
 }
 
 export function draftFromEvent(event: CalendarEvent): Draft {
-  return {
+  const fields = {
     eventId: event.id,
     title: event.title,
-    date: dayKey(new Date(event.start)),
-    start: timeValue(event.start),
-    end: timeValue(event.allDay ? event.start : event.end),
     allDay: event.allDay,
     location: event.location,
     notes: event.notes,
-    timeZone: event.timeZone
+    timeZone: event.timeZone,
+    endDate: dayKey(new Date(event.allDay ? lastInstant(event) : event.end))
   }
+  return event.allDay
+    ? newDraft(dayKey(new Date(event.start)), fields)
+    : newDraft(dayKey(new Date(event.start)), { ...fields, startTime: timeValue(event.start), endTime: timeValue(event.end) })
 }
 
+const minuteOf = (time: string): number => {
+  const [hh, mm] = time.split(':').map(Number)
+  return hh * 60 + mm
+}
+
+/**
+ * The draft with another start day or start time, whose end moves by as many days and minutes, so that
+ * the event keeps its length as it does in Google Calendar's editor.
+ */
+export function moveStart(draft: Draft, start: Pick<Draft, 'startDate'> | Pick<Draft, 'startTime'>): Draft {
+  const next = { ...draft, ...start }
+  const days = daysBetween(parseDayKey(draft.startDate), parseDayKey(next.startDate))
+  const minutes = minuteOf(next.startTime) - minuteOf(draft.startTime)
+  const end = localDate(draft.endDate, draft.endTime)
+  // An input that is cleared gives an empty value, from which no distance can be counted.
+  if ([days, minutes, end.getTime()].some(Number.isNaN)) return next
+  const moved = new Date(end.getFullYear(), end.getMonth(), end.getDate() + days, end.getHours(), end.getMinutes() + minutes)
+  return { ...next, endDate: dayKey(moved), endTime: timeValue(moved.getTime()) }
+}
+
+/**
+ * The draft with another end time. An event shorter than a day ends at the first time on the clock after
+ * its start, as the end-time menu of Google Calendar's editor sets it, so an end time not after the start
+ * time moves the end to the next day and 22:00 to 01:00 ends the next morning. A longer event keeps its
+ * end day. Both are decided from the draft before the change, because a time input passes through
+ * partial values such as 01:00 on the way to 13:00.
+ */
+export function setEndTime(draft: Draft, endTime: string): Draft {
+  const start = localDate(draft.startDate, draft.startTime)
+  const end = localDate(draft.endDate, draft.endTime)
+  const dayAfterStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, start.getHours(), start.getMinutes())
+  const withinADay = Number.isNaN(end.getTime()) ? draft.endDate === draft.startDate : end < dayAfterStart
+  if (Number.isNaN(start.getTime()) || !endTime || !withinADay) return { ...draft, endTime }
+  const endDate = endTime > draft.startTime ? draft.startDate : dayKey(addDays(parseDayKey(draft.startDate), 1))
+  return { ...draft, endTime, endDate }
+}
+
+/** A local day and time, or an invalid Date when an input was cleared. */
 function localDate(date: string, time: string): Date {
   const [y, m, d] = date.split('-').map(Number)
   const [hh, mm] = time.split(':').map(Number)
   return new Date(y, m - 1, d, hh, mm)
 }
 
+/** What saving the draft asks main to do, or null while the draft cannot be saved. */
 export function changeFromDraft(draft: Draft): CalendarChange | null {
   const title = draft.title.trim()
   if (!title) return null
-  const day = parseDayKey(draft.date)
-  const start = draft.allDay ? day : localDate(draft.date, draft.start)
-  const end = draft.allDay ? addDays(day, 1) : localDate(draft.date, draft.end)
-  if (end <= start) return null
+  const start = draft.allDay ? localDate(draft.startDate, '00:00') : localDate(draft.startDate, draft.startTime)
+  const end = draft.allDay ? addDays(localDate(draft.endDate, '00:00'), 1) : localDate(draft.endDate, draft.endTime)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return null
   const event = {
     title,
     start: start.toISOString(),
@@ -315,6 +364,11 @@ export function EditorCard({
   const [draft, setDraft] = useState(initial)
   const update = (patch: Partial<Draft>): void => setDraft((d) => ({ ...d, ...patch }))
   const invalid = changeFromDraft(draft) === null
+  // An event with times shows its end day only when it ends on another day, as Google Calendar's editor
+  // does, so that a one-day event stays on one line; its end time reaches the next day and from there
+  // any day. An all-day event has no times, and its two days fit on the line, so its end day is always
+  // there to be changed.
+  const showEndDate = draft.allDay || draft.endDate !== draft.startDate
   const submit = (e: FormEvent): void => {
     e.preventDefault()
     if (!invalid && calendarLabel) onSubmit(draft)
@@ -336,22 +390,36 @@ export function EditorCard({
         <div className="cal-pop-row">
           <Clock size={16} />
           <span className="cal-fields">
-            <input className="cal-field" type="date" value={draft.date} onChange={(e) => update({ date: e.target.value })} />
-            <input
-              className="cal-field"
-              type="time"
-              value={draft.start}
-              disabled={draft.allDay}
-              onChange={(e) => update({ start: e.target.value })}
-            />
+            <span className="cal-when">
+              <input
+                className="cal-field"
+                type="date"
+                value={draft.startDate}
+                onChange={(e) => setDraft((d) => moveStart(d, { startDate: e.target.value }))}
+              />
+              {!draft.allDay && (
+                <input
+                  className="cal-field"
+                  type="time"
+                  value={draft.startTime}
+                  onChange={(e) => setDraft((d) => moveStart(d, { startTime: e.target.value }))}
+                />
+              )}
+            </span>
             <span className="cal-dash">–</span>
-            <input
-              className="cal-field"
-              type="time"
-              value={draft.end}
-              disabled={draft.allDay}
-              onChange={(e) => update({ end: e.target.value })}
-            />
+            <span className="cal-when">
+              {showEndDate && (
+                <input className="cal-field" type="date" value={draft.endDate} onChange={(e) => update({ endDate: e.target.value })} />
+              )}
+              {!draft.allDay && (
+                <input
+                  className="cal-field"
+                  type="time"
+                  value={draft.endTime}
+                  onChange={(e) => setDraft((d) => setEndTime(d, e.target.value))}
+                />
+              )}
+            </span>
           </span>
         </div>
         <label className="cal-pop-row cal-allday">

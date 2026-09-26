@@ -159,6 +159,42 @@ describe('mail tools', () => {
     expect(invalid.isError).toBe(true)
   })
 
+  it('gives the model the date of a message in local time with its offset, so that mail from early morning in Japan keeps its day', async () => {
+    const early = { ...message, date: Date.parse('2026-09-16T07:30:00+09:00') }
+    mocks.service.list.mockReturnValue({ messages: [early], total: 1, unread: 1 })
+    mocks.service.read.mockResolvedValue({ message: early, text: '本文です' })
+    const previous = process.env.TZ
+    process.env.TZ = 'Asia/Tokyo'
+    try {
+      const { executeClientTool } = await load()
+      const list = await executeClientTool('list_mail', {}, ctx())
+      expect(JSON.parse(list.content).messages[0].date).toBe('2026-09-16T07:30:00+09:00')
+      const read = await executeClientTool('read_mail', { id: early.id }, ctx())
+      expect(JSON.parse(read.content).date).toBe('2026-09-16T07:30:00+09:00')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+
+  it('tells the model where a reply draft goes after an edit, and with which subject: the addresses it was settled with, and one "Re:"', async () => {
+    const reply = {
+      id: 'a1:inbox:5',
+      subject: 'Re: 打合せ',
+      from: { name: '田中', address: 't@example.com' },
+      replyAll: false,
+      to: [{ name: '事務局', address: 'office@example.com' }],
+      cc: [],
+      inReplyTo: '<5@x>',
+      references: ['<5@x>'],
+      quote: ''
+    }
+    mocks.service.draftUpdate.mockReturnValueOnce({ id: 'd2', to: [], cc: [], subject: '', body: 'では。', reply })
+    const { executeClientTool } = await load()
+    const updated = await executeClientTool('update_mail_draft', { draftId: 'd2', body: 'では。' }, ctx())
+    expect(JSON.parse(updated.content)).toMatchObject({ draftId: 'd2', subject: 'Re: 打合せ', to: ['事務局 <office@example.com>'], body: 'では。' })
+  })
+
   it('points at the settings screen when mail is not configured', async () => {
     mocks.service.status.mockReturnValue({ enabled: false, accounts: [], unread: 0, unreadRecent: 0 })
     const { executeClientTool } = await load()
