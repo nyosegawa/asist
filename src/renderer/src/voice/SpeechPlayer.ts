@@ -84,6 +84,12 @@ export class SpeechPlayer {
   private streaming = false
   private streamIdleTimer: ReturnType<typeof setTimeout> | null = null
   private streamGeneration = 0
+  /**
+   * The live chunks wait for the output here one after another. play() marks the <audio> element as
+   * playing at once and settles its promise in a later task, so a chunk that arrived meanwhile would
+   * find nothing to wait for and be scheduled ahead of the one before it.
+   */
+  private streamOutput: Promise<void> = Promise.resolve()
 
   constructor() {
     this.analyser.fftSize = 512
@@ -158,7 +164,8 @@ registerProcessor('speech-tap', TapProcessor)
   streamPush(samples: Float32Array, sampleRate: number): void {
     if (samples.length === 0 || this.ctx.state === 'closed') return
     const generation = this.streamGeneration
-    void this.ensureOutput()
+    this.streamOutput = this.streamOutput
+      .then(() => this.withLocalTimeout(this.ensureOutput(), OUTPUT_RESUME_TIMEOUT_MS))
       .then(() => {
         if (generation !== this.streamGeneration) return
         this.liveScheduler.schedule(samples, sampleRate, this.streaming ? 0 : STREAM_LEAD_S)
