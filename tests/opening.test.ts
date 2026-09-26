@@ -174,4 +174,15 @@ describe('TurnOpening', () => {
     expect(opening.clipStarted('aizuchi', 600, 1200)).toBeNull()
     expect(opening.claim(10)).toBeNull()
   })
+
+  it('plays no bridge that finishes synthesizing after the user talked over the claimed turn', async () => {
+    const { opening, play, resolvers } = setup()
+    opening.begin(input)
+    await flush()
+    opening.claim(10)
+    opening.interrupt()
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    expect(play.mock.calls.filter(([, role]) => role === 'bridge')).toHaveLength(0)
+  })
 })

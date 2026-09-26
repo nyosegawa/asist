@@ -1,8 +1,9 @@
 import { isJobTerminal } from '@shared/job-status'
 import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ipc'
-import { isSelfEcho, stripClipEcho } from '@shared/self-echo'
+import { isSelfEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { isLiveEngine, type VoiceEngine } from '@shared/voice-engine'
+import { stopsLiveEngine } from '@shared/live-session-policy'
 import { safetyNoticePending } from '@shared/settings'
 import { translate } from '@/i18n'
 import { voiceController } from '@/voice/VoiceController'
@@ -104,10 +105,7 @@ const opening = new TurnOpening({
     const settings = useSettingsStore.getState().settings
     return pickAizuchi(classification, { enabled: settings?.aizuchi ?? false, rate: settings?.aizuchiRate ?? 0 })
   },
-  play: (clip, role) => {
-    recordClip(clip.text)
-    speechPlayer.playClip(clip.audio, clip.text, { role })
-  },
+  play: (clip, role) => speechPlayer.playClip(clip.audio, clip.text, { role }),
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   onBridgeOutcome: noteBridgeOutcome
@@ -116,48 +114,16 @@ const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
 )
 
-/** Assistant utterances played recently, kept to recognize what the speaker leaks back into the microphone. */
-const recentSpeech: Array<{ text: string; t: number }> = []
-const SELF_ECHO_WINDOW_MS = 15_000
-
-function recordSpokenText(text: string): void {
-  const now = performance.now()
-  recentSpeech.push({ text, t: now })
-  while (recentSpeech.length > 0 && now - recentSpeech[0].t > SELF_ECHO_WINDOW_MS) {
-    recentSpeech.shift()
-  }
-}
-
-/** Reports a transcript that is the assistant's own speech coming back through the speaker. This is the last line of defense. */
-function isRecentSelfEcho(utterance: string): boolean {
-  const now = performance.now()
-  const texts = recentSpeech.filter((s) => now - s.t <= SELF_ECHO_WINDOW_MS).map((s) => s.text)
-  return isSelfEcho(utterance, texts)
-}
+/** What the speaker played and when, which tells what can have leaked back into the microphone during a capture. */
+const playback = new PlaybackLog()
 
 /**
- * A record of the aizuchi clips that were played, such as "はい。" or "うん". `isSelfEcho` does not
- * judge short utterances, so that a genuine "はい" answer survives, and the echo of a short clip is
- * removed by time correlation instead: whether the clip actually sounded while the utterance was
- * captured. Listening aizuchi are played through WebAudio and therefore never reach the echo
- * canceller as a reference signal, so they mix into the capture easily.
+ * The turn that takes the barge-ins and the user's aizuchi counted while it sounds: the turn under
+ * way, or once brain has reported it done, the one whose reply is still being read.
  */
-const recentClips: Array<{ text: string; t: number }> = []
-const CLIP_WINDOW_HEAD_MS = 500
-
-function recordClip(text: string): void {
-  recentClips.push({ text, t: performance.now() })
-  while (recentClips.length > 8) recentClips.shift()
-}
-
-/** Strips the clips that sounded inside the capture window, from startedAt minus 500 ms until now, off the ends of the transcript. */
-function stripClipsInCaptureWindow(utterance: string, startedAt: number): string {
-  const now = performance.now()
-  const texts = recentClips
-    .filter((c) => c.t >= startedAt - CLIP_WINDOW_HEAD_MS && c.t <= now)
-    .map((c) => c.text)
-  if (texts.length === 0) return utterance
-  return stripClipEcho(utterance, texts)
+function heardTurn(): number {
+  const active = useTurnStore.getState().activeTurnId
+  return active >= 0 ? active : speechPlayer.readingTurn
 }
 
 export function initConversation(): Promise<void> {
@@ -190,13 +156,8 @@ async function initializeConversation(): Promise<void> {
       settings.qwenTtsVoice !== before.qwenTtsVoice ||
       settings.conversationLocale !== before.conversationLocale
     )) reloadAizuchiBank()
-    // Changing the voice engine, or the live model or voice, stops a running microphone; main stops
-    // its live engine for the same change.
-    if (settings && before && (
-      settings.voiceEngine !== before.voiceEngine ||
-      JSON.stringify(settings.gptLive) !== JSON.stringify(before.gptLive) ||
-      JSON.stringify(settings.geminiLive) !== JSON.stringify(before.geminiLive)
-    ) && (voiceController.current !== 'off' || liveVoice.current !== 'off')) {
+    if (settings && before && stopsLiveEngine(before, settings) &&
+      (voiceController.current !== 'off' || liveVoice.current !== 'off')) {
       voiceController.disable()
       liveVoice.disable()
       toasts.push({
@@ -278,12 +239,20 @@ async function initializeConversation(): Promise<void> {
   })
 
   voiceController.events.on('bargein', () => {
-    // The VoiceController has just dropped the playback queue, so interjections that never played
-    // are returned to main.
+    // The VoiceController drops the playback queue right after this, so interjections that never
+    // played are returned to main and nothing more of the opening plays.
     interjectPlayback.interruptPending()
+    opening.interrupt()
+    const heard = heardTurn()
+    if (heard >= 0) turnMetrics.increment(heard, 'bargeIns')
+    // A request still waiting for its turn id is given up, so that finishUserTurnStart aborts the
+    // turn once the id arrives instead of reading the reply the user talked over.
+    if (pendingRequestId !== null) {
+      turnMetrics.discardRequest(pendingRequestId)
+      pendingRequestId = null
+    }
     const active = useTurnStore.getState().activeTurnId
     if (active >= 0) {
-      turnMetrics.increment(active, 'bargeIns')
       usePanelStore.getState().dismissLoadingOwnedBy(active)
       void window.api.turnAbort(active)
     }
@@ -292,19 +261,16 @@ async function initializeConversation(): Promise<void> {
   // A "うん" or "はい" spoken during playback was taken as an aizuchi, so playback keeps going
   // instead of stopping.
   voiceController.events.on('userBackchannel', () => {
-    const turn = useTurnStore.getState()
-    turn.setRouterNote(translate('hud.router.heardAsBackchannel'))
-    if (turn.activeTurnId >= 0) turnMetrics.increment(turn.activeTurnId, 'userBackchannels')
+    useTurnStore.getState().setRouterNote(translate('hud.router.heardAsBackchannel'))
+    const heard = heardTurn()
+    if (heard >= 0) turnMetrics.increment(heard, 'userBackchannels')
   })
 
   // Listening aizuchi: a quiet "うん" or "なるほど" at a break in a long user utterance, which does
   // not stop the conversation.
   voiceController.events.on('backchannel', ({ kind }) => {
     const clip = pickListeningClip(kind)
-    if (clip?.audio) {
-      recordClip(clip.text)
-      speechPlayer.playClip(clip.audio, '', { role: 'listening', volume: 0.4 })
-    }
+    if (clip?.audio) speechPlayer.playClip(clip.audio, clip.text, { role: 'listening', volume: 0.4 })
   })
 
   // At speech end, as decided by VAD, the aizuchi sounds without waiting for the final transcript
@@ -332,21 +298,27 @@ async function initializeConversation(): Promise<void> {
   })
 
   voiceController.events.on('utterance', ({ text, vadMs, vadMode, asrMs, partialText, startedAt, speechEndAt }) => {
-    // The echo of the aizuchi clips that sounded during capture is stripped off the ends, and the
-    // utterance is dropped when nothing but echo is left.
-    const cleaned = stripClipsInCaptureWindow(text, startedAt)
+    // Only what sounded while this speech was captured can have come back through the microphone;
+    // the capture runs on through the hangover's silence, vadMs past speechEndAt. `isSelfEcho` does
+    // not judge short utterances, so that a genuine "はい" answer survives, and the echo of a short
+    // clip is stripped off the ends instead. The utterance is dropped when nothing but echo is left.
+    const heard = playback.heardDuring(startedAt, speechEndAt + vadMs)
+    const cleaned = stripClipEcho(text, heard.filter((sound) => sound.clip).map((sound) => sound.text))
     if (!cleaned) {
       useTurnStore.getState().setRouterNote(translate('hud.router.droppedClipEcho'))
       opening.cancel(startedAt)
       return
     }
-    if (isRecentSelfEcho(cleaned)) {
+    if (isSelfEcho(cleaned, heard.map((sound) => sound.text))) {
       useTurnStore.getState().setRouterNote(translate('hud.router.droppedSelfEcho'))
       opening.cancel(startedAt)
       return
     }
     void startVoiceTurn(cleaned, { vadMs, vadMode, asrMs, partialText, speechEndAt }, opening.claim(startedAt))
   })
+
+  // A speech that never becomes an utterance plays no bridge.
+  voiceController.events.on('speechdropped', ({ startedAt }) => opening.cancel(startedAt))
 
   voiceController.events.on('error', (message) =>
     toasts.push({ kind: 'error', title: translate('voice.micFailed'), body: message })
@@ -399,13 +371,7 @@ async function initializeConversation(): Promise<void> {
     else useConfirmStore.getState().close(event.id)
   })
 
-  window.api.onHotkeyMic(() => {
-    if (liveMode()) {
-      if (liveVoice.current === 'off') void liveVoice.enable()
-    } else if (voiceController.current === 'off') {
-      void voiceController.enable()
-    }
-  })
+  window.api.onHotkeyMic(() => void enableMic())
 
   window.api.onPanelEvent((event) => {
     usePanelStore.getState().apply(event)
@@ -439,7 +405,7 @@ async function initializeConversation(): Promise<void> {
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)
-    if (segment.text) recordSpokenText(segment.text)
+    playback.started(segment, performance.now())
     const t = useTurnStore.getState()
     if (segment.clip) {
       // An aizuchi is measured at the moment it actually sounds. Before the turn starts the value is
@@ -459,8 +425,12 @@ async function initializeConversation(): Promise<void> {
   })
 
   speechPlayer.events.on('idle', ({ turnId }) => {
+    playback.stopped(performance.now())
     const t = useTurnStore.getState()
-    if (t.phase === 'speak') t.setPhase('idle')
+    // A turn that ended while only its opening clip was sounding left the phase on think until now.
+    if (t.phase === 'speak' || (t.phase === 'think' && t.activeTurnId < 0 && pendingRequestId === null)) {
+      t.setPhase('idle')
+    }
     // A turn whose playback has finished is closed after the events counted during playback are
     // appended to it.
     turnMetrics.playbackIdle(turnId)
@@ -474,14 +444,19 @@ async function initializeConversation(): Promise<void> {
 }
 
 /**
- * Turns the microphone on when the user chose to have it on at launch. It stays off while the setup or
- * the notice of the risks covers the app, so that nothing is heard before they are answered.
+ * Turns the microphone on for the configured voice engine, whether at launch, from the global
+ * shortcut, from the tray or with the button. It stays off while the setup or the notice of the risks
+ * covers the app, so that nothing is heard before they are answered.
  */
-export function startMicAtLaunch(): void {
+function enableMic(): Promise<void> {
   const settings = useSettingsStore.getState().settings
-  if (!settings?.micAutoStart || settings.onboardingVersion < 1 || safetyNoticePending(settings)) return
-  if (liveMode()) void liveVoice.enable()
-  else void voiceController.enable()
+  if (!settings || settings.onboardingVersion < 1 || safetyNoticePending(settings)) return Promise.resolve()
+  return liveMode() ? liveVoice.enable() : voiceController.enable()
+}
+
+/** Turns the microphone on when the user chose to have it on at launch. */
+export function startMicAtLaunch(): void {
+  if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
 }
 
 function handleLiveEvent(event: LiveEvent): void {
@@ -846,10 +821,10 @@ export function handleTurnEvent(event: TurnEvent): void {
 /** Toggles the microphone from the UI, switching the cascade capture or the live capture according to the configured voice engine. */
 export async function toggleMic(): Promise<void> {
   if (liveMode()) {
-    if (liveVoice.current === 'off') await liveVoice.enable()
+    if (liveVoice.current === 'off') await enableMic()
     else liveVoice.disable()
     return
   }
-  if (voiceController.current === 'off') await voiceController.enable()
+  if (voiceController.current === 'off') await enableMic()
   else voiceController.disable()
 }

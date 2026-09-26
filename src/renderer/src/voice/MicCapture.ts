@@ -54,7 +54,11 @@ export class MicCapture {
     return TARGET_SAMPLE_RATE
   }
 
-  start(onFrame: (frame: Float32Array) => void): Promise<void> {
+  /**
+   * onEnded is called when the device goes away, because it was unplugged or the permission was
+   * withdrawn. The capture then delivers nothing more, so the caller has to build it again.
+   */
+  start(onFrame: (frame: Float32Array) => void, onEnded: () => void): Promise<void> {
     if (this.ctx) return Promise.resolve()
     const generation = this.generation
     if (this.startOperation?.generation === generation) return this.startOperation.promise
@@ -73,7 +77,7 @@ export class MicCapture {
     // Neither getUserMedia nor addModule can be cancelled. The caller's wait ends at once, and
     // startOnce releases whatever arrives late, touching only its own generation.
     operation.promise = Promise.race([
-      this.startOnce(generation, onFrame, controller.signal), cancelled
+      this.startOnce(generation, onFrame, onEnded, controller.signal), cancelled
     ]).finally(() => {
       if (this.startOperation === operation) this.startOperation = null
     })
@@ -102,6 +106,7 @@ export class MicCapture {
   private async startOnce(
     generation: number,
     onFrame: (frame: Float32Array) => void,
+    onEnded: () => void,
     signal: AbortSignal
   ): Promise<void> {
     let stream: MediaStream | null = null
@@ -135,6 +140,12 @@ export class MicCapture {
         }
       })
       if (!current()) return
+      // Stopping a track does not fire ended, so only a device that goes away reaches onEnded.
+      for (const track of stream.getTracks()) {
+        track.addEventListener('ended', () => {
+          if (current()) onEnded()
+        }, { once: true })
+      }
 
       // The context runs at the native rate, usually 44.1 kHz or 48 kHz.
       ctx = new AudioContext()

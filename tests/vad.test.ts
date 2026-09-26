@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { HangoverMode } from '@shared/ipc'
-import { VadSegmenter } from '@/voice/VadSegmenter'
+import { VadSegmenter, type VadUtterance } from '@/voice/VadSegmenter'
 
 /** Builds one 20 ms frame, which is 320 samples at 16 kHz. */
 const frame = (amplitude: number): Float32Array => new Float32Array(320).fill(amplitude)
@@ -8,15 +7,17 @@ const SILENT = 0.001
 const LOUD = 0.3
 
 interface Captured {
-  utterances: Array<{ samples: Float32Array; vadMs: number; mode: HangoverMode }>
+  utterances: VadUtterance[]
   starts: number
+  /** Captures that ended without an utterance. */
+  discards: number
 }
 
 function makeVad(hangoverMs = 350): { vad: VadSegmenter; got: Captured } {
-  const got: Captured = { utterances: [], starts: 0 }
+  const got: Captured = { utterances: [], starts: 0, discards: 0 }
   const vad = new VadSegmenter({
     onSpeechStart: () => got.starts++,
-    onUtterance: (samples, vadMs, mode) => got.utterances.push({ samples, vadMs, mode })
+    onSpeechEnd: (utterance) => (utterance ? got.utterances.push(utterance) : got.discards++)
   })
   vad.hangoverMs = hangoverMs
   return { vad, got }
@@ -56,9 +57,27 @@ describe('VadSegmenter', () => {
     // 100 ms, standing for a cough or a key press.
     pushFrames(vad, LOUD, 5)
     pushFrames(vad, SILENT, 20)
-    // The start is detected, but the utterance is never confirmed.
+    // The start is detected, but the utterance is never confirmed, and the capture still ends.
     expect(got.starts).toBe(1)
     expect(got.utterances).toHaveLength(0)
+    expect(got.discards).toBe(1)
+  })
+
+  it('ends a capture in progress with no utterance when it is muted', () => {
+    const { vad, got } = makeVad()
+    pushFrames(vad, SILENT, 10)
+    pushFrames(vad, LOUD, 25)
+    vad.muted = true
+    pushFrames(vad, LOUD, 25)
+    expect(got.starts).toBe(1)
+    expect(got.discards).toBe(1)
+    expect(vad.isSpeaking).toBe(false)
+    // After unmuting, the next voice opens a new capture.
+    vad.muted = false
+    pushFrames(vad, LOUD, 25)
+    pushFrames(vad, SILENT, 18)
+    expect(got.starts).toBe(2)
+    expect(got.utterances).toHaveLength(1)
   })
 
   it('does not split at a pause shorter than the hangover', () => {
