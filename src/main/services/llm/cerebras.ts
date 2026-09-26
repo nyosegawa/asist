@@ -4,7 +4,7 @@ import type { ConversationMessage, ConversationRequest, ConversationResult, Stop
 import type { RoundUsage } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { effortFor } from '@shared/llm-catalog'
-import { AdapterStream, parseToolArguments, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
+import { AdapterStream, parseToolArguments, streamCutOff, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
 
 /**
  * Cerebras, called through the openai package: its API is OpenAI-compatible chat completions, and its
@@ -122,6 +122,7 @@ class CerebrasStream extends AdapterStream {
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
+    if (finish === null) streamCutOff(request.signal, 'Cerebras')
     if (open !== null) confirm(open)
     this.closeText()
 
