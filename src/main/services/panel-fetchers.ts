@@ -66,7 +66,7 @@ async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult
 
 async function geocode(place: string, signal: AbortSignal): Promise<GeoResult> {
   const name = place.trim()
-  // The suffix is dropped only after the name as given misses the table, or 京都 would be looked up as 京.
+  // The suffix is dropped only after the name as given misses the table, or "京都" would be looked up as "京".
   const bare = name.replace(/(都|府|県|市)$/, '')
   const result = await geocodeOnce(JP_PLACES[name] ?? JP_PLACES[bare] ?? bare, signal)
   if (result) return result

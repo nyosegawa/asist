@@ -123,7 +123,7 @@ describe('executeTool', () => {
   })
 
   it('passes text from outside through as it is, even text that looks like a packed pair', async () => {
-    const subjects = ['bilingual: 請求書', bilingual({ ja: '件名', en: 'Subject' }), 'ふつうの件名']
+    const subjects = ['bilingual: 請求書', bilingual({ ja: '請求書について', en: 'About the invoice' }), 'Re: 見積もりの件']
     const registry = createToolRegistry([
       def({ name: 'list_mail', run: () => ({ messages: subjects.map((subject) => ({ subject })) }) }),
       def({ name: 'read_mail', run: () => { throw new Error(subjects[0]) } })

@@ -49,7 +49,7 @@ describe('the requests a card makes for the conversation language and the region
     expect(urls[0]).toContain('language=de')
   })
 
-  it('looks a Japanese city up under its English name whether or not it ends in 都, 府 or 市', async () => {
+  it('looks a Japanese city up under its English name, with or without the suffix of a prefecture or a city', async () => {
     const urls: string[] = []
     respond({ results: [{ name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
     for (const city of ['京都', '京都府', '京都市']) await fetchPanel('clock', { city })
