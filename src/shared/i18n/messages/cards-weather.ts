@@ -852,19 +852,6 @@ export const cardsWeather = defineMessages({
       'es-419': 'No se pudieron leer los datos del clima.',
       'es-ES': 'No se han podido leer los datos del tiempo.'
     },
-    placeNotFound: {
-      'ja-JP': '{place} という場所が見つかりません。どこの天気か、都市名と国名をユーザーに確かめてください。',
-      'en-US': "There is no place called {place}. Ask the user which city and country they mean.",
-      'fr-FR': "Aucun lieu ne s'appelle {place}. Demandez à la personne de quelle ville et de quel pays il s'agit.",
-      'de-DE': 'Es gibt keinen Ort namens {place}. Fragen Sie nach, welche Stadt und welches Land gemeint sind.',
-      'hi-IN': '{place} नाम की कोई जगह नहीं मिली। उपयोगकर्ता से पूछें कि कौन सा शहर और देश है।',
-      'id-ID': 'Tidak ada tempat bernama {place}. Tanyakan kepada pengguna kota dan negara mana yang dimaksud.',
-      'it-IT': 'Non esiste un luogo chiamato {place}. Chiedi alla persona di quale città e di quale paese si tratta.',
-      'ko-KR': '{place}(이)라는 장소가 없습니다. 어느 도시와 나라인지 사용자에게 확인하십시오.',
-      'pt-BR': 'Não existe um lugar chamado {place}. Pergunte à pessoa de que cidade e país ela fala.',
-      'es-419': 'No hay ningún lugar llamado {place}. Pregúntale al usuario de qué ciudad y país se trata.',
-      'es-ES': 'No hay ningún lugar que se llame {place}. Pregunta a la persona de qué ciudad y país se trata.'
-    },
     stale: {
       'ja-JP': '最新の観測が 30 分以上更新されていません。',
       'en-US': 'The latest observation is more than 30 minutes old.',

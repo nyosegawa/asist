@@ -3,6 +3,7 @@ import type { MessageKey } from '@shared/i18n'
 import { isLiveEngine } from '@shared/voice-engine'
 import { useT } from '@/i18n'
 import { useLiveStore, useSettingsStore, useTurnStore } from '@/state/stores'
+import { routerNoteText } from './router-note'
 
 /**
  * The measured latencies of the latest turn, for VAD, ASR, aizuchi, bridge, TTFT, TTS and end to
@@ -40,7 +41,8 @@ function LiveHud(): React.JSX.Element {
 /** What the latest turn's routing did. Before the first turn there is nothing to say, as for a latency not yet measured. */
 function RouterMetric(): React.JSX.Element {
   const t = useT()
-  const routerNote = useTurnStore((s) => s.routerNote)
+  const note = useTurnStore((s) => s.routerNote)
+  const routerNote = note ? routerNoteText(note, t) : ''
   return (
     <div className="hud-metric is-router">
       <span className="hud-label">{t('hud.metrics.router')}</span>

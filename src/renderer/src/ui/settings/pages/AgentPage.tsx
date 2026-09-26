@@ -1,6 +1,6 @@
 import type { SettingsContext } from '../context'
 import { useFieldDraft } from '../field-draft'
-import { Btn, Chip, Group, Link, Page, Row } from '../primitives'
+import { Btn, Chip, Group, Link, NotSavedHint, Page, Row } from '../primitives'
 import { useT } from '@/i18n'
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
 
@@ -58,7 +58,7 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
       </Group>
 
       <Group title={t('settingsAgent.workspace.title')} description={t('settingsAgent.workspace.description')}>
-        <Row label={t('settingsAgent.workspace.parent')} wide>
+        <Row label={t('settingsAgent.workspace.parent')} hint={cwd.failed ? <NotSavedHint /> : undefined} wide>
           <div className="st-field-action">
             <input className="st-input is-mono" aria-label={t('settingsAgent.workspace.parentLabel')} {...cwd.props} />
             <Btn onClick={() => chooseFolder(cwd.value, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
@@ -67,7 +67,7 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
       </Group>
 
       <Group title={t('settingsAgent.roots.title')} description={t('settingsAgent.roots.description')}>
-        <Row label={t('settingsAgent.roots.folders')} wide>
+        <Row label={t('settingsAgent.roots.folders')} hint={roots.failed ? <NotSavedHint /> : undefined} wide>
           <textarea className="st-input is-mono st-roots" aria-label={t('settingsAgent.roots.title')} placeholder="/Users/you/Desktop" {...roots.props} />
           <div className="st-row-actions">
             <Btn

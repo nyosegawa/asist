@@ -367,6 +367,32 @@ export const settingsMemory = defineMessages({
       'pt-BR': 'Falhou',
       'es-419': 'Falló',
       'es-ES': 'Ha fallado'
+    },
+    checking: {
+      'ja-JP': '確認中',
+      'en-US': 'Checking',
+      'fr-FR': 'Vérification',
+      'de-DE': 'Wird geprüft',
+      'hi-IN': 'देखा जा रहा है',
+      'id-ID': 'Memeriksa',
+      'it-IT': 'Controllo in corso',
+      'ko-KR': '확인 중',
+      'pt-BR': 'Verificando',
+      'es-419': 'Verificando',
+      'es-ES': 'Comprobando'
+    },
+    checkingState: {
+      'ja-JP': '整理の状態を確認しています。',
+      'en-US': 'Checking the state of the curation.',
+      'fr-FR': "Vérification de l'état de l'organisation.",
+      'de-DE': 'Der Stand der Gedächtnispflege wird geprüft.',
+      'hi-IN': 'सफ़ाई की स्थिति देखी जा रही है।',
+      'id-ID': 'Memeriksa status penataan.',
+      'it-IT': 'Controllo dello stato del riordino in corso.',
+      'ko-KR': '정리 상태를 확인하고 있습니다.',
+      'pt-BR': 'Verificando o estado da organização.',
+      'es-419': 'Verificando el estado de la organización.',
+      'es-ES': 'Comprobando el estado de la organización.'
     }
   },
   view: {

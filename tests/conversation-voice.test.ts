@@ -114,7 +114,7 @@ vi.mock('@/voice/aizuchi-bank', () => ({
   pickAizuchi: vi.fn(() => ({ text: 'はい。', category: 'flow', weight: 1, audio: 'eA==' })),
   pickListeningClip: vi.fn(() => ({ text: 'うん', audio: 'eA==' }))
 }))
-vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
+vi.mock('@/i18n', () => ({ translate: (key: string) => key, uiLocale: () => 'ja-JP' }))
 vi.mock('@/state/confirm', () => ({
   useConfirmStore: { getState: () => ({ open: (request: unknown) => mocks.confirmOpened.push(request), close: () => {} }) }
 }))

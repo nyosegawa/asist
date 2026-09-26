@@ -2,6 +2,7 @@ import type { RendererApi, SetupProgress } from '@shared/ipc'
 import type { SettingsPage } from '@shared/mini-apps'
 import { dayKey } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
+import { displayError } from '@/display-error'
 import { translate } from '@/i18n'
 import { useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
@@ -89,6 +90,12 @@ function showToasts(): void {
     toasts.push({ kind: 'ok', title: translate('voice.services.title'), body: [translate('voice.services.recognitionBack'), translate('voice.services.speechBack')].join(' · ') })
     toasts.push({ kind: 'info', title: translate('voice.engineChanged.title'), body: translate('voice.engineChanged.body') })
     toasts.push({ kind: 'error', title: translate('conversation.sendFailed'), body: translate('conversation.reply.network') })
+    // A long error, which the toast cuts at two lines until the pointer rests on it.
+    const unreadable = errorText('settings.errors.readFailed', {
+      file: '/Users/demo/Library/Application Support/ASIST/settings.json',
+      message: errorText('app.storage.versionTooNew', { file: 'settings.json', version: 9, supported: 4 })
+    })
+    toasts.push({ kind: 'error', title: translate('app.status.checkFailed'), body: displayError(new Error(unreadable)) })
   }
   // Opened again after a change of language, the next push is already in that language.
   if (toastTimer) return

@@ -31,8 +31,8 @@ export interface SettingsContext {
   embedding: EmbeddingStatus | null
   aizuchiClassifier: AizuchiClassifierStatus | null
   prep: Preparation
-  /** Saves and reloads the status, reporting a failure as a toast. */
-  set: (patch: SettingsPatch) => void
+  /** Saves and reloads the status, reporting a failure as a toast. It resolves to whether the patch was saved. */
+  set: (patch: SettingsPatch) => Promise<boolean>
   /** Saves and throws on failure, for a caller that wants to word the message itself. */
   save: (patch: SettingsPatch) => Promise<void>
   refreshStatus: () => Promise<void>

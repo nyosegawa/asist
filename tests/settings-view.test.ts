@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -85,7 +87,6 @@ const api = {
   getStatus: vi.fn(async () => status),
   getSetupStatus: vi.fn(async () => ({
     services: status,
-    apiKeyConfigured: true,
     asr: {
       selectedModel: 'auto',
       resolvedModel: 'qwen3-asr-1.7b-mlx',
@@ -441,6 +442,52 @@ describe('settings fields that are saved once the user leaves them', () => {
     }
   })
 
+  it('keeps a value whose save failed in the field, marked as not saved, and saves it again when the field is left again', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    const hint = (): string | null | undefined => days.closest('.st-row')?.querySelector('.st-row-hint')?.textContent
+    days.focus()
+    await act(async () => type(days, '30'))
+    await act(async () => leave(days))
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual([t('settings.saveFailed')])
+    expect(days.value).toBe('30')
+    expect(days.getAttribute('aria-invalid')).toBe('true')
+    expect(hint()).toBe(t('settings.fieldNotSaved'))
+
+    days.focus()
+    await act(async () => leave(days))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 30 }], [{ conversationLogRetentionDays: 30 }]])
+    expect(days.value).toBe('30')
+    expect(days.getAttribute('aria-invalid')).toBe('false')
+    expect(hint()).toBe(t('settingsConversation.log.retentionHint'))
+  })
+
+  it('lets a text whose save failed give way to folders saved after it, and never writes it back over them', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+    roots.focus()
+    await act(async () => type(roots, '/Users/demo/Desktop\n/Users/demo/Documents'))
+    await act(async () => leave(roots))
+    expect(roots.getAttribute('aria-invalid')).toBe('true')
+
+    // "Add folder" saves the list with the folder chosen, which main accepts this time.
+    api.folderChoose.mockResolvedValueOnce('/Users/demo/Pictures')
+    const add = [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t('settingsAgent.roots.add'))!
+    await act(async () => add.click())
+    const saved = ['/Users/demo/Desktop', '/Users/demo/Documents', '/Users/demo/Pictures']
+    expect(roots.value).toBe(saved.join('\n'))
+    expect(roots.getAttribute('aria-invalid')).toBe('false')
+
+    // Closing the settings, and leaving the field before that, save nothing more.
+    await act(async () => leave(roots))
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls.at(-1)).toEqual([{ fileRoots: saved }])
+  })
+
   it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
     const view = await render()
     await act(async () => nav(view, 'conversation').click())
@@ -562,6 +609,45 @@ describe('settings dialog while a model is prepared or memories are converted', 
     expect(statusRow.querySelector('.st-row-hint')?.textContent).toBe(
       t('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details })
     )
+  })
+
+  it('says the curation state is being checked, and offers no curation, until main has answered', async () => {
+    let answer!: (overview: MemoryOverview) => void
+    api.memoryOverview.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    const view = await render()
+    await act(async () => nav(view, 'memory').click())
+    const statusRow = (): Element =>
+      [...view.querySelectorAll('.st-row')].find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status'))!
+    const curate = (): HTMLButtonElement => [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t('settingsMemory.curation.start'))!
+    expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.checking'))
+    expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.checkingState'))
+    expect(curate().disabled).toBe(true)
+
+    await act(async () => answer({ dir: '', units: 0, pages: 0, curatedThrough: null, pendingJobId: null, lastFailure: null, unavailableReason: null }))
+    expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.notRun'))
+    expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.neverRun'))
+    expect(curate().disabled).toBe(false)
+  })
+
+  it('keeps each line of a reason that spans several lines on a line of its own', async () => {
+    const style = document.head.appendChild(document.createElement('style'))
+    style.textContent = readFileSync(path.join(__dirname, '../src/renderer/src/assets/settings.css'), 'utf8')
+    try {
+      const details = 'jobs: Unrecognized key\nthrough: Invalid date'
+      api.memoryOverview.mockRejectedValueOnce(
+        new Error(errorText('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details }))
+      )
+      const view = await render()
+      await act(async () => nav(view, 'memory').click())
+      await act(async () => {})
+      const hint = [...view.querySelectorAll('.st-row')]
+        .find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status'))!
+        .querySelector<HTMLElement>('.st-row-hint')!
+      expect(hint.textContent).toContain('jobs: Unrecognized key\nthrough: Invalid date')
+      expect(['pre', 'pre-wrap', 'pre-line', 'break-spaces']).toContain(getComputedStyle(hint).whiteSpace)
+    } finally {
+      style.remove()
+    }
   })
 
   it('reads the conversion count again after semantic search is turned on, until the conversion ends', async () => {

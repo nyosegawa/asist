@@ -272,7 +272,7 @@ export class MailAccountSync {
       const message = errorMessage(error)
       this.setState('error', message)
       this.scheduleReconnect()
-      throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: message }))
+      throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: errMessage(error) }))
     }
     // stop() ran while the connection was being made and found no client to end.
     if (this.stopped) {
