@@ -172,7 +172,7 @@ jobs:
   # change to the website skips. A skipped job is not a failure.
   result:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, test, fit, build, website]
+    needs: [changes, test, fit, build, website, test-windows, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

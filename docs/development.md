@@ -62,9 +62,9 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `test-windows` | Windows で `npm run typecheck` と `npm test`。辞書は OS に依らないので、`test` だけで確かめます |
 | `build-windows` | `npm run dist:win:dir` で Windows のアプリを作り、アプリの中の git、uv、`asist-agent-launcher.exe` が動くこと、`ASIST.exe` が ASAR の検査を通って起動すること |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
-| `result` | `test-windows` と `build-windows` を除くほかの job に、失敗したものも取り消されたものもないこと |
+| `result` | ほかの job に、失敗したものも取り消されたものもないこと |
 
-main の ruleset がマージの条件にしているのは `result` だけです。Windows の 2 つの job は、Windows でテストが通るようになるまで `result` の条件に入れず、結果を見るだけにしています。`website/` の中だけを変えたときは、アプリの job をスキップします。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
+main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
 
 プルリクエストに新しいコミットを push すると、前のコミットでまだ動いている実行は取り消します。main への push は取り消さず、続けてマージしてもコミットごとに最後まで確かめます。失敗したときに、どのコミットで壊れたかがわかるようにするためです。
 
