@@ -5,11 +5,15 @@ import {
   mailAccountPatchSchema,
   mailChangeSchema,
   mailDraftInputSchema,
+  mailDraftPatchSchema,
+  mailReplySendSchema,
   parseAddress,
   parseMailInput,
   parseMessageId,
-  quotedBody,
+  parseReferences,
+  quotation,
   replyRecipients,
+  replyReferences,
   replySubject,
   type MailAccount,
   type MailAccountStatus,
@@ -23,6 +27,7 @@ import {
   type MailMessage,
   type MailMessageBody,
   type MailProbeResult,
+  type MailReply,
   type MailSettings,
   type MailStatus
 } from '@shared/mail'
@@ -34,7 +39,7 @@ import type { MailCache } from './mail-cache'
 import type { MailDraftStore } from './mail-drafts'
 import { supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
 import type { MailSecretStore } from './mail-secrets'
-import { failedBeforeSending, type SmtpSender } from './mail-smtp'
+import { failedBeforeSending, type OutgoingMail, type SmtpSender } from './mail-smtp'
 import { MailAccountSync, type MailSyncIntervals } from './mail-sync'
 import { getSettings } from './settings'
 import { formatLocaleOf } from '@shared/conversation-locale'
@@ -47,8 +52,9 @@ import { formatLocaleOf } from '@shared/conversation-locale'
  * The approval rule: for an operation that leaves the machine, sending or replying, approval is the user
  * pressing the send button after seeing the recipients and the whole body. An Agent that wants to send
  * does not send; it writes a draft and waits for the user to press the button on the card or the screen.
- * Sending from the compose form or from a draft is already approved by that press, so no confirmation
- * dialog is shown. Every other Agent operation (archive, trash, mark read, star) and trashing from the
+ * Sending from the compose form, from the reply form of the reader or from a draft is already approved
+ * by that press, so no confirmation dialog is shown. A reply is settled before it is shown, and what is
+ * shown is what is sent. Every other Agent operation (archive, trash, mark read, star) and trashing from the
  * screen goes through the confirmation dialog. A send is attempted exactly once, and a failure whose
  * outcome is unknown is never retried.
  */
@@ -83,13 +89,15 @@ const CONFIRM_BODY_MAX = 1200
 const REJECTED = errorText('mail.errors.change.rejected')
 
 /** The words on the confirmation's button: the operation itself, so that the button says what pressing it does. */
-function confirmAction(input: MailChange): string {
+function confirmAction(input: PlannedChange): string {
   if (input.operation === 'markRead') return t(input.read ? 'mail.confirm.action.markRead' : 'mail.confirm.action.markUnread')
   if (input.operation === 'star') return t(input.starred ? 'mail.confirm.action.star' : 'mail.confirm.action.unstar')
   if (input.operation === 'send') return t('mail.confirm.action.send')
-  if (input.operation === 'reply') return t('mail.confirm.action.reply')
   return t(input.operation === 'archive' ? 'mail.confirm.action.archive' : 'mail.confirm.action.trash')
 }
+
+/** A reply never goes through a plan: it is settled first so that its recipients can be shown. */
+type PlannedChange = Exclude<MailChange, { operation: 'reply' }>
 
 export class MailService {
   private readonly syncs = new Map<string, MailAccountSync>()
@@ -99,6 +107,8 @@ export class MailService {
    * because the connection queue in mail-sync's run already serializes them.
    */
   private confirming = false
+  /** The drafts whose send is under way. */
+  private readonly sendingDrafts = new Set<string>()
 
   constructor(private readonly deps: MailServiceDependencies) {}
 
@@ -341,16 +351,21 @@ export class MailService {
     const input: MailChange = parseMailInput(mailChangeSchema, value)
     signal.throwIfAborted()
     if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
-    if (source === 'agent' && (input.operation === 'send' || input.operation === 'reply')) {
-      const draft = this.draftCreate(
-        input.operation === 'send'
-          ? { accountId: input.accountId, to: input.to, cc: input.cc, subject: input.subject, body: input.body }
-          : { replyToId: input.id, body: input.body, replyAll: input.replyAll },
-        'agent'
-      )
+    if (source === 'agent' && input.operation === 'send') {
+      const draft = this.draftCreate({ accountId: input.accountId, to: input.to, cc: input.cc, subject: input.subject, body: input.body }, 'agent')
       return { drafted: true, saved: false, draftId: draft.id, summary: draftSummary(draft) }
     }
-    const plan = await this.plan(input)
+    if (input.operation === 'reply') {
+      // A reply goes out only after the addresses it is sent to were on screen: the Agent's becomes a draft
+      // carrying the reply settled here, and the reader's is settled by replySettle and sent by replySend.
+      if (source !== 'agent') throw new Error('a reply from the screen is settled with replySettle and sent with replySend')
+      const message = this.requireMessage(input.id)
+      const account = this.accountOf(message.accountId)
+      const reply = await this.settleReply(message, account, input.replyAll)
+      const draft = this.deps.drafts.create({ accountId: account.id, to: [], cc: [], subject: '', body: input.body, reply, origin: 'agent' })
+      return { drafted: true, saved: false, draftId: draft.id, summary: draftSummary(draft) }
+    }
+    const plan = this.plan(input)
     const needsConfirm = source === 'agent' || input.operation === 'trash'
     if (needsConfirm) {
       if (this.confirming) throw new Error(errorText('mail.errors.change.confirmBusy'))
@@ -374,57 +389,118 @@ export class MailService {
     return this.deps.drafts.list()
   }
 
-  /**
-   * Checks the sender account and, for a reply, the message being answered before storing anything. A
-   * reply draft keeps its own copy of the original subject and sender, so it still renders after the
-   * message has left the cache.
-   */
+  /** Checks the sender account and the recipients of a new message before storing anything. */
   draftCreate(value: unknown, origin: MailDraft['origin']): MailDraft {
     const input = parseMailInput(mailDraftInputSchema, value)
     if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
-    if (input.replyToId) {
-      const original = this.requireMessage(input.replyToId)
-      const account = this.accountOf(original.accountId)
-      return this.deps.drafts.create({
-        accountId: account.id,
-        to: [],
-        cc: [],
-        subject: '',
-        body: input.body,
-        reply: { id: original.id, subject: original.subject, from: original.from, replyAll: input.replyAll },
-        origin
-      })
-    }
     const account = this.senderAccount(input.accountId)
     for (const recipient of [...input.to, ...input.cc]) parseAddress(recipient)
     return this.deps.drafts.create({ accountId: account.id, to: input.to, cc: input.cc, subject: input.subject, body: input.body, reply: null, origin })
   }
 
-  draftUpdate(id: string, patch: unknown): MailDraft {
-    const draft = this.deps.drafts.update(id, patch)
-    for (const recipient of [...draft.to, ...draft.cc]) parseAddress(recipient)
-    this.accountOf(draft.accountId)
-    return draft
+  /** Checks the recipients and the account an edit brings before anything is stored. */
+  draftUpdate(id: string, value: unknown): MailDraft {
+    this.requireIdle(id)
+    const patch = parseMailInput(mailDraftPatchSchema, value)
+    for (const recipient of [...(patch.to ?? []), ...(patch.cc ?? [])]) parseAddress(recipient)
+    if (patch.accountId) this.accountOf(patch.accountId)
+    return this.deps.drafts.update(id, patch)
   }
 
   draftRemove(id: string): void {
+    this.requireIdle(id)
     this.deps.drafts.remove(id)
+  }
+
+  /**
+   * A draft whose send is under way cannot be sent, edited or discarded again. The card and the mail screen
+   * each carry a send button for the same draft, and a second press would deliver it twice.
+   */
+  private requireIdle(id: string): void {
+    if (this.sendingDrafts.has(id)) throw new Error(errorText('mail.errors.draft.sending'))
   }
 
   /** Sends a draft. The user's press is the approval, so no confirmation is shown, and the draft is removed once the send succeeds. */
   async draftSend(id: string, signal: AbortSignal): Promise<MailChangeResult> {
-    const draft = this.deps.drafts.require(id)
+    this.requireIdle(id)
+    this.sendingDrafts.add(id)
+    try {
+      const draft = this.deps.drafts.require(id)
+      signal.throwIfAborted()
+      if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
+      if (!draft.body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
+      const result = draft.reply
+        ? await this.sendReply(this.accountOf(draft.accountId), draft.reply, draft.body)
+        : await this.plan({ operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }).perform()
+      this.deps.drafts.remove(id)
+      return result
+    } finally {
+      this.sendingDrafts.delete(id)
+    }
+  }
+
+  /** A reply for the reader to show before it is sent. The reader hands the same reply to replySend. */
+  async replySettle(id: string, replyAll: boolean): Promise<MailReply> {
+    if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
+    const message = this.requireMessage(id)
+    return this.settleReply(message, this.accountOf(message.accountId), replyAll)
+  }
+
+  /** Sends a reply replySettle settled and the reader showed. The user's press is the approval, so no confirmation is shown. */
+  async replySend(value: unknown, signal: AbortSignal): Promise<MailChangeResult> {
+    const { reply, body } = parseMailInput(mailReplySendSchema, value)
     signal.throwIfAborted()
     if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
-    const change: MailChange = draft.reply
-      ? { operation: 'reply', id: draft.reply.id, body: draft.body, replyAll: draft.reply.replyAll }
-      : { operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }
-    if (!draft.body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
-    const plan = await this.plan(change)
-    signal.throwIfAborted()
-    const result = await plan.perform()
-    this.deps.drafts.remove(id)
-    return result
+    if (!body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
+    return this.sendReply(this.accountOf(parseMessageId(reply.id).accountId), reply, body)
+  }
+
+  /**
+   * Settles a reply from the message it answers: its recipients, its thread headers and the quotation.
+   * The parent's References and In-Reply-To are not kept in the cache, so they are read from the server.
+   */
+  private async settleReply(message: MailMessage, account: MailAccount, replyAll: boolean): Promise<MailReply> {
+    const sync = this.requireSync(account.id)
+    const text = await sync.fetchBody(message.folder, message.uid)
+    const path = folderPath(account, message.folder)
+    const parent = await sync.run(async (client) => {
+      const lock = await client.getMailboxLock(path)
+      try {
+        const fetched = await client.fetchOne(message.uid, { envelope: true, headers: ['references'] }, { uid: true })
+        if (!fetched) throw new Error(errorText('mail.errors.message.notFound'))
+        return { inReplyTo: fetched.envelope?.inReplyTo ?? '', references: parseReferences(fetched.headers?.toString('latin1')) }
+      } finally {
+        lock.release()
+      }
+    })
+    const { to, cc } = replyRecipients(message, account.email, replyAll)
+    return {
+      id: message.id,
+      subject: message.subject,
+      from: message.from,
+      replyAll,
+      to,
+      cc,
+      inReplyTo: message.messageId,
+      references: replyReferences({ messageId: message.messageId, ...parent }),
+      quote: quotation({ date: message.date, from: message.from, text })
+    }
+  }
+
+  private sendReply(account: MailAccount, reply: MailReply, body: string): Promise<MailChangeResult> {
+    return this.send(
+      account,
+      {
+        from: { name: account.name, address: account.email },
+        to: reply.to,
+        cc: reply.cc,
+        subject: replySubject(reply.subject),
+        text: `${body.trimEnd()}\n\n${reply.quote}`,
+        inReplyTo: reply.inReplyTo || undefined,
+        references: reply.references
+      },
+      { id: reply.id, messageId: reply.inReplyTo }
+    )
   }
 
   /**
@@ -432,7 +508,7 @@ export class MailService {
    * together with the function that performs it. Nothing here changes state on the server, so a plan the
    * user rejects leaves no trace.
    */
-  private async plan(input: MailChange): Promise<{ detail: string; perform: () => Promise<MailChangeResult> }> {
+  private plan(input: PlannedChange): { detail: string; perform: () => Promise<MailChangeResult> } {
     if (input.operation === 'send') {
       const account = this.senderAccount(input.accountId)
       const to = input.to.map(parseAddress)
@@ -450,32 +526,6 @@ export class MailService {
       return {
         detail,
         perform: () => this.send(account, { from: { name: account.name, address: account.email }, to, cc, subject: input.subject, text: input.body }, null)
-      }
-    }
-    if (input.operation === 'reply') {
-      const message = this.requireMessage(input.id)
-      const account = this.accountOf(message.accountId)
-      const original = await this.requireSync(account.id).fetchBody(message.folder, message.uid)
-      const { to, cc } = replyRecipients(message, account.email, input.replyAll)
-      const subject = replySubject(message.subject)
-      const text = quotedBody(input.body, { date: message.date, from: message.from, text: original })
-      const detail = [
-        t('mail.confirm.reply', { label: account.label, email: account.email, ...describe(message) }),
-        t('mail.confirm.to', { addresses: to.map(formatAddress).join(', ') }),
-        cc.length ? t('mail.confirm.cc', { addresses: cc.map(formatAddress).join(', ') }) : '',
-        t('mail.confirm.subject', { subject }),
-        t('mail.confirm.bodyQuoted', { body: clip(input.body) })
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-      return {
-        detail,
-        perform: () =>
-          this.send(
-            account,
-            { from: { name: account.name, address: account.email }, to, cc, subject, text, inReplyTo: message.messageId || undefined, references: message.messageId ? [message.messageId] : [] },
-            message
-          )
       }
     }
     if (input.operation === 'markRead') return this.planMarkRead(input.ids, input.read)
@@ -602,17 +652,18 @@ export class MailService {
   /**
    * Sends. Once the message has been handed to SMTP it is never sent again, even when the outcome is
    * unknown. Outside Gmail the same bytes are appended to the Sent folder, and a reply also puts the
-   * \Answered flag on the message it answers.
+   * \Answered flag on the message it answers, `answered`, while that message is still in the cache.
    */
-  private async send(account: MailAccount, outgoing: Parameters<SmtpSender['send']>[2], original: MailMessage | null): Promise<MailChangeResult> {
+  private async send(account: MailAccount, outgoing: OutgoingMail, answered: { id: string; messageId: string } | null): Promise<MailChangeResult> {
     const password = this.passwordOf(account.id)
+    const replying = answered !== null
     let sent: { messageId: string; raw: Buffer }
     try {
       sent = await this.deps.smtp.send(account, password, outgoing)
     } catch (error) {
       const reason = errorMessage(error)
-      if (failedBeforeSending(error)) throw new Error(errorText(original ? 'mail.errors.send.replyFailed' : 'mail.errors.send.sendFailed', { reason }))
-      throw new Error(errorText(original ? 'mail.errors.send.replyUnknown' : 'mail.errors.send.sendUnknown', { reason }))
+      if (failedBeforeSending(error)) throw new Error(errorText(replying ? 'mail.errors.send.replyFailed' : 'mail.errors.send.sendFailed', { reason }))
+      throw new Error(errorText(replying ? 'mail.errors.send.replyUnknown' : 'mail.errors.send.sendUnknown', { reason }))
     }
     const notes: string[] = []
     const sync = this.syncs.get(account.id)
@@ -624,16 +675,12 @@ export class MailService {
         notes.push(t('mail.result.sentFolderFailed', { reason: errorMessage(error) }))
       }
     }
-    if (sync && original) {
+    if (sync && answered !== null) {
       try {
-        await sync.run(async (client) => {
-          const lock = await client.getMailboxLock(folderPath(account, original.folder))
-          try {
-            await client.messageFlagsAdd(original.uid, ['\\Answered'], { uid: true })
-          } finally {
-            lock.release()
-          }
-        })
+        // The id names a folder and a UID, which after a change of UIDVALIDITY can belong to another message.
+        const original = this.deps.cache.get(answered.id)
+        if (!original || original.messageId !== answered.messageId) throw new Error(errorText('mail.errors.message.notFound'))
+        await sync.run((client) => storeFlag(client, folderPath(account, original.folder), [original.uid], '\\Answered', true))
         this.deps.cache.setFlags(original.id, { answered: true })
       } catch (error) {
         notes.push(t('mail.result.answeredFailed', { reason: errorMessage(error) }))
@@ -644,9 +691,9 @@ export class MailService {
     const recipients = outgoing.to.map(displayName).join(', ')
     return {
       saved: true,
-      operation: original ? 'reply' : 'send',
+      operation: replying ? 'reply' : 'send',
       id: sent.messageId,
-      summary: [t(original ? 'mail.result.reply' : 'mail.result.send', { recipients }), ...notes].join('\n')
+      summary: [t(replying ? 'mail.result.reply' : 'mail.result.send', { recipients }), ...notes].join('\n')
     }
   }
 }
@@ -661,20 +708,24 @@ const describe = (message: MailMessage): { subject: string; name: string; date: 
 /**
  * What the Agent's send or reply returns to the model instead of sending. It is read by the model, never
  * shown on a screen, so it is written in the language of the conversation and tells the model that the
- * user's press on the card is what sends the mail.
+ * user's press on the card is what sends the mail. A reply names the addresses it goes to, which Reply-To
+ * can make differ from the sender of the message answered.
  */
 const draftSummary = (draft: MailDraft): string => {
   const language = promptLanguage(conversationLocale())
   const noSubject = { ja: '(件名なし)', en: '(no subject)' }[language]
-  return draft.reply
-    ? {
-        ja: `「${draft.reply.subject || noSubject}」(${displayName(draft.reply.from)})への返信を下書きにしました。ユーザーがカードの「送信」を押すと送ります`,
-        en: `Drafted a reply to "${draft.reply.subject || noSubject}" from ${displayName(draft.reply.from)}. It is sent when the user presses send on the card.`
-      }[language]
-    : {
-        ja: `${draft.to.join(', ')} 宛「${draft.subject || noSubject}」を下書きにしました。ユーザーがカードの「送信」を押すと送ります`,
-        en: `Drafted "${draft.subject || noSubject}" to ${draft.to.join(', ')}. It is sent when the user presses send on the card.`
-      }[language]
+  if (draft.reply) {
+    const to = draft.reply.to.map(formatAddress).join(', ')
+    const addressed = draft.reply.cc.length ? `${to} (Cc: ${draft.reply.cc.map(formatAddress).join(', ')})` : to
+    return {
+      ja: `「${draft.reply.subject || noSubject}」(${displayName(draft.reply.from)})への返信を下書きにしました。宛先は ${addressed}。ユーザーがカードの「送信」を押すと送ります`,
+      en: `Drafted a reply to "${draft.reply.subject || noSubject}" from ${displayName(draft.reply.from)}, addressed to ${addressed}. It is sent when the user presses send on the card.`
+    }[language]
+  }
+  return {
+    ja: `${draft.to.join(', ')} 宛「${draft.subject || noSubject}」を下書きにしました。ユーザーがカードの「送信」を押すと送ります`,
+    en: `Drafted "${draft.subject || noSubject}" to ${draft.to.join(', ')}. It is sent when the user presses send on the card.`
+  }[language]
 }
 
 /**

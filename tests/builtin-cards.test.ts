@@ -620,9 +620,31 @@ describe('mail draft card', () => {
     }
   })
 
-  it('shows the original sender and subject for a reply draft and edits only the body, removes it in main on discard, and opens the draft in the mail screen', async () => {
+  it('keeps a recipient whose name holds a comma when only the body is edited', async () => {
+    vi.useFakeTimers()
+    try {
+      const recipients = ['Tanaka, Taro <taro@example.com>', '"Sato, Hana" <hana@example.co.jp>']
+      useMailStore.setState({ drafts: [{ ...draft, to: recipients }], draftsLoaded: true })
+      const card = await renderAt(spec('mail-draft', { draftId: draft.id }), L)
+      const body = card.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)!
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(body, '本文を直した')
+        body.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(700)
+      })
+      expect(api.mailDraftUpdate).toHaveBeenCalledWith(draft.id, expect.objectContaining({ to: recipients, body: '本文を直した' }))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows for a reply draft the message it answers and the full addresses it is sent to, edits only the body, removes it in main on discard, and opens the draft in the mail screen', async () => {
     const card = await renderAt(spec('mail-draft', { draftId: reply.id }), S)
-    expect(card.querySelector('.md-reply')?.textContent).toContain(t('mailCards.draft.replyTo', { name: '田中 誠', subject: '来週の打合せの候補日' }))
+    expect(card.querySelector('.md-reply')?.textContent).toContain(t('mailCards.draft.replyToAll', { name: '鈴木 花', subject: 'Re: 採用面談の候補日' }))
+    // Reply-To sends the reply to the team address instead of the sender, and the reply-all adds the Cc.
+    expect([...card.querySelectorAll('.md-static')].map((field) => field.textContent)).toEqual(['採用チーム <recruiting@example.co.jp>', '田中 誠 <tanaka@example.co.jp>'])
     expect(card.querySelector(`[aria-label="${t('mail.fields.to')}"]`)).toBeNull()
     const [, discard, open] = [...card.querySelectorAll<HTMLButtonElement>('.card-action')]
     await act(async () => discard.click())

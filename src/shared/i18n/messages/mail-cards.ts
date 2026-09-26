@@ -425,16 +425,16 @@ export const mailCards = defineMessages({
     },
     replyTo: {
       'ja-JP': '{name} の「{subject}」への返信',
-      'en-US': 'Reply to {name} about "{subject}"',
-      'fr-FR': 'Réponse à « {subject} » de {name}',
-      'de-DE': 'Antwort an {name} auf „{subject}“',
+      'en-US': 'Reply to "{subject}" from {name}',
+      'fr-FR': 'Réponse à « {subject} » de {name}',
+      'de-DE': 'Antwort auf „{subject}“ von {name}',
       'hi-IN': '{name} की "{subject}" का जवाब',
-      'id-ID': 'Balasan untuk {name} soal “{subject}”',
-      'it-IT': 'Risposta a {name} su «{subject}»',
+      'id-ID': 'Balasan untuk “{subject}” dari {name}',
+      'it-IT': 'Risposta a «{subject}» di {name}',
       'ko-KR': '{name}의 “{subject}”에 대한 답장',
-      'pt-BR': 'Resposta para {name} sobre “{subject}”',
-      'es-419': 'Respuesta a {name} sobre «{subject}»',
-      'es-ES': 'Respuesta a {name} sobre “{subject}”'
+      'pt-BR': 'Resposta a “{subject}”, de {name}',
+      'es-419': 'Respuesta a «{subject}», de {name}',
+      'es-ES': 'Respuesta a “{subject}”, de {name}'
     },
     replyToAll: {
       'ja-JP': '{name} の「{subject}」への全員返信',
