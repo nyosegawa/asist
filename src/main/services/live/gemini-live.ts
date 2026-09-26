@@ -108,6 +108,12 @@ const RESUMPTION_TTL_MS = 100 * 60_000
 const INPUT_MIME = 'audio/pcm;rate=16000'
 const OUTPUT_RATE = 24_000
 
+/** The result of a call whose tool failed instead of answering. It still goes back to the model, because Gemini waits for one. */
+function failedExecution(err: unknown): ToolExecution {
+  const content = errMessage(err)
+  return { content, isError: true, durationMs: 0, resultLength: content.length, truncated: false }
+}
+
 export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwner {
   private session: GeminiSession | null = null
   private resumption: { handle: string; at: number } | null = null
@@ -268,7 +274,13 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
       .run(this.deps.isParallel(name), () => {
         if (controller.signal.aborted) return null
         emit({ type: 'tool', turnId, name, status: 'start' })
-        return this.deps.executeTool(name, call.args ?? {}, { turnId, signal: controller.signal, emit })
+        try {
+          return this.deps.executeTool(name, call.args ?? {}, { turnId, signal: controller.signal, emit })
+        } catch (err) {
+          // executeClientTool reads the conversation language and the tool registry before it returns its
+          // task, and either can throw, for instance on settings that cannot be read.
+          return Object.assign(Promise.resolve(failedExecution(err)), { completion: Promise.resolve() })
+        }
       })
       .then((started) => (started ? this.answerTool(call, turnId, controller, started.work) : undefined))
       .catch((err: unknown) => console.error('gemini-live function call failed:', errMessage(err)))
@@ -283,8 +295,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     try {
       execution = await task
     } catch (err) {
-      const content = errMessage(err)
-      execution = { content, isError: true, durationMs: 0, resultLength: content.length, truncated: false }
+      execution = failedExecution(err)
     }
     if (controller.signal.aborted) return
     const id = call.id ?? ''

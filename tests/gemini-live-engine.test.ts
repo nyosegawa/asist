@@ -245,6 +245,20 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('answers the model with an error and marks the tool failed when the tool throws before it returns its task', async () => {
+    const { engine, sessions, turnEvents } = await setup(() => {
+      throw new Error('settings unreadable')
+    })
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.toolResponses).toEqual([
+      { functionResponses: [{ id: 'a', name: 'run_agent_task', response: { error: 'settings unreadable' }, scheduling: 'WHEN_IDLE' }] }
+    ])
+    expect(turnEvents.filter((event) => event.type === 'tool').map((event) => event.type === 'tool' && event.status)).toEqual(['start', 'error'])
+    await engine.stop()
+  })
+
   it('does not run a call that Gemini cancels while it waits for its turn', async () => {
     const first = held()
     const { engine, sessions, executeTool } = await setup(() => first.task)
