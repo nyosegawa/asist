@@ -1,4 +1,4 @@
-import type { TurnStartOptions } from '@shared/ipc'
+import type { RoundUsage, TurnStartOptions } from '@shared/ipc'
 import type { ConversationMessage, ConversationResult, ConversationStream, SystemLayer } from '@shared/conversation'
 import { waitWithAbort, withTimeoutSignal } from '@shared/abort'
 import { apiErrorKey, errMessage, isTransientApiError } from '@shared/api-errors'
@@ -223,6 +223,7 @@ async function runTurn(
   let toolOptions: ToolOptions
   let system: SystemLayer[]
   let compacted = false
+  let historyFull = false
   const injectionStats = { count: 0, tokens: 0, searchMs: 0 }
   let injection: MemoryInjection | null = null
   // Everything that can fail before a request is sent happens here, so that a failure ends the turn
@@ -238,23 +239,21 @@ async function runTurn(
     history.ensureLoaded()
     signal.throwIfAborted()
     const need = history.needsCompaction()
-    if (need === 'block') {
-      // Only when the context is close to the API window does the turn wait for the compaction, which
-      // happens after replaying a long log with no checkpoint. An abort cancels this turn's wait, not
-      // the compaction itself, which is shared with the maintenance job.
-      await waitWithAbort(history.compact('limit'), signal)
-      compacted = true
-    } else if (need === 'now') {
-      // Above the limit the compaction starts but this turn does not wait for it and goes on with the
-      // current history. The compaction keeps the turns recent at its start and folds the older ones
-      // into the summary, so this turn and any later one stay.
+    // Above the limit the compaction starts before the turn, which never waits for it: a summary can
+    // take minutes and can fail, and a turn waiting on it would be silent that long, again after each
+    // failure. The compaction keeps the turns recent at its start and folds the older ones into the
+    // summary, so this turn and any later one stay.
+    if (need === 'now' || need === 'block') {
       void history.compact('limit')
       compacted = true
     }
+    // Close to the API window, which replaying a long log with no checkpoint can reach, the turn is
+    // not sent until the summary has shortened the history, and says so instead.
+    historyFull = need === 'block'
     // The note is stored on the user record so that the memories shown to the model and the next
     // history agree. Memories already in the profile or shown in the recent history are left out.
     const memoryBlock = memory.promptBlock()
-    if (!input.notice) {
+    if (!input.notice && !historyFull) {
       try {
         const searchStartedAt = Date.now()
         const hits = await waitWithAbort(memory.search(userText, { limit: 8, mode: 'utterance' }, signal), signal)
@@ -311,9 +310,9 @@ async function runTurn(
   let ttftSent = false
   let lastTextAt = Date.now()
   let visibleReply = ''
-  // The usage of each round. At the end of the turn the total and the context length of the last
-  // round go into the metrics.
-  const roundUsages: import('@shared/ipc').RoundUsage[] = []
+  // The usage of each round, null for a round whose usage never arrived. At the end of the turn the
+  // total and the context length of the last round go into the metrics.
+  const roundUsages: Array<RoundUsage | null> = []
   let toolCalls = 0
   // A stream dropped after speaking began is resumed at most once per turn.
   let resumed = false
@@ -321,9 +320,11 @@ async function runTurn(
   let cacheMissReason: CacheMissReason | null = null
   const emitUsage = (): void => {
     if (roundUsages.length === 0) return
-    const usage = summarizeTurnUsage(roundUsages)
+    // A round without its usage leaves the turn's token counts unknown, so none are reported and the
+    // history keeps its own estimate of the context.
+    const usage = roundUsages.every((round): round is RoundUsage => round !== null) ? summarizeTurnUsage(roundUsages) : null
     // The context length the server counted goes to the history, which decides the compaction thresholds from it.
-    history.noteContextTokens(usage.contextTokens ?? 0, revision)
+    if (usage) history.noteContextTokens(usage.contextTokens ?? 0, revision)
     emit({
       type: 'metrics',
       turnId,
@@ -507,9 +508,30 @@ async function runTurn(
       }
     )
 
+  const closeReply = async (): Promise<void> => {
+    for (const sentence of assembler.flush()) synth.push(sentence)
+    await synth.drain()
+    // drain() returns at once on an abort and the sentences not synthesized yet are dropped, so a
+    // barge-in during it leaves the reply cut short rather than said.
+    signal.throwIfAborted()
+    recordAssistant(visibleReply)
+    emitUsage()
+    emit({ type: 'done', turnId, fullText: visibleReply })
+  }
+
   // Once the input is recorded, every way out of the turn goes through the catch below, which closes
   // the turn in the log and in the events however it ends.
   try {
+    if (historyFull) {
+      // Nothing goes to the model. The sentence is the reply: the user sees and hears it as one, and
+      // the history records it as said, so neither the model nor the next summary reads the request as
+      // left undone.
+      visibleReply = tConversation('spoken.historyFull')
+      emit({ type: 'delta', turnId, text: visibleReply })
+      for (const sentence of assembler.push(visibleReply)) synth.push(sentence)
+      await closeReply()
+      return
+    }
     const messages: ConversationMessage[] = history.toMessages()
     let completed = false
     let maxTokenContinuations = 0
@@ -540,7 +562,8 @@ async function runTurn(
         }
         roundUsages.push(result.usage)
         if (fingerprint) {
-          cacheMissReason = diagnoseCacheMiss(lastRequestFingerprint(), fingerprint, roundUsages[0])
+          // Without the usage of the round there is no telling whether the cache was read.
+          cacheMissReason = result.usage ? diagnoseCacheMiss(lastRequestFingerprint(), fingerprint, result.usage) : null
           noteRequestFingerprint(fingerprint)
         }
 
@@ -602,15 +625,7 @@ async function runTurn(
     if (!completed) {
       throw new TurnStopError('spoken.turnStopped')
     }
-
-    for (const sentence of assembler.flush()) synth.push(sentence)
-    await synth.drain()
-    // drain() returns at once on an abort and the sentences not synthesized yet are dropped, so a
-    // barge-in during it leaves the reply cut short rather than said.
-    signal.throwIfAborted()
-    recordAssistant(visibleReply)
-    emitUsage()
-    emit({ type: 'done', turnId, fullText: visibleReply })
+    await closeReply()
   } catch (err) {
     if (signal.aborted) {
       // On a barge-in, what was spoken so far is kept with a marker. Even when nothing was spoken the

@@ -46,7 +46,7 @@ export const turnMetricLogSchema = z.object({
   injectedMemories: count.optional(),
   injectedTokens: count.optional(),
   memorySearchMs: ms.optional(),
-  cacheMissReason: z.enum(CACHE_MISS_REASONS as [string, ...string[]]).optional(),
+  cacheMissReason: z.enum(CACHE_MISS_REASONS).optional(),
   /**
    * One utterance allows only a few aizuchi, because of the 5-second minimum interval and the
    * 20-second maximum utterance.

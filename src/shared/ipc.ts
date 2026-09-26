@@ -268,7 +268,7 @@ export interface TurnTimings {
   toolCalls?: number
   /** The stream dropped after the reply had started and was resumed with a request to continue. */
   resumed?: boolean
-  /** The context was over the limit, so it was compacted synchronously before the request went out. */
+  /** The context was over the limit, so a compaction started in the background before the request went out. */
   compacted?: boolean
   /** How many memories the look-ahead injected and roughly how many tokens they took. Zero means the search found nothing. */
   injectedMemories?: number

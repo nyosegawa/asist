@@ -3,7 +3,7 @@ import type { TurnPlaybackAckStatus } from './ipc'
 export type PlaybackDeliveryOutcome = TurnPlaybackAckStatus | 'timeout'
 
 interface PendingDelivery {
-  timer: ReturnType<typeof setTimeout>
+  timer: ReturnType<typeof setTimeout> | null
   resolve: (outcome: PlaybackDeliveryOutcome) => void
 }
 
@@ -15,20 +15,27 @@ interface PendingDelivery {
 export class PlaybackDeliveryTracker {
   private pending = new Map<number, PendingDelivery>()
 
-  expect(turnId: number, timeoutMs: number): Promise<PlaybackDeliveryOutcome> {
+  /** Starts tracking a turn. The wait has no end until expire() gives it one. */
+  expect(turnId: number): Promise<PlaybackDeliveryOutcome> {
     if (this.pending.has(turnId)) throw new Error(`playback delivery already tracked: ${turnId}`)
     return new Promise<PlaybackDeliveryOutcome>((resolve) => {
       const finish = (outcome: PlaybackDeliveryOutcome): void => {
         const entry = this.pending.get(turnId)
         if (!entry) return
-        clearTimeout(entry.timer)
+        if (entry.timer) clearTimeout(entry.timer)
         this.pending.delete(turnId)
         resolve(outcome)
       }
-      const timer = setTimeout(() => finish('timeout'), timeoutMs)
-      timer.unref?.()
-      this.pending.set(turnId, { timer, resolve: finish })
+      this.pending.set(turnId, { timer: null, resolve: finish })
     })
+  }
+
+  /** Counts the delivery as timed out unless the renderer answers within timeoutMs from now. */
+  expire(turnId: number, timeoutMs: number): void {
+    const entry = this.pending.get(turnId)
+    if (!entry || entry.timer) return
+    entry.timer = setTimeout(() => entry.resolve('timeout'), timeoutMs)
+    entry.timer.unref?.()
   }
 
   acknowledge(turnId: number, status: TurnPlaybackAckStatus): boolean {

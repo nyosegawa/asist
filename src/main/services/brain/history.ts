@@ -24,7 +24,8 @@ import { stampUserMessage } from './prompt'
  * Compaction is decided in tokens. The context length is the server's usage plus an estimate of what
  * was added since. Above compressAtTokens it runs when the conversation goes quiet; above limitTokens
  * it starts before the turn without being waited for; above hardLimitTokens, which is close to the API
- * window, that one turn waits for it, which guards against replaying a long log with no checkpoint.
+ * window, a turn is not sent at all until it has finished, which guards against replaying a long log
+ * with no checkpoint.
  *
  * A compaction keeps the most recent recentTurns turns raw and folds the turns before them, up to the
  * turn in progress, into one handover summary that replaces them. The summary is written from the
@@ -88,7 +89,7 @@ export interface HistoryOptions {
   compressAtTokens: number
   /** Above this context length the compaction starts before the turn, without being waited for. */
   limitTokens: number
-  /** Above this context length the turn waits for the compaction, as a guard against the API window. */
+  /** Above this context length no turn is sent until a compaction brings it down, as a guard against the API window. */
   hardLimitTokens: number
   /** The records read at startup, oldest first. They may include the latest checkpoint. */
   load: () => ConversationRecord[]
@@ -369,7 +370,7 @@ export class ConversationHistory {
 
   /**
    * Whether a compaction is needed: none, soon at the next quiet moment, now meaning it starts before
-   * the turn, or block meaning the turn waits for it to finish.
+   * the turn, or block meaning it starts and no turn is sent until it has finished.
    */
   needsCompaction(): 'none' | 'soon' | 'now' | 'block' {
     if (this.compactionBoundary() === 0) return 'none'
