@@ -1,4 +1,4 @@
-import type { BridgeClip, AizuchiClip, BridgePlan, ClipRole, TurnTimings } from '@shared/ipc'
+import type { BridgeClip, AizuchiClip, BridgePlan, ClipRole, SpeechSegment, TurnTimings } from '@shared/ipc'
 import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-classifier'
 
 /**
@@ -17,7 +17,7 @@ import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-class
  * because its transcription failed, meant nothing or was dropped as echo, cancels it, and an
  * utterance that finishes first has begin replace it. A bridge promises that an answer follows, so
  * one that has not started sounding is withdrawn when no answer will: the speech is cancelled, or
- * its turn fails.
+ * its turn ends without saying anything.
  */
 
 /** No aizuchi opens a turn this soon after one played while the user was speaking, because "うん。なるほど。" back to back sounds wrong. */
@@ -37,15 +37,16 @@ export interface OpeningInput {
 export interface OpeningPorts {
   /** Picks the aizuchi for this classification, or nothing. */
   pickAizuchi(classification: AizuchiClassification | null): AizuchiClip | null
-  play(clip: { audio: string | null; text: string }, role: ClipRole): void
+  /** Queues the clip and returns what was queued, by which a bridge that has not started can be withdrawn. */
+  play(clip: { audio: string | null; text: string }, role: ClipRole): SpeechSegment
   /** Synthesizes the bridge phrase. */
   synthesizeBridge(text: string): Promise<BridgeClip>
   /** Whether the answer's own text was queued for playback after this time, which makes the bridge late. */
   bodyQueuedAfter(speechEndAt: number): boolean
   /** Records in the measurements why the bridge did not play, as late or failed. */
   onBridgeOutcome(patch: TurnTimings): void
-  /** Drops a bridge handed to play that has not started yet. */
-  withdrawBridge(): void
+  /** Drops this bridge if it has not started yet. */
+  withdrawBridge(queued: SpeechSegment): void
 }
 
 interface Opening {
@@ -54,6 +55,8 @@ interface Opening {
   aizuchi: AizuchiClip | null
   /** It is pending while the look-ahead runs, and decided once the phrase is settled, which may be null. */
   bridge: { state: 'pending' } | { state: 'decided'; text: string | null }
+  /** The bridge as it was handed to play. */
+  queuedBridge: SpeechSegment | null
 }
 
 export interface ClaimedOpening {
@@ -81,7 +84,8 @@ export class TurnOpening {
       startedAt: input.startedAt,
       speechEndAt: input.speechEndAt,
       aizuchi,
-      bridge: { state: 'pending' }
+      bridge: { state: 'pending' },
+      queuedBridge: null
     }
     this.current = opening
     this.claimed = null
@@ -108,7 +112,7 @@ export class TurnOpening {
           this.ports.onBridgeOutcome({ bridge: 'late' })
           return
         }
-        this.ports.play(bridge, 'bridge')
+        opening.queuedBridge = this.ports.play(bridge, 'bridge')
       },
       (error: unknown) => {
         console.error('aizuchi bridge failed:', error)
@@ -152,15 +156,19 @@ export class TurnOpening {
   /** Called when the speech yields no turn. The aizuchi has already been heard, so the record goes and no bridge plays. */
   cancel(startedAt: number): void {
     if (this.current?.startedAt !== startedAt) return
+    this.withdrawBridge(this.current)
     this.current = null
-    this.ports.withdrawBridge()
   }
 
-  /** Called when the turn the opening was claimed for fails, which leaves no answer for its bridge to lead into. */
+  /** Called when the turn the opening was claimed for ends without saying anything, which leaves its bridge nothing to lead into. */
   withdraw(): void {
     if (!this.claimed) return
+    this.withdrawBridge(this.claimed)
     this.claimed = null
-    this.ports.withdrawBridge()
+  }
+
+  private withdrawBridge(opening: Opening): void {
+    if (opening.queuedBridge) this.ports.withdrawBridge(opening.queuedBridge)
   }
 
   /** The user talked over the turn, so nothing more of its opening plays. */

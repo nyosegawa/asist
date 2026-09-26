@@ -192,7 +192,7 @@ describe('SpeechPlayer.discardBody drops only the body of the previous turn when
   })
 })
 
-describe('SpeechPlayer.dropWaitingClips, which withdraws a bridge that no answer follows', () => {
+describe('SpeechPlayer.dropWaiting, which withdraws a bridge that no answer follows', () => {
   it('drops the bridge waiting behind the aizuchi and goes on to the sentence after it', async () => {
     const { player, context } = await createHarness()
     const starts: string[] = []
@@ -201,10 +201,10 @@ describe('SpeechPlayer.dropWaitingClips, which withdraws a bridge that no answer
     player.playClip('eA==', 'なるほど', { role: 'aizuchi' })
     context.decodeResolvers[0]({ duration: 1 } as AudioBuffer)
     await flushMicrotasks()
-    player.playClip('eA==', '会議の件ですね。', { role: 'bridge' })
+    const bridge = player.playClip('eA==', '会議の件ですね。', { role: 'bridge' })
     player.enqueue(segment(1, 0, 'すみません、うまくいきませんでした。', 'eA=='))
 
-    player.dropWaitingClips('bridge')
+    player.dropWaiting(bridge)
     context.sources[0].onended?.()
     await flushMicrotasks()
     context.decodeResolvers[1]({ duration: 1 } as AudioBuffer)

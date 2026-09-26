@@ -96,7 +96,7 @@ vi.mock('@/voice/SpeechPlayer', async () => {
       mocks.playing = true
     }),
     discardBody: vi.fn(),
-    dropWaitingClips: vi.fn(),
+    dropWaiting: vi.fn(),
     beginTurn: vi.fn(),
     enqueue: vi.fn(),
     interrupt: vi.fn(),
@@ -255,16 +255,16 @@ describe('the opening of a speech that never becomes a turn', () => {
   })
 })
 
-describe('the opening of a turn that fails at once', () => {
-  it('does not play the bridge whose synthesis finishes after the turn reported its error', async () => {
-    let synthesized!: (clip: { text: string; audio: string }) => void
+describe('the bridge of a turn that goes wrong', () => {
+  let synthesized!: (clip: { text: string; audio: string }) => void
+
+  async function speakUntilTheBridgeIsSynthesized(): Promise<typeof import('@/conversation')> {
     const conversation = await start({
       aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })),
       bridgePlan: vi.fn(async () => ({ bridge: '会議の件ですね。' })),
       bridgeSynthesize: vi.fn(() => new Promise((resolve) => (synthesized = resolve))),
       turnStart: vi.fn(async () => 42)
     })
-
     voice().events.emit('state', 'capturing')
     voice().events.emit('partial', '昨日の会議の件なんですけど')
     await flush()
@@ -272,15 +272,28 @@ describe('the opening of a turn that fails at once', () => {
     await flush()
     utterance(end, '昨日の会議の件なんですけど')
     await flush()
+    return conversation
+  }
+  const playedRoles = (): string[] =>
+    player().playClip.mock.calls.map((call) => ((call as unknown[])[2] as { role: string }).role)
+
+  it('is not played once the turn ended without saying anything, though its synthesis finishes afterwards', async () => {
+    const conversation = await speakUntilTheBridgeIsSynthesized()
     // Brain fails before it says anything, for instance while it prepares the request.
     conversation.handleTurnEvent({ type: 'error', turnId: 42, message: 'no key' })
     conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '' })
     synthesized({ text: '会議の件ですね。', audio: 'eA==' })
     await flush()
+    expect(playedRoles()).toContain('aizuchi')
+    expect(playedRoles()).not.toContain('bridge')
+  })
 
-    const roles = player().playClip.mock.calls.map((call) => ((call as unknown[])[2] as { role: string }).role)
-    expect(roles).toContain('aizuchi')
-    expect(roles).not.toContain('bridge')
+  it('is still played when one sentence of the reply failed to be synthesized and the rest goes on', async () => {
+    const conversation = await speakUntilTheBridgeIsSynthesized()
+    conversation.handleTurnEvent({ type: 'error', turnId: 42, message: 'VOICEVOX is not running' })
+    synthesized({ text: '会議の件ですね。', audio: 'eA==' })
+    await flush()
+    expect(playedRoles()).toContain('bridge')
   })
 })
 

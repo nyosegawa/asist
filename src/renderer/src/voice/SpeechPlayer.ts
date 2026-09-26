@@ -278,9 +278,9 @@ registerProcessor('speech-tap', TapProcessor)
     audioBase64: string | null,
     text: string,
     options: { role: ClipRole; volume?: number }
-  ): void {
+  ): SpeechSegment {
     if (options.role === 'preview') this.cancelPreview()
-    this.enqueueRaw({
+    const segment: SpeechSegment = {
       turnId: this.currentTurn,
       index: -1,
       text,
@@ -288,12 +288,14 @@ registerProcessor('speech-tap', TapProcessor)
       phonemes: null,
       clip: options.role,
       ...(options.volume !== undefined ? { volume: options.volume } : {})
-    })
+    }
+    this.enqueueRaw(segment)
+    return segment
   }
 
-  /** Drops the clips of this role that still wait in the queue. One that has started plays to its end. */
-  dropWaitingClips(role: ClipRole): void {
-    this.queue = this.queue.filter((s) => s.clip !== role)
+  /** Drops a clip that still waits in the queue. One that has started plays to its end. */
+  dropWaiting(segment: SpeechSegment): void {
+    this.queue = this.queue.filter((s) => s !== segment)
   }
 
   /** Drops the preview playing and any preview waiting, leaving aizuchi and body segments alone. */

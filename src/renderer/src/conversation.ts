@@ -109,7 +109,7 @@ const opening = new TurnOpening({
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   onBridgeOutcome: noteBridgeOutcome,
-  withdrawBridge: () => speechPlayer.dropWaitingClips('bridge')
+  withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })
 const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
@@ -808,6 +808,7 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'done': {
       interjectPlayback.finishTurn(event.turnId)
+      if (!event.fullText) opening.withdraw()
       usePanelStore.getState().dismissLoadingOwnedBy(event.turnId)
       if (aiLineId !== null) feed.update(aiLineId, { streaming: false })
       if (!speechPlayer.isPlaying && !speechPlayer.isStreaming) turn.setPhase(liveVoice.current === 'on' ? 'listen' : 'idle')
@@ -819,7 +820,6 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'error': {
       interjectPlayback.finishTurn(event.turnId)
-      opening.withdraw()
       useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyFailed'), body: event.message })
       feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message.slice(0, 120) } } })
       break
