@@ -82,6 +82,30 @@ describe('isPathAllowed, the path check of show_files', () => {
     expect(isPathAllowed(path.join(base, 'real', 'report.md'), [path.join(base, 'alias')])).toBe(true)
     expect(isPathAllowed(path.join(base, 'alias', 'not-yet.md'), [path.join(base, 'real')])).toBe(true)
   })
+
+  it('allows a file inside a root whose Japanese name is written in the other normalization form', () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'asist-roots-'))
+    mkdirSync(path.join(base, 'プロジェクト資料'.normalize('NFC')))
+    writeFileSync(path.join(base, 'プロジェクト資料'.normalize('NFC'), 'report.pdf'), 'x')
+    const written = path.join(base, 'プロジェクト資料'.normalize('NFD'), 'report.pdf')
+    expect(isPathAllowed(written, [path.join(base, 'プロジェクト資料'.normalize('NFC'))])).toBe(true)
+    expect(isPathAllowed(path.join(base, 'プロジェクト資料'.normalize('NFC'), 'report.pdf'), [path.join(base, 'プロジェクト資料'.normalize('NFD'))])).toBe(true)
+  })
+
+  it('allows a file inside a root when only the letter case differs, as the disk matches names', () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'asist-roots-'))
+    mkdirSync(path.join(base, 'Reports'))
+    writeFileSync(path.join(base, 'Reports', 'a.pdf'), 'x')
+    expect(isPathAllowed(path.join(base, 'reports', 'a.pdf'), [path.join(base, 'Reports')])).toBe(true)
+    expect(isPathAllowed(path.join(base, 'Reports-old', 'a.pdf'), [path.join(base, 'reports')])).toBe(false)
+  })
+
+  it('allows every path when the root folder "/" is an allowed root', () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'asist-roots-'))
+    writeFileSync(path.join(base, 'a.txt'), 'x')
+    expect(isPathAllowed(path.join(base, 'a.txt'), ['/'])).toBe(true)
+    expect(isPathAllowed('/etc/hosts', ['/'])).toBe(true)
+  })
 })
 
 describe('readFileItem', () => {

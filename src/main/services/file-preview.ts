@@ -21,20 +21,26 @@ export function isPathAllowed(target: string, allowedRoots: readonly string[]): 
   return allowedRoots.some((root) => {
     if (!root) return false
     const resolvedRoot = realPath(root)
-    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+    // path.join leaves a single separator at the end, so the root folder "/" is a prefix of every path too.
+    return resolved === resolvedRoot || resolved.startsWith(path.join(resolvedRoot, path.sep))
   })
 }
 
 /**
- * The absolute path with the symbolic links of its existing part resolved. The part that does not exist
- * is kept as written, so that a missing file is still reported as missing by the read that follows.
+ * The absolute path with the symbolic links of its existing part resolved, spelled as the disk stores it.
+ * The part that does not exist is kept as written, so that a missing file is still reported as missing by
+ * the read that follows.
  */
 function realPath(target: string): string {
   const rest: string[] = []
   let existing = path.resolve(target)
   for (;;) {
     try {
-      return path.join(fs.realpathSync(existing), ...rest)
+      // fs.realpathSync keeps the letter case and the Unicode normalization the path was written in, while
+      // the default APFS volume matches names regardless of both. The native call returns the names as they
+      // are stored, so a Japanese folder name written in the other normalization form, or a name in another
+      // letter case, still matches its root.
+      return path.join(fs.realpathSync.native(existing), ...rest)
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
       if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err
