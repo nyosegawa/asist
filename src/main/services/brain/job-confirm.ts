@@ -62,7 +62,13 @@ export function mergeConfirmation(job: { title: string; repo: string }, review: 
   return {
     title: t('jobs.confirm.mergeTitle'),
     message: t('jobs.confirm.mergeMessage'),
-    detail: [t('jobs.confirm.job', { title: job.title }), t('jobs.confirm.mergeInto', { repo: job.repo }), '', review.stat].join('\n'),
+    detail: [
+      t('jobs.confirm.job', { title: job.title }),
+      t('jobs.confirm.mergeInto', { repo: job.repo }),
+      ...(review.submodules.length > 0 ? [t('jobs.worktree.submodulesLeftOut', { paths: review.submodules.join(', ') })] : []),
+      '',
+      review.stat
+    ].join('\n'),
     confirmLabel: t('jobs.confirm.merge'),
     destructive: false
   }

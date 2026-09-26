@@ -1190,17 +1190,17 @@ export const jobs = defineMessages({
       'es-ES': 'El commit del worktree ha cambiado después de que lo miraras. Vuelve a revisarlo con un trabajo posterior.'
     },
     unchanged: {
-      'ja-JP': '変更がなかったので worktree を片付けました',
-      'en-US': 'There were no changes, so the worktree was removed',
-      'fr-FR': "Il n'y avait aucune modification : le worktree a été supprimé",
-      'de-DE': 'Es gab keine Änderungen, deshalb wurde der worktree entfernt',
-      'hi-IN': 'कोई बदलाव नहीं था, इसलिए worktree हटा दिया',
-      'id-ID': 'Tidak ada perubahan, jadi worktree-nya dihapus',
-      'it-IT': "Non c'erano modifiche, quindi il worktree è stato rimosso",
-      'ko-KR': '변경이 없어서 worktree를 정리했습니다',
-      'pt-BR': 'Não houve alterações, então o worktree foi removido',
-      'es-419': 'No hubo cambios, así que se quitó el worktree',
-      'es-ES': 'No había cambios, así que se ha eliminado el worktree'
+      'ja-JP': '取り込む変更がなかったので worktree を片付けました',
+      'en-US': 'There was nothing to merge, so the worktree was removed',
+      'fr-FR': "Il n'y avait rien à fusionner : le worktree a été supprimé",
+      'de-DE': 'Es gab nichts zu übernehmen, deshalb wurde der worktree entfernt',
+      'hi-IN': 'मर्ज करने को कुछ नहीं था, इसलिए worktree हटा दिया',
+      'id-ID': 'Tidak ada yang perlu digabungkan, jadi worktree-nya dihapus',
+      'it-IT': "Non c'era niente da integrare, quindi il worktree è stato rimosso",
+      'ko-KR': '병합할 변경이 없어서 worktree를 정리했습니다',
+      'pt-BR': 'Não havia nada para mesclar, então o worktree foi removido',
+      'es-419': 'No había nada por fusionar, así que se quitó el worktree',
+      'es-ES': 'No había nada que fusionar, así que se ha eliminado el worktree'
     },
     committed: {
       'ja-JP': '成果物を commit して取り込み待ちにしました',
@@ -1227,6 +1227,19 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível arrumar o worktree: {detail}',
       'es-419': 'No se pudo limpiar el worktree: {detail}',
       'es-ES': 'No se ha podido limpiar el worktree: {detail}'
+    },
+    submodulesLeftOut: {
+      'ja-JP': 'サブモジュールの変更は取り込みません: {paths}',
+      'en-US': 'Changes to submodules are not merged: {paths}',
+      'fr-FR': 'Les modifications des sous-modules ne sont pas fusionnées : {paths}',
+      'de-DE': 'Änderungen an Submodulen werden nicht übernommen: {paths}',
+      'hi-IN': 'सबमॉड्यूल के बदलाव मर्ज नहीं किए जाते: {paths}',
+      'id-ID': 'Perubahan pada submodul tidak digabungkan: {paths}',
+      'it-IT': 'Le modifiche ai sottomoduli non vengono integrate: {paths}',
+      'ko-KR': '서브모듈의 변경은 병합하지 않습니다: {paths}',
+      'pt-BR': 'As alterações em submódulos não são mescladas: {paths}',
+      'es-419': 'Los cambios en submódulos no se fusionan: {paths}',
+      'es-ES': 'Los cambios en submódulos no se fusionan: {paths}'
     }
   },
   discard: {

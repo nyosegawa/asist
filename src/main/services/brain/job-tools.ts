@@ -291,8 +291,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
     {
       name: 'get_agent_job',
       description: {
-        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }。reviewには確認対象のcommitと差分が入る。',
-        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }, where review holds the commit to look over and its diff.'
+        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }。reviewには確認対象のcommitと差分、取り込まれないサブモジュールの変更(submodules)が入る。',
+        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }, where review holds the commit to look over, its diff, and the submodules whose changes a merge leaves out.'
       },
       usage: {
         ja: '特定のジョブの進捗や成果物のパスを知りたいとき、完了報告で詳細が要るとき',

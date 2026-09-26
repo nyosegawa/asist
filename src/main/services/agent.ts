@@ -10,7 +10,7 @@ import { artifactPaths, type AgentStreamEvent } from '@shared/agent-stream'
 import { buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
 import { formatJobContextBlock, resolveJobAccess, workspaceDirName, worktreeBranchName } from '@shared/job-workspace'
 import { errorText } from '@shared/i18n/error-text'
-import { promptLanguage, type PromptLanguage, type PromptText } from '@shared/conversation-locale'
+import { fillPrompt, promptLanguage, type PromptLanguage, type PromptText } from '@shared/conversation-locale'
 import { getSettings } from './settings'
 import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
@@ -50,7 +50,7 @@ interface JobEntry {
  * the job carries nothing else that says what happened to it, so they are written in the language of
  * the conversation.
  */
-const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'continued', PromptText> = {
+const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'submodulesLeftOut' | 'continued', PromptText> = {
   stoppedOldAgent: {
     ja: 'アプリ再起動前のAgentを停止し、残った成果物を確認しました',
     en: 'Stopped the Agent left over from before the app restarted and looked over what it produced'
@@ -58,6 +58,10 @@ const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'continued', Pro
   mergeConflict: {
     ja: '(取り込みで衝突。解消は続きのジョブで)',
     en: ' (the merge conflicted; resolve it in a follow-up job)'
+  },
+  submodulesLeftOut: {
+    ja: '(サブモジュールの変更は取り込まない: {paths})',
+    en: ' (the changes to submodules are not taken in: {paths})'
   },
   continued: { ja: '(続き)', en: ' (continued)' }
 }
@@ -310,11 +314,16 @@ export function isGitRepo(cwd: string): boolean {
 function settleWorktree(job: AgentJob): Partial<AgentJob> {
   assertWriterStopped(job)
   try {
-    const captured = captureWorktree(job)
-    pushLog(job.id, 'system', t(captured.mergeState === 'unchanged'
+    const { settled, submodules } = captureWorktree(job)
+    pushLog(job.id, 'system', t(settled.mergeState === 'unchanged'
       ? 'jobs.worktree.unchanged'
       : 'jobs.worktree.committed'))
-    return captured
+    if (submodules.length === 0) return settled
+    const paths = submodules.join(', ')
+    pushLog(job.id, 'system', t('jobs.worktree.submodulesLeftOut', { paths }))
+    // The report of the finished job and its card read the summary, and a worktree with nothing else to
+    // merge is already gone, so the summary is where the user learns what was not taken in.
+    return { ...settled, summary: `${job.summary ?? ''}${fillPrompt(say(MODEL_TEXTS.submodulesLeftOut), { paths })}` }
   } catch (err) {
     pushLog(job.id, 'stderr', t('jobs.worktree.settleFailed', { detail: errorMessage(err) }))
     return { worktree: { ...job.worktree!, commit: undefined }, mergeState: 'error' }

@@ -116,16 +116,27 @@ export function worktreeRemove(repo: string, path: string, branch: string): void
   git(repo, ['branch', '-D', branch])
 }
 
+const GITMODULES = '.gitmodules'
+const SUBMODULE_MODE = '160000'
+
 /**
- * Commits every uncommitted change in dir, and returns false when there is nothing to commit. The commit is
- * built by write-tree and commit-tree from a copy of the index taken under git's own index.lock, and the
- * copy replaces the index only once the branch has moved. git commit runs the repository's
- * prepare-commit-msg hook even with --no-verify, and a commit that fails after git add leaves the change
- * staged.
+ * Commits every uncommitted change in dir, except that the commit keeps the submodule entries and
+ * .gitmodules of `base`, and returns false when that leaves nothing to commit. A commit made inside a
+ * submodule of a worktree lives only in the worktree's own copy of that submodule, which is deleted with the
+ * worktree, so an entry pointing to it would reach the user's repository pointing to nothing. Those changes
+ * stay in the index and the working tree, where submoduleChanges finds them.
+ *
+ * The commit is built by write-tree and commit-tree from a copy of the index taken under git's own
+ * index.lock, and the copy replaces the index only once the branch has moved. git commit runs the
+ * repository's prepare-commit-msg hook even with --no-verify, and a commit that fails after git add leaves
+ * the change staged.
  */
-export function commitAll(dir: string, message: string): boolean {
-  if (!git(dir, ['status', '--porcelain']).trim()) return false
+export function commitAll(dir: string, message: string, base = 'HEAD'): boolean {
   const head = hasHead(dir) ? headCommit(dir) : null
+  // The status does not show a submodule entry that was committed in dir since base, which has to be put back too.
+  const pending = git(dir, ['status', '--porcelain']).trim() !== '' ||
+    (head !== null && submoduleEntries(git(dir, ['diff-tree', '-r', '-z', '--no-renames', base, head])).length > 0)
+  if (!pending) return false
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
   const lock = `${index}.lock`
   const staging = `${index}.asist`
@@ -133,9 +144,8 @@ export function commitAll(dir: string, message: string): boolean {
   try {
     if (fs.existsSync(index)) fs.copyFileSync(index, staging)
     else fs.rmSync(staging, { force: true })
-    const env = { GIT_INDEX_FILE: staging }
-    git(dir, ['add', '-A'], { env })
-    const tree = git(dir, ['write-tree'], { env }).trim()
+    git(dir, ['add', '-A'], { env: { GIT_INDEX_FILE: staging } })
+    const tree = treeKeepingSubmodules(dir, staging, head ? base : null)
     if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) return false
     const commit = git(dir, [
       '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
@@ -147,6 +157,102 @@ export function commitAll(dir: string, message: string): boolean {
     fs.rmSync(staging, { force: true })
     fs.rmSync(lock, { force: true })
   }
+}
+
+/** The tree of the index file `staged`, with its submodule entries and .gitmodules put back as base has them. */
+function treeKeepingSubmodules(dir: string, staged: string, base: string | null): string {
+  const env = { GIT_INDEX_FILE: staged }
+  const submodules = base ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env })) : []
+  if (submodules.length === 0) return git(dir, ['write-tree'], { env }).trim()
+  const kept = `${staged}.kept`
+  fs.copyFileSync(staged, kept)
+  try {
+    const keptEnv = { GIT_INDEX_FILE: kept }
+    git(dir, ['restore', '--staged', `--source=${base}`, '--', ...submodules], { env: keptEnv })
+    return git(dir, ['write-tree'], { env: keptEnv }).trim()
+  } finally {
+    fs.rmSync(kept, { force: true })
+  }
+}
+
+interface RawEntry {
+  path: string
+  oldMode: string
+  newMode: string
+}
+
+/** The entries of a raw diff made with -z and --no-renames, where a field of modes and ids is followed by a field with the path. */
+function rawEntries(raw: string): RawEntry[] {
+  const fields = raw.split('\0')
+  const entries: RawEntry[] = []
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const [oldMode, newMode] = fields[i].slice(1).split(' ')
+    entries.push({ path: fields[i + 1], oldMode, newMode })
+  }
+  return entries
+}
+
+/** The paths of the submodule entries and of .gitmodules among the entries of a raw diff. */
+const submoduleEntries = (raw: string): string[] =>
+  rawEntries(raw)
+    .filter((entry) => entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES)
+    .map((entry) => entry.path)
+
+/**
+ * The submodules whose state in dir differs from HEAD, with .gitmodules when it changed: a submodule moved
+ * to another commit, holding changed or new files, added or removed, or, while it is not initialized, a
+ * folder that files were written into, which git status does not show at all. commitAll leaves all of them
+ * out.
+ */
+export function submoduleChanges(dir: string): string[] {
+  const changed = new Set<string>()
+  // With -z an entry of the second porcelain format is one field, and its path is all that follows the
+  // fixed fields, spaces included. Without renames no entry carries a second path. Untracked files are
+  // listed, since otherwise git does not look for new files inside a submodule either.
+  const fixedFields: Record<string, number> = { '1': 8, u: 10 }
+  for (const entry of git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal']).split('\0')) {
+    const count = fixedFields[entry[0]]
+    if (count === undefined) continue
+    const fields = entry.split(' ')
+    const file = fields.slice(count).join(' ')
+    if (fields[2].startsWith('S') || file === GITMODULES) changed.add(file)
+  }
+  for (const file of declaredSubmodules(dir)) {
+    if (!changed.has(file) && writtenWhileUninitialized(path.join(dir, file))) changed.add(file)
+  }
+  return [...changed].sort()
+}
+
+/**
+ * The paths .gitmodules at HEAD gives its submodules. Listing the tree for its submodule entries would read
+ * every file of the repository.
+ */
+function declaredSubmodules(dir: string): string[] {
+  if (!hasHead(dir) || !git(dir, ['ls-tree', 'HEAD', '--', GITMODULES]).trim()) return []
+  return git(dir, ['config', '--blob', `HEAD:${GITMODULES}`, '-z', '--list'])
+    .split('\0')
+    .map((entry) => entry.split('\n'))
+    .filter(([key]) => /^submodule\..+\.path$/.test(key))
+    .map(([, value]) => value)
+}
+
+/** A folder of a submodule that is not initialized is empty in a new worktree, and git does not look inside it. */
+function writtenWhileUninitialized(folder: string): boolean {
+  let names: string[]
+  try {
+    names = fs.readdirSync(folder)
+  } catch (error) {
+    // A folder that is gone or replaced by a file shows in git status already.
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false
+    throw error
+  }
+  return names.length > 0 && !names.includes('.git')
+}
+
+/** Whether dir holds no change that commitAll would commit, leaving out the changes to its submodules. */
+export function isSettled(dir: string): boolean {
+  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', `:(exclude)${GITMODULES}`]).trim() === ''
 }
 
 /** A summary of the changes from base to the branch. An empty string means nothing changed. */
@@ -162,13 +268,8 @@ export interface DiffEntry {
 
 /** Every path the changes from base to the branch touch, with its mode afterwards. Renames count as a deletion and an addition. */
 export function diffEntries(repo: string, base: string, branch: string): DiffEntry[] {
-  const fields = git(repo, ['diff', '--raw', '-z', '--no-renames', `${base}..${branch}`]).split('\0')
-  const entries: DiffEntry[] = []
-  for (let i = 0; i + 1 < fields.length; i += 2) {
-    const [, mode] = fields[i].slice(1).split(' ')
-    entries.push({ path: fields[i + 1], mode })
-  }
-  return entries
+  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', `${base}..${branch}`]))
+    .map((entry) => ({ path: entry.path, mode: entry.newMode }))
 }
 
 /**

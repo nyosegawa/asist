@@ -577,7 +577,8 @@ export const mockApi: RendererApi = {
   jobDiff: async () => ({
     commit: 'abc',
     stat: ' README.md | 3 +++\n 1 file changed, 3 insertions(+)',
-    patch: '+## 注意\n+\n+設定ファイルの形式は変わることがあります。'
+    patch: '+## 注意\n+\n+設定ファイルの形式は変わることがあります。',
+    submodules: []
   }),
   jobList: async () => DEMO_JOBS.map((job) => ({ ...job })),
   jobLog: async (id) => (id === DEMO_JOB.id ? DEMO_JOB_LOG.map((event, i) => ({ t: Date.now() - (DEMO_JOB_LOG.length - i) * 1000, event })) : []),

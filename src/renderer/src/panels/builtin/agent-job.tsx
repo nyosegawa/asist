@@ -100,6 +100,9 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       <p className="aj-path">
         {job.worktree?.branch} → {job.worktree?.repo}
       </p>
+      {diff && diff.submodules.length > 0 && (
+        <p className="aj-text">{t('jobs.worktree.submodulesLeftOut', { paths: diff.submodules.join(', ') })}</p>
+      )}
       {diff && (
         <pre className="aj-diff">
           {diff.stat || t('jobs.card.merge.noDiff')}

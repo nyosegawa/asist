@@ -359,4 +359,29 @@ describe('a repository with a submodule', () => {
     expect(fs.existsSync(job.cwd)).toBe(false)
     expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
   })
+
+  it('offers the other changes for merge and names the submodule whose files it leaves out', async () => {
+    const entry = git(repo, 'ls-tree', 'HEAD', 'vendor/sub')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    // In a new worktree the submodule is not initialized, and git does not look inside its empty folder.
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    const review = agent.diff(job.id)
+    expect(review.submodules).toEqual(['vendor/sub'])
+    agent.merge(job.id, review.commit)
+    expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
+    expect(git(repo, 'ls-tree', 'HEAD', 'vendor/sub')).toBe(entry)
+  })
+
+  it('settles a job whose only change is inside a submodule as unchanged, with the submodule named in its summary', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.mergeState).toBe('unchanged')
+    expect(agent.get(job.id)?.summary).toContain('vendor/sub')
+  })
 })

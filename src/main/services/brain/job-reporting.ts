@@ -36,7 +36,7 @@ const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 
     ja: ` 変更はworktreeにあり取り込み待ち。差分は画面のジョブパネルで見られる。取り込むか捨てるかを聞くこと(「取り込んで」でmerge_agent_job、「捨てて」でdiscard_agent_job)。`,
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
   },
-  mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
+  mergeUnchanged: { ja: ` 取り込む変更は無かったのでworktreeは片付けた。`, en: ` There was nothing to take in, so the worktree has been cleared away.` },
   noSummary: { ja: `要約なし`, en: `no summary` },
   noReason: { ja: `不明`, en: `unknown` }
 }

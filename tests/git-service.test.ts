@@ -157,6 +157,71 @@ describe('git service with an isolated worktree', () => {
     expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
   })
 
+  describe('with a submodule, whose own commits live only in the copy the worktree deletes', () => {
+    const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t']
+    const FILE = ['-c', 'protocol.file.allow=always']
+    const withSubmodule = (): { wt: string; base: string } => {
+      const sub = path.join(root, 'sub')
+      fs.mkdirSync(sub)
+      run(sub, ['init', '-q', '-b', 'main'])
+      fs.writeFileSync(path.join(sub, 'lib.txt'), 'lib\n')
+      run(sub, ['add', '.'])
+      run(sub, [...ID, 'commit', '-q', '-m', 's'])
+      run(repo, [...FILE, 'submodule', 'add', '-q', sub, 'vendor/sub'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'sub'])
+      const wt = path.join(root, 'wt')
+      git.worktreeAdd(repo, wt, 'asist/sub')
+      return { wt, base: git.headCommit(repo) }
+    }
+    const changedPaths = (wt: string, base: string): string[] =>
+      run(wt, ['diff', '--name-only', base, 'HEAD']).split('\n').filter(Boolean)
+
+    it('commits the other changes and finds the files written into the folder of a submodule that is not initialized', () => {
+      const { wt, base } = withSubmodule()
+      fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+      fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      expect(changedPaths(wt, base)).toEqual(['b.txt'])
+      expect(git.submoduleChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.isSettled(wt)).toBe(true)
+    })
+
+    it('makes no commit when the only change is inside an initialized submodule, instead of failing', () => {
+      const { wt, base } = withSubmodule()
+      run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
+      fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'lib.txt'), 'changed by the agent\n')
+      expect(git.commitAll(wt, 'asist: job', base)).toBe(false)
+      expect(git.headCommit(wt)).toBe(base)
+      expect(git.submoduleChanges(wt)).toEqual(['vendor/sub'])
+    })
+
+    it('puts back a submodule entry and .gitmodules the agent committed itself, and still finds them afterwards', () => {
+      const { wt, base } = withSubmodule()
+      run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
+      const inside = path.join(wt, 'vendor', 'sub')
+      fs.writeFileSync(path.join(inside, 'lib.txt'), 'changed by the agent\n')
+      run(inside, [...ID, 'commit', '-q', '-am', 'inside'])
+      fs.appendFileSync(path.join(wt, '.gitmodules'), '\tbranch = main\n')
+      fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+      run(wt, ['add', '-A'])
+      run(wt, [...ID, 'commit', '-q', '-m', 'the agent commits everything'])
+      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      expect(changedPaths(wt, base)).toEqual(['b.txt'])
+      expect(git.submoduleChanges(wt)).toEqual(['.gitmodules', 'vendor/sub'])
+      expect(git.isSettled(wt)).toBe(true)
+    })
+
+    it('keeps a submodule the agent removed, and leaves out one it added', () => {
+      const { wt, base } = withSubmodule()
+      run(wt, ['rm', '-q', 'vendor/sub'])
+      run(wt, [...FILE, 'submodule', 'add', '-q', path.join(root, 'sub'), 'vendor/other'])
+      fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      expect(changedPaths(wt, base)).toEqual(['b.txt'])
+      expect(git.submoduleChanges(wt)).toEqual(['.gitmodules', 'vendor/other', 'vendor/sub'])
+    })
+  })
+
   it('reports a dirty working tree before a merge', () => {
     fs.writeFileSync(path.join(repo, 'a.txt'), 'dirty\n')
     expect(git.isClean(repo)).toBe(false)

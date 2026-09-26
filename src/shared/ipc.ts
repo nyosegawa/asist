@@ -505,7 +505,7 @@ export interface AgentJob {
    * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it.
    */
   worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string }
-  /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and changed nothing. */
+  /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and left nothing a merge would take in. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
   memoryCuration?: { through: string | null; applied: boolean }
@@ -517,6 +517,8 @@ export interface JobDiff {
   commit: string
   stat: string
   patch: string
+  /** The submodules whose changes the worktree holds but no merge takes in, with .gitmodules when it changed. */
+  submodules: string[]
 }
 
 /**

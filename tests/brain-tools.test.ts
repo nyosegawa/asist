@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
     isGitRepo: vi.fn(() => false),
     startIsolated: vi.fn(() => ({ id: 'w1', title: 'fix', cwd: '/ws/wt', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } })),
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
-    diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '' })),
+    diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '', submodules: [] })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
     discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-' }))
   },
