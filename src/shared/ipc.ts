@@ -600,9 +600,13 @@ export interface MemoryOverview {
 /**
  * The state of a provider's API key. `verified` means the key currently in the environment
  * authenticated against the real API within this process; validating on save and a successful model
- * lookup reach it, and replacing the key drops back to `saved`.
+ * lookup reach it, and replacing the key drops back to `saved`. `unreadable` is a saved key that this
+ * build cannot decrypt, such as one saved by the development build, and it has to be entered again.
  */
-export type ApiKeyState = 'missing' | 'saved' | 'verified'
+export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
+
+/** Whether the state is of a key the app can read and send. A missing key and one this build cannot decrypt are not. */
+export const keyReadable = (state: ApiKeyState): boolean => state === 'saved' || state === 'verified'
 
 export interface AppStatus {
   /** Whether both the conversation model and the bridge phrase model could be fetched from the real API with their providers' keys. */
@@ -625,7 +629,7 @@ export interface AppStatus {
 /** What first-time setup shows about installation progress, as opposed to plain liveness. */
 export interface SetupStatus {
   services: AppStatus
-  /** Whether a value exists in the environment or in userData/.env. Whether it authenticates is `services.llm`. */
+  /** Whether each provider of the configured models has a key that can be read. Whether it authenticates is `services.llm`. */
   apiKeyConfigured: boolean
   asr: {
     selectedModel: AsrModel
@@ -899,8 +903,12 @@ export interface RendererApi {
   memoryDocuments(): Promise<MemoryDocument[]>
   /** The document's markdown, or null when there is none. */
   memoryDocumentRead(file: string): Promise<string | null>
-  /** Replaces a document wholesale. It throws with the reason when the markdown breaks the writing rules, and a save becomes a commit. */
-  memoryDocumentWrite(file: string, markdown: string): Promise<MemoryDocument>
+  /**
+   * Replaces a document wholesale, and a save becomes a commit. `base` is the markdown the screen read
+   * before editing; the save throws when the document has changed since, and with the reason when the
+   * markdown breaks the writing rules.
+   */
+  memoryDocumentWrite(file: string, markdown: string, base: string): Promise<MemoryDocument>
   /** Creates a new page from the template. */
   memoryDocumentCreate(input: MemoryPageInput): Promise<MemoryDocument>
   /** Deletes a page or a journal entry. A page talked about on a day not curated yet can be written again by the next curation. */
@@ -1021,10 +1029,14 @@ export interface RendererApi {
   confirmResolve(id: string, approved: boolean): Promise<void>
   getSettings(): Promise<AppSettings>
   saveSettings(patch: SettingsPatch): Promise<AppSettings>
-  /** Validates the provider's API key, saves it to the .env under userData, and returns the status afterwards. */
+  /**
+   * Validates the provider's API key, saves it encrypted with the Keychain key in userData/api-keys.json, and
+   * returns the status afterwards.
+   */
   saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>
   ttsTest(): Promise<SpeechSegment>
+  /** Opens a web page in the browser or a mail address in the mail app, and refuses any other link. */
   openExternal(url: string): Promise<void>
   /** Reveals a file in Finder. Only paths belonging to a job are allowed. */
   revealPath(path: string): Promise<void>

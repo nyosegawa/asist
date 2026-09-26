@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import { isExternalLink } from '@shared/external-link'
+import { openLink } from '@/open-link'
 
 /**
  * A small renderer for reading the memory markdown. It covers only what the diary and the pages use,
@@ -48,18 +50,20 @@ export function parseBlocks(markdown: string): Block[] {
   return blocks
 }
 
-/** Turns bold text and [text](URL) links into elements. */
+/** Turns bold text and [text](URL) links into elements. A link the app does not open keeps only its text. */
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = []
-  const pattern = /\*\*([^*]+)\*\*|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g
+  const pattern = /\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)\s]+)\)/g
   let last = 0
   let match: RegExpExecArray | null
   let key = 0
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > last) out.push(text.slice(last, match.index))
+    const url = match[3]
     if (match[1] !== undefined) out.push(<strong key={key++}>{match[1]}</strong>)
+    else if (!isExternalLink(url)) out.push(match[2])
     else out.push(
-      <button key={key++} type="button" className="my-link" onClick={() => void window.api.openExternal(match![3])}>
+      <button key={key++} type="button" className="my-link" onClick={() => openLink(url)}>
         {match[2]}
       </button>
     )

@@ -753,14 +753,22 @@ export function cancel(id: string): void {
   entry.process?.stop()
 }
 
-/** Stops accepting new jobs and waits for every agent the app owns to close and for its worktree to settle. */
+/**
+ * Stops accepting new jobs and waits for every agent the app owns to close and for its worktree to settle.
+ * When an agent cannot be stopped the quit is cancelled, and new jobs are accepted again.
+ */
 export async function shutdown(): Promise<void> {
   shuttingDown = true
-  const completions: Promise<void>[] = []
-  for (const { job, process } of jobs.values()) {
-    if (!process) continue
-    completions.push(process.completion)
-    cancel(job.id)
+  try {
+    const completions: Promise<void>[] = []
+    for (const { job, process } of jobs.values()) {
+      if (!process) continue
+      completions.push(process.completion)
+      cancel(job.id)
+    }
+    await Promise.all(completions)
+  } catch (error) {
+    shuttingDown = false
+    throw error
   }
-  await Promise.all(completions)
 }

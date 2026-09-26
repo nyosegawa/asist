@@ -3,9 +3,19 @@ import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { CURATION_SKILL, curationSkillSource } from '@shared/memory-curation'
-import { FIXED } from '@shared/memory-page'
+import { describe, expect, it, vi } from 'vitest'
+import { CURATION_SKILL, SKILL_DIRS, curationSkillSource } from '@shared/memory-curation'
+import { FIXED, validateDocument } from '@shared/memory-page'
+import { createTranslator } from '@shared/i18n'
+
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => tmpdir() } }))
+vi.mock('../src/main/services/settings', () => ({
+  getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: 'ja-JP', region: 'JP' })
+}))
+
+import { installSkill } from '../src/main/services/memory-curation-skill'
+
+const ja = createTranslator('ja-JP')
 
 const LOCALES = ['ja-JP', 'en-US'] as const
 const TEMPLATES = ['page', 'user', 'me', 'journal', 'instruction']
@@ -173,6 +183,37 @@ describe('the memory-curation skill', () => {
     fs.writeFileSync(path.join(dir, 'journal', '2026-09-09.md'), '# 2026-09-09\n\n見出しの無い日記。\n')
     fs.writeFileSync(path.join(dir, 'tasks.md'), '# 約束\n- [ ] 古い約束\n')
     expect(problemsIn(dir)).toEqual(['pages/一蘭.md', 'pages/壊れ.md', 'pages/壊れ.md:3', 'journal/2026-09-09.md', 'tasks.md'])
+  })
+
+  it('reports every file exactly as the check ASIST runs before a merge does, so that nothing the Agent passes is refused', () => {
+    const dir = wellFormed()
+    const prose = '私は落ち着いて話すアシスタントで、確かめてから答えることを大事にしている。'.repeat(30)
+    const files: Record<string, string> = {
+      // me.md may go without a heading; its text is then one section, capped like any other.
+      'me.md': `---\nupdated: 2026-09-22\n---\n# 私について\n\n${prose}\n`,
+      'pages/大川俊介.md': '---\nupdated: 2026-09-20\n---\n# 大川俊介\n\n## 要約\n本人の上司。\n\n## 私の印象\n落ち着いた人。\n\n## 私の印象\nくるみアレルギーがある。\n',
+      'pages/松葉軒.md': '---\naliases:\n- 松葉軒\nupdated: 2026-09-22\n---\n# 松葉軒\n行きつけの店。\n\n## 要約\nラーメン屋。\n',
+      'journal/2026-09-09.md': '---\nupdated: 昨日\n---\n# 2026-09-09\n\n## 食事\n麺類の話。\n',
+      'instruction.md': `# いつも覚えておくこと\n\n${'前置き。'.repeat(175)}\n\n## この人について\n${'あ'.repeat(700)}\n\n## 頼まれていること\n${'い'.repeat(700)}\n`
+    }
+    for (const [file, markdown] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), markdown)
+    const reported = problemsIn(dir)
+    for (const [file, markdown] of Object.entries(files)) {
+      const app = validateDocument(file, markdown, ja)
+      expect([file, app.length]).not.toEqual([file, 0])
+      expect([file, reported.filter((place) => place === file || place.startsWith(`${file}:`)).length]).toEqual([file, app.length])
+    }
+  })
+
+  it('runs its validate.mjs once installed into a worktree, where the rules it imports are copied beside it', () => {
+    for (const locale of LOCALES) {
+      const worktree = mkdtempSync(path.join(tmpdir(), 'asist-memory-skill-installed-'))
+      installSkill(worktree, skillDir(locale))
+      const dir = wellFormed()
+      for (const skills of SKILL_DIRS) expect(validate(path.join(worktree, skills, CURATION_SKILL), dir)).toEqual({ ok: true, output: 'OK\n' })
+      fs.writeFileSync(path.join(dir, 'pages', '壊れ.md'), '---\n---\n# 壊れ\n\n## 要約\n\n')
+      for (const skills of SKILL_DIRS) expect(places(validate(path.join(worktree, skills, CURATION_SKILL), dir).output)).toEqual(['pages/壊れ.md:5'])
+    }
   })
 
   it('takes a directory that holds pages written under each of the two fixed headings, in both skills', () => {

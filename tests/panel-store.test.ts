@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   advancePanelLifecycle,
   PANEL_STALE_GRACE_MS,
@@ -158,6 +158,21 @@ describe('usePanelStore', () => {
     expect(refreshed.updatedAt).toBeGreaterThanOrEqual(first.updatedAt)
     advancePanelLifecycle(refreshed.updatedAt + 99)
     expect(store().panels[0].state).toBe('ready')
+  })
+
+  it('keeps a card that failed on its error past the TTL, having no data to go out of date, and removes it after the grace period', () => {
+    vi.useFakeTimers()
+    try {
+      store().apply({ op: 'create', key: 'fx:USD:JPY', type: 'fx', slot: 'left', props: { base: 'USD', quote: 'JPY' }, state: 'loading' })
+      store().apply({ op: 'patch', key: 'fx:USD:JPY', state: 'error', error: 'fetch failed' })
+      const failed = store().panels[0]
+      vi.advanceTimersByTime(failed.ttl!)
+      expect(store().panels[0]).toMatchObject({ state: 'error', error: 'fetch failed' })
+      vi.advanceTimersByTime(PANEL_STALE_GRACE_MS)
+      expect(store().panels).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('never removes a panel that has no TTL, however much time passes', () => {

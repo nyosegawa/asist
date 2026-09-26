@@ -6,6 +6,7 @@ import type { AppSettings, AppStatus, EmbeddingStatus, MemoryOverview, SetupProg
 import { defaultPersona } from '@shared/persona'
 import { CONVERSATION_LOCALES } from '@shared/conversation-locale'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { SETTINGS_PAGES } from '@shared/mini-apps'
 import { THEMES } from '@shared/themes'
 import { localDate, type UsageDay } from '@shared/api-usage'
@@ -49,6 +50,7 @@ const settings = {
   calendar: { enabled: false, readCalendarIds: [], writeCalendarId: null },
   mail: { accounts: [], defaultAccountId: null },
   agentCwd: '/Users/demo',
+  fileRoots: ['/Users/demo/Desktop'],
   agentEngine: 'codex',
   agentMode: 'auto',
   micAutoStart: false,
@@ -105,6 +107,7 @@ const api = {
   embeddingPrepare: vi.fn(async () => ({ ok: true, message: '' })),
   onSetupProgress: vi.fn((_callback: (p: SetupProgress) => void) => () => {}),
   openExternal: vi.fn(async () => {}),
+  folderChoose: vi.fn(async (_startAt?: string): Promise<string | null> => null),
   apiUsage: vi.fn(async (): Promise<UsageDay[]> => [
     {
       date: localDate(new Date()),
@@ -149,6 +152,13 @@ async function render(): Promise<HTMLElement> {
   return container.querySelector<HTMLElement>('[aria-label="SETTINGS"]')!
 }
 const nav = (view: HTMLElement, page: string): HTMLButtonElement => view.querySelector<HTMLButtonElement>(`.st-nav[data-page="${page}"]`)!
+/** Writes into a field the way a keystroke does. React tracks changes through its own value setter, so the native one writes the value. */
+const type = (field: HTMLInputElement | HTMLTextAreaElement, value: string): void => {
+  const proto = field instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+  Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(field, value)
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+}
+const leave = (field: HTMLElement): void => void field.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
 const title = (view: HTMLElement): string | null | undefined => view.querySelector('.st-page > header h2')?.textContent
 
 describe('settings dialog', () => {
@@ -306,6 +316,175 @@ describe('settings dialog', () => {
     await act(async () => view.querySelector<HTMLButtonElement>('.st-key[data-provider="openai"] .st-btn')!.click())
     expect(view.querySelector('input[aria-label="OPENAI_API_KEY"]')).not.toBeNull()
   })
+
+  it('shows a saved key this build cannot decrypt as such wherever a key appears, and asks for it again', async () => {
+    useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'unreadable', cerebras: 'unreadable' } } })
+    useSettingsStore.setState({ settings: { ...settings, voiceEngine: 'gpt-live' } })
+    const view = await render()
+    expect(nav(view, 'integrations').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.integrationsCalendarOff', { keys: 1, total: 4 }))
+    // The conversation model's row and the GPT-Live row both show the OpenAI key.
+    const keyRows = [...view.querySelectorAll('.st-row')].filter(
+      (row) => row.querySelector('.st-row-label')?.textContent === t('settingsConversation.models.apiKey', { provider: 'OpenAI' })
+    )
+    expect(keyRows.map((row) => [row.querySelector('.st-chip')?.textContent, row.querySelector('.st-row-hint')?.textContent])).toEqual([
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })],
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })]
+    ])
+    await act(async () => nav(view, 'integrations').click())
+    const row = view.querySelector('.st-key[data-provider="openai"]')!
+    expect(row.querySelector('.st-chip')?.textContent).toBe(t('settingsIntegrations.apiKeys.unreadable'))
+    expect(row.querySelector('.st-btn')?.textContent).toBe(t('settingsIntegrations.apiKeys.register'))
+  })
+
+  it('reports a status check that fails instead of keeping the last status without a word', async () => {
+    api.getStatus.mockRejectedValueOnce(new Error('api-keys.json is damaged'))
+    await useStatusStore.getState().refresh()
+    expect(useToastStore.getState().toasts).toMatchObject([{ kind: 'error', title: t('app.status.checkFailed'), body: 'api-keys.json is damaged' }])
+  })
+})
+
+describe('settings fields that are saved once the user leaves them', () => {
+  it('keeps every key typed into the working folder while main has not answered, and saves the folder once the field is left', async () => {
+    // Main answers a save a moment later, and the settings on screen change only then.
+    const answers: Array<() => void> = []
+    api.saveSettings.mockImplementationOnce((patch) => new Promise((resolve) => answers.push(() => resolve({ ...settings, ...patch }))))
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    expect(folder.value).toBe('/Users/demo')
+    await act(async () => type(folder, '/Users/demo/a'))
+    await act(async () => type(folder, '/Users/demo/ab'))
+    expect(folder.value).toBe('/Users/demo/ab')
+    expect(api.saveSettings).not.toHaveBeenCalled()
+
+    await act(async () => leave(folder))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/ab' }]])
+    expect(folder.value).toBe('/Users/demo/ab')
+    await act(async () => answers.splice(0).forEach((answer) => answer()))
+    expect(folder.value).toBe('/Users/demo/ab')
+    // The folder has been saved once, and the page going away does not save it again.
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('saves a typed folder when the page goes away while the field still has focus, as when Escape closes the settings', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    folder.focus()
+    await act(async () => type(folder, '/Users/demo/projects'))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/projects' }]])
+  })
+
+  it('does not leave the working folder on the Enter that confirms an IME conversion', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    folder.focus()
+    await act(async () => type(folder, '/Users/demo/しごと'))
+    await act(async () => void folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })))
+    expect(document.activeElement).toBe(folder)
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => void folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/しごと' }]])
+  })
+
+  it('keeps a second edit of the days made while main has not answered the save of the first', async () => {
+    const answers: Array<() => void> = []
+    const later = (patch: Partial<AppSettings>): Promise<AppSettings> => new Promise((resolve) => answers.push(() => resolve({ ...settings, ...patch })))
+    api.saveSettings.mockImplementationOnce(later).mockImplementationOnce(later)
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    days.focus()
+    await act(async () => type(days, '3'))
+    await act(async () => leave(days))
+    days.focus()
+    await act(async () => type(days, '30'))
+    // Main answers the save of 3 while 30 is being typed.
+    await act(async () => answers.shift()!())
+    expect(days.value).toBe('30')
+    await act(async () => leave(days))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 3 }], [{ conversationLogRetentionDays: 30 }]])
+    await act(async () => answers.shift()!())
+    expect(days.value).toBe('30')
+  })
+
+  it('adds a chosen folder to the folders typed in the field and opens the folder dialog at the typed folder, before main has answered their saves', async () => {
+    api.saveSettings.mockImplementation(() => new Promise(() => {}))
+    try {
+      const view = await render()
+      await act(async () => nav(view, 'agent').click())
+      const button = (key: Parameters<typeof t>[0]): HTMLButtonElement => [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t(key))!
+      const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+      roots.focus()
+      await act(async () => type(roots, '/Users/demo/Desktop\n/Users/demo/Documents'))
+      api.folderChoose.mockResolvedValueOnce('/Users/demo/Pictures')
+      // Pressing a button takes the focus from the field before the click.
+      await act(async () => leave(roots))
+      await act(async () => button('settingsAgent.roots.add').click())
+      expect(api.saveSettings.mock.calls).toEqual([
+        [{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents'] }],
+        [{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents', '/Users/demo/Pictures'] }]
+      ])
+
+      const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+      folder.focus()
+      await act(async () => type(folder, '/Users/demo/projects'))
+      await act(async () => leave(folder))
+      await act(async () => button('settingsAgent.workspace.choose').click())
+      expect(api.folderChoose).toHaveBeenLastCalledWith('/Users/demo/projects')
+    } finally {
+      api.saveSettings.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }))
+    }
+  })
+
+  it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    days.focus()
+    await act(async () => type(days, '0'))
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+  })
+
+  it('lets a second readable folder be typed on a new line, and saves the list without blank lines once the field is left', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+    expect(roots.value).toBe('/Users/demo/Desktop')
+    await act(async () => type(roots, '/Users/demo/Desktop\n'))
+    expect(roots.value).toBe('/Users/demo/Desktop\n')
+    await act(async () => type(roots, '/Users/demo/Desktop\n\n /Users/demo/Documents \n'))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+
+    await act(async () => leave(roots))
+    expect(api.saveSettings.mock.calls).toEqual([[{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents'] }]])
+    expect(roots.value).toBe('/Users/demo/Desktop\n/Users/demo/Documents')
+  })
+
+  it('saves the days conversation logs are kept only once the field is left, and puts the saved days back for a field left empty', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    expect(days.value).toBe('90')
+    days.focus()
+    // Two Backspaces, then 3 and 0. Main deletes the logs older than the saved days at the change of day,
+    // so a value on the way, such as 9, must never be saved.
+    for (const value of ['9', '', '3', '30']) await act(async () => type(days, value))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => void days.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 30 }]])
+
+    await act(async () => type(days, ''))
+    expect(days.value).toBe('')
+    await act(async () => leave(days))
+    expect(days.value).toBe('30')
+    expect(api.saveSettings).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('settings dialog while a model is prepared or memories are converted', () => {
@@ -365,6 +544,24 @@ describe('settings dialog while a model is prepared or memories are converted', 
     await act(async () => {})
     expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.waiting'))
     expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.pending'))
+  })
+
+  it('gives the reason on the memory page when main cannot read the curation state, instead of saying the curation has not run yet', async () => {
+    const details = 'jobs: Unrecognized key'
+    api.memoryOverview.mockRejectedValueOnce(
+      new Error(errorText('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details }))
+    )
+    const view = await render()
+    await act(async () => nav(view, 'memory').click())
+    await act(async () => {})
+    const statusRow = [...view.querySelectorAll('.st-row')].find(
+      (el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status')
+    )!
+    expect(statusRow.querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.unavailable'))
+    expect(statusRow.querySelector('.st-chip')?.getAttribute('data-tone')).toBe('warn')
+    expect(statusRow.querySelector('.st-row-hint')?.textContent).toBe(
+      t('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details })
+    )
   })
 
   it('reads the conversion count again after semantic search is turned on, until the conversion ends', async () => {

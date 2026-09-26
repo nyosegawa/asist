@@ -44,9 +44,13 @@ export function viewerFor(item: FileItem): Viewer {
   return VIEWERS[item.kind] ?? StubViewer
 }
 
+/**
+ * A viewer keeps what it found out about its file, such as a video that cannot be played, the sheet that is
+ * open or the links it blocked, so each file gets a viewer of its own.
+ */
 export function FileViewer(props: ViewerProps): React.JSX.Element {
   const Component = viewerFor(props.item)
-  return <Component {...props} />
+  return <Component key={props.item.path} {...props} />
 }
 
 export type { Viewer, ViewerProps } from './types'

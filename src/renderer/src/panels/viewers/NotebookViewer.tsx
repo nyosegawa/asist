@@ -1,3 +1,4 @@
+import { isExternalLink } from '@shared/external-link'
 import { CodeBlock } from './CodeViewer'
 import { Frame } from './Frame'
 import { MarkdownContent } from './MarkdownViewer'
@@ -5,6 +6,7 @@ import type { Viewer } from './types'
 import './NotebookViewer.css'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
+import { openLink } from '@/open-link'
 
 /**
  * A Jupyter notebook (.ipynb, nbformat 4), drawn cell by cell.
@@ -94,7 +96,10 @@ const ALLOWED_TAGS = new Set([
 ])
 const ALLOWED_ATTRS: Record<string, Set<string>> = { td: new Set(['colspan', 'rowspan']), th: new Set(['colspan', 'rowspan']), a: new Set(['href']) }
 
-/** A tag outside the allowlist is unwrapped and its content kept, while script and style go with their content. */
+/**
+ * A tag outside the allowlist is unwrapped and its content kept, while script and style go with their content.
+ * A link the app does not open keeps its text but is not drawn as a link.
+ */
 export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const out = document.createElement('div')
@@ -116,8 +121,12 @@ export function sanitizeHtml(html: string): string {
       for (const attr of ALLOWED_ATTRS[tag] ?? []) {
         const value = el.getAttribute(attr)
         if (value === null) continue
-        if (attr === 'href' && !/^https?:\/\//.test(value)) continue
+        if (attr === 'href' && !isExternalLink(value)) continue
         clean.setAttribute(attr, value)
+      }
+      if (tag === 'a' && !clean.hasAttributes()) {
+        walk(el, to)
+        continue
       }
       walk(el, clean)
       to.appendChild(clean)
@@ -143,7 +152,19 @@ function Output({ output }: { output: NotebookOutput }): React.JSX.Element {
         </pre>
       )
     case 'html':
-      return <div className="fv-nb-output fv-doc" data-kind="html" dangerouslySetInnerHTML={{ __html: sanitizeHtml(output.html) }} />
+      return (
+        <div
+          className="fv-nb-output fv-doc"
+          data-kind="html"
+          onClick={(event) => {
+            const anchor = (event.target as HTMLElement).closest('a[href]')
+            if (!anchor) return
+            event.preventDefault()
+            openLink(anchor.getAttribute('href')!)
+          }}
+          dangerouslySetInnerHTML={{ __html: sanitizeHtml(output.html) }}
+        />
+      )
     case 'image':
       return (
         <div className="fv-nb-output" data-kind="image">

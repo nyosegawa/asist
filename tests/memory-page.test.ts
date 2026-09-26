@@ -1,18 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
-  INSTRUCTION_MAX_CHARS,
-  SECTION_MAX_CHARS,
   documentOf,
   parseMemoryPageInput,
   validateDocument,
   classifyFile,
   embeddingTextOf,
-  parseFrontmatter,
   parsePage,
   unitId,
   unitsOfJournal,
   unitsOfPage
 } from '@shared/memory-page'
+import { INSTRUCTION_MAX_CHARS, SECTION_MAX_CHARS } from '../resources/skills/memory-format.mjs'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 
@@ -59,7 +57,6 @@ describe('parsePage', () => {
     expect(page.title).toBe('松葉軒')
     expect(page.titled).toBe(true)
     expect(page.frontmatter).toEqual({ present: true, aliases: ['松葉軒', 'ラーメン屋'], hasAliases: true, updated: '2026-09-09', obsoleteKeys: [] })
-    expect(page.issues).toEqual([])
     expect(page.sections.map((s) => [s.line, s.heading, s.text])).toEqual([
       [7, '要約', '本人の行きつけのラーメン屋。麺類の気分のときにまず名前が出る。'],
       [10, '行った記録', '2026-09-08 に麺類の気分だと話した。\n2026-09-09 に行ったと話した。'],
@@ -75,17 +72,21 @@ describe('parsePage', () => {
     expect(page.sections).toEqual([{ line: 1, heading: '要約', text: '行きつけの店。\n二行目。' }])
   })
 
-  it('reports a heading without a body, an unclosed frontmatter and a malformed updated as things to fix', () => {
-    const page = parsePage('---\nupdated: 昨日\n---\n# x\n## 空\n\n## あり\n本文\n', 'x')
-    expect(page.issues).toEqual([{ kind: 'updatedNotDate' }, { kind: 'headingWithoutText', line: 5, heading: '空' }])
-    expect(page.sections.map((s) => s.heading)).toEqual(['あり'])
-    expect(parsePage('---\nupdated: 2026-09-09\n# x\n', 'x').issues).toEqual([{ kind: 'frontmatterUnclosed' }])
+  it('reports a heading without a body, an unclosed frontmatter and a malformed updated as things to fix, and leaves the empty heading out of the sections', () => {
+    const file = 'journal/2026-09-07.md'
+    const markdown = '---\nupdated: 昨日\n---\n# x\n## 空\n\n## あり\n本文\n'
+    expect(validateDocument(file, markdown, ja)).toEqual([
+      ja('memory.check.updatedNotDate', { file }),
+      ja('memory.check.headingWithoutText', { file, line: 5, heading: '空' })
+    ])
+    expect(parsePage(markdown, 'x').sections.map((s) => s.heading)).toEqual(['あり'])
+    expect(validateDocument(file, '---\nupdated: 2026-09-09\n# x\n## 話\n本文\n', ja)).toContain(ja('memory.check.frontmatterUnclosed', { file }))
+    expect(validateDocument(file, '---\nupdated: 2026-09-09\n---', ja)).not.toContain(ja('memory.check.frontmatterUnclosed', { file }))
   })
 
   it('reads a page written under the English fixed headings into the same structure as its Japanese twin', () => {
     const japanese = parsePage(PAGE, 'fallback')
     const english = parsePage(PAGE_EN, 'fallback')
-    expect(english.issues).toEqual([])
     expect(english.sections.map((s) => s.line)).toEqual(japanese.sections.map((s) => s.line))
     expect(english.sections[0].heading).toBe('Summary')
     expect(english.sections[0].text.split('\n')).toHaveLength(1)
@@ -95,26 +96,30 @@ describe('parsePage', () => {
     ])
   })
 
-  it('reads a frontmatter list written on one line as well as one written across several', () => {
-    const block = parseFrontmatter(['---', 'aliases:', '  - ムギ', '  - "ムギちゃん"', 'updated: 2026-09-09', '---', '# ムギ'])
-    expect(block.frontmatter).toEqual({ present: true, aliases: ['ムギ', 'ムギちゃん'], hasAliases: true, updated: '2026-09-09', obsoleteKeys: [] })
-    expect(block.bodyStart).toBe(6)
+  it('reads a frontmatter list written on one line, indented under its key, or at the key\'s own indentation as a YAML library writes it', () => {
+    const indented = parsePage('---\naliases:\n  - ムギ\n  - "ムギちゃん"\nupdated: 2026-09-09\n---\n# ムギ\n## 要約\n猫。\n', 'x')
+    expect(indented.frontmatter).toEqual({ present: true, aliases: ['ムギ', 'ムギちゃん'], hasAliases: true, updated: '2026-09-09', obsoleteKeys: [] })
+    expect(indented.sections).toEqual([{ line: 8, heading: '要約', text: '猫。' }])
+    const flush = parsePage('---\naliases:\n- 松葉軒\n- ラーメン屋\nupdated: 2026-09-09\n---\n# 松葉軒\n\n## 要約\n本人の行きつけのラーメン屋。\n', 'x')
+    expect(flush.frontmatter).toMatchObject({ aliases: ['松葉軒', 'ラーメン屋'], updated: '2026-09-09' })
   })
 
-  it('reports kind and links as obsolete keys, and keeps the items of an obsolete list out of the aliases', () => {
-    const page = parsePage('---\nkind: place\nlinks:\n  - ユーザー\naliases:\n  - 松葉軒\n---\n# 松葉軒\n## 要約\n行きつけの店。\n', 'x')
-    expect(page.frontmatter.aliases).toEqual(['松葉軒'])
-    expect(page.issues).toEqual([
-      { kind: 'obsoleteKey', key: 'kind' },
-      { kind: 'obsoleteKey', key: 'links' }
+  it('reports kind and links as obsolete keys, and keeps the items of an obsolete list out of the aliases, indented or not', () => {
+    const file = 'pages/松葉軒.md'
+    const markdown = '---\nkind: place\nlinks:\n  - ユーザー\n- 田中さん\naliases:\n  - 松葉軒\n---\n# 松葉軒\n## 要約\n行きつけの店。\n'
+    expect(parsePage(markdown, 'x').frontmatter.aliases).toEqual(['松葉軒'])
+    expect(validateDocument(file, markdown, ja)).toEqual([
+      ja('memory.check.obsoleteKey', { file, key: 'kind' }),
+      ja('memory.check.obsoleteKey', { file, key: 'links' })
     ])
   })
 
   it('reports a section whose body passes the cap, counted without whitespace', () => {
+    const file = 'journal/2026-09-07.md'
     const atCap = 'あ '.repeat(SECTION_MAX_CHARS / 2) + '\n' + 'い\t'.repeat(SECTION_MAX_CHARS / 2)
-    expect(parsePage(`# x\n## 長い\n${atCap}\n`, 'x').issues).toEqual([])
-    expect(parsePage(`# x\n## 長い\n${'あ'.repeat(SECTION_MAX_CHARS + 1)}\n`, 'x').issues).toEqual([
-      { kind: 'sectionTooLong', line: 2, heading: '長い' }
+    expect(validateDocument(file, `# x\n## 長い\n${atCap}\n`, ja)).toEqual([])
+    expect(validateDocument(file, `# x\n## 長い\n${'あ'.repeat(SECTION_MAX_CHARS + 1)}\n`, ja)).toEqual([
+      ja('memory.check.sectionTooLong', { file, line: 2, heading: '長い', limit: SECTION_MAX_CHARS })
     ])
   })
 })
@@ -254,11 +259,28 @@ describe('documents', () => {
     ])
   })
 
-  it('caps instruction.md as a whole, counting the headings and leaving out whitespace', () => {
+  it('refuses a heading that stands twice in one file, since a section is found by its file and heading', () => {
+    const file = 'pages/大川俊介.md'
+    const twice = '---\nupdated: 2026-09-20\n---\n# 大川俊介\n\n## 要約\n本人の上司。\n\n## 私の印象\n落ち着いた人に見える。\n\n## 私の印象\nくるみアレルギーがあると本人が言っていた。\n'
+    expect(validateDocument(file, twice, ja)).toEqual([ja('memory.check.duplicateHeading', { file, line: 12, heading: '私の印象', first: 9 })])
+    // The text above the first heading is the summary section, so a `## 要約` after it is a second one.
+    const above = '---\nupdated: 2026-09-20\n---\n# 大川俊介\n本人の上司。\n\n## 要約\n打ち合わせの相手。\n'
+    expect(validateDocument(file, above, ja)).toEqual([ja('memory.check.duplicateHeading', { file, line: 7, heading: '要約', first: 5 })])
+  })
+
+  it('caps the text above the first heading like any other section, in me.md written as prose as well', () => {
+    const prose = '私は落ち着いて話すアシスタントで、確かめてから答えることを大事にしている。'.repeat(30)
+    expect(validateDocument('me.md', `---\nupdated: 2026-09-20\n---\n# 私について\n\n${prose}\n`, ja)).toEqual([
+      ja('memory.check.sectionTooLong', { file: 'me.md', line: 6, heading: '要約', limit: SECTION_MAX_CHARS })
+    ])
+  })
+
+  it('caps instruction.md as a whole, counting the heading lines as the system prompt carries them and leaving out whitespace', () => {
     const sections = (bodyLength: number): string =>
       Array.from({ length: 4 }, (_, i) => `## 見出し${i}\n${'あ'.repeat(bodyLength)}\n\n`).join('')
-    // Each heading "見出しN" is 4 characters, so four sections of 496 characters come to exactly the cap.
-    const atCap = sections(INSTRUCTION_MAX_CHARS / 4 - 4)
+    // Each heading line "## 見出しN" is 6 characters without its space, so four sections of 494 characters
+    // come to exactly the cap.
+    const atCap = sections(INSTRUCTION_MAX_CHARS / 4 - 6)
     expect(validateDocument('instruction.md', `# いつも覚えておくこと\n\n${atCap}`, ja)).toEqual([])
     expect(validateDocument('instruction.md', `# いつも覚えておくこと\n\n${atCap}## 追加\nあ\n`, ja)).toEqual([
       ja('memory.check.instructionTooLong', { file: 'instruction.md', limit: INSTRUCTION_MAX_CHARS })

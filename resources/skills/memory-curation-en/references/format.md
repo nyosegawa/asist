@@ -36,6 +36,13 @@ These stay in English whatever language the body is written in, because ASIST re
 
 Every other heading you write yourself, in the language of the conversation.
 
+## Headings
+
+ASIST searches a `## heading` and the text under it as one section. Do not put the same heading twice in
+one file. Text above the first `## heading` is read as the "Summary" section, which is how a me.md without
+headings is read. In the other files, write the text under a heading: text above `## Summary` makes a
+second "Summary".
+
 ## Length
 
 In every file, what stands under one `## heading` is at most 800 characters. instruction.md as a whole,

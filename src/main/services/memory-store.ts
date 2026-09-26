@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
-import { promptText, type PromptText } from '@shared/conversation-locale'
+import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import type { MemoryDocument, MemoryUnit } from '@shared/ipc'
 import { localDateKey } from '@shared/local-date'
@@ -11,7 +11,7 @@ import {
   classifyFile,
   documentKindOf,
   documentOf,
-  parseFrontmatter,
+  instructionBody,
   parseMemoryPageInput,
   parsePage,
   unitsOfJournal,
@@ -50,7 +50,7 @@ const WRITES = {
 } as const satisfies Record<string, PromptText>
 
 const written = (of: keyof typeof WRITES, values: Record<string, string> = {}): string =>
-  Object.entries(values).reduce((text, [key, value]) => text.replace(`{${key}}`, value), promptText(conversationLocale(), WRITES[of]))
+  fillPrompt(promptText(conversationLocale(), WRITES[of]), values)
 
 export interface ReadResult {
   units: MemoryUnit[]
@@ -79,9 +79,45 @@ export function ensureRepo(dir = memoryDir()): void {
   git.commitAll(dir, written(git.hasHead(dir) ? 'prepared' : 'created'))
 }
 
+const notRegular = (file: string): Error => new Error(errorText('memory.errors.notRegular', { file }))
+
+/**
+ * Reads a file of the memory, or returns null when there is none. Anything but a regular file is refused
+ * before a byte of it is read. A curation worktree can hold what git never shows, a named pipe anywhere or
+ * a symbolic link in a path the Agent added to .gitignore, and assertInsideMemory sees only what git
+ * shows: reading a pipe blocks the main process until a writer appears, and a link to /dev/zero never
+ * ends. The file is opened without following a link and without waiting for a writer, and its type is
+ * checked on the open descriptor, so nothing can be put in its place in between.
+ */
+function readFileOf(dir: string, file: string): string | null {
+  let fd: number
+  try {
+    fd = fs.openSync(path.join(dir, file), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return null
+    if (code === 'ELOOP') throw notRegular(file)
+    throw error
+  }
+  try {
+    if (!fs.fstatSync(fd).isFile()) throw notRegular(file)
+    return fs.readFileSync(fd, 'utf8')
+  } finally {
+    fs.closeSync(fd)
+  }
+}
+
+/** The markdown files of pages/ or journal/. A link in place of the folder would list a folder outside the memory. */
 function listMarkdown(dir: string, sub: string): string[] {
   const target = path.join(dir, sub)
-  if (!fs.existsSync(target)) return []
+  let stat: fs.Stats
+  try {
+    stat = fs.lstatSync(target)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+  if (!stat.isDirectory()) throw notRegular(sub)
   return fs
     .readdirSync(target)
     .filter((name) => name.endsWith('.md') && !name.startsWith('.'))
@@ -98,10 +134,7 @@ export function readAll(dir = memoryDir()): ReadResult {
   const units: MemoryUnit[] = []
   const errors: string[] = []
   let pages = 0
-  const read = (file: string): string | null => {
-    const full = path.join(dir, file)
-    return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : null
-  }
+  const read = (file: string): string | null => readFileOf(dir, file)
 
   const user = read(USER_FILE)
   if (user !== null) {
@@ -144,32 +177,42 @@ export function readAll(dir = memoryDir()): ReadResult {
 
 /** The documents in the order the screen shows them: instruction.md, me.md, user.md, the pages by name, then the journal with the newest day first. */
 export function listDocuments(dir = memoryDir()): MemoryDocument[] {
-  const files = [INSTRUCTION_FILE, ME_FILE, USER_FILE].filter((file) => fs.existsSync(path.join(dir, file)))
-  files.push(...listMarkdown(dir, PAGES_DIR), ...listMarkdown(dir, JOURNAL_DIR).reverse())
-  return files.filter((file) => DOCUMENT_FILE.test(file)).map((file) => documentOf(file, fs.readFileSync(path.join(dir, file), 'utf8')))
+  const files = [INSTRUCTION_FILE, ME_FILE, USER_FILE, ...listMarkdown(dir, PAGES_DIR), ...listMarkdown(dir, JOURNAL_DIR).reverse()]
+  return files.flatMap((file) => {
+    const markdown = DOCUMENT_FILE.test(file) ? readFileOf(dir, file) : null
+    return markdown === null ? [] : [documentOf(file, markdown)]
+  })
 }
 
 function documentPath(dir: string, file: string): string {
+  return path.join(dir, documentFile(file))
+}
+
+function documentFile(file: string): string {
   if (!DOCUMENT_FILE.test(file)) throw new Error(errorText('memory.errors.notADocument', { file }))
-  return path.join(dir, file)
+  return file
 }
 
 export function readDocument(file: string, dir = memoryDir()): string | null {
-  const full = documentPath(dir, file)
-  return fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : null
+  return readFileOf(dir, documentFile(file))
 }
 
 /**
- * Replaces a whole document and commits it, on the user's own action from the memory screen. A document
- * that breaks the rules is not written and the reason is thrown.
+ * Replaces a whole document and commits it, on the user's own action from the memory screen. `base` is
+ * the text the screen read before the user started editing. A document that has changed or gone since,
+ * as a curation merged meanwhile changes or removes it, is not written, because the save would take back
+ * what the other writer did without anyone seeing it; a removed page is not made again, since the
+ * curation removes one when it moves what it held elsewhere. A document that breaks the rules is not
+ * written either, and the reason is thrown.
  */
-export function writeDocument(file: string, markdown: string, dir = memoryDir()): MemoryDocument {
-  const full = documentPath(dir, file)
+export function writeDocument(file: string, markdown: string, base: string, dir = memoryDir()): MemoryDocument {
+  const current = readFileOf(dir, documentFile(file))
+  if (current === null) throw new Error(errorText('memory.errors.removedSinceOpened'))
+  if (current !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
-  fs.writeFileSync(full, text, { mode: 0o600 })
-  commit(dir, written('edited', { file }))
+  commitFile(dir, file, text, written('edited', { file }))
   return documentOf(file, text)
 }
 
@@ -177,15 +220,14 @@ export function writeDocument(file: string, markdown: string, dir = memoryDir())
 export function createPage(name: string, template: string, dir = memoryDir()): MemoryDocument {
   const input = parseMemoryPageInput({ name })
   const file = `${PAGES_DIR}/${input.name}.md`
-  const full = documentPath(dir, file)
-  if (fs.existsSync(full)) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
+  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
+  // The name goes in through a function, because a replacement string reads `$&` or `$$` in it as a pattern.
   const markdown = template
     .replace(/^updated: .*$/m, `updated: ${localDateKey(new Date())}`)
-    .replace(/^# .*$/m, `# ${input.name}`)
+    .replace(/^# .*$/m, () => `# ${input.name}`)
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errorText('memory.errors.templateInvalid', { errors: errors.join(' / ') }))
-  fs.writeFileSync(full, markdown, { mode: 0o600 })
-  commit(dir, written('pageCreated', { name: input.name }))
+  commitFile(dir, file, markdown, written('pageCreated', { name: input.name }))
   return documentOf(file, markdown)
 }
 
@@ -196,39 +238,36 @@ export function createPage(name: string, template: string, dir = memoryDir()): M
 export function deleteDocument(file: string, dir = memoryDir()): void {
   const kind = documentKindOf(file)
   if (kind !== 'page' && kind !== 'journal') throw new Error(errorText('memory.errors.deleteKind'))
-  const full = documentPath(dir, file)
-  if (!fs.existsSync(full)) throw new Error(errorText('memory.errors.notFound', { file }))
-  fs.rmSync(full)
-  commit(dir, written('deleted', { file }))
+  if (!fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.notFound', { file }))
+  commitFile(dir, file, null, written('deleted', { file }))
 }
 
-function readText(dir: string, file: string): string | null {
+/**
+ * Puts one file in its new state, removing it for null, and commits it; when the commit fails the file
+ * goes back to what it held. Each change from the screen is meant to be a commit: the curation cuts its
+ * worktree from HEAD and would not see a change left on disk, and the screen would take such a change for
+ * someone else's and refuse its own next save of the document.
+ */
+function commitFile(dir: string, file: string, text: string | null, message: string): void {
   const full = path.join(dir, file)
-  if (!fs.existsSync(full)) return null
-  const text = fs.readFileSync(full, 'utf8').trim()
-  return text || null
-}
-
-/** The body with the frontmatter and the top-level "# " headings removed. */
-function bodyOf(text: string | null): string | null {
-  if (!text) return null
-  const lines = text.split('\n')
-  const { bodyStart } = parseFrontmatter(lines)
-  const body = lines
-    .slice(bodyStart)
-    .filter((line) => !/^# /.test(line))
-    .join('\n')
-    .trim()
-  return body || null
+  const put = (content: string | null): void => {
+    if (content === null) fs.rmSync(full, { force: true })
+    else fs.writeFileSync(full, content, { mode: 0o600 })
+  }
+  const before = readFileOf(dir, file)
+  put(text)
+  try {
+    git.commitAll(dir, message)
+  } catch (error) {
+    put(before)
+    throw error
+  }
 }
 
 /** The body of instruction.md, which goes whole into the system prompt, or null when it is missing or empty. */
 export function readInstruction(dir = memoryDir()): string | null {
-  return bodyOf(readText(dir, INSTRUCTION_FILE))
-}
-
-function commit(dir: string, message: string): void {
-  git.commitAll(dir, message)
+  const text = readFileOf(dir, INSTRUCTION_FILE)
+  return text === null ? null : instructionBody(text).trim() || null
 }
 
 /** Whether the working tree has no uncommitted change, which the curation job checks before it starts. */

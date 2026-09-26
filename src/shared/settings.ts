@@ -95,12 +95,22 @@ export const appSettingsSchema = z.strictObject({
 
 export type AppSettings = z.infer<typeof appSettingsSchema>
 /**
+ * A key whose value is undefined names no change. zod keeps such a key in a partial object, and spreading
+ * the patch over the settings then put that field back to its default.
+ */
+const withoutUndefined = <T extends object>(patch: T): T =>
+  Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as T
+
+/**
  * A patch names only the fields it changes, and the same holds inside the mail group: main changes its
  * accounts while the settings screen is open, so a page sending the whole group as it drew it would write
  * back the accounts of that moment, and an account added in the meantime would vanish while its password
  * stays stored.
  */
-const patchSchema = z.strictObject({ ...fields, mail: z.strictObject(mailSettingsSchema.shape).partial() }).partial()
+const patchSchema = z
+  .strictObject({ ...fields, mail: z.strictObject(mailSettingsSchema.shape).partial().transform(withoutUndefined) })
+  .partial()
+  .transform(withoutUndefined)
 export type SettingsPatch = z.infer<typeof patchSchema>
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {

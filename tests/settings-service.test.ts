@@ -62,6 +62,19 @@ describe('settings persistence', () => {
     })
   })
 
+  it('leaves a setting as it is when a patch names it with the value undefined', async () => {
+    const settings = await import('../src/main/services/settings')
+    settings.saveSettings({ uiLocale: 'en-US', conversationLocale: 'en-US', region: 'US', qwenTtsVoice: 'ryan', fileRoots: ['/tmp/shared'], bargeIn: true })
+    settings.saveSettings({ mail: { notifyNewMail: false } })
+
+    const saved = settings.saveSettings({
+      uiLocale: undefined, conversationLocale: undefined, region: undefined, qwenTtsVoice: undefined, fileRoots: undefined,
+      bargeIn: undefined, onboardingVersion: undefined, mail: { notifyNewMail: undefined }, hangoverMs: 700
+    })
+    expect(saved).toMatchObject({ uiLocale: 'en-US', conversationLocale: 'en-US', region: 'US', qwenTtsVoice: 'ryan', fileRoots: ['/tmp/shared'], bargeIn: true, hangoverMs: 700 })
+    expect(saved.mail.notifyNewMail).toBe(false)
+  })
+
   it('changes one mail option onto the accounts main holds, and still checks the mail settings as a whole', async () => {
     const settings = await import('../src/main/services/settings')
     const account = {

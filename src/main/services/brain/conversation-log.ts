@@ -43,6 +43,21 @@ export type ConversationRecord =
   | {
       t: number
       /**
+       * A note the engine added to the model's context after the input it belongs to was recorded, such
+       * as the memories Gemini Live finds for an utterance once its transcript is final. The history
+       * appends it to that turn's notes, since the model read it there. It is not written with the
+       * utterance, because holding the utterance back for the search would let the reply be recorded
+       * before it.
+       */
+      kind: 'note'
+      turnId: number
+      text: string
+      /** The ids of the memories the note shows. They are not injected again while the turn is still in the raw recent history. */
+      memoryIds: string[]
+    }
+  | {
+      t: number
+      /**
        * A message sent to the API during the turn. These follow the user's utterance in the order
        * they were sent, and the next turn sends them in the same shape, so the history only grows at
        * the end and the prompt cache keeps working. An assistant message that contains tool calls is

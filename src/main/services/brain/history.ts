@@ -194,6 +194,17 @@ export class ConversationHistory {
       this.addedTokens += estimateTokens(record.text) + (notes ? estimateTokens(notes) : 0) + (jobStatus ? estimateTokens(jobStatus) : 0)
       return
     }
+    if (record.kind === 'note') {
+      // A live engine can finish a note after the next utterance was recorded, so the note looks for its
+      // own turn rather than taking the current one. A turn already folded into the summary takes nothing.
+      const turn = this.turns.findLast((candidate) => candidate.turnId === record.turnId && candidate.user !== undefined)
+      if (!turn) return
+      turn.notes = turn.notes ? `${turn.notes}\n\n${record.text}` : record.text
+      turn.memoryIds.push(...record.memoryIds)
+      turn.records.push(record)
+      this.addedTokens += estimateTokens(record.text)
+      return
+    }
     const current = this.currentIndex()
     const own = current >= 0 && this.turns[current].turnId === record.turnId ? this.turns[current] : undefined
     // A voice model records what it said as soon as its transcript settles, which can be while the

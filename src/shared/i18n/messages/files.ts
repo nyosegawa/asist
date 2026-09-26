@@ -1127,6 +1127,32 @@ export const files = defineMessages({
       'pt-BR': 'Voltar à página',
       'es-419': 'Volver a la página',
       'es-ES': 'Volver a la página'
+    },
+    moreColumns: {
+      'ja-JP': { other: '他 {count} 列' },
+      'en-US': { one: '{count} more column', other: '{count} more columns' },
+      'fr-FR': { one: '{count} colonne de plus', other: '{count} colonnes de plus' },
+      'de-DE': { one: 'noch {count} Spalte', other: 'noch {count} Spalten' },
+      'hi-IN': { one: '{count} और कॉलम', other: '{count} और कॉलम' },
+      'id-ID': { other: '{count} kolom lagi' },
+      'it-IT': { one: '{count} altra colonna', other: 'Altre {count} colonne' },
+      'ko-KR': { other: '외 {count}열' },
+      'pt-BR': { one: 'mais {count} coluna', other: 'mais {count} colunas' },
+      'es-419': { one: '{count} columna más', other: '{count} columnas más' },
+      'es-ES': { one: '{count} columna más', other: '{count} columnas más' }
+    },
+    anchorMissing: {
+      'ja-JP': 'リンク先がこの文書にありません',
+      'en-US': "Link target isn't in the document",
+      'fr-FR': 'Cible du lien introuvable',
+      'de-DE': 'Linkziel nicht im Dokument',
+      'hi-IN': 'लिंक की जगह दस्तावेज़ में नहीं मिली',
+      'id-ID': 'Tujuan tautan tidak ditemukan',
+      'it-IT': 'Destinazione del link non trovata',
+      'ko-KR': '링크 대상이 문서에 없습니다',
+      'pt-BR': 'Destino do link não encontrado',
+      'es-419': 'Destino del enlace no encontrado',
+      'es-ES': 'Destino del enlace no encontrado'
     }
   },
   source: {

@@ -144,4 +144,19 @@ describe('starting an agent', () => {
     await stopping
     expect(agent.get(second.id)?.status).toBe('cancelled')
   })
+
+  it('accepts new jobs again when an agent cannot be stopped and the quit is cancelled', async () => {
+    let fail!: (error: Error) => void
+    mocks.launch.mockImplementationOnce(() => ({
+      stop: mocks.kill,
+      completion: new Promise<void>((_resolve, reject) => { fail = reject })
+    }))
+    const agent = await import('../src/main/services/agent')
+    agent.start('止まらない', options)
+    const stopping = agent.shutdown()
+    expect(() => agent.start('終了中', options)).toThrow(errorText('jobs.start.shuttingDown'))
+    fail(new Error(errorText('jobs.process.stopTimedOut')))
+    await expect(stopping).rejects.toThrow(errorText('jobs.process.stopTimedOut'))
+    expect(agent.start('終了を取りやめたあと', options).status).toBe('running')
+  })
 })

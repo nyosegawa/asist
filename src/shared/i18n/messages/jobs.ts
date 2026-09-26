@@ -1420,19 +1420,6 @@ export const jobs = defineMessages({
       'es-419': 'No se pudo confirmar el grupo de procesos en el que empezó el agente.',
       'es-ES': 'No se ha podido confirmar el grupo de procesos en el que se inició el agente.'
     },
-    pidReused: {
-      'ja-JP': '保存された Agent の PID を別のプロセスが使っています。停止と worktree の操作を見送りました。',
-      'en-US': "Another process is using the agent's saved PID. Stopping it and working on the worktree were both skipped.",
-      'fr-FR': "Un autre processus utilise le PID enregistré de l'agent. L'arrêt et l'intervention sur le worktree ont été abandonnés.",
-      'de-DE': 'Ein anderer Prozess verwendet die gespeicherte PID des Agenten. Das Stoppen und die Arbeit am worktree wurden beide übersprungen.',
-      'hi-IN': 'Agent के सेव किए PID को कोई दूसरी प्रोसेस इस्तेमाल कर रही है। इसे रोकना और worktree पर काम करना, दोनों छोड़ दिए।',
-      'id-ID': 'Proses lain memakai PID agent yang tersimpan. Penghentian dan penanganan worktree sama-sama dilewati.',
-      'it-IT': "Un altro processo sta usando il PID salvato dell'agente. L'interruzione e le operazioni sul worktree sono state saltate.",
-      'ko-KR': '저장된 Agent의 PID를 다른 프로세스가 사용하고 있습니다. 중지와 worktree 처리를 모두 건너뛰었습니다.',
-      'pt-BR': 'Outro processo está usando o PID salvo do agente. Parar o agente e mexer no worktree foram ignorados.',
-      'es-419': 'Otro proceso está usando el PID guardado del agente. No se lo detuvo ni se trabajó en el worktree.',
-      'es-ES': 'Otro proceso está usando el PID guardado del agente. No se ha detenido ni se ha tocado el worktree.'
-    },
     tokenUnreadable: {
       'ja-JP': 'Agent の起動識別子を読み取れません。停止と worktree の操作を見送りました。',
       'en-US': "Couldn't read the agent's launch identifier. Stopping it and working on the worktree were both skipped.",

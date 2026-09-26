@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AgentJob } from '@shared/ipc'
+import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 import { useToastStore } from '@/state/stores'
 
@@ -14,7 +15,7 @@ export function JobStopButton({ job, className }: { job: AgentJob; className: st
     try {
       await window.api.jobCancel(job.id)
     } catch (error) {
-      toast({ kind: 'error', title: t('jobs.stop.failed'), body: String(error) })
+      toast({ kind: 'error', title: t('jobs.stop.failed'), body: displayError(error) })
     } finally {
       setBusy(false)
     }

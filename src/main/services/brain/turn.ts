@@ -397,7 +397,7 @@ async function runTurn(
     emit({ type: 'tool', turnId, name: call.name, status: execution.isError ? 'error' : 'done' })
     // The memory ids returned by recall count as already shown, so they are not
     // injected again while they remain in the raw recent history.
-    const memoryIds = execution.isError ? [] : memoryIdsInToolResult(call.name, execution.content)
+    const memoryIds = memoryIdsInToolResult(call.name, execution)
     record({
       kind: 'tool',
       turnId,

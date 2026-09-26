@@ -1,4 +1,3 @@
-import { formatMessage } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 import { uiLocale } from '@/i18n'
 
@@ -17,6 +16,5 @@ const IPC_WRAPPER = /^Error invoking remote method '[^']+': (?:\w*Error: )?/
 
 export function displayError(error: unknown): string {
   const text = (error instanceof Error ? error.message : String(error)).replace(IPC_WRAPPER, '')
-  const known = readErrorText(text)
-  return known ? formatMessage(known.message, uiLocale(), known.values) : text
+  return readErrorText(text, uiLocale()) ?? text
 }

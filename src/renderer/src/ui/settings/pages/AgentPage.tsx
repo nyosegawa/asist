@@ -1,4 +1,5 @@
 import type { SettingsContext } from '../context'
+import { useFieldDraft } from '../field-draft'
 import { Btn, Chip, Group, Link, Page, Row } from '../primitives'
 import { useT } from '@/i18n'
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
@@ -13,6 +14,12 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
     })
   }
   const t = useT()
+  const cwd = useFieldDraft(settings.agentCwd, { format: (folder) => folder, parse: (text) => text, save: (agentCwd) => set({ agentCwd }) })
+  const roots = useFieldDraft(settings.fileRoots, {
+    format: (folders) => folders.join('\n'),
+    parse: (text) => text.split('\n').map((line) => line.trim()).filter(Boolean),
+    save: (fileRoots) => set({ fileRoots })
+  })
   const missing = status !== null && !status.agent
   return (
     <Page title="Agent" lead={t('settingsAgent.lead')}>
@@ -53,31 +60,20 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
       <Group title={t('settingsAgent.workspace.title')} description={t('settingsAgent.workspace.description')}>
         <Row label={t('settingsAgent.workspace.parent')} wide>
           <div className="st-field-action">
-            <input
-              className="st-input is-mono"
-              aria-label={t('settingsAgent.workspace.parentLabel')}
-              value={settings.agentCwd}
-              onChange={(e) => set({ agentCwd: e.target.value })}
-            />
-            <Btn onClick={() => chooseFolder(settings.agentCwd, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
+            <input className="st-input is-mono" aria-label={t('settingsAgent.workspace.parentLabel')} {...cwd.props} />
+            <Btn onClick={() => chooseFolder(cwd.value, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
           </div>
         </Row>
       </Group>
 
       <Group title={t('settingsAgent.roots.title')} description={t('settingsAgent.roots.description')}>
         <Row label={t('settingsAgent.roots.folders')} wide>
-          <textarea
-            className="st-input is-mono st-roots"
-            aria-label={t('settingsAgent.roots.title')}
-            value={settings.fileRoots.join('\n')}
-            onChange={(e) => set({ fileRoots: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean) })}
-            placeholder="/Users/you/Desktop"
-          />
+          <textarea className="st-input is-mono st-roots" aria-label={t('settingsAgent.roots.title')} placeholder="/Users/you/Desktop" {...roots.props} />
           <div className="st-row-actions">
             <Btn
               onClick={() =>
                 chooseFolder(undefined, (folder) => {
-                  if (!settings.fileRoots.includes(folder)) set({ fileRoots: [...settings.fileRoots, folder] })
+                  if (!roots.value.includes(folder)) set({ fileRoots: [...roots.value, folder] })
                 })
               }
             >
