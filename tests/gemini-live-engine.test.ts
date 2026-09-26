@@ -314,4 +314,25 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('keeps the session open while a function call waits for approval, and closes it once the result is back and the conversation is quiet', async () => {
+    const call = held()
+    let signal: AbortSignal | null = null
+    const { engine, sessions } = await setup((_name, _input, ctx) => {
+      signal = ctx.signal
+      return call.task
+    })
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    // The idle close is 30 seconds in this setup, and a confirmation may wait for five minutes.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(session.closed).toBe(false)
+    expect(signal!.aborted).toBe(false)
+    call.answer('approved')
+    call.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['a'])
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(session.closed).toBe(true)
+    await engine.stop()
+  })
 })

@@ -310,6 +310,10 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     await completion
   }
 
+  protected override working(): boolean {
+    return this.running.size > 0
+  }
+
   private sendUserText(text: string): void {
     this.session?.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true })
     this.touch()
