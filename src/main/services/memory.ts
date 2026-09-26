@@ -38,7 +38,6 @@ import { getSettings } from './settings'
  */
 
 const INDEX_FILE = 'memory-index.db'
-const EMBED_BATCH = 32
 
 /** The line that introduces each memory block in the system prompt, read by the model in its language. */
 export const MEMORY_HEADER: PromptText = {
@@ -233,6 +232,13 @@ export function embedMissing(): Promise<number> {
   return operation
 }
 
+/**
+ * Sends the units to the worker one per request. The worker answers in arrival order, so a turn's query
+ * waits behind the request in flight, and it pads the texts of a request to the longest one. Measured on
+ * 2026-09-26 over the 110 units of a real index (30 to 804 characters, median 176) on one thread, with
+ * other work running: a request of 32 units kept the worker busy for a median of 1.6 to 1.9 s and up to
+ * 5.7 s, a request of one unit for 16 to 41 ms and up to 0.4 s, and the whole index took no longer.
+ */
 async function embedMissingOnce(): Promise<number> {
   if (!embeddingAvailable()) return 0
   ensureLoaded()
@@ -241,22 +247,15 @@ async function embedMissingOnce(): Promise<number> {
   idx.setEmbeddingModel(key)
   let done = 0
   for (;;) {
-    const batch = idx.missingEmbeddings(EMBED_BATCH)
-    if (batch.length === 0) return done
-    const vectors = await embedding.embed(
-      batch.map((r) => r.text),
-      'document'
-    )
-    if (vectors.length !== batch.length) {
-      throw new Error(`the worker returned ${vectors.length} vectors for ${batch.length} texts`)
-    }
+    const [input] = idx.missingEmbeddings(1)
+    if (!input) return done
+    const vectors = await embedding.embed([input.text], 'document')
+    if (vectors.length !== 1) throw new Error(`the worker returned ${vectors.length} vectors for one text`)
     if (embeddingModelKey() !== key) {
       embedAgain = true
       return done
     }
-    batch.forEach((input, i) => {
-      if (idx.setEmbedding(input, vectors[i])) done++
-    })
+    if (idx.setEmbedding(input, vectors[0])) done++
   }
 }
 
