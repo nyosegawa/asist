@@ -5,12 +5,17 @@ import { resolveWeatherLocation, weeklyCandidates } from '../src/main/services/w
 import {
   numeric,
   parseForecast,
+  type Forecast,
   parseHourly,
   parseObservation,
   observationBlock
 } from '../src/main/services/weather/parsers'
 import regions from '../src/main/services/weather/data/regions.json'
 import forecast from './fixtures/weather/tokyo-forecast.json'
+// JMA's forecast for Tokyo as released at 5:00 on 2024-12-07 and at 11:00 on 2025-06-11, taken from the
+// Internet Archive. tokyo-forecast.json is a 17:00 release.
+import forecastAt0500 from './fixtures/weather/tokyo-forecast-0500.json'
+import forecastAt1100 from './fixtures/weather/tokyo-forecast-1100.json'
 import hourly from './fixtures/weather/tokyo-hourly.json'
 
 const resolve = (name: string) => {
@@ -99,6 +104,37 @@ describe('Japan Meteorological Agency data', () => {
     expect(w.day.condition?.icons).toContain('rain')
     expect(w.day.min).toBe(21)
     expect(w.daily[0].percent).toBeNull()
+  })
+  it('reads the temperatures of each release and leaves the minimum of the day of a 5:00 or 11:00 release missing', () => {
+    const tokyo = resolve('東京都')
+    const temps = (data: Forecast[], date: string) => {
+      const { min, max } = parseForecast(data, tokyo, date).day
+      return { min, max }
+    }
+    // The 17:00 release gives the next day's minimum and maximum.
+    expect(temps(forecast, '2026-09-16')).toEqual({ min: 21, max: 24 })
+    // The 5:00 and 11:00 releases give the maximum of their own day and both of the next day.
+    expect(temps(forecastAt0500, '2024-12-07')).toEqual({ min: null, max: 13 })
+    expect(temps(forecastAt0500, '2024-12-08')).toEqual({ min: 4, max: 13 })
+    expect(temps(forecastAt1100, '2025-06-11')).toEqual({ min: null, max: 23 })
+    expect(temps(forecastAt1100, '2025-06-12')).toEqual({ min: 20, max: 29 })
+    // A correction released between midnight and 5:00 keeps the 17:00 layout and its minimum.
+    const correction = structuredClone(forecast)
+    correction[0].reportDatetime = '2026-09-16T01:00:00+09:00'
+    expect(temps(correction, '2026-09-16')).toEqual({ min: 21, max: 24 })
+    const unreadableTime = structuredClone(forecast)
+    unreadableTime[0].reportDatetime = '2026-09-15 17:00 JST'
+    expect(temps(unreadableTime, '2026-09-16')).toEqual({ min: 21, max: 24 })
+  })
+  it('reports short-term temperatures laid out in a way it does not know rather than guessing which is which', () => {
+    const tokyo = resolve('東京都')
+    const series = (data: Forecast[]) => data[0].timeSeries.find((s) => s.areas.some((a) => a.temps))!
+    const shifted = structuredClone(forecastAt0500)
+    series(shifted).timeDefines = series(shifted).timeDefines.map((at) => at.replace('T09:00', 'T06:00'))
+    expect(() => parseForecast(shifted, tokyo, '2024-12-08')).toThrow(errorText('cardsWeather.errors.badData'))
+    const shortened = structuredClone(forecastAt0500)
+    series(shortened).timeDefines.shift()
+    expect(() => parseForecast(shortened, tokyo, '2024-12-08')).toThrow(errorText('cardsWeather.errors.badData'))
   })
   it('reads fog as a sky of its own rather than as a missing one', () => {
     const location = resolve('東京都')

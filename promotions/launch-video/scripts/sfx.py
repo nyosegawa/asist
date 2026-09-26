@@ -1,9 +1,10 @@
 # /// script
 # dependencies = ["numpy"]
 # ///
-"""Sound effects for the video: 11 kinds of moments x 3 patterns, all synthesized with numpy.
+"""Sound effects for the video, all synthesized with numpy: 11 kinds of moments in 3 patterns, and 11
+more kinds that only the clay pattern has, since the video uses that pattern.
 
-Kinds (what happens on screen):
+Kinds in every pattern (what happens on screen):
   voice       someone talks to ASIST (a speech bubble from the user)
   reply       ASIST or the robot answers
   card        a card appears as the answer
@@ -15,6 +16,17 @@ Kinds (what happens on screen):
   work        the Agent job runs and finishes (1.2 s of work, then done)
   night       the night falls and the clock strikes midnight
   write       the diary is written, character by character (2 s)
+
+Kinds in the clay pattern only:
+  jump, land  the robot jumps in and lands
+  fly         papers fly into a dialog
+  open, close a window grows out of its icon, and goes back into it
+  done        a job finishes, with confetti
+  clock       the clock turns to midnight
+  morning     the morning rises
+  cta         the address of the site appears
+  cascade     n wooden taps over a duration, rising a little (a job's progress)
+  chime       n kalimba notes rising through F major pentatonic over a duration (letters, chips, a count)
 
 Patterns:
   musicbox    tuned bells, celesta, kalimba and harp in F major pentatonic, to blend with the music box BGM
@@ -31,6 +43,7 @@ import numpy as np
 SR = 48000
 ROOT = Path(__file__).resolve().parent.parent
 KINDS = ['voice', 'reply', 'card', 'deal', 'hand', 'transition', 'appear', 'click', 'work', 'night', 'write']
+CLAY_KINDS = ['jump', 'land', 'fly', 'open', 'close', 'done', 'clock', 'morning', 'cta', 'cascade', 'chime']
 PATTERNS = ['musicbox', 'clay', 'mac']
 # F major pentatonic from F4
 PENTA = [65, 67, 69, 72, 74, 77, 79, 81, 84, 86, 89, 91, 93, 96, 98, 101]
@@ -39,6 +52,8 @@ PENTA = [65, 67, 69, 72, 74, 77, 79, 81, 84, 86, 89, 91, 93, 96, 98, 101]
 PEAK_DB = {
     'voice': -17, 'reply': -18, 'card': -17, 'deal': -22, 'hand': -21, 'transition': -25,
     'appear': -21, 'click': -20, 'work': -20, 'night': -20, 'write': -25,
+    'jump': -21, 'land': -22, 'fly': -24, 'open': -21, 'close': -23, 'done': -18, 'clock': -20,
+    'morning': -21, 'cta': -18, 'cascade': -26, 'chime': -24,
 }
 
 
@@ -271,6 +286,37 @@ def s_clay(kind, i=0):
         return reverb(pencil(2.0, 16, seed=70), 0.05)
 
 
+def s_clay_only(kind, i=0, n=1, dur=0.0):
+    if kind == 'jump':
+        t = ts(0.3)
+        swish = band(noise(0.3, 44), 600, 3000) * np.sin(np.pi * t / 0.3) ** 2 * 0.25
+        return reverb(seq([(0, squish(180, 560, 0.2), 1.0), (0.02, swish, 1.0)]), 0.08)
+    if kind == 'land':
+        return reverb(seq([(0, thump(70, 0.12), 1.0), (0.0, squish(420, 260, 0.09), 0.6)]), 0.06)
+    if kind == 'fly':
+        return reverb(paper(0.38, 1200, 6000, seed=45), 0.08)
+    if kind == 'open':
+        return reverb(seq([(0, paper(0.26, 900, 5000, seed=46), 0.9), (0.2, thump(95), 0.8), (0.2, squish(380, 520, 0.08), 0.4)]), 0.08)
+    if kind == 'close':
+        return reverb(seq([(0, squish(520, 300, 0.1), 1.0), (0.09, wood(900, 0.06, 47), 0.5)]), 0.06)
+    if kind == 'done':
+        rustle = seq([(k * 0.035, paper(0.05, 2500, 9000, seed=60 + k, shape='snap'), 0.5) for k in range(10)])
+        chime = seq([(0.02 + k * 0.08, celesta(m, 1.0), 0.55) for k, m in enumerate([81, 86, 89])])
+        return reverb(seq([(0, wood(620, 0.2, 90), 1.0), (0, chime, 1.0), (0.05, rustle, 0.8)]), 0.12)
+    if kind == 'clock':
+        return reverb(seq([(0, wood(1400, 0.05, 71), 0.5), (0.18, wood(1100, 0.05, 72), 0.5), (0.36, church_bell(65, 2.2), 0.6)]), 0.3, 1.2)
+    if kind == 'morning':
+        return reverb(seq([(k * 0.07, kalimba(m, 0.9), 0.5 + 0.08 * k) for k, m in enumerate([72, 77, 81, 84, 89])]), 0.25)
+    if kind == 'cta':
+        return reverb(seq([(0, squish(300, 520, 0.12), 0.7)] + [(0.05 + k * 0.06, musicbox(m, 1.3), 0.7) for k, m in enumerate([84, 89, 93, 96])]), 0.3)
+    if kind == 'chime':
+        gap = dur / max(1, n - 1) if n > 1 else 0
+        return reverb(seq([(k * gap, kalimba(PENTA[5 + k % 10], 0.6), 0.55 + 0.04 * k) for k in range(n)]), 0.25)
+    if kind == 'cascade':
+        gap = dur / max(1, n - 1) if n > 1 else 0
+        return reverb(seq([(k * gap, wood(900 + 60 * k, 0.05, 80 + k), 0.8) for k in range(n)]), 0.06)
+
+
 def s_mac(kind, i=0):
     if kind == 'voice':
         rise = glide(hz(84), hz(89), 0.26, 0.3) * bell_env(0.26, 0.03, 0.15)
@@ -313,8 +359,8 @@ def s_mac(kind, i=0):
 MAKERS = {'musicbox': s_musicbox, 'clay': s_clay, 'mac': s_mac}
 
 
-def make(pattern, kind, i=0):
-    sig = MAKERS[pattern](kind, i)
+def make(pattern, kind, i=0, n=1, dur=0.0):
+    sig = s_clay_only(kind, i, n, dur) if kind in CLAY_KINDS else MAKERS[pattern](kind, i)
     sig = sig / (np.abs(sig).max() + 1e-9)
     # a short fade removes clicks at the end of the reverb tail
     sig[-int(0.01 * SR):] *= np.linspace(1, 0, int(0.01 * SR))
@@ -342,4 +388,6 @@ if __name__ == '__main__':
         for k in KINDS:
             events = [(at, make(p, k, i), 1.0) for at, i in AUDITION.get(k, [(0, 0)])]
             write_wav(ROOT / 'out' / 'sfx' / p / f'{k}.wav', np.concatenate([silence(0.05), seq(events), silence(0.1)]))
-    print('wrote', len(PATTERNS) * len(KINDS), 'sounds to out/sfx/')
+    for k in CLAY_KINDS:
+        write_wav(ROOT / 'out' / 'sfx' / 'clay' / f'{k}.wav', np.concatenate([silence(0.05), make('clay', k, 0, 6, 0.5), silence(0.1)]))
+    print('wrote', len(PATTERNS) * len(KINDS) + len(CLAY_KINDS), 'sounds to out/sfx/')

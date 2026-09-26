@@ -19,7 +19,7 @@ import { useMailStore, useSettingsStore, useToastStore } from '@/state/stores'
 import { askConfirm } from '@/state/confirm'
 import type { SettingsContext } from './context'
 import { useFieldDraft } from './field-draft'
-import { Btn, Chip, Group, Row, type ChipTone } from './primitives'
+import { Btn, Chip, Group, NotSavedHint, Row, type ChipTone } from './primitives'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 
@@ -50,7 +50,7 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
 
   // Only the option that changed is sent. The accounts change through their own calls to main, and an
   // account added while this page was drawn is not in `mail`.
-  const persist = (patch: Partial<Omit<MailSettingsValue, 'accounts'>>): void => ctx.set({ mail: patch })
+  const persist = (patch: Partial<Omit<MailSettingsValue, 'accounts'>>): Promise<boolean> => ctx.set({ mail: patch })
   const syncDays = useFieldDraft(mail.syncDays, {
     format: String,
     parse: (text) => {
@@ -125,7 +125,7 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           </select>
         </Row>
       )}
-      <Row label={t('settingsMail.syncDays')} hint={t('settingsMail.syncDaysHint', { min: MIN_SYNC_DAYS, max: MAX_SYNC_DAYS })}>
+      <Row label={t('settingsMail.syncDays')} hint={syncDays.failed ? <NotSavedHint /> : t('settingsMail.syncDaysHint', { min: MIN_SYNC_DAYS, max: MAX_SYNC_DAYS })}>
         <input
           type="number"
           aria-label={t('settingsMail.syncDays')}

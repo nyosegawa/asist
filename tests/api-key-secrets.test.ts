@@ -134,7 +134,6 @@ describe('a saved key that this build cannot decrypt', () => {
     await llm.validateProviderKey('openai', 'sk-openai-new')
     llm.saveProviderKey('openai', 'sk-openai-new')
     expect(llm.llmKeyStates()).toEqual({ anthropic: 'unreadable', openai: 'verified', google: 'missing', cerebras: 'missing' })
-    expect(llm.apiKeyConfigured()).toBe(false)
     await expect(llm.configuredApiKeyAvailable()).resolves.toBe(false)
     expect(() => llm.providerKey('anthropic')).toThrow(errorText('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'Anthropic' }))
   })
@@ -145,7 +144,6 @@ describe('a saved key that this build cannot decrypt', () => {
     models.settings.bridgeModel = { provider: 'openai', id: 'gpt-fast' }
     const llm = await import('../src/main/services/llm/configuration')
     llm.saveProviderKey('openai', 'sk-openai-saved')
-    expect(llm.apiKeyConfigured()).toBe(true)
     await expect(llm.configuredApiKeyAvailable()).resolves.toBe(true)
     expect(models.retrieved.map(({ id }) => id)).toEqual(['gpt-main', 'gpt-fast'])
   })

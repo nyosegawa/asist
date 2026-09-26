@@ -192,6 +192,29 @@ describe('SpeechPlayer.discardBody drops only the body of the previous turn when
   })
 })
 
+describe('SpeechPlayer.dropWaiting, which withdraws a bridge that no answer follows', () => {
+  it('drops the bridge waiting behind the aizuchi and goes on to the sentence after it', async () => {
+    const { player, context } = await createHarness()
+    const starts: string[] = []
+    player.events.on('segmentstart', (value) => starts.push(value.segment.text))
+    player.beginTurn(1)
+    player.playClip('eA==', 'なるほど', { role: 'aizuchi' })
+    context.decodeResolvers[0]({ duration: 1 } as AudioBuffer)
+    await flushMicrotasks()
+    const bridge = player.playClip('eA==', '会議の件ですね。', { role: 'bridge' })
+    player.enqueue(segment(1, 0, 'すみません、うまくいきませんでした。', 'eA=='))
+
+    player.dropWaiting(bridge)
+    context.sources[0].onended?.()
+    await flushMicrotasks()
+    context.decodeResolvers[1]({ duration: 1 } as AudioBuffer)
+    await flushMicrotasks()
+
+    expect(starts).toEqual(['なるほど', 'すみません、うまくいきませんでした。'])
+    player.interrupt()
+  })
+})
+
 describe('SpeechPlayer.bodyQueuedAfter, which tells whether the bridge came too late', () => {
   it('does not count the filler played while a tool runs as the answer', async () => {
     const { player } = await createHarness()

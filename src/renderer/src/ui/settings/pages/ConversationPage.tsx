@@ -22,7 +22,7 @@ import { keyReadable, type ApiKeyState } from '@shared/ipc'
 import { useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
 import { useFieldDraft } from '../field-draft'
-import { Btn, Chip, Group, Link, Page, Row, type ChipTone } from '../primitives'
+import { Btn, Chip, Group, Link, NotSavedHint, Page, Row, type ChipTone } from '../primitives'
 import { displayError } from '@/display-error'
 import { useT, useUiLocale } from '@/i18n'
 import { personaStateKey } from '../persona-state'
@@ -170,7 +170,7 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
       </Group>
 
       <Group title={t('settingsConversation.log.title')} description={t('settingsConversation.log.description')}>
-        <Row label={t('settingsConversation.log.retention')} hint={t('settingsConversation.log.retentionHint')}>
+        <Row label={t('settingsConversation.log.retention')} hint={retention.failed ? <NotSavedHint /> : t('settingsConversation.log.retentionHint')}>
           <input
             type="number"
             min={1}

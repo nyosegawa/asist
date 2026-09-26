@@ -1,6 +1,6 @@
 import type { TurnEvent } from '@shared/ipc'
 import * as tts from '../tts'
-import { errorMessage } from '../i18n'
+import { errMessage } from '@shared/api-errors'
 import { SynthQueue } from './synth-queue'
 
 /**
@@ -45,7 +45,7 @@ export const ttsRoute: SpeechRoute = {
       emitSegment: (segment) => emit({ type: 'segment', turnId, segment }),
       emitAudio: (index, samples, last) => emit({ type: 'segmentAudio', turnId, index, samples, last }),
       onFirstSynth: (ms) => emit({ type: 'metrics', turnId, timings: { ttsMs: ms } }),
-      onFailure: (err) => emit({ type: 'error', turnId, message: errorMessage(err) })
+      onFailure: (err) => emit({ type: 'error', turnId, message: errMessage(err) })
     })
 }
 

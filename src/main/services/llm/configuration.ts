@@ -8,7 +8,7 @@ import {
 import type { JsonSchema } from '@shared/conversation'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
 import { errorText } from '@shared/i18n/error-text'
-import { keyReadable, type ApiKeyState, type AppSettings } from '@shared/ipc'
+import type { ApiKeyState, AppSettings } from '@shared/ipc'
 import { t } from '../i18n'
 import { SecretUnreadableError } from '../encrypted-secrets'
 import { getSettings } from '../settings'
@@ -76,12 +76,6 @@ function keysOf(models: readonly ConfiguredApiModel[]): ProviderKeys {
 
 function validationFingerprint(keys: ProviderKeys, models: readonly ConfiguredApiModel[]): string {
   return JSON.stringify(models.map(({ provider, id }) => [provider, id.trim(), keys[provider] ?? '']))
-}
-
-/** Whether every provider the configured models use has a key that can be read. It says nothing about whether those keys authenticate. */
-export const apiKeyConfigured = (): boolean => {
-  const states = llmKeyStates()
-  return configuredModels().every(({ provider }) => keyReadable(states[provider]))
 }
 
 /** Whether the current combination of keys and models was verified against the real API in this process. */

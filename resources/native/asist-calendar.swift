@@ -102,9 +102,13 @@ func perform(_ input: [String: Any]) async throws -> Any {
         }
         let start = try date(input, "start"), end = try date(input, "end")
         guard end > start, end.timeIntervalSince(start) <= 366 * 86400 else { try fail("badRequest") }
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
-        return try store.events(matching: predicate).filter { $0.startDate < end && $0.endDate > start }
-            .sorted { $0.startDate < $1.startDate }.map(eventData)
+        // EventKit does not document whether its predicate takes an event that only touches the range.
+        // If it tests overlap strictly, an event without length at `start` is never matched, so the
+        // predicate starts a minute earlier. Times in Calendar are set in whole minutes, so the minute
+        // brings in only events that end at `start` or just before it, and calendar-service.ts applies
+        // the exact range to what comes back.
+        let predicate = store.predicateForEvents(withStart: start.addingTimeInterval(-60), end: end, calendars: calendars)
+        return try store.events(matching: predicate).sorted { $0.startDate < $1.startDate }.map(eventData)
     }
     if operation == "get" { return try eventData(existing(input)) }
     guard ["create", "update", "delete"].contains(operation) else { try fail("badRequest") }

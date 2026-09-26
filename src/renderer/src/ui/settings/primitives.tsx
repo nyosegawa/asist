@@ -1,5 +1,6 @@
 import { ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useT } from '@/i18n'
 
 /**
  * The parts the settings screen is built from, in three levels: a page with a title and one
@@ -66,6 +67,16 @@ export function Row({
       </div>
       {children && <div className="st-row-control">{children}</div>}
     </div>
+  )
+}
+
+/** The hint of a row whose field holds text that could not be saved, in place of its usual hint. */
+export function NotSavedHint(): React.JSX.Element {
+  const t = useT()
+  return (
+    <span className="st-row-hint-failed" role="alert">
+      {t('settings.fieldNotSaved')}
+    </span>
   )
 }
 

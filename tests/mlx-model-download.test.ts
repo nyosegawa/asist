@@ -19,11 +19,14 @@ const MODEL = { id: 'test-org/test-model', revision: 'abc123', label: 'Test Mode
  * A stand-in for the environment's python. For hf_snapshot.py it prints the repository's size, writes
  * the weights into the cache in three steps like a download, links every file into the snapshot, and
  * records its pid; for a worker script it reports ready. With FAKE_DOWNLOAD_HANG set the download never ends.
+ * The pid file appears by a rename: a redirection creates the file before it writes, and a test that saw it
+ * empty read pid 0, which names the test's own process group and never stops existing.
  */
 const FAKE_PYTHON = `#!/bin/sh
 case "$1" in
   *hf_snapshot.py)
-    echo $$ > "$FAKE_PID_FILE"
+    echo $$ > "$FAKE_PID_FILE.tmp"
+    mv "$FAKE_PID_FILE.tmp" "$FAKE_PID_FILE"
     cache="$HOME/.cache/huggingface/hub/models--$(echo "$2" | sed 's#/#--#')"
     mkdir -p "$cache/blobs" "$cache/snapshots/$3"
     echo 'ASIST_JSON:{"type":"total","bytes":3000000}'
@@ -97,6 +100,7 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('prepa
     const outcome = prepareModel({ model: MODEL, feature: 'Test', signal: controller.signal, onProgress: () => {}, start })
     await vi.waitFor(() => expect(fs.existsSync(process.env.FAKE_PID_FILE!)).toBe(true), { timeout: 5_000 })
     const pid = Number(fs.readFileSync(process.env.FAKE_PID_FILE!, 'utf8'))
+    expect(pid).toBeGreaterThan(0)
     controller.abort()
     const result = await outcome
     expect(result.ok).toBe(false)

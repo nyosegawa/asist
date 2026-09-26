@@ -23,6 +23,15 @@ export const detail = (err: unknown, language: PromptLanguage): string =>
 export const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
   issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
 
+/** The failure of a tool whose input its schema rejected, which sends the model back to the schema. */
+export function badInput(issues: readonly { message: string }[], language: PromptLanguage): ToolError {
+  const reasons = issueText(issues, language)
+  return new ToolError({
+    ja: `入力が不正: ${reasons}。スキーマに合わせて呼び直すこと。`,
+    en: `Invalid input: ${reasons}. Call again with input that matches the schema.`
+  })
+}
+
 /**
  * The error a card shows, which is the error's own message with its key still in it: the screen words
  * it in the language of the interface, which need not be the language the model is told the failure in.

@@ -1,5 +1,6 @@
 import { errorText } from '@shared/i18n/error-text'
 import { userAgent } from '../user-agent'
+import { fetchFailure } from '../fetch-failure'
 
 interface Pending {
   controller: AbortController
@@ -30,6 +31,8 @@ export class WeatherCache {
         const response = await this.request(url, {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]),
           headers: { 'user-agent': userAgent() }
+        }).catch((error: unknown) => {
+          throw fetchFailure(url, error)
         })
         if (!response.ok) throw new Error(errorText('cardsWeather.errors.fetchFailed', { status: response.status }))
         const value = decode(await response.text())

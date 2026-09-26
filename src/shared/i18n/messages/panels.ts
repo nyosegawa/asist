@@ -265,6 +265,32 @@ export const panels = defineMessages({
       'pt-BR': 'O assistente já sabe o motivo.',
       'es-419': 'El asistente ya sabe el motivo.',
       'es-ES': 'El asistente ya sabe el motivo.'
+    },
+    unreachable: {
+      'ja-JP': '{host} に接続できませんでした。ネットワークの接続を確かめてください。',
+      'en-US': "Couldn't connect to {host}. Check the network connection.",
+      'fr-FR': 'Impossible de se connecter à {host}. Vérifiez la connexion réseau.',
+      'de-DE': 'Keine Verbindung zu {host} möglich. Prüfen Sie die Netzwerkverbindung.',
+      'hi-IN': '{host} से कनेक्ट नहीं हो सका। नेटवर्क कनेक्शन देखें।',
+      'id-ID': 'Tidak bisa terhubung ke {host}. Periksa koneksi jaringan.',
+      'it-IT': 'Impossibile connettersi a {host}. Controlla la connessione di rete.',
+      'ko-KR': '{host}에 연결하지 못했습니다. 네트워크 연결을 확인하십시오.',
+      'pt-BR': 'Não foi possível se conectar a {host}. Confira a conexão de rede.',
+      'es-419': 'No se pudo conectar con {host}. Revisa la conexión de red.',
+      'es-ES': 'No se ha podido conectar con {host}. Comprueba la conexión de red.'
+    },
+    connectFailed: {
+      'ja-JP': '{host} に接続できませんでした。',
+      'en-US': "Couldn't connect to {host}.",
+      'fr-FR': 'Impossible de se connecter à {host}.',
+      'de-DE': 'Keine Verbindung zu {host} möglich.',
+      'hi-IN': '{host} से कनेक्ट नहीं हो सका।',
+      'id-ID': 'Tidak bisa terhubung ke {host}.',
+      'it-IT': 'Impossibile connettersi a {host}.',
+      'ko-KR': '{host}에 연결하지 못했습니다.',
+      'pt-BR': 'Não foi possível se conectar a {host}.',
+      'es-419': 'No se pudo conectar con {host}.',
+      'es-ES': 'No se ha podido conectar con {host}.'
     }
   }
 })

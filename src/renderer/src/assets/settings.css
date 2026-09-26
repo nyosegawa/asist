@@ -232,6 +232,8 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-holo-dim);
+  /* A reason main gives can span several lines, such as each problem of a file it cannot read. */
+  white-space: pre-line;
 }
 .st-row-control {
   display: flex;
@@ -309,6 +311,12 @@
     5px 5px,
     5px 5px;
   background-repeat: no-repeat;
+}
+.st-input[aria-invalid='true'] {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.6);
+}
+.st-row-hint-failed {
+  color: var(--ui-tone-red-text);
 }
 .st-input.is-mono {
   font-family: var(--font-mono);

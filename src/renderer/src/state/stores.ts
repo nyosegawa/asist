@@ -14,8 +14,10 @@ import type {
   PanelEvent,
   PanelSlot,
   PanelSpec,
+  TurnEvent,
   TurnTimings
 } from '@shared/ipc'
+import type { AizuchiClass } from '@shared/aizuchi-classifier'
 import { catalogByType } from '@shared/panel-catalog'
 import { displayError } from '@/display-error'
 import { translate } from '@/i18n'
@@ -52,6 +54,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
 export type Phase = 'idle' | 'listen' | 'think' | 'speak'
 
+/**
+ * What the latest turn's routing did, kept as what happened rather than as a sentence, so that the HUD words it
+ * in the language the interface has when it is drawn. A detail is an error's message as it was thrown.
+ */
+export type RouterNote =
+  | { kind: 'bridgeFailed' | 'heardAsBackchannel' | 'droppedClipEcho' | 'droppedSelfEcho' | 'interrupted' }
+  | { kind: 'bridge'; text: string }
+  | { kind: 'aizuchi'; cls: AizuchiClass; percent: number }
+  | { kind: 'live'; state: LiveConnection; detail?: string }
+  | { kind: 'tool'; name: string; status: Extract<TurnEvent, { type: 'tool' }>['status']; detail?: string }
+
 interface TurnState {
   phase: Phase
   micState: 'off' | 'loading' | 'on'
@@ -61,15 +74,15 @@ interface TurnState {
   activeTurnId: number
   /** Measurements of the latest turn, as shown in the HUD. */
   timings: TurnTimings
-  /** What the HUD says about the routing of the latest turn, empty until the first turn. */
-  routerNote: string
+  /** What the latest turn's routing did, null until the first turn. */
+  routerNote: RouterNote | null
   setPhase: (phase: Phase) => void
   setMic: (micState: TurnState['micState'], progress?: number) => void
   setPartial: (partial: string) => void
   setActiveTurn: (id: number) => void
   mergeTimings: (t: TurnTimings) => void
   resetTimings: () => void
-  setRouterNote: (note: string) => void
+  setRouterNote: (note: RouterNote) => void
 }
 
 export const useTurnStore = create<TurnState>((set) => ({
@@ -79,7 +92,7 @@ export const useTurnStore = create<TurnState>((set) => ({
   partial: '',
   activeTurnId: -1,
   timings: {},
-  routerNote: '',
+  routerNote: null,
   setPhase: (phase) => set({ phase }),
   setMic: (micState, progress = 0) => set({ micState, micProgress: progress }),
   setPartial: (partial) => set({ partial }),
@@ -116,7 +129,10 @@ export const useLiveStore = create<LiveState>((set) => ({
   reset: () => set({ connection: 'off', detail: '', usage: null, responseMs: null, connectMs: null })
 }))
 
-/** A line of the interface that is drawn from the dictionary each time, so that it follows a change of the language. */
+/**
+ * A line of the interface that is drawn from the dictionary each time, so that it follows a change of the language.
+ * The message of an error is kept as it was thrown, key and all, and worded when the line is drawn.
+ */
 export type FeedMessage = { key: 'conversation.start' } | { key: 'conversation.error'; values: { message: string } }
 
 export interface FeedLine {
@@ -423,10 +439,17 @@ interface MailState {
   /** Every draft main has stored. The "下書き" box of the mail view and the draft cards read it. */
   drafts: MailDraft[]
   draftsLoaded: boolean
+  /**
+   * The drafts this window has asked main to send and not yet heard back about. Every send starts from a
+   * draft editor in this window, so the card and the composer open on the same draft both know that a send
+   * is under way, while main already records its start in the draft.
+   */
+  sending: string[]
   refresh: () => Promise<void>
   loadDrafts: () => Promise<void>
   apply: (status: MailStatus) => void
   applyDrafts: (drafts: MailDraft[]) => void
+  setSending: (id: string, sending: boolean) => void
   bump: () => void
 }
 
@@ -435,6 +458,7 @@ export const useMailStore = create<MailState>((set) => ({
   revision: 0,
   drafts: [],
   draftsLoaded: false,
+  sending: [],
   refresh: async () => {
     try {
       set({ status: await window.api.mailStatus() })
@@ -451,6 +475,7 @@ export const useMailStore = create<MailState>((set) => ({
   },
   apply: (status) => set({ status }),
   applyDrafts: (drafts) => set({ drafts, draftsLoaded: true }),
+  setSending: (id, sending) => set((s) => ({ sending: sending ? [...s.sending, id] : s.sending.filter((item) => item !== id) })),
   bump: () => set((s) => ({ revision: s.revision + 1 }))
 }))
 
@@ -464,17 +489,42 @@ export interface Toast {
 interface ToastState {
   toasts: Toast[]
   push: (t: Omit<Toast, 'id'>) => void
+  /** Keeps the toast up while someone reads it, until `release`. */
+  hold: (id: number) => void
+  /** Lets a held toast go away TOAST_MS later. */
+  release: (id: number) => void
   remove: (id: number) => void
 }
 
-let nextToastId = 1
+/** How long a toast stays up after it appears, or after it is released. */
+export const TOAST_MS = 5000
 
-export const useToastStore = create<ToastState>((set) => ({
-  toasts: [],
-  push: (t) => {
-    const id = nextToastId++
-    set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-4) }))
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), 5000)
-  },
-  remove: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
-}))
+let nextToastId = 1
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+export const useToastStore = create<ToastState>((set, get) => {
+  const stop = (id: number): void => {
+    clearTimeout(toastTimers.get(id))
+    toastTimers.delete(id)
+  }
+  const removeLater = (id: number): void => {
+    stop(id)
+    toastTimers.set(id, setTimeout(() => get().remove(id), TOAST_MS))
+  }
+  return {
+    toasts: [],
+    push: (t) => {
+      const id = nextToastId++
+      set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-4) }))
+      removeLater(id)
+    },
+    hold: stop,
+    release: (id) => {
+      if (get().toasts.some((x) => x.id === id)) removeLater(id)
+    },
+    remove: (id) => {
+      stop(id)
+      set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
+    }
+  }
+})

@@ -164,8 +164,13 @@ function stopWorker(error: Error = new DOMException('Qwen3-TTS worker stopped', 
  * generations were plausible. Whole sentences are read at about 0.16 s per character and do not show
  * this. Every generation is cancelled once it passes a length no natural reading reaches, and a clip
  * is generated again until it stays below it; each generation is sampled afresh.
+ *
+ * A digit is read as a word of its own and takes longer than a character of text, so it is allowed
+ * twice the time. Measured on 2026-09-26 with `ono_anna`, 16 readings: "暗証番号は4桁で、8264です。"
+ * took up to 5.9 s, which the allowance by characters alone, 5.4 s, cut before "四です".
  */
-const plausibleSeconds = (text: string): number => 0.6 + 0.3 * text.length
+const plausibleSeconds = (text: string): number =>
+  0.6 + 0.3 * text.length + 0.3 * (text.match(/\p{Nd}/gu)?.length ?? 0)
 const CLIP_ATTEMPTS = 6
 
 /**

@@ -528,5 +528,18 @@ export const settings = defineMessages({
       'es-419': 'Proveedor desconocido: {provider}',
       'es-ES': 'Proveedor desconocido: {provider}'
     }
+  },
+  fieldNotSaved: {
+    'ja-JP': '保存できませんでした。入力欄から移動すると、もう一度保存します。',
+    'en-US': 'Not saved. Leave the field to save it again.',
+    'fr-FR': 'Non enregistré. Quittez le champ pour réessayer.',
+    'de-DE': 'Nicht gespeichert. Verlassen Sie das Feld, um es erneut zu speichern.',
+    'hi-IN': 'सेव नहीं हुआ। फिर से सेव करने के लिए फ़ील्ड से बाहर जाएँ।',
+    'id-ID': 'Belum tersimpan. Keluar dari kolom untuk menyimpannya lagi.',
+    'it-IT': 'Non salvato. Esci dal campo per salvarlo di nuovo.',
+    'ko-KR': '저장하지 못했습니다. 입력란을 벗어나면 다시 저장합니다.',
+    'pt-BR': 'Não foi salvo. Saia do campo para salvar de novo.',
+    'es-419': 'No se guardó. Sal del campo para volver a guardarlo.',
+    'es-ES': 'No se ha guardado. Sal del campo para volver a guardarlo.'
   }
 })

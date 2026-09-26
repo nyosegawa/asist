@@ -16,7 +16,7 @@ import { fillPrompt, promptText, type ConversationLocale, type PromptText } from
 import { marker } from '@shared/conversation-markers'
 import { providerKey, streamConversation } from '../llm'
 import { LLM_PROVIDER_INFO, type ConversationModel } from '@shared/llm-catalog'
-import { errorMessage, tConversation } from '../i18n'
+import { tConversation } from '../i18n'
 import { conversationLocale, features } from '../conversation-locale'
 import { getSettings } from '../settings'
 import * as agentRunner from '../agent'
@@ -293,7 +293,7 @@ async function runTurn(
     } else {
       console.error('brain preparation failed:', errMessage(err))
       recordAssistant('', { failed: true })
-      emit({ type: 'error', turnId, message: errorMessage(err) })
+      emit({ type: 'error', turnId, message: errMessage(err) })
     }
     emit({ type: 'done', turnId, fullText: '' })
     return
