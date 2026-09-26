@@ -1,0 +1,41 @@
+// @vitest-environment happy-dom
+import React, { act } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
+import { Hud } from '@/ui/Hud'
+import { useSettingsStore, useTurnStore } from '@/state/stores'
+
+const t = createTranslator('ja-JP')
+let container: HTMLDivElement
+let root: Root
+
+beforeEach(() => {
+  vi.stubGlobal('React', React)
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  useSettingsStore.setState({ settings: null })
+  useTurnStore.setState(useTurnStore.getInitialState())
+  container = document.createElement('div')
+  document.body.append(container)
+  root = createRoot(container)
+})
+afterEach(async () => {
+  await act(async () => root.unmount())
+  container.remove()
+  vi.unstubAllGlobals()
+})
+
+describe('the HUD', () => {
+  it('shows the routing as not yet measured before the first turn, like a latency, and the note of the latest turn after it', async () => {
+    await act(async () => root.render(<Hud />))
+    const router = container.querySelector('.hud-value.is-router')!
+    const latency = container.querySelector('.hud-value:not(.is-router)')!
+    expect(latency.classList.contains('is-empty')).toBe(true)
+    expect(router.classList.contains('is-empty')).toBe(true)
+    expect(router.textContent).toBe(latency.textContent)
+
+    await act(async () => useTurnStore.getState().setRouterNote(t('hud.router.interrupted')))
+    expect(router.textContent).toBe(t('hud.router.interrupted'))
+    expect(router.classList.contains('is-empty')).toBe(false)
+  })
+})

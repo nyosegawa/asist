@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { REGIONS, regionCurrency } from '@shared/conversation-locale'
-import { formatMessage } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 
 const mocks = vi.hoisted(() => ({
@@ -141,9 +140,8 @@ describe('a card that cannot be filled', () => {
     ]
     for (const [type, props, host] of cases) {
       const error = (await fetchPanel(type, props).catch((err: unknown) => err)) as Error
-      const known = readErrorText(error.message)
-      expect(known, type).not.toBeNull()
-      const text = formatMessage(known!.message, 'en-US', known!.values)
+      const text = readErrorText(error.message, 'en-US')
+      expect(text, type).not.toBeNull()
       expect(text).toContain(host)
       expect(text).toContain('503')
     }
@@ -151,22 +149,18 @@ describe('a card that cannot be filled', () => {
 
   it('refuses a clock without a city in a message the screen words', async () => {
     respond({ results: [] }, [])
-    await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message) !== null)
+    await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message, 'en-US') !== null)
   })
 
   it('names the files it could not show in a message the screen words', async () => {
     const error = (await fetchPanel('files', { paths: ['/elsewhere/report.pdf'] }).catch((err: unknown) => err)) as Error
-    const known = readErrorText(error.message)
-    expect(known).not.toBeNull()
-    expect(formatMessage(known!.message, 'en-US', known!.values)).toContain('report.pdf')
+    expect(readErrorText(error.message, 'en-US')).toContain('report.pdf')
   })
 
   it('words a place the table of Japan does not resolve for the weather card, naming the place', async () => {
     for (const location of ['東京タワー', '府中市']) {
       const error = (await fetchPanel('weather', { location }).catch((err: unknown) => err)) as Error
-      const known = readErrorText(error.message)
-      expect(known, location).not.toBeNull()
-      expect(formatMessage(known!.message, 'en-US', known!.values)).toContain(location)
+      expect(readErrorText(error.message, 'en-US'), location).toContain(location)
     }
   })
 })

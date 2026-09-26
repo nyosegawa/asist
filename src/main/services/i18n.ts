@@ -1,4 +1,4 @@
-import { createTranslator, formatMessage, type Translate, type UiLocale } from '@shared/i18n'
+import { createTranslator, type Translate, type UiLocale } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 import { getSettings } from './settings'
 
@@ -40,8 +40,7 @@ export const tConversation: Translate = (key, ...values) => {
 /** An error as text in the given language. An error that was not written for the user is returned as it is. */
 export function errorMessageIn(locale: UiLocale, error: unknown): string {
   const text = error instanceof Error ? error.message : String(error)
-  const known = readErrorText(text)
-  return known ? formatMessage(known.message, locale, known.values) : text
+  return readErrorText(text, locale) ?? text
 }
 
 /**

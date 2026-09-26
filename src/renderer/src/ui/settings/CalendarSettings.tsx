@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AppSettings } from '@shared/settings'
 import type { CalendarStatus } from '@shared/calendar'
+import { errorText } from '@shared/i18n/error-text'
 import { HoloSwitch } from '@/components/ui/switch'
 import { useSettingsStore } from '@/state/stores'
 import { Btn, Chip, Group, Row } from './primitives'
@@ -73,7 +74,7 @@ export function CalendarSettings({ settings }: { settings: AppSettings }): React
               if (enabled) {
                 const result = await window.api.calendarRequestAccess()
                 setStatus(result)
-                if (result.authorization !== 'fullAccess') throw new Error(t(`settingsCalendar.authorization.${result.authorization}`))
+                if (result.authorization !== 'fullAccess') throw new Error(errorText(`settingsCalendar.authorization.${result.authorization}`))
               }
               await persist({ enabled })
             })

@@ -25,7 +25,7 @@ describe('the text of a tool error for the model', () => {
     const { cardError } = await import('../src/main/services/brain/tool-error-text')
     const { ToolError } = await import('@shared/tool-registry')
     for (const err of [new DOMException('show_news ran past 8000 ms', 'TimeoutError'), new ToolError({ ja: '見つからない', en: 'Not found' })]) {
-      expect(readErrorText(cardError(err)), err.name).not.toBeNull()
+      expect(readErrorText(cardError(err), 'en-US'), err.name).not.toBeNull()
     }
   })
 

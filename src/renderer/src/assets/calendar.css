@@ -884,6 +884,11 @@
 .cal-pop-actions .cal-pop-hint {
   margin: 0;
 }
+/* The hint gives up the width, so that a button's label stays on one line, as the primary button's does. */
+.cal-pop-actions .cal-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .cal-pop.is-editor {
   width: 420px;
 }

@@ -26,18 +26,5 @@ export const confirm = defineMessages({
     'pt-BR': 'Não foi possível exibir a confirmação.',
     'es-419': 'No se pudo mostrar la confirmación.',
     'es-ES': 'No se ha podido mostrar la confirmación.'
-  },
-  alreadyOpen: {
-    'ja-JP': '別の確認が開いています。その確認に答えてから、もう一度試してください。',
-    'en-US': 'Another confirmation is open. Answer it, then try again.',
-    'fr-FR': 'Une autre confirmation est ouverte. Répondez-y, puis réessayez.',
-    'de-DE': 'Eine andere Bestätigung ist offen. Beantworten Sie sie zuerst und versuchen Sie es dann erneut.',
-    'hi-IN': 'पुष्टि की एक और विंडो खुली है। पहले उसका जवाब दें, फिर कोशिश करें।',
-    'id-ID': 'Ada konfirmasi lain yang masih terbuka. Jawab dulu, lalu coba lagi.',
-    'it-IT': "C'è un'altra conferma aperta. Rispondi prima a quella, poi riprova.",
-    'ko-KR': '다른 확인 화면이 열려 있습니다. 먼저 응답한 뒤 다시 시도하십시오.',
-    'pt-BR': 'Há outra confirmação aberta. Responda a ela primeiro e tente de novo.',
-    'es-419': 'Hay otra confirmación abierta. Respóndela primero y vuelve a intentarlo.',
-    'es-ES': 'Hay otra confirmación abierta. Respóndela primero y vuelve a intentarlo.'
   }
 })

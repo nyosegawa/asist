@@ -110,9 +110,44 @@ describe('an xlsx sheet into rows', () => {
           { text: '7', numeric: true },
           { text: '', numeric: false }
         ]
-      ]
+      ],
+      rowCount: 2,
+      columnCount: 3
     })
-    expect(sheetToRows('空', {})).toEqual({ name: '空', header: [], rows: [] })
+    expect(sheetToRows('空', {})).toEqual({ name: '空', header: [], rows: [], rowCount: 0, columnCount: 0 })
+  })
+
+  it('builds only the cells between the first and the last value, whatever range the file declares', () => {
+    // A 16 KB file can declare A1:XFD1048576, and SheetJS keeps that as !ref. A smaller part of such a range
+    // keeps this test short on a build that walks the declared range.
+    const sheet = { '!ref': 'A1:XFD40', A1: { t: 's', v: '氏名' }, B1: { t: 's', v: '数' }, A2: { t: 's', v: 'A' }, B2: { t: 'n', v: 3, w: '3' } }
+    expect(sheetToRows('表', sheet)).toEqual({
+      name: '表',
+      header: ['氏名', '数'],
+      rows: [[{ text: 'A', numeric: false }, { text: '3', numeric: true }]],
+      rowCount: 1,
+      columnCount: 2
+    })
+  })
+
+  it('builds only the first rows of a long sheet, in order, and counts all of them', () => {
+    const sheet: Record<string, unknown> = { '!ref': 'A1:A1201', A1: { t: 's', v: '番号' } }
+    for (let r = 2; r <= 1201; r++) sheet[`A${r}`] = { t: 'n', v: r - 1 }
+    const rows = sheetToRows('表', sheet)
+    expect(rows.rowCount).toBe(1200)
+    expect(rows.rows.length).toBeLessThan(rows.rowCount)
+    expect(rows.rows.map(([cell]) => cell.text)).toEqual(Array.from({ length: rows.rows.length }, (_, i) => String(i + 1)))
+  })
+
+  it('builds only the first columns of a sheet with a value far to the right, and counts all of them', () => {
+    const sheet = { '!ref': 'A1:XFD2', A1: { t: 's', v: '氏名' }, XFD1: { t: 's', v: '端' }, A2: { t: 's', v: 'A' }, XFD2: { t: 'n', v: 1 } }
+    const rows = sheetToRows('表', sheet)
+    expect(rows.columnCount).toBe(16_384)
+    expect(rows.header.length).toBeLessThan(rows.columnCount)
+    expect(rows.header[0]).toBe('氏名')
+    expect(rows.rows).toHaveLength(1)
+    expect(rows.rows[0]).toHaveLength(rows.header.length)
+    expect(rows.rows[0][0]).toEqual({ text: 'A', numeric: false })
   })
 })
 

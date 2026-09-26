@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import type { AppTimer, PanelSpec } from '@shared/ipc'
+import type { FileItem } from '@shared/files'
 import { dayKeyOf, type Task, type TaskStatus } from '@shared/tasks'
 import { usePanelStore, useJobStore, useMailStore, useNoteStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
@@ -324,12 +325,16 @@ describe('todo and notes cards', () => {
 
   it('says the tasks could not be read rather than that there are none, and reads them again on retry', async () => {
     useTaskStore.setState({ tasks: [], loaded: false, error: '' })
-    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeListBroken')))
+    // A stored task that breaks the schema is reported with the reason the schema gave, which is an error of its own.
+    const reason = errorText('tasks.errors.titleTooLong', { limit: 200 })
+    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeItemBroken', { index: 3, message: reason })))
     const card = await renderAt(spec('todo', {}), L)
     await act(async () => {})
     expect(card.textContent).not.toContain(t('tasks.card.empty'))
     expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.card.loadFailed'))
-    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.errors.storeListBroken'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(
+      t('tasks.errors.storeItemBroken', { index: 3, message: t('tasks.errors.titleTooLong', { limit: 200 }) })
+    )
     api.tasksList.mockResolvedValueOnce([taskOf('a', '牛乳を買う', 'todo', 0)])
     await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
     expect([...card.querySelectorAll('.card-row-title')].map((el) => el.textContent)).toEqual(['牛乳を買う'])
@@ -351,6 +356,20 @@ describe('todo and notes cards', () => {
     expect(card.querySelector('.card-more')?.textContent).toContain(t('common.more', { count: 1 }))
     await act(async () => card.querySelectorAll<HTMLButtonElement>('.nt-open')[2].click())
     expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: ids[2], editing: false })
+  })
+
+  it('says the notes could not be read rather than that there are none, and reads them again on retry', async () => {
+    useNoteStore.setState({ notes: [], loaded: false, error: '' })
+    const denied = "EACCES: permission denied, scandir '/Users/me/Library/Application Support/ASIST/notes'"
+    api.notesList.mockRejectedValueOnce(new Error(`Error invoking remote method 'notes-list': Error: ${denied}`))
+    const card = await renderAt(spec('notes', {}), L)
+    await act(async () => {})
+    expect(card.textContent).not.toContain(t('notes.card.emptyList'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('notes.card.loadFailed'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(denied)
+    api.notesList.mockResolvedValueOnce([summarizeNote('20260923-090000-0001', '# 買い物\n', 1)])
+    await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
+    expect([...card.querySelectorAll('.nt-item .card-row-title')].map((el) => el.textContent)).toEqual(['買い物'])
   })
 
   it('redraws when main delivers the notes it has written', async () => {
@@ -552,6 +571,24 @@ describe('files card', () => {
     expect(focus.querySelector('.fv-stub')?.textContent).toContain(t('files.errors.missing'))
     await act(async () => focus.querySelector<HTMLButtonElement>(`[aria-label="${t('files.focus.previous')}"]`)!.click())
     expect(usePanelStore.getState().panels[0].props.selected).toBe(3)
+  })
+
+  it('gives the next file in the focus view a viewer of its own, so a video that could not be played leaves the next one playable', async () => {
+    const video = (name: string): FileItem => ({ path: `/Users/me/Movies/${name}`, name, kind: 'video', sizeBytes: 1000, modifiedAt: 1, url: `asist-file:///Users/me/Movies/${name}` })
+    const items = [video('broken.mov'), video('fine.mp4')]
+    await renderAt(spec('files', { paths: items.map((item) => item.path), items, selected: 0 }), L)
+    await act(async () => {
+      root.render(
+        React.createElement(React.Fragment, null, React.createElement(Dock, { slot: 'right' }), React.createElement('section', { 'data-surface': 'focus' }, React.createElement(FocusOverlay)))
+      )
+      usePanelStore.getState().setFocused('files:test')
+    })
+    const focus = container.querySelector<HTMLElement>('[data-surface="focus"]')!
+    await act(async () => void focus.querySelector('video')!.dispatchEvent(new Event('error')))
+    expect(focus.querySelector('video')).toBeNull()
+    await act(async () => focus.querySelector<HTMLButtonElement>(`[aria-label="${t('files.focus.next')}"]`)!.click())
+    expect(focus.querySelector('.fl-pager-count')?.textContent).toBe('2 / 2')
+    expect(focus.querySelector('video')?.getAttribute('src')).toBe(items[1].url)
   })
 
   it('lists the contents of a folder and opens a files card for the entry that is pressed', async () => {

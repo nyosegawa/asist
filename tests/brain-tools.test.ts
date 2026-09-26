@@ -218,7 +218,7 @@ describe('brain tools registry', () => {
       expect(result.isError).toBe(true)
       const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
       const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
-      expect(readErrorText(shown ?? '')).toEqual(readErrorText(errorText('panels.errors.timedOut')))
+      expect(readErrorText(shown ?? '', 'en-US')).toBe(readErrorText(errorText('panels.errors.timedOut'), 'en-US'))
     } finally {
       vi.useRealTimers()
     }
@@ -232,7 +232,7 @@ describe('brain tools registry', () => {
     const result = await executeClientTool('show_clock', { city: 'Atlantis' }, ctx)
     const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
     const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
-    expect(readErrorText(shown ?? '')).toEqual(readErrorText(failure))
+    expect(readErrorText(shown ?? '', 'en-US')).toBe(readErrorText(failure, 'en-US'))
     expect(result.content).toContain(ja('panels.errors.placeNotFound', { place: 'Atlantis' }))
   })
 

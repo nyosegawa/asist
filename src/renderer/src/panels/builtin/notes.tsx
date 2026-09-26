@@ -28,6 +28,26 @@ function NotesBody({ spec, size }: CardContext): React.JSX.Element {
   }, [loaded, load, spec.updatedAt])
 
   const focusId = typeof spec.props.focusId === 'string' ? spec.props.focusId : null
+  const openWorkspace = (
+    <Action leadsTo="screen" onClick={() => openApp({ app: 'notes', noteId: focusId ?? undefined })}>
+      {t('notes.card.openWorkspace')}
+    </Action>
+  )
+  // Until the notes have been read the card knows nothing about them, so it does not say there are none.
+  if (!loaded)
+    return (
+      <div className="card nt" data-size={size}>
+        <div className="card-hero">
+          <h3>{t('notes.card.title')}</h3>
+        </div>
+        <Empty note={error || undefined}>{error ? t('notes.card.loadFailed') : t('common.loading')}</Empty>
+        <Actions>
+          {error && <Action onClick={() => void load()}>{t('common.retry')}</Action>}
+          {openWorkspace}
+        </Actions>
+      </div>
+    )
+
   const shown = notes.slice(0, LIMIT[size])
   const rest = notes.length - shown.length
   return (
@@ -58,11 +78,7 @@ function NotesBody({ spec, size }: CardContext): React.JSX.Element {
           </More>
         )}
       </Box>
-      <Actions>
-        <Action leadsTo="screen" onClick={() => openApp({ app: 'notes', noteId: focusId ?? undefined })}>
-          {t('notes.card.openWorkspace')}
-        </Action>
-      </Actions>
+      <Actions>{openWorkspace}</Actions>
       {error && (
         <p className="card-missing" role="alert">
           {error}
