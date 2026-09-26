@@ -271,6 +271,27 @@ describe('the native microphone', () => {
   })
 })
 
+describe('the aizuchi classifier', () => {
+  it('is asked about each partial recognition only on a machine that runs it', async () => {
+    const classifiedOn = async (windows: boolean): Promise<number> => {
+      mocks.windows = windows
+      vi.resetModules()
+      const aizuchiClassify = vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 }))
+      await start({ aizuchiClassify })
+      voice().events.emit('state', 'capturing')
+      voice().events.emit('partial', '昨日の会議の件なんですけど')
+      await flush()
+      return aizuchiClassify.mock.calls.length
+    }
+    try {
+      expect(await classifiedOn(false)).toBeGreaterThan(0)
+      expect(await classifiedOn(true)).toBe(0)
+    } finally {
+      mocks.windows = false
+    }
+  })
+})
+
 describe('the opening of a speech that never becomes a turn', () => {
   it('does not play the bridge once the speech is reported dropped', async () => {
     let synthesized!: (clip: { text: string; audio: string }) => void

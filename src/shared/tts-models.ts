@@ -1,3 +1,4 @@
+import type { TtsEngine } from './ipc'
 import type { PlatformCapabilities } from './platform'
 
 /**
@@ -67,6 +68,14 @@ export function qwenTtsRuns(
 ): speechRuntime is Extract<PlatformCapabilities['speechRuntime'], { memoryGb: number }> {
   return speechRuntime.kind === 'mlx'
 }
+
+/**
+ * Whether the engine can run on this machine at all. A saved engine that cannot, such as Qwen3-TTS in
+ * settings brought over from a Mac, is treated like one that cannot speak the conversation language:
+ * it is not offered, not counted as something to prepare, and reading with it fails with the reason.
+ */
+export const ttsEngineRuns = (engine: TtsEngine, speechRuntime: PlatformCapabilities['speechRuntime']): boolean =>
+  engine !== 'qwen3tts' || qwenTtsRuns(speechRuntime)
 
 /** Whether to offer Qwen3-TTS: a runtime that runs it, with the memory for it beside the speech recognition. */
 export function recommendQwenTts(speechRuntime: PlatformCapabilities['speechRuntime']): boolean {

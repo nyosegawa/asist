@@ -15,9 +15,10 @@ const PERMISSIONS: Record<OsFamily, MicrophonePermission> = {
     settingsUrl: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
   },
   // Windows offers a desktop app no prompt of its own: the switch that lets desktop apps use the
-  // microphone decides, so the status is only read, and a refusal is changed in the settings.
+  // microphone decides. Only a refusal the status states is final; 'not-determined' and 'unknown' say
+  // nothing either way, so the capture the renderer opens next decides.
   windows: {
-    request: async () => systemPreferences.getMediaAccessStatus('microphone') === 'granted',
+    request: async () => !['denied', 'restricted'].includes(systemPreferences.getMediaAccessStatus('microphone')),
     settingsUrl: 'ms-settings:privacy-microphone'
   }
 }

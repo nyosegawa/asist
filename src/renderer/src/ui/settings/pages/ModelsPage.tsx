@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { HoloSwitch } from '@/components/ui/switch'
-import { ttsEngineLabel, isExternalTts, ttsNeedsPreparation, type PreparationTarget, type SettingsContext } from '../context'
+import { speechRecognitionReady, ttsEngineLabel, isExternalTts, ttsNeedsPreparation, type PreparationTarget, type SettingsContext } from '../context'
 import { Btn, Chip, Link, Page, Progress } from '../primitives'
 import { progressLabel } from '../../progress-label'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { useT } from '@/i18n'
 import { platformCapabilities } from '@/platform'
 import { SPEECH_RUNTIME_UNAVAILABLE_TEXT } from '@shared/platform'
+import { ttsEngineRuns } from '@shared/tts-models'
 
 /**
  * The models page, where the models and their runtimes are prepared. It is kept apart from the
@@ -54,17 +55,9 @@ export function ModelsPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
                   : 'settingsModels.asr.model',
             { memoryGb: asr.totalMemoryGb, model: asr.label }
           )
-  // Without a runtime for the local model, speech recognition here is Whisper in the browser alone.
-  const asrState =
-    speechRuntime.kind === null
-      ? settings.localAsrEnabled
-        ? 'ready'
-        : 'missing'
-      : setup
-        ? asrReady
-          ? 'ready'
-          : 'missing'
-        : 'unknown'
+  const recognitionReady = speechRecognitionReady(settings, setup, speechRuntime)
+  const asrState = recognitionReady === null ? 'unknown' : recognitionReady ? 'ready' : 'missing'
+  const engineRuns = ttsEngineRuns(engine, speechRuntime)
 
   return (
     <Page title={t('settingsModels.title')} lead={t('settingsModels.lead')}>
@@ -127,31 +120,35 @@ export function ModelsPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
 
         <Card
           title={t('settingsModels.speech.title')}
-          state={!ttsNeedsPreparation(engine) ? 'ready' : status ? (status.tts ? 'ready' : 'missing') : 'unknown'}
+          state={!engineRuns ? 'unknown' : !ttsNeedsPreparation(engine) ? 'ready' : status ? (status.tts ? 'ready' : 'missing') : 'unknown'}
           stateLabel={
-            !ttsNeedsPreparation(engine)
-              ? t('settingsModels.speech.noPreparation')
-              : status
-                ? status.tts
-                  ? t('settingsModels.speech.running')
-                  : engine === 'qwen3tts'
-                    ? t('common.notReady')
-                    : t('common.notFound')
-                : t('settingsModels.checking')
+            !engineRuns
+              ? t('settingsModels.speech.cannotRun')
+              : !ttsNeedsPreparation(engine)
+                ? t('settingsModels.speech.noPreparation')
+                : status
+                  ? status.tts
+                    ? t('settingsModels.speech.running')
+                    : engine === 'qwen3tts'
+                      ? t('common.notReady')
+                      : t('common.notFound')
+                  : t('settingsModels.checking')
           }
           description={
-            engine === 'none'
-              ? t('settingsModels.speech.none')
-              : engine === 'system'
-                ? t('settingsModels.speech.system')
-                : engine === 'qwen3tts'
-                  ? t(setup && !setup.qwenTts.recommended ? 'settingsModels.speech.qwenTooLittleMemory' : 'settingsModels.speech.qwen', {
-                      model: setup?.qwenTts.label ?? 'Qwen3-TTS'
-                    })
-                  : t('settingsModels.speech.external', { engine: ttsEngineLabel(t, engine) })
+            !engineRuns
+              ? t('voice.speech.cannotRunHere', { engine: ttsEngineLabel(t, engine) })
+              : engine === 'none'
+                ? t('settingsModels.speech.none')
+                : engine === 'system'
+                  ? t('settingsModels.speech.system')
+                  : engine === 'qwen3tts'
+                    ? t(setup && !setup.qwenTts.recommended ? 'settingsModels.speech.qwenTooLittleMemory' : 'settingsModels.speech.qwen', {
+                        model: setup?.qwenTts.label ?? 'Qwen3-TTS'
+                      })
+                    : t('settingsModels.speech.external', { engine: ttsEngineLabel(t, engine) })
           }
         >
-          {engine === 'qwen3tts' && !status?.tts && prepareButton('tts', prepare.tts)}
+          {engineRuns && engine === 'qwen3tts' && !status?.tts && prepareButton('tts', prepare.tts)}
           {isExternalTts(engine) && (
             <Btn onClick={() => void window.api.openExternal(ttsSite)}>
               <ExternalLink size={12} />

@@ -18,11 +18,14 @@ describe('the microphone permission of each OS', () => {
     expect(mocks.askForMediaAccess).toHaveBeenCalledWith('microphone')
   })
 
-  it('reads the switch of the Windows settings without asking, and reports a refusal', async () => {
-    mocks.status = 'denied'
-    await expect(microphonePermission('windows').request()).resolves.toBe(false)
-    mocks.status = 'granted'
-    await expect(microphonePermission('windows').request()).resolves.toBe(true)
+  it('reads the switch of the Windows settings without asking, and refuses only on a refusal it states', async () => {
+    const answers: Record<string, boolean> = {}
+    for (const status of ['granted', 'denied', 'restricted', 'not-determined', 'unknown']) {
+      mocks.status = status
+      answers[status] = await microphonePermission('windows').request()
+    }
+    // A status that says nothing either way leaves the decision to the capture the renderer opens next.
+    expect(answers).toEqual({ granted: true, denied: false, restricted: false, 'not-determined': true, unknown: true })
     expect(mocks.askForMediaAccess).not.toHaveBeenCalled()
   })
 

@@ -1,3 +1,4 @@
+import { conversationFeatures, type ConversationLocale } from './conversation-locale'
 import type { MessageKey } from './i18n'
 import { errorText } from './i18n/error-text'
 
@@ -81,3 +82,10 @@ export function hotkeyLabel({ os, hotkey }: Pick<PlatformCapabilities, 'os' | 'h
     .map((part) => MAC_MODIFIERS[part] ?? part)
     .join('')
 }
+
+/**
+ * Whether an aizuchi can open a turn: the language has them, and the classifier that picks one, a
+ * Python worker, runs here. The aizuchi while the user is still speaking are clips and need no worker.
+ */
+export const openingAizuchiRuns = (locale: ConversationLocale, capabilities: Pick<PlatformCapabilities, 'cpuSidecars'>): boolean =>
+  conversationFeatures(locale).aizuchi && capabilities.cpuSidecars

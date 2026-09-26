@@ -12,7 +12,7 @@ import { useMiniApp, useViewStore } from '@/state/view'
 import { useFormatLocale, useT } from '@/i18n'
 import { localDate } from '@shared/api-usage'
 import { usageReport } from '@shared/usage-report'
-import { ttsEngineLabel, ttsNeedsPreparation, type Preparation, type PreparationTarget, type SettingsContext, type SettingsPage } from './settings/context'
+import { speechRecognitionReady, ttsEngineLabel, ttsNeedsPreparation, type Preparation, type PreparationTarget, type SettingsContext, type SettingsPage } from './settings/context'
 import { ConversationPage } from './settings/pages/ConversationPage'
 import { PersonaPage } from './settings/pages/PersonaPage'
 import { VoicePage } from './settings/pages/VoicePage'
@@ -26,6 +26,8 @@ import { UsagePage } from './settings/pages/UsagePage'
 import { usdFormatter } from './settings/usage-format'
 import { displayError } from '@/display-error'
 import { platformCapabilities } from '@/platform'
+import { openingAizuchiRuns } from '@shared/platform'
+import { ttsEngineRuns } from '@shared/tts-models'
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
 
 /**
@@ -215,15 +217,16 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   // needs preparing without opening the page. Speech can only be missing when a separate engine is
   // selected, since the macOS speech synthesis needs no preparation.
   const features = conversationFeatures(settings.conversationLocale)
-  const { cpuSidecars, calendar } = platformCapabilities()
+  const { cpuSidecars, calendar, speechRuntime } = platformCapabilities()
+  const engineRuns = ttsEngineRuns(settings.ttsEngine, speechRuntime)
+  const openingAizuchi = openingAizuchiRuns(settings.conversationLocale, { cpuSidecars })
   const missing = [
-    setup?.asr != null && !setup.asr.ready,
-    status !== null && ttsNeedsPreparation(settings.ttsEngine) && !status.tts,
+    speechRecognitionReady(settings, setup, speechRuntime) === false,
+    status !== null && engineRuns && ttsNeedsPreparation(settings.ttsEngine) && !status.tts,
     status !== null && !status.agent,
     cpuSidecars && features.maai && vap !== null && !(vap.runtimeInstalled && vap.modelsInstalled),
     cpuSidecars && embedding !== null && !(embedding.runtimeInstalled && embedding.modelInstalled),
-    cpuSidecars &&
-      features.aizuchi &&
+    openingAizuchi &&
       aizuchiClassifier !== null &&
       !(aizuchiClassifier.runtimeInstalled && aizuchiClassifier.modelInstalled)
   ].filter(Boolean).length
@@ -247,17 +250,25 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
           ? t('settings.summary.personaEdited')
           : t('settings.summary.personaEmpty')
     },
-    voice: {
-      text: live
-        ? t('settings.summary.voiceLive', { engine: LIVE_ENGINE_INFO[live].label })
-        : !features.aizuchi
-          ? ttsEngineLabel(t, settings.ttsEngine)
-          : t(settings.aizuchi ? 'settings.summary.voiceBackchannelOn' : 'settings.summary.voiceBackchannelOff', {
-              engine: ttsEngineLabel(t, settings.ttsEngine)
-            })
-    },
+    // A saved engine this machine cannot run is not something to prepare; the voice page is where it is chosen again.
+    voice: live
+      ? { text: t('settings.summary.voiceLive', { engine: LIVE_ENGINE_INFO[live].label }) }
+      : !engineRuns
+        ? { text: t('voice.speech.cannotRunHere', { engine: ttsEngineLabel(t, settings.ttsEngine) }), tone: 'warn' }
+        : {
+            text: !openingAizuchi
+              ? ttsEngineLabel(t, settings.ttsEngine)
+              : t(settings.aizuchi ? 'settings.summary.voiceBackchannelOn' : 'settings.summary.voiceBackchannelOff', {
+                  engine: ttsEngineLabel(t, settings.ttsEngine)
+                })
+          },
     appearance: { text: t(`settingsAppearance.themes.${settings.theme}.name`) },
-    memory: { text: cpuSidecars ? t(settings.memoryEmbeddingEnabled ? 'settings.summary.memorySemanticOn' : 'settings.summary.memorySemanticOff') : '' },
+    // Without the Python workers the page holds the curation alone, which the line then names.
+    memory: {
+      text: cpuSidecars
+        ? t(settings.memoryEmbeddingEnabled ? 'settings.summary.memorySemanticOn' : 'settings.summary.memorySemanticOff')
+        : t('settingsMemory.curation.title')
+    },
     agent: { text: `${agentEngine} · ${AGENT_MODE_NAME[settings.agentEngine][settings.agentMode]}` },
     integrations: {
       text: !calendar

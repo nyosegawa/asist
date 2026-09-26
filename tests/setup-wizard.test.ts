@@ -367,6 +367,9 @@ describe('first-run setup on a machine without the local models, the Python work
     await press(ja('setup.listening.prepareModel'))
     await press(ja('setup.next'))
     expect(optionTitles()).toEqual([ja('setup.tts.engines.system.title'), ja('setup.tts.engines.voicevox.title'), ja('setup.tts.engines.aivisspeech.title')])
+    // The saved engine is none of the choices, so the step asks for one rather than for a preparation.
+    expect(container.querySelector('.su-next')?.textContent).toBe(ja('setup.guide.tts.choose'))
+    expect(container.textContent).not.toContain(ja('setup.tts.prepareModel'))
 
     await press(ja('setup.tts.engines.system.title'))
     await press(ja('setup.next'))

@@ -788,13 +788,52 @@ describe('settings dialog on a machine without the local models, the Python work
 
   it('prepares nothing the machine cannot run, and counts only what it can', async () => {
     const view = await render()
-    // Of what this machine runs, only the Agent CLI is missing.
-    expect(nav(view, 'models').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.modelsNotPrepared', { count: 1 }))
+    // Of what this machine runs, the Agent CLI and speech recognition, here Whisper in the browser, are missing.
+    expect(nav(view, 'models').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.modelsNotPrepared', { count: 2 }))
     await act(async () => nav(view, 'models').click())
     const cards = [...view.querySelectorAll('.st-prep-card')]
     expect(cards.map((card) => card.getAttribute('aria-label'))).toEqual([t('settingsModels.asr.title'), t('settingsModels.speech.title'), t('settingsModels.agent.title')])
+    expect(cards.map((card) => card.getAttribute('data-state'))).toEqual(['missing', 'ready', 'missing'])
     expect(cards[0].querySelector('p')?.textContent).toBe(t('speechRecognition.unavailable.unsupportedOs'))
     expect(cards[0].textContent).not.toContain(t('settingsModels.asr.chooseModel'))
+  })
+
+  it('counts speech recognition as prepared once Whisper in the browser is, as its card shows', async () => {
+    useSettingsStore.setState({ settings: { ...settings, localAsrEnabled: true } })
+    const view = await render()
+    expect(nav(view, 'models').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.modelsNotPrepared', { count: 1 }))
+    await act(async () => nav(view, 'models').click())
+    expect(view.querySelector(`.st-prep-card[aria-label="${t('settingsModels.asr.title')}"]`)?.getAttribute('data-state')).toBe('ready')
+  })
+
+  it('shows Qwen3-TTS left in the settings as an engine this machine cannot run, never as something to prepare', async () => {
+    useSettingsStore.setState({ settings: { ...settings, ttsEngine: 'qwen3tts' } })
+    const view = await render()
+    const reason = t('voice.speech.cannotRunHere', { engine: 'Qwen3-TTS' })
+    expect(nav(view, 'models').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.modelsNotPrepared', { count: 2 }))
+    expect(nav(view, 'voice').querySelector('.st-nav-sub')?.textContent).toBe(reason)
+    expect(nav(view, 'voice').querySelector('.st-nav-sub')?.getAttribute('data-tone')).toBe('warn')
+
+    await act(async () => nav(view, 'models').click())
+    const card = view.querySelector(`.st-prep-card[aria-label="${t('settingsModels.speech.title')}"]`)!
+    expect(card.querySelector('p')?.textContent).toBe(reason)
+    expect([...card.querySelectorAll('button')].map((button) => button.textContent)).not.toContain(t('settingsModels.prepare'))
+
+    await act(async () => nav(view, 'voice').click())
+    expect(hint(view, t('settingsVoice.speech.engine'))).toBe(reason)
+    expect([...view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsVoice.speech.engineLabel')}"]`)!.options].map((option) => option.value)).not.toContain('qwen3tts')
+  })
+
+  it('offers no aizuchi to open a turn without its classifier, keeps the ones while the user speaks, and names the curation for the memory', async () => {
+    useSettingsStore.setState({ settings: { ...settings, aizuchi: true } })
+    const view = await render()
+    expect(nav(view, 'voice').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.ttsEngine.system'))
+    expect(nav(view, 'memory').querySelector('.st-nav-sub')?.textContent).toBe(t('settingsMemory.curation.title'))
+    await act(async () => nav(view, 'voice').click())
+    const labels = rowLabels(view)
+    expect(labels).not.toContain(t('settingsVoice.response.aizuchi'))
+    expect(labels).not.toContain(t('settingsVoice.response.aizuchiRate'))
+    expect(labels).toContain(t('settingsVoice.response.listeningAizuchi'))
   })
 
   it('leaves the calendar out of the integrations and of their summary', async () => {

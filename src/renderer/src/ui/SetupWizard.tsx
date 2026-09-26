@@ -3,7 +3,7 @@ import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmPro
 import { keyReadable, type SetupProgress, type SetupStatus } from '@shared/ipc'
 import type { AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
-import { qwenTtsRuns } from '@shared/tts-models'
+import { qwenTtsRuns, ttsEngineRuns } from '@shared/tts-models'
 import { defaultRegion, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
 import { UI_LOCALE_NAMES } from '@shared/i18n'
 import { useSettingsStore, useStatusStore } from '@/state/stores'
@@ -330,6 +330,8 @@ export function SetupWizard(): React.JSX.Element | null {
     }
     if (step === 'tts') {
       if (ttsReady) return t('setup.guide.tts.ready')
+      // A saved engine this machine cannot run is offered by no choice on the screen, so it is chosen again.
+      if (!ttsEngineRuns(settings.ttsEngine, capabilities.speechRuntime)) return t('setup.guide.tts.choose')
       if (settings.ttsEngine === 'qwen3tts') return ttsChecking ? ttsDownload?.message || t('common.preparing') : t('setup.guide.tts.prepareOrSystem')
       return ttsChecking ? t('setup.guide.tts.verifying') : t('setup.guide.tts.notConnected', { engine: services?.ttsLabel ?? t('setup.steps.tts.title') })
     }
