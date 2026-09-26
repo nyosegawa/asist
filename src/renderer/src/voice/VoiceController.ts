@@ -15,7 +15,7 @@ import { whisperLanguageName } from '@shared/asr-models'
 import { MicCapture, StreamResampler } from './MicCapture'
 import { VapAudio } from './VapAudio'
 import { NativeMicSource } from './NativeMic'
-import { VadSegmenter } from './VadSegmenter'
+import { VadSegmenter, type VadUtterance } from './VadSegmenter'
 import { SileroVad } from './SileroVad'
 import { DfnDenoiser } from './DfnDenoiser'
 import { AsrEngine, type AsrProgress } from './AsrEngine'
@@ -69,6 +69,12 @@ type VoiceEvents = {
     /** When capture started, on performance.now(). It decides whether an aizuchi clip falls inside the echo window. */
     startedAt: number
   }
+  /**
+   * The speech a speechend announced will not become an utterance: its transcription failed, the
+   * transcript meant nothing, or the microphone stopped first. Every speechend is followed by one
+   * utterance or one of these, with the same startedAt.
+   */
+  speechdropped: { startedAt: number }
   /** The user started speaking over the assistant. */
   bargein: undefined
   /** A short sound from the user during playback was taken as an aizuchi and let pass; the reading continues. */
@@ -98,7 +104,8 @@ export class VoiceController {
   /** Tells noise from voice. Where it is unavailable, the energy VAD runs alone. */
   private silero = new SileroVad()
   private state: VoiceState = 'off'
-  private transcribing = 0
+  /** The speeches, by startedAt, whose final transcript is still awaited. */
+  private awaitingTranscript = new Set<number>()
   private backend: 'server' | 'local' = 'server'
   private captureGeneration = 0
   private recoveryPromise: Promise<void> | null = null
@@ -166,28 +173,20 @@ export class VoiceController {
   constructor() {
     this.vad = new VadSegmenter({
       onSpeechStart: () => {
-        // During playback nothing stops at once: the voice has to hold first, or an echo mistaken
-        // for speech would stop it. While that decision is open the volume goes down, which both
-        // keeps the assistant off the user's words and makes the response feel immediate.
         this.captureIsBackchannel = false
-        if (speechPlayer.isPlaying) {
-          this.overlap = 'pending'
-          // An aizuchi or bridge lasts about a second and sounds broken off if ducked. A real
-          // interruption stops it once confirmed anyway.
-          if (!speechPlayer.isPlayingClip) speechPlayer.duck()
-        }
+        if (speechPlayer.isPlaying) this.beginOverlap()
         this.captureStartedAt = performance.now()
         this.lastPartial = ''
         this.listening.reset()
         this.startPartialLoop()
-        this.setState('capturing')
+        this.settleState()
       },
       onLevel: (rms) => {
         this.events.emit('level', Math.min(1, rms * 12))
         this.maybeConfirmBargein()
         this.maybeBackchannel()
       },
-      onUtterance: (samples, vadMs, vadMode) => this.enqueueUtterance(samples, vadMs, vadMode)
+      onSpeechEnd: (utterance) => this.endCapture(utterance)
     })
     this.vad.speechProbProvider = () => this.silero.currentProb()
     this.vad.eotProvider = () => (this.vapFresh() ? this.vapState!.eotUser : null)
@@ -199,15 +198,21 @@ export class VoiceController {
         this.vapAudio.clearAssistant()
       }
     }
-    speechPlayer.events.on('segmentstart', () => {
+    speechPlayer.events.on('segmentstart', ({ segment }) => {
       if (this.boostReleaseTimer) clearTimeout(this.boostReleaseTimer)
       this.boostReleaseTimer = null
       // Chromium's echo canceller lets echo through, so the threshold rises during playback.
       // Native capture through Apple's VPIO cancels the echo in the OS and attenuates the
       // microphone further during double talk, so a boost on top of that would put an
       // interrupting voice out of reach of the threshold.
-      if (this.bargeIn) this.vad.thresholdBoost = this.nativeActive ? 1 : 3
-      else this.vad.muted = true
+      this.vad.thresholdBoost = this.nativeActive ? 1 : 3
+      // The listening aizuchi answers the capture in progress. Muting would throw that capture
+      // away, and it is not the assistant taking the floor either.
+      if (segment.clip === 'listening') return
+      if (!this.bargeIn) this.vad.muted = true
+      // A reply that starts while the user is already speaking overlaps the voice just as a voice
+      // that starts during the reply does.
+      else if (this.vad.isSpeaking) this.beginOverlap()
     })
     // Reverberation and the tail of the echo linger in the microphone just after playback ends,
     // so the normal threshold returns only after a wait.
@@ -223,6 +228,20 @@ export class VoiceController {
 
   get current(): VoiceState {
     return this.state
+  }
+
+  /**
+   * Opens the decision on a voice that overlaps playback. Nothing stops at once: the voice has to
+   * hold first, or an echo mistaken for speech would stop it. While the decision is open the volume
+   * goes down, which both keeps the assistant off the user's words and makes the response feel
+   * immediate. With barge-in off the user's voice never stops the assistant.
+   */
+  private beginOverlap(): void {
+    if (!this.bargeIn || this.overlap !== 'none') return
+    this.overlap = 'pending'
+    // An aizuchi or bridge lasts about a second and sounds broken off if ducked. A real
+    // interruption stops it once confirmed anyway.
+    if (!speechPlayer.isPlayingClip) speechPlayer.duck()
   }
 
   /**
@@ -417,7 +436,7 @@ export class VoiceController {
         // would also stop a recording that an off-then-on cycle has already begun.
         if (!current()) return
       }
-      this.setState('listening')
+      this.settleState()
       if (this.backend === 'local') void this.probeUpgrade()
     } catch (err) {
       if (!current()) return
@@ -474,7 +493,8 @@ export class VoiceController {
     // Detaching the chain keeps a new generation's final transcription out of the queue of an
     // aborted one.
     this.transcriptionTail = Promise.resolve()
-    this.transcribing = 0
+    const dropped = [...this.awaitingTranscript]
+    this.awaitingTranscript.clear()
     this.stopPartialLoop()
     this.overlap = 'none'
     this.captureIsBackchannel = false
@@ -490,6 +510,7 @@ export class VoiceController {
     if (this.backend === 'local' || this.localWorkInFlight > 0) {
       this.asr.reset(errorText('speechRecognition.errors.stoppedWithMic'))
     }
+    for (const startedAt of dropped) this.events.emit('speechdropped', { startedAt })
     this.setState('off')
   }
 
@@ -588,19 +609,26 @@ export class VoiceController {
     return out
   }
 
-  private enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: HangoverMode): void {
-    if (this.captureIsBackchannel) {
-      // A "うん" or "はい" during the reading. It was let pass as an aizuchi, so it becomes
-      // neither a turn nor a transcript.
-      this.captureIsBackchannel = false
-      this.stopPartialLoop()
-      return
+  /** Every capture ends here, with the utterance the VAD kept, or with nothing when it was noise or the VAD was muted. */
+  private endCapture(utterance: VadUtterance | null): void {
+    this.stopPartialLoop()
+    if (this.overlap !== 'none') {
+      this.overlap = 'none'
+      speechPlayer.unduck()
     }
+    const backchannel = this.captureIsBackchannel
+    this.captureIsBackchannel = false
+    // A "うん" or "はい" during the reading was let pass as an aizuchi, so it becomes neither a turn
+    // nor a transcript.
+    if (utterance && !backchannel) this.enqueueUtterance(utterance.samples, utterance.vadMs, utterance.mode)
+    this.settleState()
+  }
+
+  private enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: HangoverMode): void {
     const generation = this.captureGeneration
     const startedAt = this.captureStartedAt
     const partialText = this.lastPartial
     const speechEndAt = performance.now() - vadMs
-    this.stopPartialLoop()
     this.events.emit('speechend', {
       startedAt,
       speechEndAt,
@@ -610,8 +638,7 @@ export class VoiceController {
       utteranceMs: Math.max(0, Math.round(samples.length / 16) - vadMs),
       listening: this.listening.take()
     })
-    this.transcribing++
-    this.setState('transcribing')
+    this.awaitingTranscript.add(startedAt)
     const previous = this.transcriptionTail.catch(() => {})
     const completion = previous.then(() =>
       this.handleUtterance(samples, vadMs, vadMode, generation, startedAt, partialText, speechEndAt)
@@ -630,8 +657,10 @@ export class VoiceController {
     partialText: string,
     speechEndAt: number
   ): Promise<void> {
+    // disable has already reported the speeches of the generation it ended as dropped.
     if (generation !== this.captureGeneration) return
     const t0 = performance.now()
+    let heard = false
     try {
       const audio = this.normalize(samples)
       const text = await this.transcribeWithRecovery(
@@ -641,6 +670,7 @@ export class VoiceController {
       if (generation !== this.captureGeneration) return
       const asrMs = Math.round(performance.now() - t0)
       if (isMeaningfulTranscript(text, this.conversationLocale)) {
+        heard = true
         this.events.emit('utterance', {
           text: text.trim(),
           vadMs,
@@ -657,10 +687,9 @@ export class VoiceController {
       }
     } finally {
       if (generation === this.captureGeneration) {
-        this.transcribing--
-        if (this.state !== 'off') {
-          this.setState(this.transcribing > 0 ? 'transcribing' : 'listening')
-        }
+        this.awaitingTranscript.delete(startedAt)
+        if (!heard) this.events.emit('speechdropped', { startedAt })
+        this.settleState()
         void this.probeUpgrade()
       }
     }
@@ -731,6 +760,17 @@ export class VoiceController {
     } finally {
       this.localWorkInFlight--
     }
+  }
+
+  /**
+   * Listening, capturing and transcribing follow from what is under way: a capture in progress, then
+   * a transcript still awaited. Only enable and disable move the state to loading and off.
+   */
+  private settleState(): void {
+    if (this.state === 'off') return
+    this.setState(
+      this.vad.isSpeaking ? 'capturing' : this.awaitingTranscript.size > 0 ? 'transcribing' : 'listening'
+    )
   }
 
   private setState(next: VoiceState): void {

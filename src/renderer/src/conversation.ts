@@ -348,6 +348,9 @@ async function initializeConversation(): Promise<void> {
     void startVoiceTurn(cleaned, { vadMs, vadMode, asrMs, partialText, speechEndAt }, opening.claim(startedAt))
   })
 
+  // A speech that never becomes an utterance plays no bridge.
+  voiceController.events.on('speechdropped', ({ startedAt }) => opening.cancel(startedAt))
+
   voiceController.events.on('error', (message) =>
     toasts.push({ kind: 'error', title: translate('voice.micFailed'), body: message })
   )

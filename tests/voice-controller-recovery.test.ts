@@ -60,6 +60,7 @@ interface VoiceInternals {
   }
   transcribeWithRecovery(audio: Float32Array): Promise<string>
   enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: 'early' | 'extended' | 'fixed'): void
+  endCapture(utterance: { samples: Float32Array; vadMs: number; mode: 'early' | 'extended' | 'fixed' } | null): void
   partialTick(): Promise<void>
 }
 
@@ -402,13 +403,13 @@ describe('VoiceController ASR recovery', () => {
     controller.events.on('utterance', () => events.push('utterance'))
 
     state.captureIsBackchannel = true
-    state.enqueueUtterance(new Float32Array([0.1]), 300, 'fixed')
+    state.endCapture({ samples: new Float32Array([0.1]), vadMs: 300, mode: 'fixed' })
     await Promise.resolve()
     expect(transcribe).not.toHaveBeenCalled()
     expect(events).toEqual([])
 
     // The next capture behaves normally.
-    state.enqueueUtterance(new Float32Array([0.1]), 300, 'fixed')
+    state.endCapture({ samples: new Float32Array([0.1]), vadMs: 300, mode: 'fixed' })
     await vi.waitFor(() => expect(events).toContain('utterance'))
     expect(events[0]).toBe('speechend')
   })
