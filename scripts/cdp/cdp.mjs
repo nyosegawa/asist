@@ -163,8 +163,10 @@ export async function waitForApp(client, timeoutMs = 30_000) {
   // error is reported once the page has had 3 s to render anyway, instead of a timeout 30 s later that
   // names no cause; an error on a page that does render is left to the page.
   // main.tsx catches an error thrown while the renderer starts and draws it with data-preload-failure on
-  // <html>, so that page is reported at once with what it says.
-  const failed = `document.documentElement.dataset.preloadFailure === 'true' ? document.body.innerText : null`
+  // <html>, so that page is reported at once with what it says. Just after a navigation commits, the new
+  // document has no <html> yet and documentElement is null; reading it unguarded threw and stopped
+  // demo:fit on CI (2026-09-26).
+  const failed = `document.documentElement?.dataset.preloadFailure === 'true' ? document.body.innerText : null`
   while (Date.now() < deadline) {
     if (await client.evaluate(ready)) return
     const fatal = await client.evaluate(failed)
