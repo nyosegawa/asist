@@ -10,6 +10,7 @@ import { download, extract, filesBelow, megabytes, stampCurrent, treeSize, withT
  */
 
 const VERSION = '2.55.0.windows.5'
+const MODULE = fileURLToPath(import.meta.url)
 const ASSET = 'MinGit-2.55.0.5-64-bit.zip'
 const SHA256 = '56d7b226b7693196cfc71fef26568f536c4a021ab6c37ff2db4287bed908e96e'
 
@@ -68,7 +69,7 @@ export function unusedFiles(files, unused) {
 export async function prepareGitWindows({ resources }) {
   const out = path.join(resources, 'git')
   const stamp = path.join(out, 'VERSION')
-  if (stampCurrent(stamp, VERSION, fileURLToPath(import.meta.url))) return
+  if (stampCurrent(stamp, VERSION, MODULE)) return
 
   await withTemporaryDir('asist-mingit-', async (work) => {
     const zip = path.join(work, ASSET)
@@ -83,7 +84,7 @@ export async function prepareGitWindows({ resources }) {
     console.error(
       `git: unpacked ${unpacked.files} files (${megabytes(unpacked.bytes)}), kept ${kept.files} (${megabytes(kept.bytes)})`
     )
-    writeStamp(stamp, VERSION)
+    writeStamp(stamp, VERSION, MODULE)
   })
 }
 

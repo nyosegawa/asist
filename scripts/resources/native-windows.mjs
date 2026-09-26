@@ -33,15 +33,17 @@ function msvcEnvironment() {
   if (!fs.existsSync(vswhere)) throw new Error(`${vswhere} not found; install Visual Studio with the C++ build tools`)
   const vcvars = execFileSync(
     vswhere,
-    ['-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-find', 'VC\\Auxiliary\\Build\\vcvars64.bat'],
+    ['-latest', '-utf8', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-find', 'VC\\Auxiliary\\Build\\vcvars64.bat'],
     { encoding: 'utf8', windowsHide: true }
   )
     .split(/\r?\n/)
     .find(Boolean)
   if (!vcvars) throw new Error('vswhere found no Visual Studio with the x64 C++ compiler; install the C++ build tools')
   // cmd.exe with /s drops the outer quotes and keeps the ones around the path, which has spaces in it.
-  const output = execFileSync('cmd.exe', ['/d', '/s', '/c', `""${vcvars}" >nul && set"`], {
-    encoding: 'utf8',
+  // Into a pipe, set writes in the OEM code page (cp932 on Japanese Windows), which garbles a user name in
+  // TMP and TEMP; /u makes it write UTF-16LE.
+  const output = execFileSync('cmd.exe', ['/d', '/u', '/s', '/c', `""${vcvars}" >nul && set"`], {
+    encoding: 'utf16le',
     windowsHide: true,
     windowsVerbatimArguments: true
   })

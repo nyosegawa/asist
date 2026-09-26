@@ -52,22 +52,44 @@ export function upToDate(output, inputs) {
   return inputs.every((input) => fs.statSync(input).mtimeMs <= written)
 }
 
-/** Whether the VERSION stamp of a prepared tool records version and is newer than the module that prepares it. */
+/**
+ * The VERSION stamp of a tool: its version, and the sha256 of the module that prepares it, which holds the
+ * pinned downloads and the build flags. It is compared by content, because a CI cache restores the stamp
+ * with its old time while a checkout gives the module the current one.
+ */
+function stampText(version, module) {
+  return `${version}\nrecipe ${createHash('sha256').update(fs.readFileSync(module)).digest('hex')}\n`
+}
+
+/** Whether the tool beside stamp was prepared as version by the module as it is now. */
 export function stampCurrent(stamp, version, module) {
-  return upToDate(stamp, [module]) && fs.readFileSync(stamp, 'utf8').trim() === version
+  return fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === stampText(version, module)
 }
 
-export function writeStamp(stamp, version) {
-  fs.writeFileSync(stamp, `${version}\n`)
+export function writeStamp(stamp, version, module) {
+  fs.writeFileSync(stamp, stampText(version, module))
 }
 
-/** Runs work with a fresh folder under the system's temporary folder, and removes the folder afterwards. */
+/**
+ * Runs work with a fresh folder under the system's temporary folder, and removes the folder afterwards,
+ * also when Ctrl-C or SIGTERM ends the preparation. Without a listener Node ends at once on the signal,
+ * even inside a blocking execFileSync such as the git build, and the finally never runs.
+ */
 export async function withTemporaryDir(prefix, work) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  const remove = () => fs.rmSync(dir, { recursive: true, force: true })
+  const interrupted = (signal) => {
+    remove()
+    process.exit(128 + os.constants.signals[signal])
+  }
+  process.once('SIGINT', interrupted)
+  process.once('SIGTERM', interrupted)
   try {
     return await work(dir)
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
+    process.off('SIGINT', interrupted)
+    process.off('SIGTERM', interrupted)
+    remove()
   }
 }
 

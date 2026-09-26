@@ -12,6 +12,7 @@ import { download, extract, requireCommand, run, stampCurrent, withTemporaryDir,
  */
 
 const VERSION = '2.55.0'
+const MODULE = fileURLToPath(import.meta.url)
 const SHA256 = '457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357'
 
 // The flags keep the build to the system libraries of macOS 14 and later on Apple Silicon.
@@ -53,7 +54,7 @@ const UNUSED = [
 export async function prepareGitMacos({ resources }) {
   const out = path.join(resources, 'git')
   const stamp = path.join(out, 'VERSION')
-  if (stampCurrent(stamp, VERSION, fileURLToPath(import.meta.url))) return
+  if (stampCurrent(stamp, VERSION, MODULE)) return
   requireCommand('cc', 'install Xcode Command Line Tools before building')
 
   await withTemporaryDir('asist-git-', async (work) => {
@@ -70,6 +71,6 @@ export async function prepareGitMacos({ resources }) {
     run('make', ['-C', source, ...FLAGS, `DESTDIR=${path.resolve(out)}`, 'install'], quiet)
     for (const unused of UNUSED) fs.rmSync(path.join(out, unused), { recursive: true, force: true })
     fs.copyFileSync(path.join(source, 'COPYING'), path.join(out, 'COPYING'))
-    writeStamp(stamp, VERSION)
+    writeStamp(stamp, VERSION, MODULE)
   })
 }

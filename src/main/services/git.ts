@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import { devNull, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
@@ -34,7 +34,9 @@ export function gitPath(): string {
 export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = childEnv({}, parent)
   removeVariables(env, (key) => key.startsWith('GIT_'))
-  const isolated = { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull }
+  // Git for Windows reads the literal /dev/null as its NUL device, but refuses os.devNull there (\\.\nul)
+  // as the reserved name NUL, which would fail every git call; so both OSes get /dev/null.
+  const isolated = { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
   if (platformCapabilities().os !== 'windows') return isolated
   // git.exe puts its own mingw64\bin and usr\bin, where sh and the coreutils of hooks and scripts are,
   // at the front of PATH only when MSYSTEM is unset. MinGit's etc/gitattributes is read even without the

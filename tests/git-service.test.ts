@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
-import { devNull, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
@@ -12,6 +12,12 @@ vi.mock('../src/main/services/platform', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/services/platform')>()
   const { WINDOWS } = await import('./helpers/platform')
   return { platformCapabilities: () => (mocks.windows ? WINDOWS : actual.platformCapabilities()) }
+})
+// The null device as Node names it on Windows, which Git for Windows refuses to open as a configuration file.
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  const devNull = '\\\\.\\nul'
+  return { ...actual, default: { ...actual, devNull }, devNull }
 })
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: 'ja-JP' }) }))
 
@@ -70,7 +76,7 @@ describe('the git ASIST runs', () => {
     const executable = git.gitPath()
     mocks.windows = true
     const env = git.gitEnv({ ...process.env, GIT_CONFIG_GLOBAL: path.join(repo, 'a.txt') })
-    expect(env.GIT_CONFIG_GLOBAL).toBe(devNull)
+    expect(env.GIT_CONFIG_GLOBAL).toBe('/dev/null')
     const scopes = execFileSync(executable, ['config', '--list', '--show-scope'], { cwd: repo, env, encoding: 'utf8' })
       .trim()
       .split('\n')

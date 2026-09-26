@@ -9,6 +9,7 @@ import { download, extract, stampCurrent, withTemporaryDir, writeStamp } from '.
  */
 
 const VERSION = '0.12.18'
+const MODULE = fileURLToPath(import.meta.url)
 
 /** The release asset of each platform and architecture, and the path of the uv binary inside it. */
 const ASSETS = {
@@ -30,7 +31,7 @@ export async function prepareUv({ resources, platform, arch }) {
   if (!asset) throw new Error(`uv ${VERSION} is not pinned for ${platform} ${arch}`)
   const out = path.join(resources, 'uv')
   const stamp = path.join(out, 'VERSION')
-  if (stampCurrent(stamp, VERSION, fileURLToPath(import.meta.url))) return
+  if (stampCurrent(stamp, VERSION, MODULE)) return
 
   await withTemporaryDir('asist-uv-', async (work) => {
     const base = 'https://github.com/astral-sh/uv'
@@ -45,6 +46,6 @@ export async function prepareUv({ resources, platform, arch }) {
     const binary = path.join(work, 'unpacked', ...asset.binary.split('/'))
     fs.copyFileSync(binary, path.join(out, path.basename(binary)))
     for (const license of ['LICENSE-MIT', 'LICENSE-APACHE']) fs.copyFileSync(path.join(work, license), path.join(out, license))
-    writeStamp(stamp, VERSION)
+    writeStamp(stamp, VERSION, MODULE)
   })
 }

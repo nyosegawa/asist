@@ -65,10 +65,10 @@ extraResources:
   # The agent skills for memory curation, copied into the worktree of a curation job.
   - from: resources/skills
     to: skills
-  # uv builds the Python environments above, from scripts/fetch-uv.sh.
+  # uv builds the Python environments above, fetched by scripts/prepare-resources.mjs.
   - from: resources/uv
     to: uv
-  # git keeps the memory history and the worktrees of editing jobs, from scripts/build-git.sh.
+  # git keeps the memory history and the worktrees of editing jobs, prepared by scripts/prepare-resources.mjs.
   - from: resources/git
     to: git
 

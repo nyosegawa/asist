@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { requireCommand, run, upToDate } from './shared.mjs'
@@ -8,7 +9,7 @@ import { requireCommand, run, upToDate } from './shared.mjs'
  * older than its sources or than this module is built again.
  */
 
-// The target matches what electron-builder.yml supports, whatever SDK or Rosetta environment this runs in.
+// swiftc would build for the macOS of its SDK; the target is the arm64 macOS 14 that electron-builder.yml supports.
 const TARGET = ['-target', 'arm64-apple-macosx14.0', '-O']
 
 export function prepareNativeMacos({ resources }) {
@@ -25,6 +26,9 @@ export function prepareNativeMacos({ resources }) {
     }
   ]
   for (const { name, sources, flags } of helpers) {
+    // The helpers used to be built into resources/native itself, which is no longer ignored by Git, so a
+    // checkout that built them there would otherwise show them as new files to commit.
+    fs.rmSync(path.join(resources, 'native', name), { force: true })
     const out = path.join(dir, name)
     if (upToDate(out, [...sources.map((source) => path.join(dir, source)), module])) continue
     requireCommand('swiftc', 'install Xcode Command Line Tools before building')
