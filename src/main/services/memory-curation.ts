@@ -140,9 +140,10 @@ const MEMORY_FILE_MODES = new Set(['100644', '100755', '000000'])
 /**
  * The curation merges without asking anyone, and its prompt holds the day's transcript, which can carry
  * text from a mail or a web page written to steer the agent. So the merge takes only plain files of the
- * memory repository itself. A symbolic link counts as outside, because the validation, the reindex and
- * the memory screen would read the file it points to, so this runs before anything in the worktree is
- * read.
+ * memory repository itself. A symbolic link counts as outside, because the reindex and the memory screen
+ * would read the file it points to after the merge. This sees only what git shows; a named pipe, or a link
+ * in a path the Agent added to .gitignore, reaches the check that follows, whose reader refuses anything
+ * but a regular file.
  */
 function assertInsideMemory(job: AgentJob): string {
   const worktree = job.worktree

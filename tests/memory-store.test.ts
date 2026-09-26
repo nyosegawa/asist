@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -134,6 +134,43 @@ describe('the memory store', () => {
     expect(() => store.deleteDocument('me.md')).toThrow(errorText('memory.errors.deleteKind'))
     expect(() => store.deleteDocument('instruction.md')).toThrow(errorText('memory.errors.deleteKind'))
     expect(store.isClean()).toBe(true)
+  })
+
+  it('refuses a named pipe at once instead of waiting for a writer, since git never shows one in a curation worktree', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    const pipe = path.join(dir, 'pages', 'x.md')
+    execFileSync('mkfifo', [pipe])
+    // A writer opens the pipe after 1.5 seconds, so that a read that waits ends instead of hanging the run.
+    spawn('sh', ['-c', `sleep 1.5; printf '# x\\n' > '${pipe}'`], { detached: true, stdio: 'ignore' }).unref()
+    const started = Date.now()
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(() => store.listDocuments()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+  })
+
+  it('reads no file through a symbolic link, neither one in place of a document nor one in place of pages/', () => {
+    const dir = store.memoryDir()
+    const outside = mkdtempSync(path.join(tmpdir(), 'asist-memory-outside-'))
+    fs.writeFileSync(path.join(outside, 'secret.md'), MATSUBAKEN)
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    fs.symlinkSync(path.join(outside, 'secret.md'), path.join(dir, 'user.md'))
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
+    expect(() => store.readDocument('user.md')).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
+    fs.rmSync(path.join(dir, 'user.md'))
+    fs.rmSync(path.join(dir, 'pages'), { recursive: true })
+    fs.symlinkSync(outside, path.join(dir, 'pages'))
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages' }))
+  })
+
+  it('writes a page name holding the dollar patterns of a replacement string as it was given, in the page and in the commit', () => {
+    const dir = store.memoryDir()
+    for (const name of ['Ke$$ha', 'A$&B', "C$'D", 'E$`F']) {
+      const created = store.createPage(name, PAGE_TEMPLATE)
+      expect(created).toMatchObject({ file: `pages/${name}.md`, title: name })
+      expect(fs.readFileSync(path.join(dir, created.file), 'utf8')).toContain(`\n# ${name}\n`)
+      expect(subjects(dir)[0]).toBe(`asist: ページを作る ${name}`)
+    }
   })
 
   it('returns instruction.md without its title heading, and null when it is missing or empty', () => {

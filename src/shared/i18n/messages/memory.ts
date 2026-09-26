@@ -1107,6 +1107,19 @@ export const memory = defineMessages({
       'pt-BR': 'As alterações vão além da pasta da memória, por isso não foram mescladas:\n{files}',
       'es-419': 'Los cambios salen de la carpeta de la memoria, así que no se fusionaron:\n{files}',
       'es-ES': 'Los cambios salen de la carpeta de la memoria, así que no se han fusionado:\n{files}'
+    },
+    notRegular: {
+      'ja-JP': '{file} は通常のファイルやフォルダではないため、読みませんでした',
+      'en-US': '{file} is not a regular file or folder, so it was not read',
+      'fr-FR': "{file} n'est ni un fichier ni un dossier ordinaire, il n'a donc pas été lu",
+      'de-DE': '{file} ist keine gewöhnliche Datei und kein gewöhnlicher Ordner und wurde daher nicht gelesen',
+      'hi-IN': '{file} सामान्य फ़ाइल या फ़ोल्डर नहीं है, इसलिए इसे पढ़ा नहीं गया',
+      'id-ID': '{file} bukan file atau folder biasa, jadi tidak dibaca',
+      'it-IT': '{file} non è un file o una cartella normale, quindi non è stato letto',
+      'ko-KR': '{file}은(는) 일반 파일이나 폴더가 아니어서 읽지 않았습니다',
+      'pt-BR': '{file} não é um arquivo nem uma pasta comum, por isso não foi lido',
+      'es-419': '{file} no es un archivo ni una carpeta común, así que no se leyó',
+      'es-ES': '{file} no es un archivo ni una carpeta normal, así que no se ha leído'
     }
   }
 })
