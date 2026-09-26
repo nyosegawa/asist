@@ -35,7 +35,7 @@ import { agentTool, jobTools, projectTools } from './job-tools'
 import { memoryTools } from './memory-tools'
 import { miniAppTools } from './mini-app-tools'
 import { noteTools } from './note-tools'
-import { cardError, detail, issueText } from './tool-error-text'
+import { badInput, cardError, detail } from './tool-error-text'
 
 /**
  * The client tools the conversation model can call, held in a registry. One tool is one definition
@@ -108,7 +108,7 @@ async function runPanelTool(
 ): Promise<unknown> {
   const type = entry.type
   const parsed = entry.schema.safeParse(input)
-  if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
+  if (!parsed.success) throw badInput(parsed.error.issues, language)
   // A default the schema filled in may be a packed pair, so the fetcher and the card see one language.
   // Only a field the model left out can hold one; what it wrote may quote text from outside.
   const given = Object.fromEntries(
@@ -219,10 +219,6 @@ const jobBrief = (j: AgentJob): Record<string, unknown> => ({
 
 /** What this file says to the model, in both prompt languages. */
 const TEXTS = {
-  badInput: (issues: string): PromptText => ({
-    ja: `入力が不正: ${issues}。スキーマに合わせて呼び直すこと。`,
-    en: `Invalid input: ${issues}. Call again with input that matches the schema.`
-  }),
   timerFailed: (reason: string): PromptText => ({
     ja: `タイマー開始に失敗: ${reason}。秒数を見直して呼び直すこと。`,
     en: `The timer could not be started: ${reason}. Check the number of seconds and call again.`

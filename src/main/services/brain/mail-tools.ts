@@ -12,7 +12,7 @@ import { MAIL_VIEWS, mailChangeSchema, mailDraftPatchSchema, mailListQuerySchema
 import { catalogByType } from '@shared/panel-catalog'
 import { getMailService } from '../mail'
 import type { ToolContext } from './tools'
-import { detail, issueText } from './tool-error-text'
+import { badInput, detail } from './tool-error-text'
 import { CARD_FIELD, putUpCard } from './cards'
 
 /**
@@ -31,10 +31,6 @@ function accountLabels(): Map<string, string> {
 
 /** What this file says to the model, in both prompt languages. */
 const TEXTS = {
-  badInput: (issues: string): PromptText => ({
-    ja: `入力が不正: ${issues}。スキーマに合わせて呼び直すこと。`,
-    en: `Invalid input: ${issues}. Call again with input that matches the schema.`
-  }),
   notConfigured: {
     ja: 'メール連携が設定されていない。設定画面でアカウントを追加すると使えることを伝えること。',
     en: 'Mail is not set up. Tell the user it works once they add an account on the settings screen.'
@@ -108,7 +104,7 @@ export function mailTools(language: PromptLanguage): ToolDefinition<ToolContext>
       run: async (input, ctx, signal) => {
         const { card, ...listInput } = input
         const query = mailListQuerySchema.safeParse({ ...listInput, limit: listInput.limit ?? 20 })
-        if (!query.success) throw new ToolError(TEXTS.badInput(issueText(query.error.issues, language)))
+        if (!query.success) throw badInput(query.error.issues, language)
         const service = getMailService()
         const status = service.status()
         if (!status.enabled || status.accounts.length === 0) throw new ToolError(TEXTS.notConfigured)
@@ -235,7 +231,7 @@ export function mailTools(language: PromptLanguage): ToolDefinition<ToolContext>
       maxResultChars: 3_000,
       run: async (input, ctx, signal) => {
         const parsed = mailChangeSchema.safeParse(input)
-        if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
+        if (!parsed.success) throw badInput(parsed.error.issues, language)
         let result
         try {
           result = await getMailService().change(parsed.data, signal, 'agent')
@@ -274,7 +270,7 @@ export function mailTools(language: PromptLanguage): ToolDefinition<ToolContext>
       run: (input, ctx) => {
         const { draftId, ...patch } = input
         const parsed = mailDraftPatchSchema.safeParse(patch)
-        if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
+        if (!parsed.success) throw badInput(parsed.error.issues, language)
         try {
           const draft = getMailService().draftUpdate(String(draftId ?? ''), parsed.data)
           showDraftCard(ctx, draft.id)
