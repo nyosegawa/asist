@@ -124,6 +124,8 @@ export interface ToolExecution {
    * shortened the way content shows them, or the text of a result that is a string. An error has none.
    */
   value?: unknown
+  /** The user approved the operation and it started, but the wait for its result was cut off (see operationStarted). */
+  unfinished?: boolean
 }
 
 /**
@@ -396,7 +398,7 @@ export function executeTool<Ctx>(
       durationMs: now() - startedAt
     }))
     .catch((err): ToolExecution => {
-      if (started && combined.aborted) return failure(TEXTS.unfinished(def.name)[language])
+      if (started && combined.aborted) return { ...failure(TEXTS.unfinished(def.name)[language]), unfinished: true }
       if (signal.aborted) return failure(TEXTS.interrupted(def.name)[language])
       if (timeout.signal.aborted) return failure(TEXTS.timedOut(def.name, def.timeoutMs / 1000)[language])
       if (err instanceof ToolError) return failure(resolvePromptTexts(err.message, language))

@@ -211,9 +211,8 @@ describe('executeTool', () => {
       expect(await sent).toMatchObject({ isError: false, content: 'sent' })
       await vi.advanceTimersByTimeAsync(1000)
       const cut = await archived
-      expect(cut.isError).toBe(true)
+      expect(cut).toMatchObject({ isError: true, unfinished: true })
       expect(cut.content).toContain('archive')
-      expect(cut.content).not.toContain('時間切れ')
     } finally {
       vi.useRealTimers()
     }

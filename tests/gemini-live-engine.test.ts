@@ -58,12 +58,14 @@ async function setup(execute?: ExecuteTool): Promise<{
   turnEvents: TurnEvent[]
   executeTool: ReturnType<typeof vi.fn>
   memoryInjection: ReturnType<typeof vi.fn>
+  recordTool: ReturnType<typeof vi.fn>
 }> {
   const { GeminiLiveEngine } = await import('../src/main/services/live/gemini-live')
   const sessions: FakeSession[] = []
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
   const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
+  const recordTool = vi.fn()
   const memoryInjection = vi.fn(async (text: string) =>
     text.includes('いつもの') ? { text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] } : null
   )
@@ -81,7 +83,7 @@ async function setup(execute?: ExecuteTool): Promise<{
     executeTool: executeTool as never,
     // The show_ tools only read, as in the registry; every other name stands for a tool that writes.
     isParallel: (name) => name.startsWith('show_'),
-    recordTool: vi.fn(),
+    recordTool,
     memoryInjection,
     recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
     recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
@@ -90,7 +92,7 @@ async function setup(execute?: ExecuteTool): Promise<{
   })
   engine.events.on('event', (event) => events.push(event))
   await engine.start()
-  return { engine, sessions, events, turnEvents, executeTool, memoryInjection }
+  return { engine, sessions, events, turnEvents, executeTool, memoryInjection, recordTool }
 }
 
 /** A tool call that runs until the test ends it, as one waiting for approval does. `finish` ends its work as well. */
@@ -299,6 +301,24 @@ describe('GeminiLiveEngine', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(executeTool).toHaveBeenCalledTimes(1)
     expect(responseIds(session)).toEqual(['a'])
+    await engine.stop()
+  })
+
+  it('records a call Gemini cancels after the user approved it, and tells Gemini that its operation started', async () => {
+    const unfinished = { ...result('change_mail は承認されて実行を始めたが、結果を待つのを打ち切った。'), isError: true, unfinished: true }
+    const { engine, sessions, recordTool } = await setup((_name, _input, ctx) =>
+      Object.assign(new Promise<ToolExecution>((resolve) => ctx.signal.addEventListener('abort', () => resolve(unfinished))), {
+        completion: new Promise<void>(() => {}),
+        operationStarted: () => {}
+      }))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'change_mail', args: { operation: 'archive' } }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    session.message({ toolCallCancellation: { ids: ['a'] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(recordTool).toHaveBeenCalledWith(expect.any(Number), 'change_mail', { operation: 'archive' }, unfinished)
+    expect(session.toolResponses).toEqual([])
+    expect(JSON.stringify(session.contents.at(-1))).toContain(unfinished.content)
     await engine.stop()
   })
 

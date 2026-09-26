@@ -105,6 +105,12 @@ const READ_ALOUD: PromptText = {
   en: `{systemNotice} Read the following sentence aloud exactly as it is: {text}`
 }
 
+/** Tells Gemini what came of a call it cancelled after the user had approved it. */
+const CANCELLED_AFTER_APPROVAL: PromptText = {
+  ja: `{notice} 取り消した呼び出しは、ユーザーが承認したあとだったので実行が始まっている: {result}`,
+  en: `{notice} The call you cancelled had already been approved by the user, so it has started: {result}`
+}
+
 const OPEN_TIMEOUT_MS = 15_000
 /** How long a resumption handle is reused. The provider allows two hours, and this leaves a margin. */
 const RESUMPTION_TTL_MS = 100 * 60_000
@@ -326,9 +332,19 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     } catch (err) {
       execution = failedExecution(err)
     }
-    if (controller.signal.aborted) return
     const id = call.id ?? ''
     const name = call.name ?? ''
+    if (controller.signal.aborted) {
+      // Gemini dropped the call, but an operation the user approved goes on, so what is known of it is
+      // recorded and told to Gemini as context: it has no call left to answer.
+      if (execution.unfinished) {
+        this.deps.recordTool(turnId, name, call.args ?? {}, execution)
+        const locale = conversationLocale()
+        const text = fillPrompt(promptText(locale, CANCELLED_AFTER_APPROVAL), { notice: marker(locale, 'systemNotice'), result: execution.content })
+        this.session?.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: false })
+      }
+      return
+    }
     this.deps.emitTurn({ type: 'tool', turnId, name, status: execution.isError ? 'error' : 'done' })
     this.deps.recordTool(turnId, name, call.args ?? {}, execution)
     this.touch()
