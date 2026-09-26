@@ -1,6 +1,8 @@
 /**
  * Runs conversation turns strictly one at a time and aborts the running turn when a new one arrives.
- * A turn that is waiting for the user's answer holds the abort off until it lets go.
+ * A turn that is waiting for the user's answer holds the abort off until it lets go. Every turn runs,
+ * in the order it started: one that a newer turn replaced while it waited runs with its signal already
+ * aborted and closes at once, so that what the user said in it is still recorded.
  */
 
 export interface TurnRunContext {
@@ -39,11 +41,7 @@ export class LatestTurnScheduler {
     const { turnId, controller } = turn
     const previous = this.tail.catch(() => {})
     const completion = previous
-      .then(async () => {
-        // While this turn waited for the previous one, a newer turn replaced it.
-        if (controller.signal.aborted) return
-        await run({ turnId, signal: controller.signal, hold: () => this.hold(turn) })
-      })
+      .then(() => run({ turnId, signal: controller.signal, hold: () => this.hold(turn) }))
       .finally(() => {
         if (this.current?.turnId === turnId) this.current = null
       })

@@ -47,24 +47,28 @@ describe('LatestTurnScheduler', () => {
     expect(order).toEqual(['first:start', 'first:abort', 'first:end', 'second:start'])
   })
 
-  it('never starts a waiting turn that was replaced before it began', async () => {
+  it('runs a waiting turn that was replaced before it began with its signal already aborted, in order, so it can record its input', async () => {
     const scheduler = new LatestTurnScheduler()
+    const started = deferred()
     const release = deferred()
-    const first = scheduler.start(async ({ signal }) => {
-      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    const order: string[] = []
+    const first = scheduler.start(async () => {
+      started.resolve()
       await release.promise
+      order.push('first')
     })
-    await Promise.resolve()
+    await started.promise
 
-    const skipped = vi.fn(async () => {})
-    const middle = scheduler.start(skipped)
-    const latest = vi.fn(async () => {})
-    const last = scheduler.start(latest)
+    const middle = scheduler.start(async ({ signal }) => {
+      order.push(`middle, aborted: ${signal.aborted}`)
+    })
+    const last = scheduler.start(async ({ signal }) => {
+      order.push(`last, aborted: ${signal.aborted}`)
+    })
 
     release.resolve()
     await Promise.all([first.completion, middle.completion, last.completion])
-    expect(skipped).not.toHaveBeenCalled()
-    expect(latest).toHaveBeenCalledOnce()
+    expect(order).toEqual(['first', 'middle, aborted: true', 'last, aborted: false'])
   })
 
   it('hands out increasing turn ids and lets a turn be aborted by its id', async () => {

@@ -754,6 +754,18 @@ describe('brain turn', () => {
     expect(readLog().at(-1)).toMatchObject({ kind: 'assistant', text: 'タイマーが終わりました。' })
   })
 
+  it('says and records nothing of an interjection that a user turn replaced before it began', async () => {
+    mocks.rounds.push(async (round) => { round.text('晴れです。'); return {} })
+    const { brain, events } = await loadBrain()
+    const { interject } = await import('../src/main/services/brain/interject')
+    const interjection = interject('タイマーが終わりました。')
+    const turnId = brain.startTurn('明日の天気は')
+    await interjection
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'done' && e.turnId === turnId)).toBe(true))
+    expect(events.filter((e) => e.type === 'started').map((e) => e.type === 'started' && e.origin)).toEqual(['user'])
+    expect(readLog().some((r) => r.text === 'タイマーが終わりました。')).toBe(false)
+  })
+
   it('hands each sentence to the voice route, adds no aizuchi note, puts the division of roles in system, and records no assistant entry', async () => {
     mocks.rounds.push(async (round) => {
       round.text('明日は', '晴天です。')
@@ -1016,6 +1028,46 @@ describe('brain turn', () => {
     const result = sent.flatMap((message) => message.parts).find((part) => part.type === 'tool_result' && part.callId === 't1')
     expect(JSON.parse((result as Extract<ConversationPart, { type: 'tool_result' }>).content)).toMatchObject({ started: true, jobId: 'j1' })
     expect(textOf(sent.at(-1)!)).toContain('はい')
+  })
+
+  it('keeps every utterance said while a confirmation waits, in order, and answers the last one', async () => {
+    mocks.rounds.push(async (round) => {
+      round.text('確認画面で承認してください。')
+      round.toolUse('t1', 'run_agent_task', { prompt: '調べて', title: '調べもの' })
+      return { stop: 'tool_calls' }
+    })
+    mocks.rounds.push(async (round) => { round.text('明後日の天気ですね。'); return {} })
+    const { brain } = await loadBrain()
+    const { confirmEvents, resolveConfirm } = await import('../src/main/services/confirm')
+    const agent = await import('../src/main/services/agent')
+    vi.mocked(agent.start).mockReturnValueOnce({ id: 'j1', title: '調べもの', cwd: '/work/asist-jobs/j1' } as never)
+    const confirmations: ConfirmEvent[] = []
+    confirmEvents.on('event', (event) => confirmations.push(event))
+
+    const asking = brain.beginTurn({ text: '調べておいて' }, {}, 'user', false)!
+    await vi.waitFor(() => expect(confirmations).toHaveLength(1))
+    // The user says two things while the sheet is open; the renderer aborts its active turn before each.
+    brain.abortTurn(asking.turnId)
+    const first = brain.beginTurn({ text: '明日の天気も' }, {}, 'user', false)!
+    brain.abortTurn(first.turnId)
+    const second = brain.beginTurn({ text: 'あ、明後日で' }, {}, 'user', false)!
+
+    resolveConfirm((confirmations[0] as Extract<ConfirmEvent, { type: 'open' }>).request.id, true)
+    await Promise.all([asking.completion, first.completion, second.completion])
+    expect(mocks.requests).toHaveLength(2)
+    const sent = mocks.requests[1].messages.slice(-3)
+    expect(sent.map((message) => message.role)).toEqual(['user', 'assistant', 'user'])
+    expect(textOf(sent[0])).toContain('明日の天気も')
+    expect(sent[1]).toEqual(said(INTERRUPTED_BEFORE_REPLY))
+    expect(textOf(sent[2])).toContain('あ、明後日で')
+    expect(readLog().filter((r) => r.kind === 'user' || r.kind === 'assistant').map((r) => [r.kind, r.turnId, r.text, r.interrupted])).toEqual([
+      ['user', asking.turnId, '調べておいて', undefined],
+      ['assistant', asking.turnId, '確認画面で承認してください。', 'while-speaking'],
+      ['user', first.turnId, '明日の天気も', undefined],
+      ['assistant', first.turnId, '', 'before-reply'],
+      ['user', second.turnId, 'あ、明後日で', undefined],
+      ['assistant', second.turnId, '明後日の天気ですね。', undefined]
+    ])
   })
 
   it('does not hold the conversation for a confirmation that something a tool started asks for after the tool\'s round', async () => {
