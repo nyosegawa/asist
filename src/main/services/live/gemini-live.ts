@@ -308,7 +308,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         } catch (err) {
           // executeClientTool reads the conversation language and the tool registry before it returns its
           // task, and either can throw, for instance on settings that cannot be read.
-          return Object.assign(Promise.resolve(failedExecution(err)), { completion: Promise.resolve() })
+          return Object.assign(Promise.resolve(failedExecution(err)), { completion: Promise.resolve(), operationStarted: () => {} })
         }
       })
       .then((started) => (started ? this.answerTool(call, turnId, controller, started.work) : undefined))

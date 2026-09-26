@@ -152,6 +152,7 @@ vi.mock('../src/main/services/agent', () => ({
   findActive: () => undefined,
   start: vi.fn(),
   get: () => undefined,
+  userJob: vi.fn(),
   list: () => [],
   getLog: () => [],
   cancel: vi.fn(),
@@ -1068,6 +1069,41 @@ describe('brain turn', () => {
       ['user', second.turnId, 'あ、明後日で', undefined],
       ['assistant', second.turnId, '明後日の天気ですね。', undefined]
     ])
+  })
+
+  it('reports a continuation approved in the last seconds of the time limit as started, not as timed out', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      mocks.rounds.push(async (round) => {
+        round.toolUse('t1', 'continue_agent_job', { jobId: 'j1', prompt: '続けて' })
+        return { stop: 'tool_calls' }
+      })
+      mocks.rounds.push(async (round) => { round.text('続きを始めました。'); return {} })
+      const { brain } = await loadBrain()
+      const { confirmEvents, resolveConfirm } = await import('../src/main/services/confirm')
+      const agent = await import('../src/main/services/agent')
+      vi.mocked(agent.userJob).mockReturnValue({ id: 'j1', title: '調べもの', engine: 'claude', readonly: true, cwd: '/work/asist-jobs/j1', status: 'running' } as never)
+      // The running job is stopped before the continuation starts, which takes a few seconds.
+      let continued!: () => void
+      vi.mocked(agent.continueJob).mockImplementationOnce(() => new Promise((resolve) => {
+        continued = () => resolve({ id: 'j2', title: '調べもの(続き)' } as never)
+      }))
+      const confirmations: ConfirmEvent[] = []
+      confirmEvents.on('event', (event) => confirmations.push(event))
+      const turn = brain.beginTurn({ text: 'さっきの続きをやって' }, {}, 'user', false)!
+      await vi.waitFor(() => expect(confirmations).toHaveLength(1))
+      await vi.advanceTimersByTimeAsync(299_000)
+      resolveConfirm((confirmations[0] as Extract<ConfirmEvent, { type: 'open' }>).request.id, true)
+      await vi.advanceTimersByTimeAsync(3_000)
+      continued()
+      await turn.completion
+      const result = mocks.requests[1].messages.flatMap((message) => message.parts)
+        .find((part) => part.type === 'tool_result' && part.callId === 't1') as Extract<ConversationPart, { type: 'tool_result' }>
+      expect(result.isError).toBeFalsy()
+      expect(JSON.parse(result.content)).toMatchObject({ started: true, jobId: 'j2' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not hold the conversation for a confirmation that something a tool started asks for after the tool\'s round', async () => {

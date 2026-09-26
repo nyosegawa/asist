@@ -44,7 +44,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/memory', () => mocks.memory)
 vi.mock('../src/main/services/agent', () => mocks.agent)
-vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm }))
+vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm, askingFrom: (_asker: unknown, run: () => unknown) => run() }))
 vi.mock('../src/main/services/panel-fetchers', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/services/panel-fetchers')>()),
   fetchPanel: mocks.fetchPanel

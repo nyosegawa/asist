@@ -49,7 +49,7 @@ type ExecuteTool = (name: string, input: Record<string, unknown>, ctx: { signal:
 const result = (content: string): ToolExecution => ({ content, isError: false, durationMs: 1, resultLength: content.length, truncated: false })
 
 /** A tool call whose answer and work have both ended. */
-const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve() })
+const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve(), operationStarted: () => {} })
 
 async function setup(execute?: ExecuteTool): Promise<{
   engine: import('../src/main/services/live/gemini-live').GeminiLiveEngine
@@ -99,7 +99,7 @@ function held(): { task: ToolExecutionTask; answer: (content: string) => void; f
   let finish!: () => void
   const response = new Promise<ToolExecution>((resolve) => (answer = (content) => resolve(result(content))))
   const completion = new Promise<void>((resolve) => (finish = resolve))
-  return { task: Object.assign(response, { completion }), answer, finish }
+  return { task: Object.assign(response, { completion, operationStarted: () => {} }), answer, finish }
 }
 
 const responseIds = (session: FakeSession): string[] =>

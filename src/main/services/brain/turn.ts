@@ -21,7 +21,6 @@ import { conversationLocale, features } from '../conversation-locale'
 import { getSettings } from '../settings'
 import * as agentRunner from '../agent'
 import { randomClip as randomAizuchiClip } from '../aizuchi'
-import { askingFrom } from '../confirm'
 import * as memory from '../memory'
 import { summarizeToolInput, summarizeToolResult, type NoticeKind } from './conversation-log'
 import { openAppNote } from './mini-app-tools'
@@ -420,11 +419,11 @@ async function runTurn(
       signal,
       locale,
       isParallel: (name) => toolRegistry().find(name)?.parallel ?? false,
-      execute: (call, roundSignal) => askingFrom(() => holdForAnswer(roundSignal), () => executeClientTool(call.name, call.input, {
+      execute: (call, roundSignal) => executeClientTool(call.name, call.input, {
         ...ctx,
         signal: roundSignal,
         emit: (event) => { if (!roundSignal.aborted) emit(event) }
-      })),
+      }, () => holdForAnswer(roundSignal)),
       onStart: (call) => {
         toolCalls++
         slowToolTimer ??= setTimeout(() => playWorkFiller(round.signal), 2500)

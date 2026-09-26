@@ -132,6 +132,13 @@ export interface ToolExecution {
  */
 export interface ToolExecutionTask extends Promise<ToolExecution> {
   readonly completion: Promise<void>
+  /**
+   * Says that the operation of the tool has started, once the user approved it. The time limit counted the
+   * wait for the answer, so it starts again for the operation alone, and a wait cut off from here on is
+   * reported as an operation that started with its result unknown. The operation does not stop with the
+   * wait, and a timeout would lead the model to take a sent mail or a started job for a failure and retry it.
+   */
+  operationStarted(): void
 }
 
 /** What this file says to the model, in both prompt languages. */
@@ -162,6 +169,10 @@ const TEXTS = {
   interrupted: (name: string): PromptText => ({
     ja: `${name} は実行中に中断された。`,
     en: `${name} was interrupted while running.`
+  }),
+  unfinished: (name: string): PromptText => ({
+    ja: `${name} は承認されて実行を始めたが、結果を待つのを打ち切った。成否は分からないので、やり直す前に今の状態を確かめること。`,
+    en: `${name} was approved and started, but the wait for its result was cut off, so whether it succeeded is not known. Check the current state before trying it again.`
   }),
   failed: (name: string, reason: string): PromptText => ({
     ja: `${name} の実行に失敗した: ${reason}。入力を見直すか、別の手段を選ぶこと。`,
@@ -354,7 +365,8 @@ export function executeTool<Ctx>(
   const def = registry.find(name)
   if (!def) {
     return Object.assign(Promise.resolve(failure(TEXTS.unknownTool(name)[language])), {
-      completion: Promise.resolve()
+      completion: Promise.resolve(),
+      operationStarted: () => {}
     })
   }
 
@@ -363,10 +375,10 @@ export function executeTool<Ctx>(
   // The reason reaches whatever the tool hands the signal to: fetch rejects with it, and a card shows
   // what a fetch rejects with. So it is the platform's TimeoutError, and the model's text is written
   // below from which signal ended the run.
-  const timer = setTimeout(
-    () => timeout.abort(new DOMException(`${def.name} ran past ${def.timeoutMs} ms`, 'TimeoutError')),
-    def.timeoutMs
-  )
+  const expire = (): void => timeout.abort(new DOMException(`${def.name} ran past ${def.timeoutMs} ms`, 'TimeoutError'))
+  let timer = setTimeout(expire, def.timeoutMs)
+  let started = false
+  let settled = false
   let rejectAbort!: (reason: unknown) => void
   const aborted = new Promise<never>((_, reject) => { rejectAbort = reject })
   const onAbort = (): void => rejectAbort(combined.reason)
@@ -384,14 +396,22 @@ export function executeTool<Ctx>(
       durationMs: now() - startedAt
     }))
     .catch((err): ToolExecution => {
+      if (started && combined.aborted) return failure(TEXTS.unfinished(def.name)[language])
       if (signal.aborted) return failure(TEXTS.interrupted(def.name)[language])
       if (timeout.signal.aborted) return failure(TEXTS.timedOut(def.name, def.timeoutMs / 1000)[language])
       if (err instanceof ToolError) return failure(resolvePromptTexts(err.message, language))
       return failure(TEXTS.failed(def.name, errMessage(err))[language])
     })
     .finally(() => {
+      settled = true
       clearTimeout(timer)
       combined.removeEventListener('abort', onAbort)
     })
-  return Object.assign(response, { completion })
+  const operationStarted = (): void => {
+    if (started || settled || combined.aborted) return
+    started = true
+    clearTimeout(timer)
+    timer = setTimeout(expire, def.timeoutMs)
+  }
+  return Object.assign(response, { completion, operationStarted })
 }

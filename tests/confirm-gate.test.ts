@@ -47,7 +47,7 @@ describe('createConfirmGate', () => {
     const input = { title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false }
     const asked: number[] = []
     const fromTurn = askingFrom(
-      () => asked.push(events.length) > 0,
+      { onAsk: () => asked.push(events.length) > 0, onApprove: () => {} },
       async () => {
         // The mail and calendar services read their state before they ask.
         await new Promise((resolve) => setTimeout(resolve, 0))
@@ -64,6 +64,25 @@ describe('createConfirmGate', () => {
     gate.resolve('c1', true)
     gate.resolve('c2', true)
     await expect(Promise.all([fromTurn, fromScreen])).resolves.toEqual([true, true])
+  })
+})
+
+describe('an approval told to the tool that asked', () => {
+  it('tells the tool when the user approves, and not when the user cancels or the request is aborted', async () => {
+    const { gate } = setup()
+    const input = { title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false }
+    const approvals: string[] = []
+    const ask = (name: string, signal = new AbortController().signal): Promise<boolean> =>
+      askingFrom({ onAsk: () => false, onApprove: () => approvals.push(name) }, () => gate.request(input, signal))
+    const approved = ask('approved')
+    const cancelled = ask('cancelled')
+    const controller = new AbortController()
+    const aborted = ask('aborted', controller.signal)
+    gate.resolve('c1', true)
+    gate.resolve('c2', false)
+    controller.abort()
+    await expect(Promise.all([approved, cancelled, aborted])).resolves.toEqual([true, false, false])
+    expect(approvals).toEqual(['approved'])
   })
 })
 

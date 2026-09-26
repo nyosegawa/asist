@@ -190,6 +190,35 @@ describe('executeTool', () => {
     expect(seen!.aborted).toBe(true)
   })
 
+  it('gives an operation the user approved late in the time limit a limit of its own, and says it started when that one passes too', async () => {
+    vi.useFakeTimers()
+    try {
+      let approve!: () => void
+      const approval = new Promise<void>((resolve) => { approve = resolve })
+      let finishSend!: () => void
+      const registry = createToolRegistry([
+        def({ name: 'send', timeoutMs: 1000, run: async () => { await approval; await new Promise<void>((resolve) => { finishSend = resolve }); return 'sent' } }),
+        def({ name: 'archive', timeoutMs: 1000, run: async () => { await approval; await new Promise(() => {}) } })
+      ])
+      const sent = executeTool(registry, 'send', {}, ctx, signal, 'ja')
+      const archived = executeTool(registry, 'archive', {}, ctx, signal, 'ja')
+      await vi.advanceTimersByTimeAsync(900)
+      sent.operationStarted()
+      archived.operationStarted()
+      approve()
+      await vi.advanceTimersByTimeAsync(500)
+      finishSend()
+      expect(await sent).toMatchObject({ isError: false, content: 'sent' })
+      await vi.advanceTimersByTimeAsync(1000)
+      const cut = await archived
+      expect(cut.isError).toBe(true)
+      expect(cut.content).toContain('archive')
+      expect(cut.content).not.toContain('時間切れ')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reports the result as interrupted when the caller aborts', async () => {
     const controller = new AbortController()
     const registry = createToolRegistry([
