@@ -29,6 +29,18 @@ describe('StreamResampler', () => {
     expect(total).toBeGreaterThan(2380)
     expect(total).toBeLessThanOrEqual(2400)
   })
+
+  it.each([128, 480, 1023, 1024, 4096])('keeps a 48 kHz to 16 kHz stream on one timeline across %i-sample chunks', (chunk) => {
+    // On a ramp x[n] = n, linear interpolation returns the source position, so every output must read 3 × its index.
+    const down = new StreamResampler(48_000, 16_000)
+    const out: number[] = []
+    for (let offset = 0; offset < 48_000; offset += chunk) {
+      const ramp = new Float32Array(Math.min(chunk, 48_000 - offset)).map((_, i) => offset + i)
+      out.push(...down.process(ramp))
+    }
+    expect(out).toHaveLength(16_000)
+    expect(out.findIndex((value, index) => Math.abs(value - index * 3) > 1e-3)).toBe(-1)
+  })
 })
 
 describe('live audio encode/decode', () => {

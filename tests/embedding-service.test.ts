@@ -9,6 +9,7 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/unused', getPath: () => '/unused', on: vi.fn()
 } }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'en-US' }) }))
 
 function fakeChild() {
   const input: Array<{ id: string; kind: string; texts: string[] }> = []
@@ -33,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv('ASIST_EMBEDDING_PYTHON', '/unused/python')
   vi.spyOn(fs, 'existsSync').mockReturnValue(true)
   child = fakeChild()
-  mocks.spawn.mockReturnValue(child)
+  mocks.spawn.mockReset().mockReturnValue(child)
   embedding = await import('../src/main/services/embedding')
 })
 afterEach(() => {
@@ -67,6 +68,36 @@ describe('embedding worker start', () => {
     expect(await starting).toBe(false)
     expect(embedding.running()).toBe(false)
     expect(child.kill).toHaveBeenCalled()
+  })
+
+  it('lets a preparation wait for the worker a start is already loading, instead of starting another', async () => {
+    const starting = embedding.ensureStarted()
+    const preparing = embedding.prepare(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    child.stdout.write(`ASIST_JSON:{"type":"ready","dim":${EMBEDDING_MODEL.dim}}\n`)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    expect((await preparing).ok).toBe(true)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('stops a worker whose input pipe breaks and fails its request, without an uncaught error', async () => {
+    await ready()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const outcome = embedding.embed(['猫の名前'], 'query').then(() => 'resolved', () => 'rejected')
+    const uncaught: Error[] = []
+    const onUncaught = (error: Error): void => { uncaught.push(error) }
+    process.prependListener('uncaughtException', onUncaught)
+    try {
+      child.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      await vi.advanceTimersByTimeAsync(10)
+    } finally {
+      process.removeListener('uncaughtException', onUncaught)
+    }
+    expect(uncaught).toEqual([])
+    expect(await outcome).toBe('rejected')
+    expect(embedding.running()).toBe(false)
   })
 })
 

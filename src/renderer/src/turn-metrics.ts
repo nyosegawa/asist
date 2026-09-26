@@ -100,7 +100,7 @@ export class TurnMetrics {
     entry.completed = true
     if (entry.dirty) this.persist(entry)
     if (entry.cleanupTimer) clearTimeout(entry.cleanupTimer)
-    entry.cleanupTimer = setTimeout(() => this.discard(turnId), IDLE_WAIT_MS)
+    entry.cleanupTimer = setTimeout(() => this.close(turnId), IDLE_WAIT_MS)
   }
 
   /**
@@ -112,7 +112,13 @@ export class TurnMetrics {
     const entry = this.turns.get(turnId)
     if (!entry || !entry.completed) return
     if (!entry.snapshot.typed && entry.snapshot.e2eMs === undefined) return
-    if (entry.dirty) this.persist(entry)
+    this.close(turnId)
+  }
+
+  /** Appends what changed since the last save and stops accepting values for the turn. */
+  private close(turnId: number): void {
+    const entry = this.turns.get(turnId)
+    if (entry?.dirty) this.persist(entry)
     this.discard(turnId)
   }
 

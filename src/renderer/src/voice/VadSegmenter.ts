@@ -21,10 +21,20 @@ import { VAP_EOT_CONFIRM, VAP_EOT_HOLD_BELOW } from '@shared/maai-thresholds'
  *   decides, so no failure here can discard speech.
  */
 
+/** samples holds the whole stretch of speech, vadMs the hangover the end decision took, and mode the path that decision went through. */
+export interface VadUtterance {
+  samples: Float32Array
+  vadMs: number
+  mode: HangoverMode
+}
+
 export interface VadEvents {
   onSpeechStart?: () => void
-  /** samples holds the whole stretch of speech, vadMs the hangover the end decision took, and mode the path that decision went through. */
-  onUtterance?: (samples: Float32Array, vadMs: number, mode: HangoverMode) => void
+  /**
+   * Ends every capture that onSpeechStart opened: with the utterance, or with null when the capture
+   * held too little voice or the VAD was muted in the middle of it.
+   */
+  onSpeechEnd?: (utterance: VadUtterance | null) => void
   /** The RMS, roughly 0 to 1, that the level meter in the UI displays. */
   onLevel?: (rms: number) => void
 }
@@ -144,7 +154,10 @@ export class VadSegmenter {
 
   push(frame: Float32Array): void {
     if (this.muted) {
-      if (this.speaking) this.reset()
+      if (this.speaking) {
+        this.reset()
+        this.events.onSpeechEnd?.(null)
+      }
       return
     }
 
@@ -234,16 +247,19 @@ export class VadSegmenter {
       voicedMs >= MIN_VOICED_MS &&
       speechMs >= MIN_SPEECH_MS
     ) {
-      this.events.onUtterance?.(samples, vadMs, mode)
-    } else if (voicedMs > 0) {
+      this.events.onSpeechEnd?.({ samples, vadMs, mode })
+      return
+    }
+    if (voicedMs > 0) {
       // The breakdown makes it possible to follow up a report that speaking did nothing.
       console.log(
         `vad: utterance discarded (utterance=${Math.round(utteranceMs)}ms voiced=${Math.round(voicedMs)}ms speech=${Math.round(speechMs)}ms silence=${vadMs}ms)`
       )
     }
+    this.events.onSpeechEnd?.(null)
   }
 
-  /** Stopping and restarting capture must not carry the previous utterance buffer over. */
+  /** Stopping and restarting capture must not carry the previous utterance buffer over. It reports no end, because the owner is stopping. */
   reset(): void {
     this.speaking = false
     this.silenceMs = 0

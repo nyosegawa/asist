@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -12,12 +13,12 @@ vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale
 
 import { prepareModel, snapshotPath } from '../src/main/services/mlx-runtime'
 
-const MODEL = { id: 'test-org/test-model', revision: 'abc123', label: 'Test Model' }
+const MODEL = { id: 'test-org/test-model', revision: 'abc123', label: 'Test Model', files: ['config.json', 'model.safetensors', 'tokenizer.json'] }
 
 /**
  * A stand-in for the environment's python. For hf_snapshot.py it prints the repository's size, writes
- * the model into the cache in three steps like a download, and records its pid; for a worker script it
- * reports ready. With FAKE_DOWNLOAD_HANG set the download never ends.
+ * the weights into the cache in three steps like a download, links every file into the snapshot, and
+ * records its pid; for a worker script it reports ready. With FAKE_DOWNLOAD_HANG set the download never ends.
  */
 const FAKE_PYTHON = `#!/bin/sh
 case "$1" in
@@ -34,6 +35,7 @@ case "$1" in
     mv "$cache/blobs/weights.incomplete" "$cache/blobs/weights"
     cp "$cache/blobs/weights" "$cache/snapshots/$3/model.safetensors"
     echo '{}' > "$cache/snapshots/$3/config.json"
+    echo '{}' > "$cache/snapshots/$3/tokenizer.json"
     ;;
   *)
     [ -f "$2/model.safetensors" ] || exit 3
@@ -100,5 +102,31 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('prepa
     expect(result.ok).toBe(false)
     expect(start).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 5_000 })
+  })
+
+  it('downloads again a snapshot that an interrupted download left without some of its files', async () => {
+    const snapshot = snapshotPath(MODEL)
+    fs.mkdirSync(snapshot, { recursive: true })
+    fs.writeFileSync(path.join(snapshot, 'config.json'), '{}')
+    fs.writeFileSync(path.join(snapshot, 'model.safetensors'), 'x')
+    const result = await prepareModel({
+      model: MODEL,
+      feature: 'Test',
+      signal: new AbortController().signal,
+      onProgress: () => {},
+      start: async () => fs.existsSync(path.join(snapshot, 'tokenizer.json'))
+    })
+    expect(result.ok).toBe(true)
+    expect(fs.existsSync(process.env.FAKE_PID_FILE!)).toBe(true)
+  })
+
+  it('fails a download whose python cannot be started, and leaves nothing listening on the signal', async () => {
+    fs.chmodSync(process.env.ASIST_MLX_PYTHON!, 0o644)
+    const controller = new AbortController()
+    const start = vi.fn(async () => true)
+    const result = await prepareModel({ model: MODEL, feature: 'Test', signal: controller.signal, onProgress: () => {}, start })
+    expect(result.ok).toBe(false)
+    expect(start).not.toHaveBeenCalled()
+    expect(getEventListeners(controller.signal, 'abort')).toEqual([])
   })
 })
