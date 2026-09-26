@@ -9,6 +9,7 @@ import { conversationLocale } from '../conversation-locale'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { ToolCallOrder } from '@shared/tool-call-order'
+import type { MemoryInjection } from '@shared/memory-injection'
 import type { ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -88,8 +89,10 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   /** Whether the registry lets the tool run at the same time as other calls, which a writing tool does not. */
   isParallel: (name: string) => boolean
   recordTool: (turnId: number, name: string, input: Record<string, unknown>, execution: ToolExecution) => void
-  /** Looks for memories related to the user's utterance and returns a note about them, or null. */
-  memoryInjection: (text: string) => Promise<string | null>
+  /** Looks for memories related to the user's utterance and returns a note about them with their ids, or null. */
+  memoryInjection: (text: string) => Promise<Pick<MemoryInjection, 'text' | 'ids'> | null>
+  /** Records a note sent to the model after the utterance of the turn, with the ids of the memories it shows. */
+  recordNote: (turnId: number, text: string, memoryIds: string[]) => void
   /** Records typed input in the conversation log. A spoken user line is written when its transcript is final. */
   recordUser: (turnId: number, text: string) => void
   history: () => HistoryMessage[]
@@ -356,13 +359,18 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.sendUserText(fillPrompt(promptText(locale, READ_ALOUD), { systemNotice: marker(locale, 'systemNotice'), text }))
   }
 
-  /** A user utterance is final. Any related memory is added to the context silently, without asking for a reply. */
-  protected override onUserUtterance(_turnId: number, text: string): void {
+  /**
+   * A user utterance is final. Any related memory is added to the context silently, without asking for
+   * a reply, and is recorded on the utterance's turn only once a session has it.
+   */
+  protected override onUserUtterance(turnId: number, text: string): void {
     void this.deps
       .memoryInjection(text)
       .then((injection) => {
-        if (!injection || !this.session) return
-        this.session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection }] }], turnComplete: false })
+        const session = this.session
+        if (!injection || !session) return
+        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection.text }] }], turnComplete: false })
+        this.deps.recordNote(turnId, injection.text, injection.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
   }

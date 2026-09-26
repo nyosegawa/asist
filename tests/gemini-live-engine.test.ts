@@ -64,7 +64,9 @@ async function setup(execute?: ExecuteTool): Promise<{
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
   const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
-  const memoryInjection = vi.fn(async (text: string) => (text.includes('いつもの') ? '[記憶] いつもの店は中野のカフェ' : null))
+  const memoryInjection = vi.fn(async (text: string) =>
+    text.includes('いつもの') ? { text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] } : null
+  )
   const engine = new GeminiLiveEngine(LIVE_ENGINE_INFO['gemini-live'], {
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
     apiKey: () => 'key',
@@ -81,6 +83,7 @@ async function setup(execute?: ExecuteTool): Promise<{
     isParallel: (name) => name.startsWith('show_'),
     recordTool: vi.fn(),
     memoryInjection,
+    recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
     recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
     history: () => [{ role: 'user', content: '前の話' }],
     emitTurn: (event) => turnEvents.push(event)
@@ -162,7 +165,22 @@ describe('GeminiLiveEngine', () => {
     expect(events.at(-1)).toMatchObject({ type: 'userTranscript', text: 'いつもの店を教えて', final: true })
     expect(memoryInjection).toHaveBeenCalledWith('いつもの店を教えて')
     expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: '[記憶] いつもの店は中野のカフェ' }] }], turnComplete: false })
+    // The note is recorded on the utterance's turn, which keeps its memories from being injected again.
+    expect(mocks.record).toHaveBeenLastCalledWith({ kind: 'note', turnId: 200, text: '[記憶] いつもの店は中野のカフェ', memoryIds: ['m-cafe'] })
     await engine.stop()
+  })
+
+  it('records no memory note when the session closed before the note was ready, since no model read it', async () => {
+    const { engine, sessions, memoryInjection } = await setup()
+    let ready!: (injection: { text: string; ids: string[] }) => void
+    memoryInjection.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await engine.stop()
+    ready({ text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.record.mock.calls.map((c) => c[0].kind)).toEqual(['user'])
+    expect(session.contents.some((content) => JSON.stringify(content).includes('[記憶]'))).toBe(false)
   })
 
   it('tells the renderer about an interruption, keeps what was spoken, and sends typed text and notices as text turns', async () => {

@@ -166,11 +166,13 @@ function createEngine(): LiveEngineBase {
     },
     memoryInjection: async (text) => {
       const hits = await memory.search(text, { limit: 8, mode: 'utterance' })
-      const injection = buildMemoryInjection(
+      return buildMemoryInjection(
         hits.map((hit) => hit.record),
         { locale: conversationLocale(), memoryBlock: memory.promptBlock(), excludeIds: history.shownMemoryIds() }
       )
-      return injection?.text ?? null
+    },
+    recordNote: (turnId, text, memoryIds) => {
+      record({ kind: 'note', turnId, text, memoryIds })
     },
     history: () => {
       history.ensureLoaded()
