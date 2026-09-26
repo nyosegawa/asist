@@ -5,14 +5,14 @@ import {
   LOCAL_TIMEOUT_MS,
   ToolError,
   bilingual,
-  resolvePromptTexts,
   type ToolDefinition
 } from '@shared/tool-registry'
-import { MAIL_VIEWS, mailChangeSchema, mailDate, mailDraftPatchSchema, mailListQuerySchema, mailSummary, formatAddress, replySubject } from '@shared/mail'
+import { localIsoWithOffset } from '@shared/calendar'
+import { MAIL_VIEWS, mailChangeSchema, mailDraftPatchSchema, mailListQuerySchema, mailSummary, formatAddress, replySubject } from '@shared/mail'
 import { catalogByType } from '@shared/panel-catalog'
 import { getMailService } from '../mail'
 import type { ToolContext } from './tools'
-import { detail, errMessage } from './tool-error-text'
+import { detail, issueText } from './tool-error-text'
 import { CARD_FIELD, putUpCard } from './cards'
 
 /**
@@ -28,9 +28,6 @@ const READ_RESULT_MAX = 12_000
 function accountLabels(): Map<string, string> {
   return new Map(getMailService().status().accounts.map((account) => [account.id, account.label]))
 }
-
-const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
-  issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
 
 /** What this file says to the model, in both prompt languages. */
 const TEXTS = {
@@ -157,7 +154,7 @@ export function mailTools(language: PromptLanguage): ToolDefinition<ToolContext>
             from: formatAddress(message.from),
             to: message.to.map(formatAddress),
             cc: message.cc.map(formatAddress),
-            date: mailDate(message.date),
+            date: localIsoWithOffset(message.date),
             subject: message.subject,
             attachments: message.attachments.map((item) => item.filename),
             text

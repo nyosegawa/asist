@@ -1,9 +1,10 @@
 import { errorText } from '@shared/i18n/error-text'
-import { languageOf } from '@shared/conversation-locale'
+import { languageOf, regionCurrency } from '@shared/conversation-locale'
 import { conversationLocale, region } from './conversation-locale'
 import { weatherPanelProps } from './weather'
 import { withTimeoutSignal } from '@shared/abort'
 import { includesNextWeek, resolveCalendarRange, summarizeCalendarEvents, type CalendarRange } from '@shared/calendar'
+import { addDays } from '@shared/calendar-layout'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { searchCalendar } from './calendar'
 import { getMailService } from './mail'
@@ -25,11 +26,13 @@ type Props = Record<string, unknown>
 type Fetched = { props: Props; source?: string; data?: unknown }
 type Fetcher = (props: Props, signal: AbortSignal) => Promise<Fetched>
 
-const json = async <T>(url: string, signal: AbortSignal): Promise<T> => {
+const request = async (url: string, signal: AbortSignal): Promise<Response> => {
   const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!res.ok) throw new Error(`${new URL(url).hostname}: HTTP ${res.status}`)
-  return (await res.json()) as T
+  if (!res.ok) throw new Error(errorText('panels.errors.fetchFailed', { host: new URL(url).hostname, status: res.status }))
+  return res
 }
+
+const json = async <T>(url: string, signal: AbortSignal): Promise<T> => (await (await request(url, signal)).json()) as T
 
 interface GeoResult {
   name: string
@@ -40,18 +43,24 @@ interface GeoResult {
   admin1?: string
 }
 
-/** Open-Meteo's geocoding only resolves English or local names, so a Japanese place name is translated first. */
-const JP_PLACES: Record<string, string> = {
-  東京: 'Tokyo', 大阪: 'Osaka', 京都: 'Kyoto', 名古屋: 'Nagoya', 札幌: 'Sapporo',
-  福岡: 'Fukuoka', 仙台: 'Sendai', 広島: 'Hiroshima', 横浜: 'Yokohama', 神戸: 'Kobe',
-  那覇: 'Naha', 沖縄: 'Naha', 金沢: 'Kanazawa', 新潟: 'Niigata', 静岡: 'Shizuoka',
-  岡山: 'Okayama', 熊本: 'Kumamoto', 鹿児島: 'Kagoshima', 長野: 'Nagano', 松本: 'Matsumoto',
-  ニューヨーク: 'New York', ロサンゼルス: 'Los Angeles', サンフランシスコ: 'San Francisco',
-  ロンドン: 'London', パリ: 'Paris', ベルリン: 'Berlin', ローマ: 'Rome',
-  シンガポール: 'Singapore', ソウル: 'Seoul', 北京: 'Beijing', 上海: 'Shanghai',
-  台北: 'Taipei', 香港: 'Hong Kong', バンコク: 'Bangkok', シドニー: 'Sydney',
-  ドバイ: 'Dubai', ホノルル: 'Honolulu', バンクーバー: 'Vancouver'
-}
+/**
+ * Open-Meteo's geocoding only resolves English or local names, so a Japanese place name is translated
+ * first. A Map, because the place name comes from the model and an object would also answer
+ * "constructor" or "toString" with a member of its prototype.
+ */
+const JP_PLACES = new Map(
+  Object.entries({
+    東京: 'Tokyo', 大阪: 'Osaka', 京都: 'Kyoto', 名古屋: 'Nagoya', 札幌: 'Sapporo',
+    福岡: 'Fukuoka', 仙台: 'Sendai', 広島: 'Hiroshima', 横浜: 'Yokohama', 神戸: 'Kobe',
+    那覇: 'Naha', 沖縄: 'Naha', 金沢: 'Kanazawa', 新潟: 'Niigata', 静岡: 'Shizuoka',
+    岡山: 'Okayama', 熊本: 'Kumamoto', 鹿児島: 'Kagoshima', 長野: 'Nagano', 松本: 'Matsumoto',
+    ニューヨーク: 'New York', ロサンゼルス: 'Los Angeles', サンフランシスコ: 'San Francisco',
+    ロンドン: 'London', パリ: 'Paris', ベルリン: 'Berlin', ローマ: 'Rome',
+    シンガポール: 'Singapore', ソウル: 'Seoul', 北京: 'Beijing', 上海: 'Shanghai',
+    台北: 'Taipei', 香港: 'Hong Kong', バンコク: 'Bangkok', シドニー: 'Sydney',
+    ドバイ: 'Dubai', ホノルル: 'Honolulu', バンクーバー: 'Vancouver'
+  })
+)
 
 async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult | null> {
   const data = await json<{ results?: GeoResult[] }>(
@@ -62,9 +71,10 @@ async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult
 }
 
 async function geocode(place: string, signal: AbortSignal): Promise<GeoResult> {
-  const raw = place.trim().replace(/(都|府|県|市)$/, '')
-  const candidates = [JP_PLACES[raw] ?? raw]
-  const result = await geocodeOnce(candidates[0], signal)
+  const name = place.trim()
+  // The suffix is dropped only after the name as given misses the table, or "京都" would be looked up as "京".
+  const bare = name.replace(/(都|府|県|市)$/, '')
+  const result = await geocodeOnce(JP_PLACES.get(name) ?? JP_PLACES.get(bare) ?? bare, signal)
   if (result) return result
   throw new Error(errorText('panels.errors.placeNotFound', { place }))
 }
@@ -73,7 +83,7 @@ const weather: Fetcher = weatherPanelProps
 
 const clock: Fetcher = async (props, signal) => {
   const city = String(props.city ?? '').trim()
-  if (!city) throw new Error('city required')
+  if (!city) throw new Error(errorText('panels.errors.cityMissing'))
   const geo = await geocode(city, signal)
   return {
     props: { city: geo.name, timezone: geo.timezone, country: geo.country ?? '' },
@@ -82,23 +92,26 @@ const clock: Fetcher = async (props, signal) => {
 }
 
 /**
- * The currency a rate is quoted in when the user names only the other side, for the regions a
- * conversation language starts from. A region outside the table has no obvious currency, so the card
- * says so rather than quoting a rate against a country the user never chose.
+ * The props a card is keyed and fetched with, once the main process has filled in what only it knows:
+ * an exchange rate asked for without the currency it is quoted in takes the region's. show_ tools make
+ * the key of the card from these, so asking again with that currency named lands on the same card. A
+ * rate of a currency against itself is always 1, so when the region's currency is the base, the rate
+ * is quoted against the other of the two most traded currencies. A region outside the list of the
+ * settings has no currency to take, and the card says so rather than quoting against a country the user
+ * never chose.
  */
-const REGION_CURRENCIES: Record<string, string> = {
-  JP: 'JPY', US: 'USD', FR: 'EUR', DE: 'EUR', IN: 'INR', ID: 'IDR',
-  IT: 'EUR', KR: 'KRW', BR: 'BRL', MX: 'MXN', ES: 'EUR'
+export function completePanelProps(type: string, props: Props): Props {
+  if (type !== 'fx' || props.quote != null) return props
+  const home = region()
+  const currency = regionCurrency(home)
+  if (!currency) throw new Error(errorText('panels.errors.currencyUnknown', { region: home }))
+  const base = String(props.base).toUpperCase()
+  return { ...props, quote: currency !== base ? currency : base === 'USD' ? 'EUR' : 'USD' }
 }
 
 const fx: Fetcher = async (props, signal) => {
-  const base = String(props.base ?? 'USD').toUpperCase()
-  const home = region()
-  const currency = REGION_CURRENCIES[home]
-  if (props.quote == null && !currency) {
-    throw new Error(errorText('panels.errors.currencyUnknown', { region: home }))
-  }
-  const quote = String(props.quote ?? currency).toUpperCase()
+  const base = String(props.base).toUpperCase()
+  const quote = String(props.quote).toUpperCase()
   const data = await json<{ result: string; rates: Record<string, number>; time_last_update_utc: string }>(
     `https://open.er-api.com/v6/latest/${base}`,
     signal
@@ -126,13 +139,12 @@ const news: Fetcher = async (props, signal) => {
     topic === NEWS_TOP_TOPIC
       ? `https://news.google.com/rss?${edition}`
       : `https://news.google.com/rss/search?q=${encodeURIComponent(topic)}&${edition}`
-  const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!res.ok) throw new Error(`news: HTTP ${res.status}`)
-  const xml = await res.text()
+  const xml = await (await request(url, signal)).text()
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 6).map((m) => {
     const block = m[1]
     const pick = (tag: string): string => {
-      const raw = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? ''
+      // Google News writes the publisher as <source url="…">, so an element may carry attributes.
+      const raw = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`))?.[1] ?? ''
       return raw
         .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
         .replace(/&lt;/g, '<')
@@ -162,7 +174,7 @@ const calendar: Fetcher = async (props, signal) => {
   const query = typeof props.query === 'string' && props.query.trim() ? props.query.trim() : undefined
   // Asked for "this week" on a weekend, the search reaches into next week in one call, while the card
   // still shows only the events inside this week.
-  const searchUntilMs = includesNextWeek(now, window.range) ? window.untilMs + 7 * 86400000 : window.untilMs
+  const searchUntilMs = includesNextWeek(now, window.range) ? addDays(new Date(window.untilMs), 7).getTime() : window.untilMs
   const result = await searchCalendar(
     { start: new Date(window.fromMs).toISOString(), end: new Date(searchUntilMs).toISOString(), ...(query ? { query } : {}) },
     signal
@@ -230,11 +242,13 @@ const files: Fetcher = async (props) => {
       ? readFileItem(allowed, fileUrl)
       : { path: target, name: target.slice(target.lastIndexOf('/') + 1), kind: 'binary', sizeBytes: 0, error: t('files.errors.outsideRoots') }
   })
-  if (items.every((item) => item.error)) throw new Error(items.map((item) => `${item.name}: ${item.error}`).join(' / '))
+  if (items.every((item) => item.error)) {
+    throw new Error(errorText('panels.errors.filesUnreadable', { files: items.map((item) => `${item.name}: ${item.error}`).join(' / ') }))
+  }
   return { props: { ...props, paths, items }, source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length }) }
 }
 
-export const FETCHERS: Record<string, Fetcher> = {
+const FETCHERS: Record<string, Fetcher> = {
   calendar,
   mail,
   'mail-message': mailMessage,
@@ -253,5 +267,5 @@ export async function fetchPanel(
 ): Promise<Fetched> {
   const fetcher = FETCHERS[type]
   if (!fetcher) return { props }
-  return fetcher(props, withTimeoutSignal(signal, 12_000))
+  return fetcher(completePanelProps(type, props), withTimeoutSignal(signal, 12_000))
 }

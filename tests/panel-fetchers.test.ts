@@ -4,11 +4,19 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
+import { REGIONS, regionCurrency } from '@shared/conversation-locale'
+import { readErrorText } from '@shared/i18n/error-text'
 
-const mocks = vi.hoisted(() => ({ conversationLocale: 'ja-JP', region: 'JP', roots: [] as string[] }))
+const mocks = vi.hoisted(() => ({
+  conversationLocale: 'ja-JP',
+  region: 'JP',
+  roots: [] as string[],
+  searchCalendar: vi.fn(async (_query: { start: string; end: string }) => ({ events: [] }))
+}))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: mocks.conversationLocale, region: mocks.region })
 }))
+vi.mock('../src/main/services/calendar', () => ({ searchCalendar: mocks.searchCalendar }))
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
 vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => mocks.roots }))
 
@@ -45,6 +53,20 @@ describe('the requests a card makes for the conversation language and the region
     mocks.conversationLocale = 'de-DE'
     await fetchPanel('clock', { city: 'Berlin' })
     expect(urls[0]).toContain('language=de')
+  })
+
+  it('looks a Japanese city up under its English name, with or without the suffix of a prefecture or a city', async () => {
+    const urls: string[] = []
+    respond({ results: [{ name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
+    for (const city of ['京都', '京都府', '京都市']) await fetchPanel('clock', { city })
+    expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['Kyoto', 'Kyoto', 'Kyoto'])
+  })
+
+  it('looks up a city whose name is also a member of every object under that name', async () => {
+    const urls: string[] = []
+    respond({ results: [{ name: 'X', latitude: 0, longitude: 0, timezone: 'UTC' }] }, urls)
+    for (const city of ['constructor', 'toString']) await fetchPanel('clock', { city })
+    expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['constructor', 'toString'])
   })
 
   it('keeps the Japanese request of the clock card unchanged', async () => {
@@ -84,13 +106,62 @@ describe('the requests a card makes for the conversation language and the region
     expect((await fetchPanel('fx', { base: 'USD' })).props).toMatchObject({ quote: 'BRL', rate: 5.2 })
   })
 
-  it('says it does not know the currency of a region rather than quoting the rate against the yen', async () => {
+  it('quotes a rate asked for without its quote in every region the settings offer, never against the base itself', async () => {
+    const currencies = [...new Set(REGIONS.map((code) => regionCurrency(code)!)), 'USD', 'EUR']
+    respond({ result: 'success', rates: Object.fromEntries(currencies.map((code) => [code, 1.5])), time_last_update_utc: 'now' }, [])
+    const unquoted: string[] = []
+    for (const code of REGIONS) {
+      mocks.region = code
+      for (const base of ['USD', regionCurrency(code)]) {
+        const { props } = await fetchPanel('fx', { base })
+        if (typeof props.quote !== 'string' || props.quote === base) unquoted.push(`${code} ${base}/${String(props.quote)}`)
+      }
+    }
+    expect(unquoted).toEqual([])
+  })
+
+  it('says it does not know the currency of a region outside the list rather than quoting the rate against the yen', async () => {
     const urls: string[] = []
     respond({ result: 'success', rates: { JPY: 150 }, time_last_update_utc: 'now' }, urls)
-    mocks.region = 'AT'
-    await expect(fetchPanel('fx', { base: 'USD' })).rejects.toThrow('[asist:panels.errors.currencyUnknown {"region":"AT"}]')
+    mocks.region = 'XK'
+    await expect(fetchPanel('fx', { base: 'USD' })).rejects.toThrow('[asist:panels.errors.currencyUnknown {"region":"XK"}]')
     // A currency the user named is still quoted, whatever the region is.
     expect((await fetchPanel('fx', { base: 'USD', quote: 'JPY' })).props).toMatchObject({ quote: 'JPY' })
+  })
+})
+
+describe('a card that cannot be filled', () => {
+  it('names the service and the status of a failed request in a message the screen words', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })))
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      ['clock', { city: 'Berlin' }, 'geocoding-api.open-meteo.com'],
+      ['fx', { base: 'USD', quote: 'EUR' }, 'open.er-api.com'],
+      ['news', { topic: 'AI' }, 'news.google.com']
+    ]
+    for (const [type, props, host] of cases) {
+      const error = (await fetchPanel(type, props).catch((err: unknown) => err)) as Error
+      const text = readErrorText(error.message, 'en-US')
+      expect(text, type).not.toBeNull()
+      expect(text).toContain(host)
+      expect(text).toContain('503')
+    }
+  })
+
+  it('refuses a clock without a city in a message the screen words', async () => {
+    respond({ results: [] }, [])
+    await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message, 'en-US') !== null)
+  })
+
+  it('names the files it could not show in a message the screen words', async () => {
+    const error = (await fetchPanel('files', { paths: ['/elsewhere/report.pdf'] }).catch((err: unknown) => err)) as Error
+    expect(readErrorText(error.message, 'en-US')).toContain('report.pdf')
+  })
+
+  it('words a place the table of Japan does not resolve for the weather card, naming the place', async () => {
+    for (const location of ['東京タワー', '府中市']) {
+      const error = (await fetchPanel('weather', { location }).catch((err: unknown) => err)) as Error
+      expect(readErrorText(error.message, 'en-US'), location).toContain(location)
+    }
   })
 })
 
@@ -118,5 +189,37 @@ describe('the news card', () => {
     respond(`<rss>${item}</rss>`, [])
     const { props } = await fetchPanel('news', { topic: 'AI' })
     expect((props.items as { title: string }[])[0].title).toBe('5 &lt; 6 &amp; Q&A')
+  })
+
+  it('reads the publisher of an item from a source element that carries its url', async () => {
+    const item =
+      '<item><title>見出し - NHK</title><link>https://news.google.com/rss/articles/x</link>' +
+      '<pubDate>Fri, 25 Sep 2026 01:00:00 GMT</pubDate><source url="https://www3.nhk.or.jp">NHK</source></item>'
+    respond(`<rss><channel>${item}</channel></rss>`, [])
+    const { props } = await fetchPanel('news', { topic: 'AI' })
+    expect((props.items as { source: string }[])[0].source).toBe('NHK')
+  })
+})
+
+describe('the calendar card', () => {
+  // In New York, 2026-11-01 has 25 hours, so the week after 2026-10-26 lasts 7 days and one hour.
+  let zone: string | undefined
+  beforeEach(() => {
+    zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    if (zone === undefined) delete process.env.TZ
+    else process.env.TZ = zone
+  })
+
+  it('searches next week up to its last midnight when this week is asked for at the weekend, across a change of the clocks', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 24, 12), toFake: ['Date'] })
+    await fetchPanel('calendar', { range: 'week' })
+    expect(mocks.searchCalendar).toHaveBeenLastCalledWith(
+      { start: new Date(2026, 9, 19).toISOString(), end: new Date(2026, 10, 2).toISOString() },
+      expect.any(AbortSignal)
+    )
   })
 })

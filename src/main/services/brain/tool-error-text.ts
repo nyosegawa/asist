@@ -1,5 +1,6 @@
 import type { PromptLanguage } from '@shared/conversation-locale'
-import { resolvePromptTexts } from '@shared/tool-registry'
+import { errorText } from '@shared/i18n/error-text'
+import { ToolError, resolvePromptTexts } from '@shared/tool-registry'
 import { conversationLocale } from '../conversation-locale'
 import { errorMessageIn } from '../i18n'
 
@@ -13,6 +14,24 @@ export const errMessage = (err: unknown): string => errorMessageIn(conversationL
 /**
  * The same, for a tool that words the failure itself and needs the reason as one plain sentence: a
  * message that a ToolError packed into both prompt languages is unpacked into the one being written.
+ * Any other message can carry text from outside, so it is never read as a packed pair.
  */
 export const detail = (err: unknown, language: PromptLanguage): string =>
-  resolvePromptTexts(errMessage(err), language)
+  err instanceof ToolError ? resolvePromptTexts(err.message, language) : errMessage(err)
+
+/** The reasons a schema rejected the input, as one sentence the model reads. */
+export const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
+  issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
+
+/**
+ * The error a card shows, which is the error's own message with its key still in it: the screen words
+ * it in the language of the interface, which need not be the language the model is told the failure in.
+ * Two errors carry no such message. A time limit, the tool's or the fetch's own, ends a fetch with the
+ * platform's TimeoutError, whose message is English; and a ToolError holds the model's two languages,
+ * of which the screen has none, while its reason goes to the model anyway.
+ */
+export const cardError = (err: unknown): string => {
+  if (err instanceof Error && err.name === 'TimeoutError') return errorText('panels.errors.timedOut')
+  if (err instanceof ToolError) return errorText('panels.errors.reasonToAssistant')
+  return err instanceof Error ? err.message : String(err)
+}

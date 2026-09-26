@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PanelSpec } from '@shared/ipc'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { usePanelStore } from '@/state/stores'
 import { Dock } from '@/ui/Dock'
 import { FocusOverlay } from '@/ui/FocusOverlay'
@@ -218,5 +219,13 @@ describe('content that does not fit', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('a card whose data could not be fetched', () => {
+  it('words the error the main process sent in the language of the interface', async () => {
+    const error = errorText('panels.errors.placeNotFound', { place: 'Atlantis' })
+    const dock = await render([weather({ state: 'error', error })])
+    expect(dock.textContent).toContain(t('panels.errors.placeNotFound', { place: 'Atlantis' }))
   })
 })

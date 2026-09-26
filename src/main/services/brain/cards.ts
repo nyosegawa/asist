@@ -3,7 +3,7 @@ import type { PanelEvent } from '@shared/ipc'
 import { catalogByType } from '@shared/panel-catalog'
 import { ToolError, bilingual } from '@shared/tool-registry'
 import { fetchPanel } from '../panel-fetchers'
-import { detail } from './tool-error-text'
+import { cardError, detail, issueText } from './tool-error-text'
 import type { ToolContext } from './tools'
 
 /**
@@ -43,7 +43,9 @@ export async function putUpCard(
 ): Promise<void> {
   const entry = catalogByType.get(type)
   if (!entry) throw new Error(`no card of type ${type}`)
-  const parsed = entry.schema.parse(props) as Record<string, unknown>
+  const input = entry.schema.safeParse(props)
+  if (!input.success) throw new ToolError(TEXTS.cardFailed(issueText(input.error.issues, language)))
+  const parsed = input.data as Record<string, unknown>
   const key = entry.key(parsed)
   const emit = (event: PanelEvent): void => ctx.emit({ type: 'panel', turnId: ctx.turnId, event })
   if (!entry.fetch) {
@@ -55,7 +57,7 @@ export async function putUpCard(
     const result = await fetchPanel(type, parsed, signal)
     emit({ op: 'patch', key, props: result.props, state: 'ready', source: result.source })
   } catch (err) {
-    emit({ op: 'patch', key, state: 'error', error: detail(err, language) })
+    emit({ op: 'patch', key, state: 'error', error: cardError(err) })
     throw new ToolError(TEXTS.cardFailed(detail(err, language)))
   }
 }

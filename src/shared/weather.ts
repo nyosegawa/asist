@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { PromptText } from './conversation-locale'
 import { bilingual } from './tool-registry'
 
 /**
@@ -157,7 +158,8 @@ export type WeatherLocation = JmaWeatherLocation | GlobalWeatherLocation
 export interface WeatherIssue {
   status: 'location_not_found' | 'location_ambiguous' | 'location_unavailable'
   requestedLocation: string
-  hint: string
+  /** What the model is told to do next, in both prompt languages; show_weather picks the one of the turn. */
+  hint: PromptText
   candidates?: Array<{ location: string; municipalityCode: string }>
 }
 export interface WeatherSource {

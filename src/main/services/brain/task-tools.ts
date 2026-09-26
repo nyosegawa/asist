@@ -1,7 +1,5 @@
-import type { JsonSchema } from '@shared/conversation'
-import { z } from 'zod'
 import type { PromptLanguage, PromptText } from '@shared/conversation-locale'
-import { LOCAL_TIMEOUT_MS, ToolError, bilingual, type ToolDefinition } from '@shared/tool-registry'
+import { LOCAL_TIMEOUT_MS, ToolError, bilingual, inputJsonSchema, type ToolDefinition } from '@shared/tool-registry'
 import {
   TASK_STATUSES,
   TASK_STATUS_LABEL,
@@ -80,7 +78,7 @@ export function taskTools(language: PromptLanguage): ToolDefinition<ToolContext>
         ja: '「〜をやることに追加して」「〜を忘れないようにして」「〜しないと」。期限を言われたら due を付け、追加したことを一言で伝える',
         en: 'When the user asks to put something on the list, not to let them forget it, or says they have to do it. Set due when they name a deadline, and say in one sentence that you added it.'
       },
-      inputSchema: z.toJSONSchema(taskInputSchema) as JsonSchema,
+      inputSchema: inputJsonSchema(taskInputSchema),
       parallel: false,
       timeoutMs: LOCAL_TIMEOUT_MS,
       maxResultChars: 3_000,

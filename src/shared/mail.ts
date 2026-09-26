@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isoWithOffset } from './calendar'
+import { localIsoWithOffset } from './calendar'
 import { errorText } from './i18n/error-text'
 
 /**
@@ -508,13 +508,6 @@ export function syncSince(now: Date, syncDays: number): Date {
 
 export const isRecent = (date: number, now: number): boolean => now - date <= RECENT_WINDOW_MS
 
-/**
- * The date of a message as the conversation reads it: local time with its offset, the form the calendar
- * tools use. The utterance carries local time, so a UTC stamp puts mail that arrived before 9 a.m. in
- * Japan on the previous day.
- */
-export const mailDate = (at: number): string => isoWithOffset(at, Intl.DateTimeFormat().resolvedOptions().timeZone)
-
 /** One row of the list in the shape handed to the conversation. The body comes from read_mail. */
 export function mailSummary(message: MailMessage, accountLabel: string): Record<string, unknown> {
   return {
@@ -522,7 +515,7 @@ export function mailSummary(message: MailMessage, accountLabel: string): Record<
     account: accountLabel,
     from: formatAddress(message.from),
     subject: message.subject,
-    date: mailDate(message.date),
+    date: localIsoWithOffset(message.date),
     unread: message.unread,
     starred: message.starred,
     ...(message.attachments.length ? { attachments: message.attachments.map((item) => item.filename) } : {}),

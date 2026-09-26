@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import type { JsonSchema } from '@shared/conversation'
 import { calendarChangeSchema } from '@shared/calendar'
 import {
@@ -7,7 +6,7 @@ import {
   type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
-import { ToolError, type ToolDefinition } from '@shared/tool-registry'
+import { ToolError, inputJsonSchema, type ToolDefinition } from '@shared/tool-registry'
 import { changeCalendar } from '../calendar'
 import { detail } from './tool-error-text'
 import type { ToolContext } from './tools'
@@ -44,12 +43,7 @@ export function calendarTools(locale: ConversationLocale): ToolDefinition<ToolCo
         properties: {
           operation: { type: 'string', enum: ['create', 'update', 'delete'] },
           eventId: { type: 'string' },
-          event: (
-            z.toJSONSchema(calendarChangeSchema.options[0]).properties as Record<
-              string,
-              unknown
-            >
-          ).event
+          event: (inputJsonSchema(calendarChangeSchema.options[0]).properties as Record<string, unknown>).event
         },
         required: ['operation'],
         additionalProperties: false

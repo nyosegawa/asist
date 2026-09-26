@@ -200,6 +200,71 @@ export const panels = defineMessages({
       'pt-BR': 'A rota não tem ponto de partida.',
       'es-419': 'La ruta no tiene punto de partida.',
       'es-ES': 'La ruta no tiene punto de partida.'
+    },
+    fetchFailed: {
+      'ja-JP': '{host} からデータを取得できませんでした(HTTP {status})。',
+      'en-US': "Couldn't get the data from {host} (HTTP {status}).",
+      'fr-FR': "Impossible d'obtenir les données de {host} (HTTP {status}).",
+      'de-DE': 'Die Daten von {host} ließen sich nicht abrufen (HTTP {status}).',
+      'hi-IN': '{host} से डेटा नहीं मिला (HTTP {status})।',
+      'id-ID': 'Tidak bisa mengambil data dari {host} (HTTP {status}).',
+      'it-IT': 'Impossibile ottenere i dati da {host} (HTTP {status}).',
+      'ko-KR': '{host}에서 데이터를 가져오지 못했습니다(HTTP {status}).',
+      'pt-BR': 'Não foi possível obter os dados de {host} (HTTP {status}).',
+      'es-419': 'No se pudieron obtener los datos de {host} (HTTP {status}).',
+      'es-ES': 'No se han podido obtener los datos de {host} (HTTP {status}).'
+    },
+    cityMissing: {
+      'ja-JP': '都市が指定されていません。',
+      'en-US': 'No city was given.',
+      'fr-FR': "Aucune ville n'a été indiquée.",
+      'de-DE': 'Es wurde keine Stadt angegeben.',
+      'hi-IN': 'कोई शहर नहीं दिया गया।',
+      'id-ID': 'Tidak ada kota yang disebutkan.',
+      'it-IT': 'Non è stata indicata nessuna città.',
+      'ko-KR': '도시가 지정되지 않았습니다.',
+      'pt-BR': 'Nenhuma cidade foi indicada.',
+      'es-419': 'No se indicó ninguna ciudad.',
+      'es-ES': 'No se ha indicado ninguna ciudad.'
+    },
+    filesUnreadable: {
+      'ja-JP': 'どのファイルも表示できませんでした: {files}',
+      'en-US': 'None of the files could be shown: {files}',
+      'fr-FR': "Aucun fichier n'a pu être affiché : {files}",
+      'de-DE': 'Keine der Dateien ließ sich anzeigen: {files}',
+      'hi-IN': 'कोई भी फ़ाइल दिखाई नहीं जा सकी: {files}',
+      'id-ID': 'Tidak ada file yang bisa ditampilkan: {files}',
+      'it-IT': 'Impossibile mostrare i file: {files}',
+      'ko-KR': '파일을 하나도 표시하지 못했습니다: {files}',
+      'pt-BR': 'Nenhum arquivo pôde ser exibido: {files}',
+      'es-419': 'No se pudo mostrar ningún archivo: {files}',
+      'es-ES': 'No se ha podido mostrar ningún archivo: {files}'
+    },
+    timedOut: {
+      'ja-JP': '時間内に取得できませんでした。',
+      'en-US': 'It took too long to get the data.',
+      'fr-FR': 'La récupération des données a pris trop de temps.',
+      'de-DE': 'Das Abrufen der Daten hat zu lange gedauert.',
+      'hi-IN': 'डेटा लाने में बहुत ज़्यादा समय लगा।',
+      'id-ID': 'Pengambilan data terlalu lama.',
+      'it-IT': 'Il recupero dei dati ha richiesto troppo tempo.',
+      'ko-KR': '데이터를 가져오는 데 시간이 너무 오래 걸렸습니다.',
+      'pt-BR': 'A busca dos dados demorou demais.',
+      'es-419': 'Obtener los datos tardó demasiado.',
+      'es-ES': 'Obtener los datos ha tardado demasiado.'
+    },
+    reasonToAssistant: {
+      'ja-JP': '理由はアシスタントに伝えました。',
+      'en-US': 'The assistant has been told why.',
+      'fr-FR': "L'assistant en connaît la raison.",
+      'de-DE': 'Der Assistent kennt den Grund.',
+      'hi-IN': 'असिस्टेंट को कारण बता दिया गया है।',
+      'id-ID': 'Asisten sudah diberi tahu alasannya.',
+      'it-IT': "L'assistente conosce il motivo.",
+      'ko-KR': '이유는 어시스턴트에게 전달했습니다.',
+      'pt-BR': 'O assistente já sabe o motivo.',
+      'es-419': 'El asistente ya sabe el motivo.',
+      'es-ES': 'El asistente ya sabe el motivo.'
     }
   }
 })

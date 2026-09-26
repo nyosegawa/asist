@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { JsonSchema, ToolSpec } from './conversation'
 import type { PromptLanguage, PromptText } from './conversation-locale'
 
@@ -23,13 +24,19 @@ export const LOCAL_TIMEOUT_MS = 2_000
 
 /**
  * Packs both prompt languages into a single string, for the places that hold one string and cannot
- * hold a pair: a zod `.describe()`, a note inside a tool's result, a ToolError message. The character
- * in front is from the Unicode private use area, so no text of either language can be mistaken for it.
+ * hold a pair: a zod `.describe()`, `.default()` or issue message, and a ToolError message. The
+ * character in front is from the Unicode private use area, so no text of either language can be
+ * mistaken for it. Text from outside can hold any character, so a tool's result is never unpacked:
+ * a tool writes the text it adds for the model in the language it was built for.
  */
 const BILINGUAL_PREFIX = '\uE000bilingual:'
 export const bilingual = (text: PromptText): string => `${BILINGUAL_PREFIX}${JSON.stringify(text)}`
 
-/** Replaces every packed pair inside a value, however deeply nested, with the text of one language. */
+/**
+ * Replaces every packed pair inside a value, however deeply nested, with the text of one language. The
+ * value must be one this code wrote, such as a schema; a mail subject that starts with the prefix
+ * would otherwise be parsed as a pair and fail.
+ */
 export function resolvePromptTexts<T>(value: T, language: PromptLanguage): T {
   if (typeof value === 'string') {
     if (!value.startsWith(BILINGUAL_PREFIX)) return value
@@ -45,6 +52,23 @@ export function resolvePromptTexts<T>(value: T, language: PromptLanguage): T {
   }
   return value
 }
+
+/**
+ * The JSON Schema of a zod schema for a tool's input, as the model fills it in. zod writes the parsed
+ * output by default, where a field with a default is required because parsing always fills it in, so
+ * the model would be told to write a value the description says to leave out. The input form in turn
+ * leaves a plain object open, because parsing drops a key it does not know rather than refusing it;
+ * the model is still told to write no other key, as the output form told it.
+ */
+export const inputJsonSchema = (schema: z.ZodType): JsonSchema =>
+  z.toJSONSchema(schema, {
+    io: 'input',
+    override: ({ zodSchema, jsonSchema }) => {
+      if (zodSchema._zod.def.type === 'object' && jsonSchema.additionalProperties === undefined) {
+        jsonSchema.additionalProperties = false
+      }
+    }
+  }) as JsonSchema
 
 export interface ToolDefinition<Ctx = unknown> {
   name: string
@@ -73,7 +97,9 @@ export interface ToolDefinition<Ctx = unknown> {
   maxResultChars: number
   /**
    * Returns a string or anything that can be turned into JSON, and throws on failure; a ToolError's
-   * message reaches the model unchanged. The signal combines the caller's abort and the time limit.
+   * message reaches the model unchanged. The result reaches the model as it is, so the text a tool adds
+   * to it is already in the language of the turn. The signal combines the caller's abort and the time
+   * limit.
    */
   run: (input: Record<string, unknown>, ctx: Ctx, signal: AbortSignal) => Promise<unknown> | unknown
 }
@@ -334,8 +360,11 @@ export function executeTool<Ctx>(
 
   const timeout = new AbortController()
   const combined = AbortSignal.any([signal, timeout.signal])
+  // The reason reaches whatever the tool hands the signal to: fetch rejects with it, and a card shows
+  // what a fetch rejects with. So it is the platform's TimeoutError, and the model's text is written
+  // below from which signal ended the run.
   const timer = setTimeout(
-    () => timeout.abort(new ToolError(TEXTS.timedOut(def.name, def.timeoutMs / 1000))),
+    () => timeout.abort(new DOMException(`${def.name} ran past ${def.timeoutMs} ms`, 'TimeoutError')),
     def.timeoutMs
   )
   let rejectAbort!: (reason: unknown) => void
@@ -350,14 +379,15 @@ export function executeTool<Ctx>(
   const completion = operation.then(() => undefined, () => undefined)
   const response = Promise.race([operation, aborted])
     .then((value): ToolExecution => ({
-      ...formatToolResult(resolvePromptTexts(value, language), def.maxResultChars, language),
+      ...formatToolResult(value, def.maxResultChars, language),
       isError: false,
       durationMs: now() - startedAt
     }))
     .catch((err): ToolExecution => {
       if (signal.aborted) return failure(TEXTS.interrupted(def.name)[language])
+      if (timeout.signal.aborted) return failure(TEXTS.timedOut(def.name, def.timeoutMs / 1000)[language])
       if (err instanceof ToolError) return failure(resolvePromptTexts(err.message, language))
-      return failure(TEXTS.failed(def.name, resolvePromptTexts(errMessage(err), language))[language])
+      return failure(TEXTS.failed(def.name, errMessage(err))[language])
     })
     .finally(() => {
       clearTimeout(timer)

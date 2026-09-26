@@ -4,6 +4,7 @@ import { PANEL_CATALOG } from '@shared/panel-catalog'
 import { taskSummary } from '@shared/tasks'
 import { FETCHER_TIMEOUT_MS, LOCAL_TIMEOUT_MS, resolvePromptTexts } from '@shared/tool-registry'
 import { createTranslator } from '@shared/i18n'
+import { errorText, readErrorText } from '@shared/i18n/error-text'
 
 const ja = createTranslator('ja-JP')
 
@@ -43,7 +44,10 @@ vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.setti
 vi.mock('../src/main/services/memory', () => mocks.memory)
 vi.mock('../src/main/services/agent', () => mocks.agent)
 vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm }))
-vi.mock('../src/main/services/panel-fetchers', () => ({ fetchPanel: mocks.fetchPanel }))
+vi.mock('../src/main/services/panel-fetchers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/services/panel-fetchers')>()),
+  fetchPanel: mocks.fetchPanel
+}))
 vi.mock('../src/main/services/timers', () => mocks.timers)
 vi.mock('../src/main/services/user-local-data', () => ({ getLocalDataService: () => mocks.localData }))
 vi.mock('../src/main/services/user-tasks', () => ({ getTaskService: () => mocks.tasks }))
@@ -117,6 +121,65 @@ describe('brain tools registry', () => {
     expect(flags('cancel_agent_job').parallel).toBe(false)
   })
 
+  it('never tells the model to write a field that the tool fills in by itself when it is left out', async () => {
+    const { tools } = await load()
+    const defaulted: string[] = []
+    const required: string[] = []
+    for (const spec of tools()) {
+      const schema = spec.inputSchema as { properties?: Record<string, object>; required?: string[] }
+      for (const [field, property] of Object.entries(schema.properties ?? {})) {
+        if (!('default' in property)) continue
+        defaulted.push(`${spec.name}.${field}`)
+        if (schema.required?.includes(field)) required.push(`${spec.name}.${field}`)
+      }
+    }
+    expect(defaulted.length).toBeGreaterThan(0)
+    expect(required).toEqual([])
+  })
+
+  it('hands the fetcher what the model wrote as it is, even text from outside that looks like a packed pair', async () => {
+    mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'Google News' })
+    const { executeClientTool } = await load()
+    const topic = 'bilingual: 請求書'
+    const result = await executeClientTool('show_news', { topic }, makeCtx().ctx)
+    expect(result.isError).toBe(false)
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('news', { topic }, expect.any(AbortSignal))
+  })
+
+  it('quotes show_fx against the currency of the region when none is named, on the card of that pair', async () => {
+    mocks.settings.region = 'BR'
+    try {
+      const { executeClientTool } = await load()
+      const keys: string[] = []
+      for (const input of [{ base: 'USD' }, { base: 'USD', quote: 'BRL' }]) {
+        mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
+        const { ctx, events } = makeCtx()
+        await executeClientTool('show_fx', input, ctx)
+        expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD', quote: 'BRL' }, expect.any(AbortSignal))
+        const created = events.find((e) => e.type === 'panel' && e.event.op === 'create')
+        keys.push(created?.type === 'panel' ? created.event.key : '')
+      }
+      expect(keys[1]).toBe(keys[0])
+    } finally {
+      mocks.settings.region = 'JP'
+    }
+  })
+
+  it('tells the model, and puts up no card, when a region outside the list has no currency to quote against', async () => {
+    mocks.settings.region = 'XK'
+    try {
+      const { executeClientTool } = await load()
+      const { ctx, events } = makeCtx()
+      const result = await executeClientTool('show_fx', { base: 'USD' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content).toContain(ja('panels.errors.currencyUnknown', { region: 'XK' }))
+      expect(events).toEqual([])
+      expect(mocks.fetchPanel).not.toHaveBeenCalled()
+    } finally {
+      mocks.settings.region = 'JP'
+    }
+  })
+
   it('turns invalid panel input into a failed tool result instead of failing the turn', async () => {
     const { executeClientTool } = await load()
     const { ctx, events } = makeCtx()
@@ -136,6 +199,49 @@ describe('brain tools registry', () => {
     expect(result.content).toContain('HTTP 503')
     const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
     expect(patch).toMatchObject({ event: { state: 'error', error: 'open-meteo: HTTP 503' } })
+  })
+
+  it('words a card whose fetch ran past the time limit for the screen, and tells the model the tool timed out', async () => {
+    const { executeClientTool } = await load()
+    // Node's fetch rejects with the reason of the signal it was handed.
+    mocks.fetchPanel.mockImplementationOnce(
+      (_type: string, _props: Record<string, unknown>, signal: AbortSignal) =>
+        new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+    )
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { ctx, events } = makeCtx()
+      const task = executeClientTool('show_news', { topic: 'AI' }, ctx)
+      await vi.advanceTimersByTimeAsync(FETCHER_TIMEOUT_MS)
+      const result = await task
+      await task.completion
+      expect(result.isError).toBe(true)
+      const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
+      const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
+      expect(readErrorText(shown ?? '', 'en-US')).toBe(readErrorText(errorText('panels.errors.timedOut'), 'en-US'))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hands the card the error with its key, for the screen to word, and tells the model in the language of the conversation', async () => {
+    const failure = errorText('panels.errors.placeNotFound', { place: 'Atlantis' })
+    mocks.fetchPanel.mockRejectedValueOnce(new Error(failure))
+    const { executeClientTool } = await load()
+    const { ctx, events } = makeCtx()
+    const result = await executeClientTool('show_clock', { city: 'Atlantis' }, ctx)
+    const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
+    const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
+    expect(readErrorText(shown ?? '', 'en-US')).toBe(readErrorText(failure, 'en-US'))
+    expect(result.content).toContain(ja('panels.errors.placeNotFound', { place: 'Atlantis' }))
+  })
+
+  it('refuses a data card whose input is invalid with a failure the model reads, and puts up no card', async () => {
+    const { putUpCard } = await import('../src/main/services/brain/cards')
+    const { ToolError } = await import('@shared/tool-registry')
+    const { ctx, events } = makeCtx()
+    await expect(putUpCard('mail-message', { id: '' }, ctx, ctx.signal, 'en')).rejects.toBeInstanceOf(ToolError)
+    expect(events).toEqual([])
   })
 
   it('returns the fetched data as JSON and puts the panel into the ready state', async () => {
@@ -190,6 +296,14 @@ describe('brain tools registry', () => {
     const result = await executeClientTool('show_weather', { location: '東京都' }, ctx)
     expect(result.isError).toBe(true)
     expect(events).toEqual([])
+  })
+
+  it('tells the model why the weather could not be fetched, in the language of the conversation', async () => {
+    mocks.fetchPanel.mockRejectedValueOnce(new Error(errorText('cardsWeather.errors.unavailable')))
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('show_weather', { location: '東京都' }, makeCtx().ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain(ja('cardsWeather.errors.unavailable'))
   })
 
   it('returns the hits of recall with their dates, the strongest match first, and fails on an empty query', async () => {
@@ -594,6 +708,9 @@ describe('the tool list in the language of the conversation', () => {
       const hint = (JSON.parse(result.content) as { hint: string }).hint
       if (JAPANESE.test(hint)) japanese.push(`show_weather ${location}: ${hint}`)
     }
+    mocks.requestConfirm.mockResolvedValueOnce(false)
+    const declined = await executeClientTool('run_agent_task', { prompt: 'Tidy the README' }, makeCtx().ctx)
+    if (JAPANESE.test(declined.content)) japanese.push(`run_agent_task declined: ${declined.content}`)
     expect(japanese).toEqual([])
   })
 

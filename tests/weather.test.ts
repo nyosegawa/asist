@@ -15,7 +15,7 @@ import hourly from './fixtures/weather/tokyo-hourly.json'
 
 const resolve = (name: string) => {
   const result = resolveWeatherLocation(name)
-  if ('status' in result) throw new Error(result.hint)
+  if ('status' in result) throw new Error(result.status)
   return result
 }
 describe('resolving a weather location', () => {

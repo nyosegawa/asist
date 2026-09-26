@@ -37,6 +37,13 @@ describe('bridge-plan', () => {
     expect(() => parseBridgePlan('ja-JP', {})).toThrow()
   })
 
+  it('measures the bridge without the brackets it is wrapped in, since they are not spoken', async () => {
+    const { parseBridgePlan } = await import('../src/main/services/bridge-plan')
+    const line = 'あ'.repeat(20)
+    expect(parseBridgePlan('ja-JP', { bridge: `「${line}」` })).toEqual({ bridge: line })
+    expect(() => parseBridgePlan('ja-JP', { bridge: `「${line}あ」` })).toThrow()
+  })
+
   it('caps the bridge in words outside Japanese, where the same number of characters would run far longer', async () => {
     const { parseBridgePlan } = await import('../src/main/services/bridge-plan')
     // Twenty-one Japanese characters are too long; the same length in English words is not.
