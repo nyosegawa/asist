@@ -5,7 +5,7 @@ import type { AgentJob } from '@shared/ipc'
 import { createTranslator } from '@shared/i18n'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { jobLogFile, readJobHistory, writeJobHistory } from '../src/main/services/job-history'
+import { JOBS_FORMAT, jobLogFile, readJobHistory, writeJobHistory } from '../src/main/services/job-history'
 
 const locations = vi.hoisted(() => ({ root: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => locations.root, getPreferredSystemLanguages: () => ['ja-JP'] } }))
@@ -120,7 +120,7 @@ describe('job history reads', () => {
 
   it('keeps the reason a history cannot be read whole, so the screen words it in the language shown when it is read', () => {
     const file = path.join(locations.root, 'jobs.json')
-    fs.writeFileSync(file, JSON.stringify({ version: 99, jobs: [] }))
+    fs.writeFileSync(file, JSON.stringify({ version: JOBS_FORMAT.version + 1, jobs: [] }))
     // The interface is Japanese (the system language of this test) while the error is thrown.
     const message = (() => {
       try {
@@ -131,7 +131,7 @@ describe('job history reads', () => {
       throw new Error('the history was read')
     })()
     const en = createTranslator('en-US')
-    const reason = en('app.storage.versionTooNew', { file: 'jobs.json', version: 99, supported: 3 })
+    const reason = en('app.storage.versionTooNew', { file: 'jobs.json', version: JOBS_FORMAT.version + 1, supported: JOBS_FORMAT.version })
     expect(message.startsWith(en('jobs.history.invalid', { file, detail: reason }))).toBe(true)
     expect(readErrorText(message, 'en-US')).toBe(en('jobs.history.invalid', { file, detail: reason }))
   })
