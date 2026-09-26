@@ -35,6 +35,9 @@ describe('diagnoseCacheMiss', () => {
     expect(diagnoseCacheMiss(fp(0), memoryChanged, { cacheRead: 0 })).toBe('system_memory')
     const withoutMemory = fp(0, { systemLayers: [layers[0], layers[2]] })
     expect(diagnoseCacheMiss(withoutMemory, fp(1000), { cacheRead: 0 })).toBe('system_memory')
+    // The summary moves up into the place of a dropped memory layer, but its text is the same.
+    const memoryGone = fp(1000, { systemLayers: [layers[0], layers[2]] })
+    expect(diagnoseCacheMiss(fp(0), memoryGone, { cacheRead: 0 })).toBe('system_memory')
     const summaryGone = fp(1000, { systemLayers: [layers[0], layers[1]] })
     expect(diagnoseCacheMiss(fp(0), summaryGone, { cacheRead: 0 })).toBe('system_summary')
     const baseChanged = fp(1000, { systemLayers: [{ name: 'base', text: 'BASE2' }, layers[1], layers[2]] })

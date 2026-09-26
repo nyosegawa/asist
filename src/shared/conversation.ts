@@ -49,13 +49,16 @@ export interface ConversationMessage {
   native?: NativeOutput
 }
 
+/** The layers of the system prompt in the order they are sent, from the one that changes least often. */
+export const SYSTEM_LAYER_NAMES = ['base', 'memory', 'summary'] as const
+
 /**
  * One layer of the system prompt. Providers with prompt cache breakpoints place one after each layer.
  * No layer changes from turn to turn: the messages are cached behind the system prompt, so such a
  * layer would send the whole history again on every turn.
  */
 export interface SystemLayer {
-  name: 'base' | 'memory' | 'summary'
+  name: (typeof SYSTEM_LAYER_NAMES)[number]
   text: string
 }
 
