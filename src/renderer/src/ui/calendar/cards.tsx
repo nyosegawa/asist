@@ -285,14 +285,41 @@ export function draftFromEvent(event: CalendarEvent): Draft {
     : newDraft(dayKey(new Date(event.start)), { ...fields, startTime: timeValue(event.start), endTime: timeValue(event.end) })
 }
 
-/** The draft with another start day, whose end day moves by as many days so that the event keeps its length. */
-export function moveStartDate(draft: Draft, startDate: string): Draft {
-  const from = parseDayKey(draft.startDate)
-  const to = parseDayKey(startDate)
-  const end = parseDayKey(draft.endDate)
-  // A date input that is cleared gives an empty value, from which no distance can be counted.
-  if ([from, to, end].some((d) => Number.isNaN(d.getTime()))) return { ...draft, startDate }
-  return { ...draft, startDate, endDate: dayKey(addDays(end, daysBetween(from, to))) }
+const minuteOf = (time: string): number => {
+  const [hh, mm] = time.split(':').map(Number)
+  return hh * 60 + mm
+}
+
+/**
+ * The draft with another start day or start time, whose end moves by as many days and minutes, so that
+ * the event keeps its length as it does in Google Calendar's editor.
+ */
+export function moveStart(draft: Draft, start: Pick<Draft, 'startDate'> | Pick<Draft, 'startTime'>): Draft {
+  const next = { ...draft, ...start }
+  const days = daysBetween(parseDayKey(draft.startDate), parseDayKey(next.startDate))
+  const minutes = minuteOf(next.startTime) - minuteOf(draft.startTime)
+  const end = localDate(draft.endDate, draft.endTime)
+  // An input that is cleared gives an empty value, from which no distance can be counted.
+  if ([days, minutes, end.getTime()].some(Number.isNaN)) return next
+  const moved = new Date(end.getFullYear(), end.getMonth(), end.getDate() + days, end.getHours(), end.getMinutes() + minutes)
+  return { ...next, endDate: dayKey(moved), endTime: timeValue(moved.getTime()) }
+}
+
+/**
+ * The draft with another end time. An event shorter than a day ends at the first time on the clock after
+ * its start, as the end-time menu of Google Calendar's editor sets it, so an end time not after the start
+ * time moves the end to the next day and 22:00 to 01:00 ends the next morning. A longer event keeps its
+ * end day. Both are decided from the draft before the change, because a time input passes through
+ * partial values such as 01:00 on the way to 13:00.
+ */
+export function setEndTime(draft: Draft, endTime: string): Draft {
+  const start = localDate(draft.startDate, draft.startTime)
+  const end = localDate(draft.endDate, draft.endTime)
+  const dayAfterStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, start.getHours(), start.getMinutes())
+  const withinADay = Number.isNaN(end.getTime()) ? draft.endDate === draft.startDate : end < dayAfterStart
+  if (Number.isNaN(start.getTime()) || !endTime || !withinADay) return { ...draft, endTime }
+  const endDate = endTime > draft.startTime ? draft.startDate : dayKey(addDays(parseDayKey(draft.startDate), 1))
+  return { ...draft, endTime, endDate }
 }
 
 /** A local day and time, or an invalid Date when an input was cleared. */
@@ -337,9 +364,11 @@ export function EditorCard({
   const [draft, setDraft] = useState(initial)
   const update = (patch: Partial<Draft>): void => setDraft((d) => ({ ...d, ...patch }))
   const invalid = changeFromDraft(draft) === null
-  // The end day is shown only for an event that ends on another day, as Google Calendar's editor does,
-  // so that the times of a one-day event stay on one line beside its date.
-  const spansDays = draft.endDate !== draft.startDate
+  // An event with times shows its end day only when it ends on another day, as Google Calendar's editor
+  // does, so that a one-day event stays on one line; its end time reaches the next day and from there
+  // any day. An all-day event has no times, and its two days fit on the line, so its end day is always
+  // there to be changed.
+  const showEndDate = draft.allDay || draft.endDate !== draft.startDate
   const submit = (e: FormEvent): void => {
     e.preventDefault()
     if (!invalid && calendarLabel) onSubmit(draft)
@@ -366,25 +395,31 @@ export function EditorCard({
                 className="cal-field"
                 type="date"
                 value={draft.startDate}
-                onChange={(e) => setDraft((d) => moveStartDate(d, e.target.value))}
+                onChange={(e) => setDraft((d) => moveStart(d, { startDate: e.target.value }))}
               />
               {!draft.allDay && (
-                <input className="cal-field" type="time" value={draft.startTime} onChange={(e) => update({ startTime: e.target.value })} />
+                <input
+                  className="cal-field"
+                  type="time"
+                  value={draft.startTime}
+                  onChange={(e) => setDraft((d) => moveStart(d, { startTime: e.target.value }))}
+                />
               )}
             </span>
-            {(!draft.allDay || spansDays) && (
-              <>
-                <span className="cal-dash">–</span>
-                <span className="cal-when">
-                  {spansDays && (
-                    <input className="cal-field" type="date" value={draft.endDate} onChange={(e) => update({ endDate: e.target.value })} />
-                  )}
-                  {!draft.allDay && (
-                    <input className="cal-field" type="time" value={draft.endTime} onChange={(e) => update({ endTime: e.target.value })} />
-                  )}
-                </span>
-              </>
-            )}
+            <span className="cal-dash">–</span>
+            <span className="cal-when">
+              {showEndDate && (
+                <input className="cal-field" type="date" value={draft.endDate} onChange={(e) => update({ endDate: e.target.value })} />
+              )}
+              {!draft.allDay && (
+                <input
+                  className="cal-field"
+                  type="time"
+                  value={draft.endTime}
+                  onChange={(e) => setDraft((d) => setEndTime(d, e.target.value))}
+                />
+              )}
+            </span>
           </span>
         </div>
         <label className="cal-pop-row cal-allday">
