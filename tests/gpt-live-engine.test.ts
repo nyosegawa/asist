@@ -404,6 +404,26 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('does not hand a request what was said longer ago than a quiet session stays open, though the provider ended the session meanwhile', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].started()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].emit({ type: 'session.input_transcript.delta', delta: 'おはよう', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(1600)
+    // The provider or the network ends the session while the user is quiet, so no idle close follows.
+    engine.activity(false)
+    sockets[0].fire('close', 1006, 'abnormal')
+    await vi.advanceTimersByTimeAsync(2 * 60 * 60 * 1000)
+    const sending = engine.sendText('明日の天気は?')
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1].started()
+    await sending
+    expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([['明日の天気は?', true]])
+    await engine.stop()
+  })
+
   it('does not hand a request made after the session closed for quiet what was said before that', async () => {
     const { engine, sockets, beginTurn } = await setup()
     engine.activity(true)

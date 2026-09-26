@@ -127,14 +127,14 @@ export class GptLiveEngine extends LiveEngineBase {
   /** The id the user's utterance in progress is shown under on screen, taken with its first fragment. */
   private utteranceId: number | null = null
   /**
-   * The utterances that went quiet before a delegation took them, oldest first: the voice answered
-   * them by itself, or its delegation came late. The next brain turn the engine starts is handed them
-   * ahead of its own input, which brain records as that turn's user text. They are not recorded as
-   * turns of their own, because the history attaches records only to the newest turn with an input,
-   * and a user-only turn recorded while brain's turn runs would take that turn's messages and tool
-   * results away from it.
+   * The utterances that went quiet before a delegation took them, oldest first, each with when its
+   * last fragment arrived: the voice answered them by itself, or its delegation came late. The next
+   * brain turn the engine starts is handed them ahead of its own input, which brain records as that
+   * turn's user text. They are not recorded as turns of their own, because the history attaches records
+   * only to the newest turn with an input, and a user-only turn recorded while brain's turn runs would
+   * take that turn's messages and tool results away from it.
    */
-  private unhanded: string[] = []
+  private unhanded: Array<{ text: string; endedAt: number }> = []
 
   constructor(
     info: LiveEngineInfo,
@@ -209,12 +209,7 @@ export class GptLiveEngine extends LiveEngineBase {
     await ready
   }
 
-  protected async closeSession(reason: 'idle' | 'stop' | 'error'): Promise<void> {
-    // The idle close comes only after the conversation has been quiet for liveIdleSeconds, and the
-    // voice's next session starts without what was said before it. A request made after that is a new
-    // one, and handing it the old utterances would have brain answer what the user had left. A session
-    // that ended on a fault did not end the conversation, so they wait for the next turn.
-    if (reason === 'idle') this.unhanded = []
+  protected async closeSession(): Promise<void> {
     const socket = this.socket
     this.socket = null
     if (!socket) return
@@ -298,9 +293,21 @@ export class GptLiveEngine extends LiveEngineBase {
 
   /** The input of a brain turn, after the utterances no delegation took, one per line. */
   private withUnhanded(input: string): string {
-    const text = [...this.unhanded, input].filter(Boolean).join('\n')
+    return [...this.takeUnhanded().map((utterance) => utterance.text), input].filter(Boolean).join('\n')
+  }
+
+  /**
+   * Takes the utterances no delegation took, leaving out those older than liveIdleSeconds. That is how
+   * long a quiet conversation keeps its session, so one older than that belongs to an exchange that is
+   * over, and handing it with a new request would have brain answer what the user had left. It holds
+   * however the session ended in between, whether it closed for quiet, the provider ended it or the
+   * network dropped it.
+   */
+  private takeUnhanded(): Array<{ text: string; endedAt: number }> {
+    const idleMs = this.settings().liveIdleSeconds * 1000
+    const fresh = this.unhanded.filter((utterance) => this.now() - utterance.endedAt < idleMs)
     this.unhanded = []
-    return text
+    return fresh
   }
 
   private userLineId(): number {
@@ -321,7 +328,7 @@ export class GptLiveEngine extends LiveEngineBase {
   /** An utterance that went quiet, or was still arriving when the engine stopped, before a delegation took it. */
   protected onTranscriptFinal(_role: TranscriptRole, text: string): void {
     this.closeUserLine(text)
-    this.unhanded.push(text)
+    this.unhanded.push({ text, endedAt: this.lastInputDeltaAt })
   }
 
   /**
