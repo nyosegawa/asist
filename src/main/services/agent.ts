@@ -596,7 +596,7 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
   pushLog(id, 'system', t('jobs.log.startContinued', {
     engine: job.engine, cwd: job.cwd, access: accessLabel(job), parentId
   }))
-  launch(job, buildResumeArgs({ ...parent, cwd }, prompt))
+  launch(job, buildResumeArgs({ ...parent, cwd }))
   return { ...job }
 }
 

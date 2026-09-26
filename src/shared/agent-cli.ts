@@ -6,9 +6,14 @@ import { CURATION_SKILL, SKILL_DIRS } from './memory-curation'
  * Argument building for the agent CLIs. The per-engine differences in starting, resuming and
  * enforcing read-only live here.
  * - codex: `exec --json`. Read-only is enforced by the OS through the `-s read-only` sandbox.
- *   Resuming is `exec resume <thread_id> <prompt>`, where the sandbox is set with `-c sandbox_mode`.
+ *   Resuming is `exec resume <thread_id>`, where the sandbox is set with `-c sandbox_mode`.
  * - claude: `-p --output-format stream-json`. Read-only is enforced by the CLI through plan mode and
  *   a tool list that holds only reading tools. Resuming is `--resume <session_id>`.
+ *
+ * The prompt is not an argument: both CLIs read it from standard input (codex with `-`, claude -p when
+ * no prompt is given), where agent-process writes it. macOS allows the arguments and the environment of a
+ * process 1 MB together, and a memory curation prompt with a week of transcripts passes that, which fails
+ * the spawn with E2BIG.
  *
  * A job that writes runs in the mode each CLI has for working unattended, in which a reviewing model
  * decides on what would otherwise ask a person: claude's `auto` permission mode, and codex's
@@ -111,14 +116,14 @@ export function buildStartArgs(job: AgentCliJob): string[] {
       job.cwd,
       // --approve-for-me implies the workspace-write sandbox and cannot be combined with -s (codex-cli 0.155).
       ...(job.memoryCuration ? CODEX_CURATION_ACCESS : job.readonly ? ['-s', 'read-only'] : ['--approve-for-me']),
-      job.prompt
+      '-'
     ]
   }
-  return ['-p', job.prompt, '--output-format', 'stream-json', '--verbose', ...claudePermissionArgs(job)]
+  return ['-p', '--output-format', 'stream-json', '--verbose', ...claudePermissionArgs(job)]
 }
 
 /** Resumes the stored session in the same directory. It throws when no session id was kept. */
-export function buildResumeArgs(job: AgentCliJob, prompt: string): string[] {
+export function buildResumeArgs(job: AgentCliJob): string[] {
   if (!job.sessionId) throw new Error(errorText('jobs.continue.noSession'))
   if (job.engine === 'codex') {
     return [
@@ -129,12 +134,11 @@ export function buildResumeArgs(job: AgentCliJob, prompt: string): string[] {
       '--skip-git-repo-check',
       ...codexResumeAccess(job),
       job.sessionId,
-      prompt
+      '-'
     ]
   }
   return [
     '-p',
-    prompt,
     '--resume',
     job.sessionId,
     '--output-format',
