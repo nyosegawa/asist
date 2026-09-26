@@ -1,0 +1,9 @@
+Image 1: character reference. Draw exactly this small robot mascot.
+Image 2: style reference only (material, colors, lighting). Do not copy its scene or the girl.
+
+Use: a cut-out character for the night scene of an animated promo video, where the assistant writes its diary at midnight.
+Subject: the robot from Image 1 sitting on the floor with its legs stretched forward, holding a small open navy notebook with a pale-cyan crescent moon on the cover in one hand and writing in it with a short lavender pencil in the other hand, looking down at the page contentedly; its cyan eyes are soft happy arcs. Keep the exact design: rounded-square periwinkle-blue felt head, dark navy glossy visor, lavender round ear discs on both sides, a short antenna with a lavender ball, a small rounded periwinkle-blue body, stubby arms with round mitten hands, short legs with round feet.
+Scene: none, isolated character on a transparent background, no ground, no floor, no cast shadow.
+Style: soft 3D clay-and-felt miniature exactly like the references: matte felt texture with fine fibers, rounded chunky shapes, pastel palette, soft light from the upper left with a faint cool evening tint, gentle ambient occlusion, cute and calm.
+Composition: full body centered, three-quarter view, the whole figure and the notebook inside the frame with a generous empty margin on every side.
+Avoid: text or writing visible on the pages, logos, extra characters, lamp, bed, background objects, outlines, drop shadows.
