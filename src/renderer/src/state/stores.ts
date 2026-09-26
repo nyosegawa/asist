@@ -480,17 +480,42 @@ export interface Toast {
 interface ToastState {
   toasts: Toast[]
   push: (t: Omit<Toast, 'id'>) => void
+  /** Keeps the toast up while someone reads it, until `release`. */
+  hold: (id: number) => void
+  /** Lets a held toast go away TOAST_MS later. */
+  release: (id: number) => void
   remove: (id: number) => void
 }
 
-let nextToastId = 1
+/** How long a toast stays up after it appears, or after it is released. */
+export const TOAST_MS = 5000
 
-export const useToastStore = create<ToastState>((set) => ({
-  toasts: [],
-  push: (t) => {
-    const id = nextToastId++
-    set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-4) }))
-    setTimeout(() => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })), 5000)
-  },
-  remove: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
-}))
+let nextToastId = 1
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>()
+
+export const useToastStore = create<ToastState>((set, get) => {
+  const stop = (id: number): void => {
+    clearTimeout(toastTimers.get(id))
+    toastTimers.delete(id)
+  }
+  const removeLater = (id: number): void => {
+    stop(id)
+    toastTimers.set(id, setTimeout(() => get().remove(id), TOAST_MS))
+  }
+  return {
+    toasts: [],
+    push: (t) => {
+      const id = nextToastId++
+      set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-4) }))
+      removeLater(id)
+    },
+    hold: stop,
+    release: (id) => {
+      if (get().toasts.some((x) => x.id === id)) removeLater(id)
+    },
+    remove: (id) => {
+      stop(id)
+      set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) }))
+    }
+  }
+})
