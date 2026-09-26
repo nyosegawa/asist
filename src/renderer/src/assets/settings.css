@@ -310,6 +310,12 @@
     5px 5px;
   background-repeat: no-repeat;
 }
+.st-input[aria-invalid='true'] {
+  border-color: rgb(from var(--color-holo-red) r g b / 0.6);
+}
+.st-row-hint-failed {
+  color: var(--ui-tone-red-text);
+}
 .st-input.is-mono {
   font-family: var(--font-mono);
   font-size: 11.5px;

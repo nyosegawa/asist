@@ -4,7 +4,8 @@ interface FieldDraftOptions<T> {
   format: (value: T) => string
   /** The value of the text, or null for a text that is not one, which is dropped when the user leaves the field. */
   parse: (text: string) => T | null
-  save: (value: T) => void
+  /** Saves the value and reports a failure itself. It resolves to whether the value was saved. */
+  save: (value: T) => Promise<boolean>
 }
 
 type FieldElement = HTMLInputElement | HTMLTextAreaElement
@@ -16,12 +17,15 @@ interface FieldDraft<T> {
     onChange: (event: ChangeEvent<FieldElement>) => void
     onBlur: () => void
     onKeyDown: (event: KeyboardEvent<FieldElement>) => void
+    'aria-invalid': boolean
   }
   /**
    * What the field holds: the typed value when it is one, or else the saved value. A button beside the field
    * builds on this, because pressing it leaves the field and main may not have answered that save yet.
    */
   value: T
+  /** Whether the text in the field is one whose save failed. It stays in the field, and leaving the field saves it again. */
+  failed: boolean
 }
 
 /**
@@ -34,8 +38,9 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
   const shown = format(saved)
   // What was typed, and the saved text it was left over. Text being typed stays until the field is left,
   // whatever answer arrives for an earlier save. Text that was left stays while its save is under way, and
-  // after a save that failed, and gives way once the saved value changes, by that save or from anywhere else.
-  const [draft, setDraft] = useState<{ text: string; leftOver: string | null } | null>(null)
+  // gives way once the saved value changes, by that save or from anywhere else. A save that failed makes
+  // the text one being typed again, marked as failed, so that it stays and leaving the field saves it again.
+  const [draft, setDraft] = useState<{ text: string; leftOver: string | null; failed?: true } | null>(null)
   const typed = draft !== null && (draft.leftOver === null || draft.leftOver === shown) ? draft.text : null
   const parsed = typed === null ? null : parse(typed)
   const leave = (): void => {
@@ -44,8 +49,11 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
       setDraft(null)
       return
     }
-    setDraft({ text: typed, leftOver: shown })
-    save(parsed)
+    const left = { text: typed, leftOver: shown }
+    setDraft(left)
+    void save(parsed).then((saved) => {
+      if (!saved) setDraft((current) => (current === left ? { text: left.text, leftOver: null, failed: true } : current))
+    })
   }
   // The field also goes away while it has focus, as when Escape closes the settings, and Chromium sends no
   // blur then, so what was typed is saved on unmount by the same rule.
@@ -62,8 +70,10 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
       onKeyDown: (event) => {
         // The Enter that confirms a conversion in the Japanese IME must not leave the field.
         if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.currentTarget instanceof HTMLInputElement) event.currentTarget.blur()
-      }
+      },
+      'aria-invalid': draft?.failed === true
     },
-    value: parsed ?? saved
+    value: parsed ?? saved,
+    failed: draft?.failed === true
   }
 }

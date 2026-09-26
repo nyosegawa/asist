@@ -440,6 +440,28 @@ describe('settings fields that are saved once the user leaves them', () => {
     }
   })
 
+  it('keeps a value whose save failed in the field, marked as not saved, and saves it again when the field is left again', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    const hint = (): string | null | undefined => days.closest('.st-row')?.querySelector('.st-row-hint')?.textContent
+    days.focus()
+    await act(async () => type(days, '30'))
+    await act(async () => leave(days))
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual([t('settings.saveFailed')])
+    expect(days.value).toBe('30')
+    expect(days.getAttribute('aria-invalid')).toBe('true')
+    expect(hint()).toBe(t('settings.fieldNotSaved'))
+
+    days.focus()
+    await act(async () => leave(days))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 30 }], [{ conversationLogRetentionDays: 30 }]])
+    expect(days.value).toBe('30')
+    expect(days.getAttribute('aria-invalid')).toBe('false')
+    expect(hint()).toBe(t('settingsConversation.log.retentionHint'))
+  })
+
   it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
     const view = await render()
     await act(async () => nav(view, 'conversation').click())

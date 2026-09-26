@@ -113,15 +113,19 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
 
   if (!settings) return <></>
 
-  const set = (patch: Parameters<typeof save>[0]): void => {
-    void save(patch)
-      .then(() => {
+  const set = (patch: Parameters<typeof save>[0]): Promise<boolean> =>
+    save(patch).then(
+      () => {
         void refreshStatus()
         // Turning semantic search on starts the conversion of the memories in the main process.
         if ('memoryEmbeddingEnabled' in patch) void refreshEmbedding().catch(() => setEmbedding(null))
-      })
-      .catch((err: unknown) => toast({ kind: 'error', title: t('settings.saveFailed'), body: displayError(err) }))
-  }
+        return true
+      },
+      (err: unknown) => {
+        toast({ kind: 'error', title: t('settings.saveFailed'), body: displayError(err) })
+        return false
+      }
+    )
 
   /** Runs a preparation that downloads something. Only one runs at a time, and its message appears on the models page. */
   const runPreparation = async (
