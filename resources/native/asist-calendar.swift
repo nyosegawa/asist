@@ -103,8 +103,7 @@ func perform(_ input: [String: Any]) async throws -> Any {
         let start = try date(input, "start"), end = try date(input, "end")
         guard end > start, end.timeIntervalSince(start) <= 366 * 86400 else { try fail("badRequest") }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
-        return try store.events(matching: predicate).filter { $0.startDate < end && $0.endDate > start }
-            .sorted { $0.startDate < $1.startDate }.map(eventData)
+        return try store.events(matching: predicate).sorted { $0.startDate < $1.startDate }.map(eventData)
     }
     if operation == "get" { return try eventData(existing(input)) }
     guard ["create", "update", "delete"].contains(operation) else { try fail("badRequest") }

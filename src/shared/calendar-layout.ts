@@ -70,12 +70,20 @@ export function visibleRange(
  */
 export const lastInstant = (event: Pick<CalendarEvent, 'start' | 'end'>): number => Math.max(event.start, event.end - 1)
 
+/**
+ * Whether an event falls in the range from `from` up to `until`, which is exclusive. It is judged by
+ * lastInstant, so an event without length at the first instant of a range, such as midnight of a day,
+ * falls in that range rather than in none.
+ */
+export const overlaps = (event: Pick<CalendarEvent, 'start' | 'end'>, from: number, until: number): boolean =>
+  event.start < until && lastInstant(event) >= from
+
 /** The events overlapping that day, all-day ones first and the rest by start time. */
 export function eventsOn(events: CalendarEvent[], date: Date): CalendarEvent[] {
   const from = startOfDay(date).getTime()
   const until = addDays(date, 1).getTime()
   return events
-    .filter((e) => e.start < until && e.end > from)
+    .filter((e) => overlaps(e, from, until))
     .sort((a, b) => Number(b.allDay) - Number(a.allDay) || a.start - b.start)
 }
 
@@ -111,7 +119,7 @@ export function weekLayout(weekStart: Date, events: CalendarEvent[]): WeekLayout
   const from = weekStart.getTime()
   const until = addDays(weekStart, 7).getTime()
   const bars: BarSegment[] = events
-    .filter((e) => e.allDay && e.start < until && e.end > from)
+    .filter((e) => e.allDay && overlaps(e, from, until))
     .map((event) => ({
       event,
       c0: Math.max(0, daysBetween(weekStart, new Date(event.start))),
@@ -133,7 +141,7 @@ export function weekLayout(weekStart: Date, events: CalendarEvent[]): WeekLayout
     const dayFrom = date.getTime()
     const dayUntil = addDays(date, 1).getTime()
     const timed = events
-      .filter((e) => !e.allDay && e.start < dayUntil && e.end > dayFrom)
+      .filter((e) => !e.allDay && overlaps(e, dayFrom, dayUntil))
       .sort((a, b) => a.start - b.start)
     const covering = bars.filter((b) => b.c0 <= i && i <= b.c1)
     const firstFree = covering.length ? Math.max(...covering.map((b) => b.lane)) + 1 : 0
