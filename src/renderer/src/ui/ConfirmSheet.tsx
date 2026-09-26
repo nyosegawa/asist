@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { ShieldCheck } from 'lucide-react'
 import { useT } from '@/i18n'
@@ -24,23 +24,20 @@ export const CONFIRM_ARM_MS = 500
  * removes something.
  */
 export function ConfirmSheet(): React.JSX.Element {
-  const request = useConfirmStore((s) => s.request)
+  const request = useConfirmStore((s) => s.queue[0] ?? null)
   const close = useConfirmStore((s) => s.close)
   const t = useT()
-  // The request whose answer is going out, rather than a flag. The next request waiting from main takes
-  // the screen as soon as main closes the answered one, before the IPC call returns, and the Escape
-  // handler registered on its first render would keep a flag still set then and ignore the key.
-  const [answeringId, setAnsweringId] = useState<string | null>(null)
-  const answering = request !== null && answeringId === request.id
   const cancelRef = useRef<HTMLButtonElement>(null)
-  // A ref, because the Escape handler registered when a request appears has to see the delay end.
-  const armedId = useRef<string | null>(null)
+  // The request the controls answer: set once it has been on screen for CONFIRM_ARM_MS and cleared as its
+  // answer goes out. A ref, because the Escape handler registered when the request appears has to see
+  // both changes, and the next request can take the screen before that answer's IPC call returns.
+  const answerable = useRef<string | null>(null)
 
   useEffect(() => {
     if (!request) return
     const id = request.id
     const arm = setTimeout(() => {
-      armedId.current = id
+      answerable.current = id
     }, CONFIRM_ARM_MS)
     cancelRef.current?.focus()
     const onKey = (event: KeyboardEvent): void => {
@@ -57,8 +54,8 @@ export function ConfirmSheet(): React.JSX.Element {
   }, [request?.id])
 
   const answer = async (approved: boolean): Promise<void> => {
-    if (!request || answering || armedId.current !== request.id) return
-    setAnsweringId(request.id)
+    if (!request || answerable.current !== request.id) return
+    answerable.current = null
     try {
       if (request.resolve) request.resolve(approved)
       else await window.api.confirmResolve(request.id, approved)
@@ -101,13 +98,12 @@ export function ConfirmSheet(): React.JSX.Element {
             <h2 id="confirm-title">{request.message}</h2>
             {request.detail && <pre className="confirm-detail">{request.detail}</pre>}
             <div className="confirm-actions">
-              <button ref={cancelRef} type="button" className="cal-btn" disabled={answering} onClick={() => void answer(false)}>
+              <button ref={cancelRef} type="button" className="cal-btn" onClick={() => void answer(false)}>
                 {t('common.cancel')}
               </button>
               <button
                 type="button"
                 className={request.destructive ? 'confirm-destructive' : 'cal-primary'}
-                disabled={answering}
                 onClick={() => void answer(true)}
               >
                 {request.confirmLabel}

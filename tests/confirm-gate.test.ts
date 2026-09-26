@@ -43,7 +43,7 @@ describe('createConfirmGate', () => {
 })
 
 describe('the gate wired to the renderer\'s confirmation store', () => {
-  beforeEach(() => useConfirmStore.setState({ request: null, waiting: [] }))
+  beforeEach(() => useConfirmStore.setState({ queue: [] }))
 
   function wired() {
     let seq = 0
@@ -60,13 +60,13 @@ describe('the gate wired to the renderer\'s confirmation store', () => {
     // A save from the calendar screen waits with a signal that nothing aborts.
     const fromScreen = gate.request(input, new AbortController().signal)
     const fromTool = gate.request(input, new AbortController().signal)
-    expect(useConfirmStore.getState().request?.id).toBe('c1')
+    expect(useConfirmStore.getState().queue[0]?.id).toBe('c1')
     gate.resolve('c1', true)
     await expect(fromScreen).resolves.toBe(true)
-    expect(useConfirmStore.getState().request?.id).toBe('c2')
+    expect(useConfirmStore.getState().queue[0]?.id).toBe('c2')
     gate.resolve('c2', false)
     await expect(fromTool).resolves.toBe(false)
-    expect(useConfirmStore.getState().request).toBeNull()
+    expect(useConfirmStore.getState().queue).toEqual([])
     expect(gate.pendingIds()).toEqual([])
   })
 
@@ -79,6 +79,6 @@ describe('the gate wired to the renderer\'s confirmation store', () => {
     await expect(aborted).resolves.toBe(false)
     gate.resolve('c1', true)
     await expect(shown).resolves.toBe(true)
-    expect(useConfirmStore.getState().request).toBeNull()
+    expect(useConfirmStore.getState().queue).toEqual([])
   })
 })

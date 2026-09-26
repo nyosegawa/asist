@@ -27,7 +27,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   api.confirmResolve.mockClear()
-  useConfirmStore.setState({ request: null, waiting: [] })
+  useConfirmStore.setState({ queue: [] })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
