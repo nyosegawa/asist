@@ -341,6 +341,10 @@ export type TurnEvent =
   | { type: 'app'; turnId: number; open: MiniAppTarget | null }
   | { type: 'metrics'; turnId: number; timings: TurnTimings }
   | { type: 'done'; turnId: number; fullText: string }
+  /**
+   * Why the turn failed: the message of an error as it was thrown, key and all, which the renderer words when it
+   * shows it, or the sentence the assistant said in place of a reply.
+   */
   | { type: 'error'; turnId: number; message: string }
 
 /** Whether the renderer really started the interject audio or discarded it before it began. */
@@ -384,6 +388,7 @@ export type LiveEvent =
   /** Milliseconds from the end of the user's utterance to the first audio that arrived. */
   | { type: 'latency'; responseMs: number; connectMs?: number }
   | { type: 'usage'; usage: LiveUsage }
+  /** The message of an error as it was thrown, key and all, which the renderer words when it shows it. */
   | { type: 'error'; message: string }
 
 export interface LiveStartResult {

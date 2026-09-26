@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
+import { readErrorText } from '@shared/i18n/error-text'
 import type * as LiveAPI from 'openai/resources/live/live'
 import type { LiveEvent, TurnEvent } from '@shared/ipc'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
@@ -233,9 +235,10 @@ describe('GptLiveEngine', () => {
   })
 
   it('reports a server error once with its message, as the failure to connect when it comes before the session started', async () => {
-    const { t } = await import('../src/main/services/i18n')
+    const t = createTranslator('ja-JP')
     const { engine, sockets, events } = await setup()
-    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [e.message] : []))
+    // The screen words each message as the renderer does.
+    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [readErrorText(e.message, 'ja-JP') ?? e.message] : []))
     const serverError = { type: 'error' as const, event_id: 'x', error: { type: 'invalid_request_error', code: 'invalid_value', message: 'Invalid value for voice.' } }
     engine.activity(true)
     await vi.advanceTimersByTimeAsync(0)

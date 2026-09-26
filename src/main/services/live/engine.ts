@@ -3,7 +3,7 @@ import type { AppSettings, LiveConnection, LiveEvent, LiveUsage, TurnEvent } fro
 import { LiveSessionPolicy } from '@shared/live-session-policy'
 import type { LiveEngineInfo } from '@shared/voice-engine'
 import { errMessage } from '@shared/api-errors'
-import { errorMessage, t } from '../i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { record, turnScheduler } from '../brain/session'
 import { InputEncoder } from './audio'
 import { TranscriptTracker, type TranscriptRole } from './transcripts'
@@ -178,9 +178,9 @@ export abstract class LiveEngineBase {
         // Left open, the socket of a session that did not start can still start late, and the provider
         // bills it for as long as it is open.
         await this.release('error')
-        const detail = errorMessage(err)
+        const detail = errMessage(err)
         this.setConnection('error', detail)
-        this.events.emit('event', { type: 'error', message: t('voice.live.connectFailed', { detail }) })
+        this.events.emit('event', { type: 'error', message: errorText('voice.live.connectFailed', { detail }) })
       })
       .finally(() => {
         this.opening = null

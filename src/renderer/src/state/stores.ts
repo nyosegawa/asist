@@ -14,8 +14,10 @@ import type {
   PanelEvent,
   PanelSlot,
   PanelSpec,
+  TurnEvent,
   TurnTimings
 } from '@shared/ipc'
+import type { AizuchiClass } from '@shared/aizuchi-classifier'
 import { catalogByType } from '@shared/panel-catalog'
 import { displayError } from '@/display-error'
 import { translate } from '@/i18n'
@@ -52,6 +54,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
 export type Phase = 'idle' | 'listen' | 'think' | 'speak'
 
+/**
+ * What the latest turn's routing did, kept as what happened rather than as a sentence, so that the HUD words it
+ * in the language the interface has when it is drawn. A detail is an error's message as it was thrown.
+ */
+export type RouterNote =
+  | { kind: 'bridgeFailed' | 'heardAsBackchannel' | 'droppedClipEcho' | 'droppedSelfEcho' | 'interrupted' }
+  | { kind: 'bridge'; text: string }
+  | { kind: 'aizuchi'; cls: AizuchiClass; percent: number }
+  | { kind: 'live'; state: LiveConnection; detail?: string }
+  | { kind: 'tool'; name: string; status: Extract<TurnEvent, { type: 'tool' }>['status']; detail?: string }
+
 interface TurnState {
   phase: Phase
   micState: 'off' | 'loading' | 'on'
@@ -61,15 +74,15 @@ interface TurnState {
   activeTurnId: number
   /** Measurements of the latest turn, as shown in the HUD. */
   timings: TurnTimings
-  /** What the HUD says about the routing of the latest turn, empty until the first turn. */
-  routerNote: string
+  /** What the latest turn's routing did, null until the first turn. */
+  routerNote: RouterNote | null
   setPhase: (phase: Phase) => void
   setMic: (micState: TurnState['micState'], progress?: number) => void
   setPartial: (partial: string) => void
   setActiveTurn: (id: number) => void
   mergeTimings: (t: TurnTimings) => void
   resetTimings: () => void
-  setRouterNote: (note: string) => void
+  setRouterNote: (note: RouterNote) => void
 }
 
 export const useTurnStore = create<TurnState>((set) => ({
@@ -79,7 +92,7 @@ export const useTurnStore = create<TurnState>((set) => ({
   partial: '',
   activeTurnId: -1,
   timings: {},
-  routerNote: '',
+  routerNote: null,
   setPhase: (phase) => set({ phase }),
   setMic: (micState, progress = 0) => set({ micState, micProgress: progress }),
   setPartial: (partial) => set({ partial }),
@@ -116,7 +129,10 @@ export const useLiveStore = create<LiveState>((set) => ({
   reset: () => set({ connection: 'off', detail: '', usage: null, responseMs: null, connectMs: null })
 }))
 
-/** A line of the interface that is drawn from the dictionary each time, so that it follows a change of the language. */
+/**
+ * A line of the interface that is drawn from the dictionary each time, so that it follows a change of the language.
+ * The message of an error is kept as it was thrown, key and all, and worded when the line is drawn.
+ */
 export type FeedMessage = { key: 'conversation.start' } | { key: 'conversation.error'; values: { message: string } }
 
 export interface FeedLine {
