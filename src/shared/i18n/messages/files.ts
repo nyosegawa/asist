@@ -1127,6 +1127,19 @@ export const files = defineMessages({
       'pt-BR': 'Voltar à página',
       'es-419': 'Volver a la página',
       'es-ES': 'Volver a la página'
+    },
+    anchorMissing: {
+      'ja-JP': 'リンク先がこの文書にありません',
+      'en-US': "Link target isn't in the document",
+      'fr-FR': 'Cible du lien introuvable',
+      'de-DE': 'Linkziel nicht im Dokument',
+      'hi-IN': 'लिंक की जगह दस्तावेज़ में नहीं मिली',
+      'id-ID': 'Tujuan tautan tidak ditemukan',
+      'it-IT': 'Destinazione del link non trovata',
+      'ko-KR': '링크 대상이 문서에 없습니다',
+      'pt-BR': 'Destino do link não encontrado',
+      'es-419': 'Destino del enlace no encontrado',
+      'es-ES': 'Destino del enlace no encontrado'
     }
   },
   source: {

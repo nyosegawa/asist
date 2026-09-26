@@ -21,13 +21,14 @@ import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
 import * as memory from './services/memory'
 import { initMemoryCuration } from './services/memory-curation'
-import { allowedFileRoots, shutdown as shutdownAgents } from './services/agent'
+import { allowedFileRoots } from './services/agent'
 import { handleFileScheme, registerFileScheme } from './file-protocol'
 import { errorMessage, t } from './services/i18n'
 import { getSettings } from './services/settings'
 import { createTranslator } from '@shared/i18n'
 import { initMail } from './services/mail'
 import { isAppPage } from '@shared/app-page'
+import { isExternalLink } from '@shared/external-link'
 
 let mainWindow: BrowserWindow | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -67,17 +68,17 @@ function createWindow(): void {
   // A Google link inside the map card's iframe, such as the one that opens the larger map, goes to the
   // default browser instead of a window inside the app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    if (isExternalLink(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 
   // The preload bridge is exposed to whatever page this window shows, so the window never leaves the
   // app's page: a link clicked in a document or a file dropped on the window would otherwise hand the
-  // whole API to that page. A web link opens in the default browser instead.
+  // whole API to that page. A web or mail link opens in its own app instead.
   mainWindow.webContents.on('will-navigate', (event) => {
     if (isAppPage(event.url, appPage)) return
     event.preventDefault()
-    if (/^https?:\/\//.test(event.url)) void shell.openExternal(event.url)
+    if (isExternalLink(event.url)) void shell.openExternal(event.url)
   })
 
   // Electron grants every permission by default, including to the map's iframe.
@@ -119,22 +120,6 @@ if (!hasSingleInstanceLock) {
   // one quits.
   app.quit()
 } else {
-  let agentsStopped = false
-  let shutdownPending = false
-  app.on('before-quit', (event) => {
-    if (agentsStopped) return
-    event.preventDefault()
-    if (shutdownPending) return
-    shutdownPending = true
-    void shutdownAgents().then(() => {
-      agentsStopped = true
-      app.quit()
-    }).catch((error) => {
-      shutdownPending = false
-      dialog.showErrorBox(t('app.startup.agentStopFailed'), errorMessage(error))
-    })
-  })
-
   app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     if (mainWindow.isMinimized()) mainWindow.restore()
@@ -191,9 +176,10 @@ if (!hasSingleInstanceLock) {
     initMemoryCuration()
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
 
+    // The window only hides when it is closed and is destroyed only by a quit, so it is never created a second
+    // time, which would register the IPC handlers again.
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else mainWindow?.show()
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
     })
   }).catch((error: unknown) => {
     showStartupFailure(error)

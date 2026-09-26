@@ -2,7 +2,8 @@ import { defineMessages } from '../message'
 
 /**
  * Text that belongs to no screen: the tray menu, the notifications macOS shows, the dialogs shown when
- * starting or quitting fails, and the errors of reading and writing files that any feature can hit.
+ * starting or quitting fails, a failed check of the services, and the errors of reading and writing files
+ * and of opening links that any feature can hit.
  */
 export const app = defineMessages({
   storage: {
@@ -206,6 +207,49 @@ export const app = defineMessages({
       'pt-BR': 'Solicitação recusada de uma página que não é o ASIST: {url}',
       'es-419': 'Se rechazó una solicitud de una página que no es ASIST: {url}',
       'es-ES': 'Se ha rechazado una solicitud de una página que no es ASIST: {url}'
+    }
+  },
+  status: {
+    checkFailed: {
+      'ja-JP': 'サービスの状態を確認できませんでした',
+      'en-US': "Couldn't check the services",
+      'fr-FR': 'Impossible de vérifier les services',
+      'de-DE': 'Die Dienste ließen sich nicht prüfen',
+      'hi-IN': 'सेवाओं की स्थिति देखी नहीं जा सकी',
+      'id-ID': 'Tidak bisa memeriksa layanan',
+      'it-IT': 'Impossibile controllare i servizi',
+      'ko-KR': '서비스 상태를 확인하지 못했습니다',
+      'pt-BR': 'Não foi possível verificar os serviços',
+      'es-419': 'No se pudieron verificar los servicios',
+      'es-ES': 'No se han podido comprobar los servicios'
+    }
+  },
+  links: {
+    refused: {
+      'ja-JP': '開けるのは Web ページとメールアドレスのリンクだけです: {url}',
+      'en-US': 'Only links to web pages and email addresses can be opened: {url}',
+      'fr-FR': "Seuls les liens vers des pages web et des adresses e-mail peuvent s'ouvrir : {url}",
+      'de-DE': 'Nur Links zu Webseiten und E-Mail-Adressen lassen sich öffnen: {url}',
+      'hi-IN': 'सिर्फ़ वेब पेज और ईमेल पते वाले लिंक खोले जा सकते हैं: {url}',
+      'id-ID': 'Hanya tautan ke halaman web dan alamat email yang bisa dibuka: {url}',
+      'it-IT': 'Si possono aprire solo i link a pagine web e indirizzi email: {url}',
+      'ko-KR': '웹 페이지와 이메일 주소 링크만 열 수 있습니다: {url}',
+      'pt-BR': 'Só é possível abrir links de páginas da web e de endereços de e-mail: {url}',
+      'es-419': 'Solo se pueden abrir enlaces a páginas web y direcciones de correo: {url}',
+      'es-ES': 'Solo se pueden abrir enlaces a páginas web y direcciones de correo: {url}'
+    },
+    openFailed: {
+      'ja-JP': 'リンクを開けませんでした',
+      'en-US': "Couldn't open the link",
+      'fr-FR': "Impossible d'ouvrir le lien",
+      'de-DE': 'Der Link ließ sich nicht öffnen',
+      'hi-IN': 'लिंक खोला नहीं जा सका',
+      'id-ID': 'Tidak bisa membuka tautan',
+      'it-IT': 'Impossibile aprire il link',
+      'ko-KR': '링크를 열지 못했습니다',
+      'pt-BR': 'Não foi possível abrir o link',
+      'es-419': 'No se pudo abrir el enlace',
+      'es-ES': 'No se ha podido abrir el enlace'
     }
   }
 })
