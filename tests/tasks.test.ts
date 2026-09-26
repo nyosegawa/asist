@@ -180,6 +180,22 @@ describe('due dates', () => {
     expect(taskSummary(task, 'en').statusLabel).not.toMatch(/[\u3040-\u30ff\u4e00-\u9fff]/)
   })
 
+  it('tells the Agent when a task was finished on the local day, as the same instant', () => {
+    const zone = process.env.TZ
+    process.env.TZ = 'Asia/Tokyo'
+    try {
+      // 00:30 on 2026-09-16 in Japan, which is still 2026-09-15 in UTC.
+      const finished = Date.UTC(2026, 8, 15, 15, 30)
+      const task = { id: 'a', title: 'x', notes: '', status: 'done' as const, due: null, order: 0, createdAt: 0, updatedAt: finished, completedAt: finished }
+      const completedAt = String(taskSummary(task, 'en').completedAt)
+      expect(completedAt.startsWith('2026-09-16T00:30')).toBe(true)
+      expect(Date.parse(completedAt)).toBe(finished)
+    } finally {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    }
+  })
+
   it('rejects an empty or overlong title, a date that does not exist, and an unknown field', () => {
     expect(taskInputSchema.safeParse({ title: '  買い物  ' }).data).toMatchObject({ title: '買い物', status: 'todo', due: null, notes: '' })
     expect(taskInputSchema.safeParse({ title: '' }).success).toBe(false)
