@@ -4,7 +4,7 @@ import type { MemoryDocument } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import { JOURNAL_SELF_HEADINGS } from '@shared/memory-page'
 import { useToastStore } from '@/state/stores'
-import { useMiniApp, useViewStore } from '@/state/view'
+import { useLeaveGuard, useMiniApp, useViewStore } from '@/state/view'
 import { askConfirm } from '@/state/confirm'
 import { Markdown } from './Markdown'
 import { displayError } from '@/display-error'
@@ -125,6 +125,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     setMode({ kind: 'read' })
     return true
   }
+  useLeaveGuard(dirty, leaveEditing)
 
   useEffect(() => {
     if (!open) return

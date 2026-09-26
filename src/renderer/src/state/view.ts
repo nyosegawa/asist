@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { dayKey } from '@shared/calendar-layout'
 import { openMiniAppSchema, type MiniApp, type MiniAppTarget, type MiniAppView } from '@shared/mini-apps'
@@ -64,8 +64,21 @@ export function placeMiniApp(current: MiniAppView | null, target: MiniAppTarget,
   }
 }
 
+/** Asks the open mini app whether what it shows may change, and resolves true when it may. */
+type LeaveGuard = () => Promise<boolean>
+
+/** Two views compare by their parsed form, which puts the keys in the schema's order. */
+const viewKey = (open: MiniAppView | null): string => JSON.stringify(openMiniAppSchema.parse(open))
+
 interface ViewState {
   open: MiniAppView | null
+  /**
+   * Set by the open mini app while it holds a draft that is not saved (useLeaveGuard). openApp, toggleApp
+   * and closeApp, which the Dock, the back buttons, the cards and open_app use, ask it before they close
+   * the mini app or change what it shows, and leave everything as it is when it answers false. The mini
+   * app's own navigation goes through update, which does not ask.
+   */
+  leaveGuard: LeaveGuard | null
   openApp: (target: MiniAppTarget) => void
   /** Opens the mini app, or closes it when it is the one open, as a button of the Dock does. */
   toggleApp: (app: MiniApp) => void
@@ -79,21 +92,55 @@ interface ViewState {
 }
 
 /** Only one mini app is open at a time. */
-export const useViewStore = create<ViewState>((set) => ({
-  open: null,
-  openApp: (target) => set((s) => ({ open: placeMiniApp(s.open, target) })),
-  toggleApp: (app) => set((s) => ({ open: s.open?.app === app ? null : placeMiniApp(null, { app } as MiniAppTarget) })),
-  closeApp: () => set({ open: null }),
-  update: (app, patch) =>
-    set((s) => {
-      const open = s.open
-      if (open?.app !== app) return s
-      const changed = Object.entries(patch).some(([key, value]) => !Object.is(open[key as keyof typeof open], value))
-      return changed ? { open: { ...open, ...patch } as MiniAppView } : s
-    })
-}))
+export const useViewStore = create<ViewState>((set, get) => {
+  /** Shows what `next` makes of the open mini app, once its leave guard agrees when there is one to ask. */
+  const navigate = (next: (open: MiniAppView | null) => MiniAppView | null): void => {
+    const { open, leaveGuard } = get()
+    if (!leaveGuard || viewKey(next(open)) === viewKey(open)) {
+      set((s) => ({ open: next(s.open) }))
+      return
+    }
+    leaveGuard().then(
+      (approved) => approved && set((s) => ({ open: next(s.open) })),
+      // The guard asks through the confirmation sheet, which refuses while another confirmation is on it;
+      // the mini app then stays as it is.
+      (error: unknown) => console.error('mini app leave guard failed:', error)
+    )
+  }
+  return {
+    open: null,
+    leaveGuard: null,
+    openApp: (target) => navigate((open) => placeMiniApp(open, target)),
+    toggleApp: (app) => navigate((open) => (open?.app === app ? null : placeMiniApp(null, { app } as MiniAppTarget))),
+    closeApp: () => navigate(() => null),
+    update: (app, patch) =>
+      set((s) => {
+        const open = s.open
+        if (open?.app !== app) return s
+        const changed = Object.entries(patch).some(([key, value]) => !Object.is(open[key as keyof typeof open], value))
+        return changed ? { open: { ...open, ...patch } as MiniAppView } : s
+      })
+  }
+})
 
 export const activeMiniApp = (s: ViewState): MiniApp | null => s.open?.app ?? null
+
+/**
+ * Makes `guard` the leave guard of the open mini app while `active` is true, as it is while a draft is
+ * not saved, and takes it away when the draft is saved or thrown away or the view leaves the screen.
+ */
+export function useLeaveGuard(active: boolean, guard: LeaveGuard): void {
+  const latest = useRef(guard)
+  latest.current = guard
+  useEffect(() => {
+    if (!active) return
+    const ask: LeaveGuard = () => latest.current()
+    useViewStore.setState({ leaveGuard: ask })
+    return () => {
+      if (useViewStore.getState().leaveGuard === ask) useViewStore.setState({ leaveGuard: null })
+    }
+  }, [active])
+}
 
 /**
  * What the mini app shows. App keeps a closing view mounted through its leave animation, after the

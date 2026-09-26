@@ -7,6 +7,7 @@ import { createTranslator } from '@shared/i18n'
 import { NotesView } from '../src/renderer/src/ui/notes/NotesView'
 import { useNoteStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
+import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { answerConfirm } from './helpers/confirm'
 
 const t = createTranslator('ja-JP')
@@ -147,5 +148,35 @@ describe('the notes screen', () => {
     expect(view.querySelector('textarea')).toBeNull()
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(useViewStore.getState().open?.app).not.toBe('notes')
+  })
+
+  it('asks before the back button, the Dock, a card or open_app throws an unsaved note away, and keeps it when the answer is no', async () => {
+    const view = await render()
+    await act(async () => button(view, t('notes.newNote')).click())
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, '# 買い物\n\n牛乳\n'))
+    // open_app naming the screen as it is leaves the draft where it is without asking.
+    await act(async () => useViewStore.getState().openApp({ app: 'notes' }))
+    expect(useConfirmStore.getState().queue).toEqual([])
+    const leaves = [
+      () => view.querySelector<HTMLButtonElement>('header > button')!.click(),
+      () => useViewStore.getState().toggleApp('notes'),
+      () => useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }),
+      () => useViewStore.getState().openApp({ app: 'tasks' })
+    ]
+    for (const leave of leaves) {
+      await act(async () => leave())
+      await answerConfirm(false)
+      expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: null, editing: true })
+      expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('# 買い物\n\n牛乳\n')
+    }
+    await act(async () => useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }))
+    await answerConfirm(true)
+    await settle()
+    expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: TRIP, editing: false })
+    expect(heading(view)).toBe('旅行の持ち物')
+    expect(api.noteCreate).not.toHaveBeenCalled()
+    // With nothing left to lose, the back button closes the screen without asking.
+    await act(async () => view.querySelector<HTMLButtonElement>('header > button')!.click())
+    expect(useViewStore.getState().open).toBeNull()
   })
 })

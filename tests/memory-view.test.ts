@@ -6,6 +6,7 @@ import { documentOf } from '@shared/memory-page'
 import { MemoryView } from '../src/renderer/src/ui/memory/MemoryView'
 import { useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
+import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { answerConfirm } from './helpers/confirm'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
@@ -211,6 +212,39 @@ describe('the memory screen', () => {
     expect(view.querySelector('textarea')).toBeNull()
     await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(useViewStore.getState().open?.app).not.toBe('memory')
+  })
+
+  it('asks before the back button, the Dock, a card or open_app throws an unsaved edit away, and keeps it when the answer is no', async () => {
+    const view = await render()
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
+    const draft = FILES['journal/2026-09-14.md'].replace('## 今日の私', '## 書きかけ\n長い下書き。\n\n## 今日の私')
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, draft))
+    // open_app naming the document already shown leaves the draft where it is without asking.
+    await act(async () => useViewStore.getState().openApp({ app: 'memory', file: 'journal/2026-09-14.md' }))
+    expect(useConfirmStore.getState().queue).toEqual([])
+    const leaves = [
+      () => view.querySelector<HTMLButtonElement>('header > button')!.click(),
+      () => useViewStore.getState().toggleApp('memory'),
+      () => useViewStore.getState().openApp({ app: 'memory', file: 'pages/松葉軒.md' }),
+      () => useViewStore.getState().openApp({ app: 'tasks' })
+    ]
+    for (const leave of leaves) {
+      await act(async () => leave())
+      await answerConfirm(false)
+      expect(useViewStore.getState().open).toEqual({ app: 'memory', file: 'journal/2026-09-14.md' })
+      expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(draft)
+    }
+    await act(async () => useViewStore.getState().openApp({ app: 'tasks' }))
+    await answerConfirm(true)
+    expect(useViewStore.getState().open).toEqual({ app: 'tasks', view: 'board', taskId: null })
+    expect(api.memoryDocumentWrite).not.toHaveBeenCalled()
+  })
+
+  it('closes from the back button without asking when nothing is being edited', async () => {
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('header > button')!.click())
+    expect(useConfirmStore.getState().queue).toEqual([])
+    expect(useViewStore.getState().open).toBeNull()
   })
 
   it('opens the address of a link in a document when it is pressed', async () => {
