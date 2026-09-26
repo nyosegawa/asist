@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
+import { isTransientApiError } from '@shared/api-errors'
 import { summarizeTurnUsage } from '@shared/turn-usage'
 
 /** The Google adapter. These tests run fake generateContentStream chunks and check the conversion to the ASIST types. */
@@ -208,8 +209,17 @@ describe('the Google stream', () => {
   it('leaves a search call whose result never arrived out of what is sent back after a broken stream', async () => {
     mocks.chunks = [chunk([{ text: '調べます。' }]), chunk([{ toolCall: { toolType: 'GOOGLE_SEARCH_WEB', args: { queries: ['x'] }, id: 's1' }, thoughtSignature: 'sig' }])]
     const { stream } = await open({ webSearch: true })
-    await expect(stream.final()).rejects.toThrow('unknown finish reason')
+    await expect(stream.final()).rejects.toThrow()
     expect(stream.snapshot()!.native!.payload).toEqual({ role: 'model', parts: [{ text: '調べます。' }] })
+  })
+
+  it('fails as a transient error on a stream that ended without a finish reason, as when a connection drops, even after a whole tool call', async () => {
+    const failure = async (): Promise<unknown> => (await open()).stream.final().then(() => null, (reason: unknown) => reason)
+    mocks.chunks = [chunk([{ text: '調べます。' }])]
+    expect(isTransientApiError(await failure())).toBe(true)
+    // A functionCall arrives whole, so only the missing finish reason shows that the rest of the response was lost.
+    mocks.chunks = [chunk([{ functionCall: { id: 'g1', name: 'show_weather', args: {} } }])]
+    expect(isTransientApiError(await failure())).toBe(true)
   })
 
   it('maps the output limit to max_tokens and a safety stop to refusal, and fails on a finish reason it does not know', async () => {
