@@ -324,12 +324,16 @@ describe('todo and notes cards', () => {
 
   it('says the tasks could not be read rather than that there are none, and reads them again on retry', async () => {
     useTaskStore.setState({ tasks: [], loaded: false, error: '' })
-    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeListBroken')))
+    // A stored task that breaks the schema is reported with the reason the schema gave, which is an error of its own.
+    const reason = errorText('tasks.errors.titleTooLong', { limit: 200 })
+    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeItemBroken', { index: 3, message: reason })))
     const card = await renderAt(spec('todo', {}), L)
     await act(async () => {})
     expect(card.textContent).not.toContain(t('tasks.card.empty'))
     expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.card.loadFailed'))
-    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.errors.storeListBroken'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(
+      t('tasks.errors.storeItemBroken', { index: 3, message: t('tasks.errors.titleTooLong', { limit: 200 }) })
+    )
     api.tasksList.mockResolvedValueOnce([taskOf('a', '牛乳を買う', 'todo', 0)])
     await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
     expect([...card.querySelectorAll('.card-row-title')].map((el) => el.textContent)).toEqual(['牛乳を買う'])

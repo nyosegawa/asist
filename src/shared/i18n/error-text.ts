@@ -1,4 +1,4 @@
-import { MESSAGES, formatMessage, type MessageKey, type MessageValues } from '.'
+import { MESSAGES, formatMessage, type MessageKey, type MessageValues, type UiLocale } from '.'
 import type { Message } from './message'
 
 /**
@@ -8,8 +8,14 @@ import type { Message } from './message'
  * writes the sentence again in the language of the interface.
  */
 
-const MARKER = /\s\[asist:([\w.]+)(?: (\{.*\}))?\]/
+/**
+ * The marker errorText puts after the sentence. Its values are matched one JSON string at a time,
+ * because a value can be the message of another error, marker and all, and a pattern that ends the
+ * values at the first or the last `}]` cuts such a value in two.
+ */
+const MARKER = String.raw`\s\[asist:([\w.]+)(?: (\{(?:[^"{}]|"(?:[^"\\]|\\.)*")*\}))?\]`
 
+type Values = Record<string, string | number>
 type Arguments<Key extends MessageKey> = keyof MessageValues<Key> extends never ? [] : [values: MessageValues<Key>]
 
 function find(key: string): Message | undefined {
@@ -18,19 +24,29 @@ function find(key: string): Message | undefined {
   return node && typeof node === 'object' && 'en-US' in node ? (node as Message) : undefined
 }
 
-/** The message of an `Error` or of a zod issue: `throw new Error(errorText('errorsMail.notConnected', { account }))`. */
+const mapStrings = (values: Values, change: (value: string) => string): Values =>
+  Object.fromEntries(Object.entries(values).map(([name, value]) => [name, typeof value === 'string' ? change(value) : value]))
+
+/**
+ * The message of an `Error` or of a zod issue: `throw new Error(errorText('errorsMail.notConnected', { account }))`.
+ * A value may be the message of another error, which the sentence then carries without its marker, so the
+ * first marker in the message is this one; the marker keeps the value whole for the reader.
+ */
 export function errorText<Key extends MessageKey>(key: Key, ...values: Arguments<Key>): string {
-  const given = values[0] as Record<string, string | number> | undefined
-  return `${formatMessage(find(key)!, 'en-US', given)} [asist:${key}${given ? ` ${JSON.stringify(given)}` : ''}]`
+  const given = values[0] as Values | undefined
+  const sentence = formatMessage(find(key)!, 'en-US', given && mapStrings(given, (value) => value.replace(new RegExp(MARKER, 'g'), '')))
+  return `${sentence} [asist:${key}${given ? ` ${JSON.stringify(given)}` : ''}]`
 }
 
 /**
- * The key and values inside an error's message, or null for an error that was not written for the user,
- * such as one from a library. The marker can sit anywhere, because other code wraps messages.
+ * The sentence of an error in the given language, or null for an error that was not written for the user,
+ * such as one from a library. The marker can sit anywhere, because other code wraps messages, and the first
+ * one is read. A value that is the message of another error is written in the same language.
  */
-export function readErrorText(message: string): { message: Message; values?: Record<string, string | number> } | null {
-  const match = MARKER.exec(message)
+export function readErrorText(message: string, locale: UiLocale): string | null {
+  const match = new RegExp(MARKER).exec(message)
   const found = match && find(match[1])
   if (!match || !found) return null
-  return { message: found, values: match[2] ? (JSON.parse(match[2]) as Record<string, string | number>) : undefined }
+  const values = match[2] ? (JSON.parse(match[2]) as Values) : undefined
+  return formatMessage(found, locale, values && mapStrings(values, (value) => readErrorText(value, locale) ?? value))
 }
