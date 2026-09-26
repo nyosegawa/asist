@@ -385,3 +385,52 @@ describe('the phase shown after a turn', () => {
     expect(mocks.turn.phase).toBe('think')
   })
 })
+
+describe('the global shortcut and the tray item that turn the microphone on', () => {
+  async function pressShortcut(): Promise<void> {
+    let hotkey!: () => void
+    await start({
+      onHotkeyMic: (callback: () => void) => {
+        hotkey = callback
+        return () => {}
+      }
+    })
+    voice().current = 'off'
+    hotkey()
+    await flush()
+    voice().current = 'listening'
+  }
+
+  it('leave the microphone off during the first-run setup', async () => {
+    Object.assign(mocks.settings, { onboardingVersion: 0, safetyNoticeVersion: 0 })
+    await pressShortcut()
+    expect(voice().enable).not.toHaveBeenCalled()
+  })
+
+  it('leave the microphone off while the notice of the risks is unanswered', async () => {
+    Object.assign(mocks.settings, { onboardingVersion: 1, safetyNoticeVersion: 0 })
+    await pressShortcut()
+    expect(voice().enable).not.toHaveBeenCalled()
+  })
+
+  it('turn the microphone on once both are answered', async () => {
+    await pressShortcut()
+    expect(voice().enable).toHaveBeenCalledOnce()
+  })
+})
+
+describe('a change of how long a quiet live session stays open', () => {
+  it('turns the microphone off, since main stops the live engine for it', async () => {
+    Object.assign(mocks.settings, { voiceEngine: 'gpt-live' })
+    await start({})
+    const live = mocks.live as { current: string; disable: Mock }
+    live.current = 'on'
+    const before = structuredClone(mocks.settings)
+    const after = { ...before, liveIdleSeconds: 120 }
+
+    mocks.settingsListener!({ settings: after }, { settings: before })
+
+    expect(live.disable).toHaveBeenCalled()
+    live.current = 'off'
+  })
+})

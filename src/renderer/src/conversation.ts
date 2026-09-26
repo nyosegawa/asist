@@ -3,6 +3,7 @@ import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ip
 import { isSelfEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { isLiveEngine, type VoiceEngine } from '@shared/voice-engine'
+import { stopsLiveEngine } from '@shared/live-session-policy'
 import { safetyNoticePending } from '@shared/settings'
 import { translate } from '@/i18n'
 import { voiceController } from '@/voice/VoiceController'
@@ -155,13 +156,8 @@ async function initializeConversation(): Promise<void> {
       settings.qwenTtsVoice !== before.qwenTtsVoice ||
       settings.conversationLocale !== before.conversationLocale
     )) reloadAizuchiBank()
-    // Changing the voice engine, or the live model or voice, stops a running microphone; main stops
-    // its live engine for the same change.
-    if (settings && before && (
-      settings.voiceEngine !== before.voiceEngine ||
-      JSON.stringify(settings.gptLive) !== JSON.stringify(before.gptLive) ||
-      JSON.stringify(settings.geminiLive) !== JSON.stringify(before.geminiLive)
-    ) && (voiceController.current !== 'off' || liveVoice.current !== 'off')) {
+    if (settings && before && stopsLiveEngine(before, settings) &&
+      (voiceController.current !== 'off' || liveVoice.current !== 'off')) {
       voiceController.disable()
       liveVoice.disable()
       toasts.push({
@@ -375,13 +371,7 @@ async function initializeConversation(): Promise<void> {
     else useConfirmStore.getState().close(event.id)
   })
 
-  window.api.onHotkeyMic(() => {
-    if (liveMode()) {
-      if (liveVoice.current === 'off') void liveVoice.enable()
-    } else if (voiceController.current === 'off') {
-      void voiceController.enable()
-    }
-  })
+  window.api.onHotkeyMic(() => void enableMic())
 
   window.api.onPanelEvent((event) => {
     usePanelStore.getState().apply(event)
@@ -454,14 +444,19 @@ async function initializeConversation(): Promise<void> {
 }
 
 /**
- * Turns the microphone on when the user chose to have it on at launch. It stays off while the setup or
- * the notice of the risks covers the app, so that nothing is heard before they are answered.
+ * Turns the microphone on for the configured voice engine, whether at launch, from the global
+ * shortcut, from the tray or with the button. It stays off while the setup or the notice of the risks
+ * covers the app, so that nothing is heard before they are answered.
  */
-export function startMicAtLaunch(): void {
+function enableMic(): Promise<void> {
   const settings = useSettingsStore.getState().settings
-  if (!settings?.micAutoStart || settings.onboardingVersion < 1 || safetyNoticePending(settings)) return
-  if (liveMode()) void liveVoice.enable()
-  else void voiceController.enable()
+  if (!settings || settings.onboardingVersion < 1 || safetyNoticePending(settings)) return Promise.resolve()
+  return liveMode() ? liveVoice.enable() : voiceController.enable()
+}
+
+/** Turns the microphone on when the user chose to have it on at launch. */
+export function startMicAtLaunch(): void {
+  if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
 }
 
 function handleLiveEvent(event: LiveEvent): void {
@@ -826,10 +821,10 @@ export function handleTurnEvent(event: TurnEvent): void {
 /** Toggles the microphone from the UI, switching the cascade capture or the live capture according to the configured voice engine. */
 export async function toggleMic(): Promise<void> {
   if (liveMode()) {
-    if (liveVoice.current === 'off') await liveVoice.enable()
+    if (liveVoice.current === 'off') await enableMic()
     else liveVoice.disable()
     return
   }
-  if (voiceController.current === 'off') await voiceController.enable()
+  if (voiceController.current === 'off') await enableMic()
   else voiceController.disable()
 }
