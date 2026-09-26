@@ -21,7 +21,8 @@ const api = {
 }
 const settings = (): AppSettings =>
   ({ mail: { enabled: true, accounts: [DEMO_MAIL_ACCOUNTS[0]], defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } }) as AppSettings
-const set = vi.fn()
+/** The settings' set, which resolves to whether the patch was saved. */
+const set = vi.fn(async (_patch: SettingsPatch): Promise<boolean> => true)
 const t = createTranslator('ja-JP')
 let container: HTMLDivElement
 let root: Root
@@ -31,7 +32,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   for (const fn of Object.values(api)) fn.mockClear()
-  set.mockReset()
+  set.mockReset().mockImplementation(async () => true)
   useSettingsStore.setState({ settings: settings() })
   useMailStore.setState({ status: null, revision: 0 })
   useToastStore.setState({ toasts: [] })
@@ -103,6 +104,18 @@ it('saves only the option that changed, and ignores a day count outside the allo
   expect(set).toHaveBeenLastCalledWith({ mail: { syncDays: 60 } })
 })
 
+it('marks a day count that could not be saved as not saved, and saves it again when the field is left again', async () => {
+  set.mockResolvedValueOnce(false)
+  const group = await render()
+  const days = group.querySelector<HTMLInputElement>(`[aria-label="${t('settingsMail.syncDays')}"]`)!
+  await act(async () => setValue(days, '60'))
+  await act(async () => days.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+  expect(days.value).toBe('60')
+  expect(days.getAttribute('aria-invalid')).toBe('true')
+  await act(async () => days.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+  expect(set.mock.calls).toEqual([[{ mail: { syncDays: 60 } }], [{ mail: { syncDays: 60 } }]])
+})
+
 it('keeps an account that main adds while an option is switched on the same page', async () => {
   // Main adds the account and saves the settings one after the other, each onto the settings it holds.
   let held = settings()
@@ -122,7 +135,7 @@ it('keeps an account that main adds while an option is switched on the same page
       return added
     })
   )
-  set.mockImplementation((patch: SettingsPatch) => void inTurn(() => (held = mergeSettings(held, patch))))
+  set.mockImplementation((patch: SettingsPatch) => inTurn(() => (held = mergeSettings(held, patch))).then(() => true))
   const group = await render()
   await act(async () => [...group.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('settingsMail.add'))!.click())
   const form = group.querySelector<HTMLFormElement>(`[aria-label="${t('settingsMail.form.title')}"]`)!
