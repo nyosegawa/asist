@@ -413,4 +413,51 @@ describe('calendar dates', () => {
       else process.env.TZ = previous
     }
   })
+  it('covers and names whole days in a range that holds a change of daylight saving time', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'America/New_York'
+      const fallBack = resolveCalendarRange({ from: '2026-11-01', to: '2026-11-01' }, new Date(2026, 9, 20))
+      expect(fallBack.untilMs).toBe(new Date(2026, 10, 2).getTime())
+      expect(summarizeCalendarEvents('en-US', [], new Date(2026, 9, 20), fallBack).range).toBe('2026-11-01 (Sun)')
+      // Asked about "this week" on a Saturday, next week runs from 2026-03-02 over the day clocks spring forward.
+      const saturday = new Date(2026, 1, 28, 12)
+      const week = summarizeCalendarEvents('en-US', [], saturday, resolveCalendarRange({ range: 'week' }, saturday))
+      expect(week.nextWeek?.range).toBe('2026-03-02 (Mon) to 2026-03-08 (Sun)')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+  it('takes back an all-day event, as the helper reports it and show_calendar shows it, in an update', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      // asist-calendar.swift reports the end of an all-day event as midnight after its last day.
+      const holiday = { ...event, allDay: true, start: Date.parse('2026-09-15T00:00:00+09:00'), end: Date.parse('2026-09-16T00:00:00+09:00') }
+      const shown = detailCalendarEvent('ja-JP', holiday)
+      expect(shown.date).toBe('2026-09-15(火)')
+      const update = { title: '祝日', start: shown.start, end: shown.end, allDay: shown.allDay, timeZone: shown.timeZone, location: '', notes: '' }
+      expect(calendarEventInputSchema.safeParse(update).success).toBe(true)
+      const trip = detailCalendarEvent('ja-JP', { ...holiday, end: Date.parse('2026-09-18T00:00:00+09:00') })
+      expect(trip.date).toBe('2026-09-15(火) 〜 2026-09-17(木)')
+      expect(calendarEventInputSchema.safeParse({ ...update, end: trip.end }).success).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+  it('tells the model that an event ending at midnight is on the day it starts', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      const late = { ...event, start: Date.parse('2026-09-15T22:00:00+09:00'), end: Date.parse('2026-09-16T00:00:00+09:00') }
+      expect(detailCalendarEvent('ja-JP', late)).toMatchObject({ date: '2026-09-15(火)', time: '22:00–00:00' })
+      const overnight = { ...late, end: Date.parse('2026-09-16T02:00:00+09:00') }
+      expect(detailCalendarEvent('ja-JP', overnight).date).toBe('2026-09-15(火) 〜 2026-09-16(水)')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
 })

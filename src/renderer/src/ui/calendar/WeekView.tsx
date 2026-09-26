@@ -2,7 +2,7 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import type { CalendarEvent } from '@shared/calendar'
 import { HOUR_PX, dayKey, layoutBlocks, mondayOf, weekLayout } from '@shared/calendar-layout'
 import { useT, useFormatLocale } from '@/i18n'
-import { BarChip, type OpenEvent } from './EventChips'
+import { BarChip, occurrenceKey, type OpenEvent } from './EventChips'
 import { dayClasses, fmtDateWd, fmtHour, fmtTimeRange, weekdayNames } from './format'
 import { colorOf } from './palette'
 
@@ -114,9 +114,9 @@ export function WeekView({
                   const width = 100 / block.cols
                   return (
                     <button
-                      key={block.event.id}
+                      key={occurrenceKey(block.event)}
                       className={`cal-block${height < 36 ? ' is-compact' : ''}`}
-                      data-event-id={block.event.id}
+                      data-occurrence={occurrenceKey(block.event)}
                       data-fit="data"
                       style={{
                         ['--c' as string]: colorOf(colors, block.event.calendarId),

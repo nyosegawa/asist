@@ -130,6 +130,18 @@ export class TimerManager {
     return true
   }
 
+  /**
+   * Arms every active timer again against the wall clock, which the caller does when the Mac wakes.
+   * Node's timers on macOS run on a clock that stops while the Mac sleeps, so a schedule armed before
+   * a sleep fires as late as the sleep was long, and a timer that ended during it would be announced
+   * only then.
+   */
+  resync(): void {
+    for (const timer of [...this.records.values()]) {
+      if (timer.status === 'active') this.arm(timer.id)
+    }
+  }
+
   /** Drops the schedules only. An active timer stays active and is picked up at the next start. */
   shutdown(): void {
     for (const handle of this.handles.values()) this.cancelSchedule(handle)

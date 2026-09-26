@@ -1,20 +1,22 @@
 import type { TurnStartOptions } from '@shared/ipc'
-import type { ConversationMessage, ConversationResult, ConversationStream } from '@shared/conversation'
+import type { ConversationMessage, ConversationResult, ConversationStream, SystemLayer } from '@shared/conversation'
 import { waitWithAbort, withTimeoutSignal } from '@shared/abort'
 import { apiErrorKey, errMessage, isTransientApiError } from '@shared/api-errors'
+import type { MessageKey } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { SegmentAssembler } from '@shared/segmenter'
 import { withRetry } from '@shared/retry'
 import type { TurnHandle, TurnRunContext } from '@shared/turn-scheduler'
 import { summarizeTurnUsage } from '@shared/turn-usage'
 import { ToolRoundExecutor, buildToolResultsMessage, type ToolRoundResult } from '@shared/tool-round'
-import { buildResumeMessages } from '@shared/turn-recovery'
+import { buildResumeMessages, resumeAfterDisconnectNote } from '@shared/turn-recovery'
 import { buildMemoryInjection, memoryIdsInToolResult, type MemoryInjection } from '@shared/memory-injection'
 import { diagnoseCacheMiss, fingerprintRequest, type CacheMissReason } from '@shared/cache-diagnosis'
 import { fillPrompt, promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
 import { marker } from '@shared/conversation-markers'
 import { providerKey, streamConversation } from '../llm'
-import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
-import { t, tConversation } from '../i18n'
+import { LLM_PROVIDER_INFO, type ConversationModel } from '@shared/llm-catalog'
+import { errorMessage, tConversation } from '../i18n'
 import { conversationLocale, features } from '../conversation-locale'
 import { getSettings } from '../settings'
 import * as agentRunner from '../agent'
@@ -22,7 +24,7 @@ import { randomClip as randomAizuchiClip } from '../aizuchi'
 import * as memory from '../memory'
 import { summarizeToolInput, summarizeToolResult, type NoticeKind } from './conversation-log'
 import { openAppNote } from './mini-app-tools'
-import { buildSystemLayers, stampUserMessage } from './prompt'
+import { buildSystemLayers } from './prompt'
 import { currentSpeechRoute, emit, history, lastRequestFingerprint, noteRequestFingerprint, record, turnScheduler } from './session'
 import type { SpeechRoute } from './speech-route'
 import {
@@ -80,9 +82,28 @@ const CONTINUE_AFTER_MAX_TOKENS: PromptText = {
   en: `The reply you were giving hit the output limit. Continue with the conclusion that is left, briefly, and do not repeat yourself.`
 }
 
+/** Stands for the job status once it has emptied after the model saw one, which it would otherwise go on reading as current. */
+const NO_JOBS: PromptText = {
+  ja: `動いているジョブも、最近終わったジョブも無い。`,
+  en: `No agent job is running, and none has finished recently.`
+}
+
+/**
+ * The job status to send with an input, or null when the history already shows the same one. It rides
+ * on the input rather than in the system prompt: the messages are cached behind the system prompt, so
+ * its running minutes there would send the whole history again on every turn. It is sent only when it
+ * changed, so an unchanged list of projects is not repeated turn after turn.
+ */
+function jobStatusNote(locale: ConversationLocale, block: string | null, shown: string | null): string | null {
+  const status = block ?? (shown ? promptText(locale, NO_JOBS) : null)
+  const note = status === null ? null : `${marker(locale, 'jobStatus')}\n${status}`
+  return note === shown ? null : note
+}
+
+/** Ends a turn with a prepared sentence, which is said aloud and therefore read in the language of the conversation. */
 class TurnStopError extends Error {
-  constructor(readonly userMessage: string) {
-    super(userMessage)
+  constructor(readonly key: Extract<MessageKey, 'spoken.replyTooLong' | 'spoken.cannotAnswer' | 'spoken.turnStopped'>) {
+    super(key)
     this.name = 'TurnStopError'
   }
 }
@@ -184,18 +205,34 @@ async function runTurn(
   // What the user has open on screen, so that "this" in the utterance can point at it.
   const openApp = input.notice ? null : openAppNote(locale)
   if (openApp) contextNotes.push(openApp)
-  const recordInput = (injection: MemoryInjection | null = null): ReturnType<typeof record> => input.notice
-    ? record({ kind: 'notice', turnId, notice: input.notice, text: userText })
-    : record({
-        kind: 'user', turnId, text: userText,
-        ...(contextNotes.length ? { notes: contextNotes.join('\n\n') } : {}),
-        ...(injection ? { memoryIds: injection.ids } : {})
-      })
+  let jobStatus: string | null = null
+  const recordInput = (injection: MemoryInjection | null = null): void => {
+    const sent = {
+      ...(contextNotes.length ? { notes: contextNotes.join('\n\n') } : {}),
+      ...(jobStatus ? { jobStatus } : {})
+    }
+    if (input.notice) record({ kind: 'notice', turnId, notice: input.notice, text: userText, ...sent })
+    else record({ kind: 'user', turnId, text: userText, ...sent, ...(injection ? { memoryIds: injection.ids } : {}) })
+  }
+  // The conversation model is chosen once at the start of the turn and never changes between rounds.
+  // The provider's raw output, such as a thinking signature, can only be sent back to the same model,
+  // and the API rejects a tool round trip where it is missing.
+  let conversationModel: ConversationModel
+  let toolOptions: ToolOptions
+  let system: SystemLayer[]
   let compacted = false
-  let memoryBlock: string | null = null
   const injectionStats = { count: 0, tokens: 0, searchMs: 0 }
   let injection: MemoryInjection | null = null
+  // Everything that can fail before a request is sent happens here, so that a failure ends the turn
+  // before anything but the input is recorded.
   try {
+    conversationModel = getSettings().conversationModel
+    const providerInfo = LLM_PROVIDER_INFO[conversationModel.provider]
+    if (!providerKey(conversationModel.provider)) {
+      throw new Error(errorText('llmModels.errors.keyMissing', { provider: providerInfo.label, envKey: providerInfo.envKey }))
+    }
+    // A provider without a built-in web search must not have it listed in the tool guide either.
+    toolOptions = { webSearch: providerInfo.webSearch }
     history.ensureLoaded()
     signal.throwIfAborted()
     const need = history.needsCompaction()
@@ -214,7 +251,7 @@ async function runTurn(
     }
     // The note is stored on the user record so that the memories shown to the model and the next
     // history agree. Memories already in the profile or shown in the recent history are left out.
-    memoryBlock = memory.promptBlock()
+    const memoryBlock = memory.promptBlock()
     if (!input.notice) {
       try {
         const searchStartedAt = Date.now()
@@ -236,6 +273,17 @@ async function runTurn(
         console.error('memory injection skipped:', errMessage(err))
       }
     }
+    jobStatus = jobStatusNote(locale, agentRunner.contextBlock(), history.lastJobStatus())
+    // The system prompt is frozen when the turn starts: if it varied between rounds, no prompt cache
+    // within the turn would ever hit.
+    system = buildSystemLayers({
+      locale,
+      persona: getSettings().persona,
+      toolGuide: toolGuide(toolOptions),
+      memoryBlock,
+      historySummary: history.summary,
+      voiceLayer: route.kind === 'live' ? 'delegated' : 'self'
+    })
     signal.throwIfAborted()
   } catch (err) {
     recordInput()
@@ -244,30 +292,17 @@ async function runTurn(
     } else {
       console.error('brain preparation failed:', errMessage(err))
       recordAssistant('', { failed: true })
-      emit({ type: 'error', turnId, message: t(apiErrorKey(err)) })
+      emit({ type: 'error', turnId, message: errorMessage(err) })
     }
     emit({ type: 'done', turnId, fullText: '' })
     return
   }
   // The conversation log is authoritative, so the record is written once the notes are settled; on an
-  // abort the path above stores the plain input instead.
-  const userRecord = recordInput(injection)
-  // The conversation model is chosen once at the start of the turn and never changes between rounds.
-  // The provider's raw output, such as a thinking signature, can only be sent back to the same model,
-  // and the API rejects a tool round trip where it is missing.
-  const conversationModel = getSettings().conversationModel
-  const providerInfo = LLM_PROVIDER_INFO[conversationModel.provider]
-  if (!providerKey(conversationModel.provider)) {
-    emit({
-      type: 'error',
-      turnId,
-      message: t('llmModels.errors.keyMissing', { provider: providerInfo.label, envKey: providerInfo.envKey })
-    })
-    emit({ type: 'done', turnId, fullText: '' })
-    return
-  }
-  // A provider without a built-in web search must not have it listed in the tool guide either.
-  const toolOptions: ToolOptions = { webSearch: providerInfo.webSearch }
+  // early end the path above stores the input as it stands.
+  recordInput(injection)
+  // The request is built from this revision of the history, and what the server measures on it is
+  // kept only while it still describes the history.
+  const revision = history.revision
   const ctx: ToolContext = { turnId, signal, emit }
   const searchCards = new SearchCards(ctx)
   const startedAt = Date.now()
@@ -286,7 +321,7 @@ async function runTurn(
     if (roundUsages.length === 0) return
     const usage = summarizeTurnUsage(roundUsages)
     // The context length the server counted goes to the history, which decides the compaction thresholds from it.
-    history.noteContextTokens(usage.contextTokens ?? 0)
+    history.noteContextTokens(usage.contextTokens ?? 0, revision)
     emit({
       type: 'metrics',
       turnId,
@@ -321,22 +356,20 @@ async function runTurn(
   const playWorkFiller = (sourceSignal: AbortSignal): void => {
     if (fillerPlayed || sourceSignal.aborted) return
     fillerPlayed = true
-    void randomAizuchiClip('work').then((clip) => {
-      if (clip?.audio && !sourceSignal.aborted) {
-        emit({
-          type: 'segment',
-          turnId,
-          segment: { turnId, index: 998, text: clip.text, audio: clip.audio, phonemes: null }
-        })
-      }
-    })
+    // The filler only covers a pause, so a clip bank that fails leaves the pause silent and is logged.
+    randomAizuchiClip('work')
+      .then((clip) => {
+        if (clip?.audio && !sourceSignal.aborted) {
+          emit({
+            type: 'segment',
+            turnId,
+            segment: { turnId, index: 998, text: clip.text, audio: clip.audio, phonemes: null }
+          })
+        }
+      })
+      .catch((err) => console.error('work filler failed:', errMessage(err)))
   }
 
-  // The history is what stamps the time onto the user text. It gives the model the current time and a
-  // sense of how much time passed, and because past messages then never change it also keeps the
-  // prompt cache warm.
-  const stampedText = input.notice ? userText : stampUserMessage(locale, userText, new Date(userRecord.t))
-  const messages: ConversationMessage[] = history.toMessages()
   // The messages sent to the API during the turn are written to the conversation log in the shape they
   // were sent, because the next turn sends them the same way. An assistant message with tool calls is
   // recorded together with the user message holding their results.
@@ -345,24 +378,6 @@ async function runTurn(
       record({ kind: 'message', turnId, role: message.role, parts: message.parts, ...(message.native ? { native: message.native } : {}) })
     }
   }
-
-  // The notes are part of the user record, so the last user message built from the history already
-  // carries them. A notice record has no notes, so only then are they attached here.
-  if (input.notice && contextNotes.length > 0) {
-    messages[messages.length - 1] = { role: 'user', parts: [{ type: 'text', text: [stampedText, ...contextNotes].join('\n\n') }] }
-  }
-
-  // The system prompt is frozen when the turn starts: if it varied between rounds, no prompt cache
-  // within the turn would ever hit.
-  const system = buildSystemLayers({
-    locale,
-    persona: getSettings().persona,
-    toolGuide: toolGuide(toolOptions),
-    memoryBlock,
-    historySummary: history.summary,
-    jobContext: agentRunner.contextBlock(),
-    voiceLayer: route.kind === 'live' ? 'delegated' : 'self'
-  })
 
   // A tool that runs longer than 2.5 seconds, such as a panel fetch, gets the filler to cover the pause.
   let slowToolTimer: ReturnType<typeof setTimeout> | null = null
@@ -416,7 +431,7 @@ async function runTurn(
   let emittedThisAttempt = false
   // The stream opened last, which is where the confirmed part is taken from when it drops mid-response.
   let lastStream: ConversationStream | null = null
-  const streamRound = (toolRound: ToolRoundExecutor): Promise<ConversationResult> =>
+  const streamRound = (toolRound: ToolRoundExecutor, messages: readonly ConversationMessage[]): Promise<ConversationResult> =>
     withRetry(
       async () => {
         emittedThisAttempt = false
@@ -480,7 +495,10 @@ async function runTurn(
       }
     )
 
+  // Once the input is recorded, every way out of the turn goes through the catch below, which closes
+  // the turn in the log and in the events however it ends.
   try {
+    const messages: ConversationMessage[] = history.toMessages()
     let completed = false
     let maxTokenContinuations = 0
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -493,7 +511,7 @@ async function runTurn(
         lastTextAt = Date.now()
         let result: ConversationResult
         try {
-          result = await streamRound(toolRound)
+          result = await streamRound(toolRound, messages)
         } catch (err) {
           // The stream dropped after speech had started: the confirmed part is appended, the results
           // of the tool calls that were already complete are awaited, and the model is asked to
@@ -503,7 +521,7 @@ async function runTurn(
           resumed = true
           console.warn('brain: stream dropped after speaking, resuming:', errMessage(err))
           const results = await toolRound.settle()
-          const resume = buildResumeMessages(locale, recorded, results)
+          const resume = buildResumeMessages(recorded, results, resumeAfterDisconnectNote(locale))
           messages.push(...resume)
           recordMessages(...resume)
           continue
@@ -530,20 +548,19 @@ async function runTurn(
 
         if (result.stop === 'max_tokens') {
           if (maxTokenContinuations >= 1) {
-            throw new TurnStopError(tConversation('spoken.replyTooLong'))
+            throw new TurnStopError('spoken.replyTooLong')
           }
           maxTokenContinuations++
-          const continuation: ConversationMessage[] = [
-            result.message,
-            { role: 'user', parts: [{ type: 'text', text: promptText(locale, CONTINUE_AFTER_MAX_TOKENS) }] }
-          ]
+          // A tool call the response finished before the limit has already started, and the API refuses
+          // the request for the rest while any call in it has no result.
+          const continuation = buildResumeMessages(result.message, await toolRound.settle(), promptText(locale, CONTINUE_AFTER_MAX_TOKENS))
           messages.push(...continuation)
           recordMessages(...continuation)
           continue
         }
 
         if (result.stop === 'refusal') {
-          throw new TurnStopError(tConversation('spoken.cannotAnswer'))
+          throw new TurnStopError('spoken.cannotAnswer')
         }
 
         // The response with its tool calls is appended, and the results of the tools started during
@@ -569,11 +586,14 @@ async function runTurn(
         : new DOMException('Turn aborted', 'AbortError')
     }
     if (!completed) {
-      throw new TurnStopError(tConversation('spoken.turnStopped'))
+      throw new TurnStopError('spoken.turnStopped')
     }
 
     for (const sentence of assembler.flush()) synth.push(sentence)
     await synth.drain()
+    // drain() returns at once on an abort and the sentences not synthesized yet are dropped, so a
+    // barge-in during it leaves the reply cut short rather than said.
+    signal.throwIfAborted()
     recordAssistant(visibleReply)
     emitUsage()
     emit({ type: 'done', turnId, fullText: visibleReply })
@@ -586,9 +606,10 @@ async function runTurn(
       recordAssistant(visibleReply, { interrupted: visibleReply ? 'while-speaking' : 'before-reply' })
       emit({ type: 'done', turnId, fullText: visibleReply })
     } else {
-      // Only a TurnStopError, such as hitting the round limit, and a failure of the API itself end the turn with a prepared sentence.
+      // Only a TurnStopError, such as hitting the round limit, and a failure of the API itself end the
+      // turn with a prepared sentence, which is said aloud in the language of the conversation.
       console.error('brain error:', err)
-      const friendly = err instanceof TurnStopError ? err.userMessage : t(apiErrorKey(err))
+      const friendly = tConversation(err instanceof TurnStopError ? err.key : apiErrorKey(err))
       recordAssistant(visibleReply, { failed: true })
       synth.push(friendly)
       await synth.drain()

@@ -71,7 +71,8 @@ describe('agent history ownership', () => {
     expect(agent.get('unmerged')?.mergeState).toBe('pending')
     expect(readSaved()).toHaveLength(51)
     agent.discard('unmerged')
-    expect(mocks.removeWorktree).toHaveBeenCalledWith('/repo', mocks.root, 'branch', true)
+    // The history was written before the worktree kept its own path, when every job ran at its top.
+    expect(mocks.removeWorktree).toHaveBeenCalledWith('/repo', mocks.root, 'branch')
     expect(agent.get('unmerged')?.mergeState).toBe('discarded')
   })
 

@@ -17,7 +17,7 @@ export const DEMO_JOBS: AgentJob[] = [
     numTurns: 6,
     costUsd: 0.21,
     mergeState: 'pending',
-    worktree: { repo: '/Users/demo/repo', branch: 'asist/readme-note', base: 'main', commit: 'abc' }
+    worktree: { repo: '/Users/demo/repo', dir: '/Users/demo/repo/.asist-worktrees/asist-readme', branch: 'asist/readme-note', base: 'main', commit: 'abc' }
   },
   {
     id: 'demo-job-1',

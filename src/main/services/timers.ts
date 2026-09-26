@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, powerMonitor } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import mitt from 'mitt'
@@ -24,7 +24,7 @@ const manager = new TimerManager({
   onEvent: (event) => events.emit('event', event)
 })
 
-let quitHookRegistered = false
+let hooksRegistered = false
 
 export function init(): void {
   try {
@@ -34,8 +34,9 @@ export function init(): void {
     // overwritten. list, create and cancel retry the same strict load and fail loudly instead.
     console.error('timer persistence is unavailable:', error)
   }
-  if (!quitHookRegistered) {
-    quitHookRegistered = true
+  if (!hooksRegistered) {
+    hooksRegistered = true
+    powerMonitor.on('resume', () => manager.resync())
     app.once('will-quit', () => manager.shutdown())
   }
 }

@@ -30,11 +30,22 @@ for (const place of regions.municipalities) {
     names.set(name, [...(names.get(name) ?? []), place])
   }
 }
+/**
+ * The municipalities a name stands for. A municipality without a forecast area is listed so that its
+ * name is answered with location_unavailable rather than not found, so when it shares its name with
+ * one that has an area, as "国後郡泊村" does with "古宇郡泊村" in Hokkaido, the name means the one with the area.
+ */
+function named(requested: string): Municipality[] {
+  const all = names.get(requested) ?? []
+  const forecast = all.filter((p) => p.officeCode)
+  return forecast.length ? forecast : all
+}
+
 export function resolveWeatherLocation(requested: string): JmaWeatherLocation | WeatherIssue {
   const prefecture = regions.prefectures.find((p) => p.name === requested)
   const matches = prefecture
     ? regions.municipalities.filter((p) => p.code === prefecture.representativeCode)
-    : (names.get(requested) ?? [])
+    : named(requested)
   if (matches.length === 0)
     return {
       status: 'location_not_found',

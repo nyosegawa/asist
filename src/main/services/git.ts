@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
-import { errorText } from '@shared/i18n/error-text'
 import { promptLanguage } from '@shared/conversation-locale'
 import { conversationLocale } from './conversation-locale'
 import { childEnv } from './child-env'
@@ -63,14 +62,50 @@ export function hasHead(repo: string): boolean {
   }
 }
 
-/** Cuts a branch for the job from HEAD and creates a worktree on it. */
-export function worktreeAdd(repo: string, path: string, branch: string): void {
-  git(repo, ['worktree', 'add', '-b', branch, path, 'HEAD'])
+/** The folder of dir within its repository, such as `packages/web`, or an empty string at the top. */
+export function pathInRepo(dir: string): string {
+  return git(dir, ['rev-parse', '--show-prefix']).trim().replace(/\/$/, '')
 }
 
-/** Removes the worktree and its branch, after a merge or after the changes are thrown away. */
-export function worktreeRemove(repo: string, path: string, branch: string, discardChanges = false): void {
-  git(repo, ['worktree', 'remove', ...(discardChanges ? ['--force'] : []), path])
+/**
+ * Cuts a branch for the job from HEAD and creates a worktree on it. When git fails after it has created
+ * them, both are removed again before its error is thrown: git keeps the worktree when only its
+ * post-checkout hook fails, as the hook of Git LFS does when an app opened from Finder has no git-lfs on
+ * its PATH, and it never deletes the branch.
+ */
+export function worktreeAdd(repo: string, path: string, branch: string): void {
+  git(repo, ['branch', branch, 'HEAD'])
+  try {
+    git(repo, ['worktree', 'add', path, branch])
+  } catch (error) {
+    try {
+      const created = worktreeOn(repo, branch)
+      if (created) git(repo, ['worktree', 'remove', '--force', created])
+      git(repo, ['branch', '-D', branch])
+    } catch (cleanupError) {
+      console.error('cannot remove the worktree git left behind:', path, cleanupError)
+    }
+    throw error
+  }
+}
+
+/** The path of the worktree that has the branch checked out, or null when none has. */
+function worktreeOn(repo: string, branch: string): string | null {
+  let path: string | null = null
+  for (const line of git(repo, ['worktree', 'list', '--porcelain', '-z']).split('\0')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    else if (line === `branch refs/heads/${branch}`) return path
+  }
+  return null
+}
+
+/**
+ * Removes the worktree and its branch together with whatever the worktree still holds. git refuses to
+ * remove a worktree in which a submodule was initialized unless it is forced, so a caller removes one only
+ * when nothing in it is left to lose: its changes are merged, there were none, or the user threw them away.
+ */
+export function worktreeRemove(repo: string, path: string, branch: string): void {
+  git(repo, ['worktree', 'remove', '--force', path])
   git(repo, ['branch', '-D', branch])
 }
 
@@ -116,12 +151,22 @@ export function diffEntries(repo: string, base: string, branch: string): DiffEnt
 }
 
 /**
- * The full diff from base to the branch, truncated at the limit. The note on the cut is part of the
- * patch, which the merge view shows and the LLM reads in get_agent_job, so it is written in the
- * language of the conversation.
+ * The diff from base to the branch, cut at the limit. git is stopped once its output passes four bytes
+ * for each character kept, so a diff of any size is read only that far; a character takes at most three
+ * bytes of UTF-8, so what was read always reaches past the limit. The note on the cut is part of the
+ * patch, which the merge view shows and the LLM reads in get_agent_job, so it is written in the language
+ * of the conversation.
  */
 export function diffPatch(repo: string, base: string, branch: string, maxChars = 60_000): string {
-  const patch = git(repo, ['diff', `${base}..${branch}`])
+  let patch: string
+  try {
+    patch = git(repo, ['diff', `${base}..${branch}`], maxChars * 4)
+  } catch (error) {
+    // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
+    const cut = error as NodeJS.ErrnoException & { stdout?: unknown }
+    if (cut.code !== 'ENOBUFS' || typeof cut.stdout !== 'string') throw error
+    patch = cut.stdout
+  }
   if (patch.length <= maxChars) return patch
   const note = {
     ja: '(以下省略。全文は worktree のブランチにある)',
@@ -132,26 +177,37 @@ export function diffPatch(repo: string, base: string, branch: string, maxChars =
 
 export type MergeOutcome = { ok: true } | { ok: false; conflict: boolean; message: string }
 
-/** Merges the branch into the user's repository with --no-ff. A conflict aborts and restores the working tree. */
+const firstLines = (text: string): string => text.trim().split('\n').slice(0, 5).join('\n')
+
+/**
+ * Merges the branch into the user's repository as a merge commit. The commit is made by merge-tree and
+ * commit-tree, which touch neither the working tree nor the index, and the working tree then moves to it
+ * only by a fast-forward. git merge would stop half done in them on a conflict or when a hook of the
+ * user's, such as a commit-msg hook that rejects the message, fails, and a later git commit of the user's
+ * would then commit changes nobody reviewed.
+ */
 export function mergeNoFf(repo: string, branch: string, message: string): MergeOutcome {
+  const head = headCommit(repo)
+  const incoming = headCommit(repo, branch)
+  let tree: string
   try {
-    git(repo, ['-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'merge', '--no-ff', '-m', message, branch])
-    return { ok: true }
-  } catch (err) {
-    const failure = err as { message?: string; stdout?: string | Buffer; stderr?: string | Buffer }
-    const text = [failure.message ?? String(err), failure.stdout, failure.stderr].filter(Boolean).join('\n')
-    // git sometimes reports a conflict on stdout, so the unresolved entries in the index decide, not the
-    // wording or the language of the message.
-    const conflict = git(repo, ['ls-files', '--unmerged']).trim().length > 0
-    if (conflict) {
-      try {
-        git(repo, ['merge', '--abort'])
-      } catch (abortError) {
-        throw new Error(errorText('jobs.merging.abortFailed', { detail: String(abortError) }))
-      }
-    }
-    return { ok: false, conflict, message: text.split('\n').slice(0, 5).join('\n') }
+    tree = git(repo, ['merge-tree', '--write-tree', '--name-only', head, incoming]).split('\n')[0]
+  } catch (error) {
+    // Status 1 with a tree is a conflict. The lines after the blank one are git's messages about it.
+    const failure = error as { status?: number; stdout?: unknown }
+    if (failure.status !== 1 || typeof failure.stdout !== 'string' || !failure.stdout) throw error
+    return { ok: false, conflict: true, message: firstLines(failure.stdout.split('\n\n')[1] ?? '') }
   }
+  const commit = git(repo, [
+    '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, '-p', head, '-p', incoming, '-m', message
+  ]).trim()
+  try {
+    git(repo, ['merge', '--ff-only', '-q', commit])
+  } catch (error) {
+    const failure = error as { message?: string; stderr?: string }
+    return { ok: false, conflict: false, message: firstLines(failure.stderr || String(failure.message)) }
+  }
+  return { ok: true }
 }
 
 /** Whether the working tree has no uncommitted change, which a merge requires. */
