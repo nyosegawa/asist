@@ -270,4 +270,47 @@ describe('GptLiveEngine', () => {
     expect(socket.ofType('session.input_audio.append')).toHaveLength(appended)
     await engine.stop()
   })
+
+  it('closes the user line on screen under the turn it was shown with when the utterance is handed to brain', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気は', event_id: 'a', start_ms: 0, end_ms: 1 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(beginTurn).toHaveBeenCalledOnce()
+    const lines = events.flatMap((e) => (e.type === 'userTranscript' ? [[e.turnId, e.text, e.final]] : []))
+    expect(lines).toEqual([
+      [100, '明日の天気は', false],
+      [100, '明日の天気は', true]
+    ])
+    // Brain records the utterance it took over.
+    expect(mocks.record).not.toHaveBeenCalled()
+    await engine.stop()
+  })
+
+  it('hands the whole transcript to brain even when the transcript of the backchannel settles while it still arrives', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の', event_id: 'a', start_ms: 0, end_ms: 1 })
+    socket.emit({ type: 'session.output_transcript.delta', delta: 'うん、', event_id: 'b', start_ms: 1, end_ms: 2 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    // The input transcript keeps arriving for 1.2 seconds, and the backchannel's settles 1.5 seconds after it began.
+    for (const [i, delta] of ['天気', 'を', '教え', 'て'].entries()) {
+      await vi.advanceTimersByTimeAsync(300)
+      socket.emit({ type: 'session.input_transcript.delta', delta, event_id: `t${i}`, start_ms: 2, end_ms: 3 })
+    }
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(beginTurn).toHaveBeenCalledOnce()
+    expect(beginTurn.mock.calls[0][0]).toBe('明日の天気を教えて')
+    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([{ kind: 'assistant', turnId: 100, text: 'うん、' }])
+    await engine.stop()
+  })
 })

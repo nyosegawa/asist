@@ -244,6 +244,7 @@ export class GptLiveEngine extends LiveEngineBase {
    * transcript arrived at all, brain is told so instead of the voice model saying it could not hear.
    */
   private async delegate(delegationId: string): Promise<void> {
+    this.claimUserUtterance()
     const startedAt = this.now()
     while (this.now() - this.lastInputDeltaAt < DELEGATION_QUIET_MS && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
       await new Promise((resolve) => setTimeout(resolve, 100))
@@ -254,7 +255,7 @@ export class GptLiveEngine extends LiveEngineBase {
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
     }
-    const text = this.transcripts.take('user') || promptText(conversationLocale(), NO_TRANSCRIPT)
+    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
     this.transcripts.flush('assistant')
     const handle = this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     if (!handle) return
