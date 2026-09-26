@@ -15,10 +15,10 @@ import { getSettings } from './settings'
 import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
 import { memoryDir } from './memory-store'
-import { launchAgentProcess } from './agent-process'
+import { launchAgentProcess, recoverAgentProcess } from './agent-process'
 import { requireCli } from './agent-process/cli-locator'
 import { platformCapabilities } from './platform'
-import { recoverAgentProcess, type AgentProcess } from './agent-process/posix'
+import type { AgentProcess } from './agent-process/owner'
 import {
   assertMergeable,
   assertWorktreePresent,
