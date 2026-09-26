@@ -4,8 +4,8 @@
  * opens when the user starts speaking and closes once the conversation has been quiet for `idleMs`.
  * Audio recorded while it is closed is kept as a pre-roll and sent first when it opens, which delays
  * the reply by the time the connection takes but keeps the beginning of the utterance. The
- * conversation does not count as quiet while the assistant is speaking or while the brain is still
- * producing the reply.
+ * conversation does not count as quiet while the assistant is speaking, while the brain is still
+ * producing the reply or while a function call is still running.
  */
 
 export interface LiveSessionPolicyOptions {
@@ -66,9 +66,16 @@ export class LiveSessionPolicy {
     return this.open ? 'keep' : 'open'
   }
 
-  /** Called periodically, and it closes the session once the conversation has been quiet for `idleMs`. */
-  tick(now: number): LiveSessionDecision {
+  /**
+   * Called periodically, and it closes the session once the conversation has been quiet for `idleMs`.
+   * While `working`, such as while a function call waits for approval, the quiet time does not start.
+   */
+  tick(now: number, working: boolean): LiveSessionDecision {
     if (!this.open) return 'keep'
+    if (working) {
+      this.lastActivityAt = now
+      return 'keep'
+    }
     return now - this.lastActivityAt >= this.options.idleMs ? 'close' : 'keep'
   }
 }

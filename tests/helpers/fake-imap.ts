@@ -51,6 +51,8 @@ export class FakeImap extends EventEmitter {
   failConnect: Error | null = null
   /** The uids whose download fails. */
   failDownload = new Set<number>()
+  /** True while the server answers every SEARCH with NO. */
+  failSearch = false
   private readonly gmail: boolean
   private currentPath = ''
 
@@ -164,12 +166,13 @@ export class FakeImap extends EventEmitter {
     return { path, release: () => undefined }
   }
 
+  /** Like the real client, it answers an empty list when nothing matches and false when the server rejects the command. */
   async search(query: { since?: Date | string; all?: boolean }): Promise<number[] | false> {
     const folder = this.current()
     this.calls.push(`search:${this.currentPath}`)
+    if (this.failSearch) return false
     const since = query.since ? new Date(query.since).getTime() : 0
-    const uids = [...folder.messages.values()].filter((mail) => mail.date.getTime() >= since).map((mail) => mail.uid)
-    return uids.length ? uids : false
+    return [...folder.messages.values()].filter((mail) => mail.date.getTime() >= since).map((mail) => mail.uid)
   }
 
   async fetchAll(range: number[] | string, query: FetchQueryObject): Promise<FetchMessageObject[]> {

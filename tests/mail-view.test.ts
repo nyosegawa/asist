@@ -3,25 +3,26 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings } from '@shared/settings'
-import type { MailListQuery, MailMessage } from '@shared/mail'
+import { MAX_BULK_CHANGE, mailListQuerySchema, messageIdOf, type MailListQuery, type MailMessage } from '@shared/mail'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
-import { MailView } from '../src/renderer/src/ui/mail/MailView'
+import { MailView, readRows } from '../src/renderer/src/ui/mail/MailView'
 import { useMailStore, useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from '../src/renderer/src/demo/fixtures/mail'
 
 const t = createTranslator('ja-JP')
 const inbox = (): MailMessage[] => DEMO_MAIL_MESSAGES.filter((m) => m.folder === 'inbox').sort((a, b) => b.date - a.date)
+const demoList = async (query: MailListQuery) => {
+  const view = query.view ?? 'inbox'
+  const list = DEMO_MAIL_MESSAGES.filter((m) => (view === 'starred' ? m.starred : m.folder === view))
+    .filter((m) => !query.accountId || m.accountId === query.accountId)
+    .filter((m) => !query.unreadOnly || m.unread)
+    .sort((a, b) => b.date - a.date)
+  return { messages: list, total: list.length, unread: list.filter((m) => m.unread).length }
+}
 const api = {
-  mailList: vi.fn(async (query: MailListQuery) => {
-    const view = query.view ?? 'inbox'
-    const list = DEMO_MAIL_MESSAGES.filter((m) => (view === 'starred' ? m.starred : m.folder === view))
-      .filter((m) => !query.accountId || m.accountId === query.accountId)
-      .filter((m) => !query.unreadOnly || m.unread)
-      .sort((a, b) => b.date - a.date)
-    return { messages: list, total: list.length, unread: list.filter((m) => m.unread).length }
-  }),
+  mailList: vi.fn(demoList),
   mailThread: vi.fn(async (accountId: string, threadId: string) => DEMO_MAIL_MESSAGES.filter((m) => m.accountId === accountId && m.threadId === threadId).sort((a, b) => a.date - b.date)),
   mailRead: vi.fn(async (id: string) => ({ message: DEMO_MAIL_MESSAGES.find((m) => m.id === id)!, text: DEMO_MAIL_BODIES.get(id) ?? '' })),
   mailChange: vi.fn(async (change: { operation: string }) => ({ saved: true, operation: change.operation, id: 'x', summary: '済み' })),
@@ -43,6 +44,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   for (const fn of Object.values(api)) fn.mockClear()
+  api.mailList.mockImplementation(demoList)
   useSettingsStore.setState({
     settings: { mail: { enabled: true, accounts: DEMO_MAIL_ACCOUNTS, defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } } as AppSettings
   })
@@ -133,6 +135,78 @@ describe('the message list', () => {
     expect(view.querySelector('.ml-notice')?.textContent).toContain(t('mail.empty.noAccounts'))
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-notice button')!.click())
     expect(useViewStore.getState().open?.app).toBe('settings')
+  })
+})
+
+describe('loading more', () => {
+  const HOUR = 3_600_000
+  const NOW = Date.UTC(2026, 8, 16, 6)
+  /** The order of main's list: newest first, then the higher uid, then the id. */
+  const order = (a: MailMessage, b: Pick<MailMessage, 'date' | 'uid' | 'id'>): number => b.date - a.date || b.uid - a.uid || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
+  /** Inbox rows of the first demo account, served the way main's cache serves a page after a cursor. */
+  function serve(dates: number[]): MailMessage[] {
+    const all = dates
+      .map((date, index): MailMessage => {
+        const uid = index + 1
+        return {
+          id: messageIdOf('demo-work', 'inbox', uid),
+          accountId: 'demo-work',
+          folder: 'inbox',
+          uid,
+          messageId: `<${uid}@x>`,
+          threadId: `m:<${uid}@x>`,
+          subject: `件名${uid}`,
+          from: { name: '田中', address: 't@example.com' },
+          to: [{ name: '', address: 'me@example.com' }],
+          cc: [],
+          replyTo: [],
+          date,
+          snippet: '',
+          unread: true,
+          starred: false,
+          answered: false,
+          attachments: [],
+          size: 100,
+          labels: [],
+          bodyFetched: false
+        }
+      })
+      .sort(order)
+    api.mailList.mockImplementation(async (value: MailListQuery) => {
+      const query = mailListQuerySchema.parse(value)
+      const cursor = query.before
+      const rest = cursor ? all.filter((m) => order(m, cursor) > 0) : all
+      return { messages: rest.slice(0, query.limit).map((m) => ({ ...m })), total: all.length, unread: all.filter((m) => m.unread).length }
+    })
+    return all
+  }
+  const rows = (): number => container.querySelectorAll('.ml-row').length
+  const loadMore = async (): Promise<void> => {
+    await act(async () => container.querySelector<HTMLButtonElement>('.ml-more')!.click())
+    await act(async () => {})
+  }
+
+  it('reaches the rows that share a date across the page boundary, and keeps every loaded row when the cache reports a change', async () => {
+    // The 47th message and every older one carry one date, so the first page ends inside that run.
+    const all = serve(Array.from({ length: 70 }, (_, index) => NOW - Math.min(index + 1, 47) * HOUR))
+    await render()
+    expect(rows()).toBe(50)
+    await loadMore()
+    expect(texts('.ml-row-subject')).toEqual(all.map((m) => m.subject))
+    // Opening a message on the second page marks it read, and the sync reports the change.
+    all[60].unread = false
+    await act(async () => useMailStore.getState().bump())
+    await act(async () => {})
+    expect(rows()).toBe(70)
+    expect(container.querySelectorAll('.ml-row[data-unread]')).toHaveLength(69)
+  })
+
+  it('reads more rows than one query returns in parts that continue one another', async () => {
+    const count = MAX_BULK_CHANGE + 60
+    const all = serve(Array.from({ length: count }, (_, index) => NOW - (index + 1) * 60_000))
+    const result = await readRows({ view: 'inbox', accountId: null, query: '' }, count)
+    expect(result.messages.map((m) => m.id)).toEqual(all.map((m) => m.id))
+    expect(result.total).toBe(count)
   })
 })
 

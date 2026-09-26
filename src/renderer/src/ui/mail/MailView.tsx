@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MailOpen, RefreshCw, Search, X } from 'lucide-react'
-import { MAX_BULK_CHANGE, type MailChangeInput, type MailMessage } from '@shared/mail'
+import { MAX_BULK_CHANGE, type MailChangeInput, type MailListQuery, type MailListResult, type MailMessage } from '@shared/mail'
 import type { MessageKey } from '@shared/i18n'
 import { useMailStore, useSettingsStore, useToastStore } from '@/state/stores'
 import { useMiniApp, useViewStore, type MiniAppState } from '@/state/view'
@@ -40,6 +40,22 @@ const FAILED_KEY = {
   star: 'mail.changeFailed.star'
 } as const satisfies Record<MailChangeInput['operation'], MessageKey>
 
+/**
+ * The first `rows` messages of the list. One query returns at most MAX_BULK_CHANGE of them, so a longer
+ * list is read in parts, each continuing after the last message of the part before.
+ */
+export async function readRows(filter: Pick<MailListQuery, 'view' | 'accountId' | 'query'>, rows: number): Promise<MailListResult> {
+  const first = await window.api.mailList({ ...filter, limit: Math.min(rows, MAX_BULK_CHANGE) })
+  const messages = [...first.messages]
+  while (messages.length < Math.min(rows, first.total)) {
+    const last = messages.at(-1)!
+    const next = await window.api.mailList({ ...filter, limit: Math.min(rows - messages.length, MAX_BULK_CHANGE), before: { date: last.date, uid: last.uid, id: last.id } })
+    if (next.messages.length === 0) break
+    messages.push(...next.messages)
+  }
+  return { ...first, messages }
+}
+
 function useNow(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -78,6 +94,11 @@ export function MailView({ open }: { open: boolean }): React.JSX.Element {
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  // How many rows the list holds: one page for a new box, account or search term, and one more for each
+  // "load more". Every read, the one after a change in the cache included, reads that many from the top.
+  const scope = JSON.stringify([view, accountId, query])
+  const [extent, setExtent] = useState({ scope, rows: PAGE })
+  const rows = extent.scope === scope ? extent.rows : PAGE
 
   const accounts = useMemo(() => mail?.accounts ?? [], [mail])
   const ready = Boolean(mail?.enabled) && accounts.length > 0
@@ -92,8 +113,7 @@ export function MailView({ open }: { open: boolean }): React.JSX.Element {
   useEffect(() => {
     if (!open || !ready || view === 'drafts') return
     let active = true
-    window.api
-      .mailList({ view, accountId, query, limit: PAGE })
+    readRows({ view, accountId, query }, rows)
       .then((result) => {
         if (!active) return
         setMessages(result.messages)
@@ -106,7 +126,7 @@ export function MailView({ open }: { open: boolean }): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [open, ready, view, accountId, query, revision, attempt])
+  }, [open, ready, view, accountId, query, rows, revision, attempt])
   useEffect(() => {
     if (!open) return
     void refreshStatus()
@@ -175,14 +195,6 @@ export function MailView({ open }: { open: boolean }): React.JSX.Element {
       toast({ kind: 'error', title: t(failed), body: displayError(err) })
       return false
     }
-  }
-  const loadMore = (): void => {
-    const last = messages.at(-1)
-    if (!last || view === 'drafts') return
-    window.api
-      .mailList({ view, accountId, query, limit: PAGE, before: last.date })
-      .then((result) => setMessages((current) => [...current, ...result.messages.filter((item) => !current.some((known) => known.id === item.id))]))
-      .catch((err: unknown) => toast({ kind: 'error', title: t('mail.list.loadMoreFailed'), body: displayError(err) }))
   }
   /** Marks every unread message that matches the current box, account and search term as read, in a single STORE. */
   const markAllRead = async (): Promise<void> => {
@@ -298,7 +310,7 @@ export function MailView({ open }: { open: boolean }): React.JSX.Element {
                 now={now}
                 onSelect={(message) => setPane({ kind: 'message', id: message.id })}
                 onStar={(message) => void submit({ operation: 'star', id: message.id, starred: !message.starred })}
-                onLoadMore={loadMore}
+                onLoadMore={() => setExtent({ scope, rows: rows + PAGE })}
                 onRetry={() => setAttempt((value) => value + 1)}
               />
             )}

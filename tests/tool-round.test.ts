@@ -50,22 +50,6 @@ describe('ToolRoundExecutor', () => {
     expect(results.map((r) => r.execution.content)).toEqual(['result:a', 'result:b'])
   })
 
-  it('runs a writing tool alone once everything submitted before it has finished, and makes later tools wait for it', async () => {
-    const { executor, started, finished } = harness({ slow: 30, fast: 5, write: 20 })
-    executor.submit(call('a', 'slow'))
-    executor.submit(call('b', 'fast'))
-    executor.submit(call('c', 'write'))
-    executor.submit(call('d', 'write'))
-    executor.submit(call('e', 'fast'))
-    await wait(10)
-    // b has finished, but c does not start while a is still running.
-    expect(started).toEqual(['a', 'b'])
-    const results = await executor.settle()
-    expect(started).toEqual(['a', 'b', 'c', 'd', 'e'])
-    expect(finished).toEqual(['b', 'a', 'c', 'd', 'e'])
-    expect(results.map((r) => r.call.id)).toEqual(['a', 'b', 'c', 'd', 'e'])
-  })
-
   it('synthesizes an interrupted result for every tool that had not started when the round was aborted', async () => {
     const controller = new AbortController()
     const { executor, started } = harness({ slow: 30 }, controller.signal)

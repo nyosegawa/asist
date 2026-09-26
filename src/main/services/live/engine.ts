@@ -92,7 +92,7 @@ export abstract class LiveEngineBase {
     this.enabled = true
     this.setConnection('idle')
     this.ticker = setInterval(() => {
-      if (this.policy.tick(this.now()) === 'close') void this.close('idle')
+      if (this.policy.tick(this.now(), this.working()) === 'close') void this.close('idle')
     }, POLICY_TICK_MS)
   }
 
@@ -176,6 +176,15 @@ export abstract class LiveEngineBase {
   /** Marks the conversation as still going, such as model audio or brain work, and pushes back the idle close. */
   protected touch(): void {
     this.policy.activity(this.now())
+  }
+
+  /**
+   * Whether the engine itself still runs something for the conversation, such as a function call waiting
+   * for approval, which gives no sign of life until it ends. An engine that hands its tools to brain turns
+   * has nothing of its own.
+   */
+  protected working(): boolean {
+    return false
   }
 
   protected setConnection(state: LiveConnection, detail?: string): void {

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Task } from '@shared/tasks'
 import type { NoteSummary } from '@shared/notes'
 import type { MailDraft, MailStatus } from '@shared/mail'
+import type { SettingsPatch } from '@shared/settings'
 import type {
   AgentJob,
   AppSettings,
@@ -39,7 +40,7 @@ export const useStatusStore = create<StatusState>((set) => ({
 interface SettingsState {
   settings: AppSettings | null
   load: () => Promise<void>
-  save: (patch: Partial<AppSettings>) => Promise<void>
+  save: (patch: SettingsPatch) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({

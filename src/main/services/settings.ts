@@ -5,7 +5,7 @@ import os from 'node:os'
 import { defaultRegion, pickInitialLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import type { AppSettings } from '@shared/ipc'
-import { SETTINGS_FORMAT, parseAppSettings, parseSettingsPatch } from '@shared/settings'
+import { SETTINGS_FORMAT, mergeSettings, parseAppSettings, parseSettingsPatch, type SettingsPatch } from '@shared/settings'
 import { defaultPersona } from '@shared/persona'
 import { DEFAULT_MAIL_SETTINGS } from '@shared/mail'
 import { DEFAULT_DOCK_ORDER } from '@shared/dock'
@@ -97,8 +97,8 @@ export function getSettings(): AppSettings {
   return cache
 }
 
-export function saveSettings(patch: Partial<AppSettings>): AppSettings {
-  const next = parseAppSettings({ ...getSettings(), ...parseSettingsPatch(patch) })
+export function saveSettings(patch: SettingsPatch): AppSettings {
+  const next = parseAppSettings(mergeSettings(getSettings(), parseSettingsPatch(patch)))
   const target = settingsFile()
   const temp = `${target}.tmp`
   fs.mkdirSync(path.dirname(target), { recursive: true })
