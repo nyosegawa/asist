@@ -112,7 +112,7 @@ vi.mock('../src/main/services/store', () => ({
 }))
 vi.mock('../src/main/services/llm', () => ({
   providerKey: () => mocks.key,
-  quickText: vi.fn(async () => ''),
+  completeText: vi.fn(async () => ''),
   streamConversation: (request: { messages: ConversationMessage[]; system: Array<{ text: string }>; signal?: AbortSignal }) => {
     mocks.requests.push({ messages: structuredClone(request.messages), system: request.system })
     const script = mocks.rounds.shift()
@@ -479,7 +479,7 @@ describe('brain turn', () => {
   it.each(['user', 'notice'] as const)('lets a %s turn proceed over the limit without waiting for compaction, which folds only the turns up to its start', async (kind) => {
     const { brain, events } = await loadBrain()
     const { history, record, LIMIT_TOKENS } = await import('../src/main/services/brain/session')
-    const { quickText } = await import('../src/main/services/llm')
+    const { completeText } = await import('../src/main/services/llm')
     history.ensureLoaded()
     // The 30 most recent turns are kept, so more than that are recorded here.
     for (let i = 0; i < 50; i++) {
@@ -489,7 +489,7 @@ describe('brain turn', () => {
     history.noteContextTokens(LIMIT_TOKENS + 1, history.revision)
     let finishSummary!: (text: string) => void
     const heldSummary = new Promise<string>((resolve) => { finishSummary = resolve })
-    vi.mocked(quickText).mockReturnValueOnce(heldSummary)
+    vi.mocked(completeText).mockReturnValueOnce(heldSummary)
     const input = kind === 'notice'
       ? { text: '作業が完了しました', notice: 'job-done' as const }
       : { text: '明日の天気は' }
@@ -498,7 +498,7 @@ describe('brain turn', () => {
     try {
       // Compaction starts, but the turn sends its request with the current history instead of waiting for the summary.
       await vi.waitFor(() => expect(events.some((e) => e.type === 'done' && e.turnId === first.turnId)).toBe(true), { timeout: 1000 })
-      expect(quickText).toHaveBeenCalledOnce()
+      expect(completeText).toHaveBeenCalledOnce()
       expect(mocks.requests).toHaveLength(1)
       expect(mocks.requests[0].messages.length).toBe(101)
       expect(history.summary).toBe('')
@@ -509,7 +509,7 @@ describe('brain turn', () => {
     // The 30 turns that were most recent at the start (20 to 49) and the turns recorded afterwards stay as they are,
     // while turns 0 to 19 become the summary.
     expect(history.summary).toBe('以前の会話の引き継ぎ')
-    const log = vi.mocked(quickText).mock.calls[0][1]
+    const log = vi.mocked(completeText).mock.calls[0][3]
     expect(log).toContain('ユーザー: 以前の質問19')
     expect(log).not.toContain('以前の質問20')
     const contents = (await historyMessages()).map(textOf)

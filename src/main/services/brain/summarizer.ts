@@ -7,7 +7,7 @@ import {
   type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
-import { quickText } from '../llm'
+import { completeText } from '../llm'
 import { conversationLocale } from '../conversation-locale'
 import { getSettings } from '../settings'
 
@@ -76,6 +76,16 @@ export const handoffSystem = (locale: ConversationLocale): string =>
 export const SUMMARY_MAX_TOKENS = 8192
 
 /**
+ * How long the summary call may take, which has to let the output limit through on the slowest
+ * conversation model. Claude Opus 5 at low effort starts after 2.8 seconds and then writes 59.6 tokens
+ * a second (Artificial Analysis, the median of 72 hours, checked 2026-09-26); a summary at its Japanese
+ * budget, about 4,900 tokens on Claude's tokenizer, takes it 85 seconds. The limit is counted at three
+ * quarters of that speed, since half of the calls run slower than the median, and 3 seconds are added
+ * for the first token.
+ */
+export const SUMMARY_TIMEOUT_MS = (3 + Math.ceil(SUMMARY_MAX_TOKENS / (0.75 * 59.6))) * 1000
+
+/**
  * Merges an existing summary and the newer log into one handover summary, on the conversation model.
  * A summary more than twice as long as its budget means the rewrite failed, so it is refused and the
  * history keeps both the previous summary and the turns.
@@ -84,7 +94,9 @@ export async function summarizeHandoff(existingSummary: string, log: string): Pr
   const locale = conversationLocale()
   const template = promptText(locale, existingSummary ? HANDOFF_USER : HANDOFF_USER_FIRST)
   const user = fillPrompt(template, { existing: existingSummary, log })
-  const summary = (await quickText(handoffSystem(locale), user, SUMMARY_MAX_TOKENS, undefined, getSettings().conversationModel, 'summary')).trim()
+  const summary = (
+    await completeText(getSettings().conversationModel, locale, handoffSystem(locale), user, SUMMARY_MAX_TOKENS, AbortSignal.timeout(SUMMARY_TIMEOUT_MS), 'summary')
+  ).trim()
   if (!summary) throw new Error('summary is empty')
   const language = promptLanguage(locale)
   const length = summaryLength(language, summary)
