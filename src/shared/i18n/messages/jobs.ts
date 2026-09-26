@@ -1590,6 +1590,32 @@ export const jobs = defineMessages({
       'pt-BR': "A mesclagem deu conflito e parou. O worktree continua ali\n{detail}",
       'es-419': "La fusión tuvo conflictos y se detuvo. El worktree sigue ahí\n{detail}",
       'es-ES': "Ha habido un conflicto y la fusión se ha detenido. El worktree sigue ahí\n{detail}"
+    },
+    baseChanged: {
+      'ja-JP': '差分を見たあとで、リポジトリで開いているブランチが変わりました。新しい差分を確かめてから取り込んでください。',
+      'en-US': 'The branch checked out in the repository changed after the diff was shown. Check the new diff before merging.',
+      'fr-FR': "La branche active du dépôt a changé depuis l'affichage des modifications. Vérifiez les nouvelles modifications avant de fusionner.",
+      'de-DE': 'Der ausgecheckte Branch des Repositorys hat sich geändert, seit die Änderungen angezeigt wurden. Sehen Sie sich die neuen Änderungen an, bevor Sie übernehmen.',
+      'hi-IN': 'बदलाव दिखाए जाने के बाद रिपॉज़िटरी में खुली ब्रांच बदल गई। मर्ज करने से पहले नए बदलाव देखें।',
+      'id-ID': 'Branch yang sedang dibuka di repositori berubah setelah perubahannya ditampilkan. Periksa perubahan yang baru sebelum menggabungkan.',
+      'it-IT': 'Il branch attivo nel repository è cambiato dopo che le modifiche sono state mostrate. Controlla le nuove modifiche prima di integrarle.',
+      'ko-KR': '변경을 보여 준 뒤에 저장소에서 체크아웃한 브랜치가 바뀌었습니다. 새 변경을 확인한 뒤에 병합하십시오.',
+      'pt-BR': 'O branch aberto no repositório mudou depois que as alterações foram mostradas. Confira as novas alterações antes de mesclar.',
+      'es-419': 'La rama activa del repositorio cambió después de mostrar los cambios. Revisa los cambios nuevos antes de fusionar.',
+      'es-ES': 'La rama activa del repositorio ha cambiado después de mostrar los cambios. Revisa los cambios nuevos antes de fusionar.'
+    },
+    noCommonHistory: {
+      'ja-JP': 'リポジトリで開いているブランチには、このジョブと共通の履歴がありません。ジョブを始めたブランチを開いてから取り込んでください。',
+      'en-US': 'The branch checked out in the repository shares no history with this job. Check out the branch the job started from before merging.',
+      'fr-FR': "La branche active du dépôt n'a aucun historique en commun avec ce job. Passez sur la branche d'où le job est parti avant de fusionner.",
+      'de-DE': 'Der ausgecheckte Branch des Repositorys hat keinen gemeinsamen Verlauf mit diesem Job. Checken Sie vor dem Übernehmen den Branch aus, von dem der Job ausging.',
+      'hi-IN': 'रिपॉज़िटरी में खुली ब्रांच का इस जॉब के साथ कोई साझा इतिहास नहीं है। मर्ज करने से पहले वह ब्रांच खोलें जिससे जॉब शुरू हुई थी।',
+      'id-ID': 'Branch yang sedang dibuka di repositori tidak punya riwayat yang sama dengan pekerjaan ini. Buka branch tempat pekerjaan ini dimulai sebelum menggabungkan.',
+      'it-IT': "Il branch attivo nel repository non ha storia in comune con questo incarico. Passa al branch da cui è partito l'incarico prima di integrare.",
+      'ko-KR': '저장소에서 체크아웃한 브랜치에는 이 작업과 공통된 기록이 없습니다. 작업을 시작한 브랜치를 체크아웃한 뒤에 병합하십시오.',
+      'pt-BR': 'O branch aberto no repositório não tem histórico em comum com este job. Abra o branch de onde o job partiu antes de mesclar.',
+      'es-419': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.',
+      'es-ES': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.'
     }
   },
   confirm: {

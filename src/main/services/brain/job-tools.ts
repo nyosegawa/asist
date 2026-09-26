@@ -423,9 +423,11 @@ export function jobTools(locale: ConversationLocale): Def[] {
         const job = requireJob(input)
         const commit = String(input.commit ?? '')
         let review
+        // A job with nothing to merge is refused before the user is asked about it.
         try {
           review = agentRunner.diff(job.id)
           if (review.commit !== commit) throw new Error(errorText('jobs.worktree.reviewStale'))
+          if (!review.stat) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
         } catch (err) {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
         }
@@ -434,7 +436,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         }
         let merged
         try {
-          merged = agentRunner.merge(job.id, commit)
+          merged = agentRunner.merge(job.id, commit, review.base)
         } catch (err) {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
         }

@@ -28,14 +28,14 @@ describe('renderer preload bridge contract', () => {
     const api = await loadPreload()
     expect(rendererApiContractError(api)).toBeNull()
     await api.jobCancel('running-job')
-    const diff = { commit: 'reviewed-commit', patch: '+change', stat: '1 file changed' }
+    const diff = { commit: 'reviewed-commit', base: 'merge-base', patch: '+change', stat: '1 file changed', submodules: [] }
     mocks.invoke.mockResolvedValueOnce(diff)
     expect(await api.jobDiff('worktree-job')).toEqual(diff)
-    await api.jobMerge('worktree-job', diff.commit)
+    await api.jobMerge('worktree-job', diff.commit, diff.base)
     expect(mocks.invoke.mock.calls).toEqual([
       [IpcChannel.JobCancel, 'running-job'],
       [IpcChannel.JobDiff, 'worktree-job'],
-      [IpcChannel.JobMerge, 'worktree-job', diff.commit]
+      [IpcChannel.JobMerge, 'worktree-job', diff.commit, diff.base]
     ])
   })
 

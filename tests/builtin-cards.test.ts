@@ -89,7 +89,7 @@ const api = {
   taskUpdate: vi.fn(async (id: string): Promise<Task> => taskOf(id, id, 'done', 0)),
   notesList: vi.fn(async () => []),
   jobLog: vi.fn(async () => []),
-  jobDiff: vi.fn(async () => ({ commit: 'abc', stat: '1 file changed', patch: '', submodules: [] })),
+  jobDiff: vi.fn(async () => ({ commit: 'abc', base: 'a0c', stat: '1 file changed', patch: '', submodules: [] })),
   jobMerge: vi.fn(async () => {}),
   jobDiscard: vi.fn(async () => {}),
   panelFetch: vi.fn(async (_type: string, props: Record<string, unknown>) => ({ props: { ...props, items: demoFileItems(props.paths as string[]) }, source: 'files' })),
@@ -447,10 +447,24 @@ describe('agent job card', () => {
     expect(api.jobDiff).toHaveBeenCalledWith(DEMO_JOB.id)
     expect(card.querySelector('.aj-diff')?.textContent).toContain('1 file changed')
     await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
-    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, 'abc')
+    expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, 'abc', 'a0c')
     expect(card.querySelector('.aj-summary')).toBeNull()
     expect(card.querySelector('.aj-log')).toBeNull()
     expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')
+  })
+
+  it('shows the current diff beside the reason when main refuses a merge because the repository moved to another branch', async () => {
+    useJobStore.setState({
+      jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],
+      logs: {}
+    })
+    api.jobMerge.mockRejectedValueOnce(new Error(errorText('jobs.merging.baseChanged')))
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'b1d', stat: '2 files changed', patch: '', submodules: [] })
+    await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
+    expect(api.jobDiff).toHaveBeenCalledTimes(2)
+    expect(card.querySelector('.aj-diff')?.textContent).toContain('2 files changed')
+    expect(card.querySelector('[role="alert"]')?.textContent).toBe(t('jobs.merging.baseChanged'))
   })
 
   it('offers only discarding a job whose merge conflicted, without showing an error for a diff it cannot merge', async () => {

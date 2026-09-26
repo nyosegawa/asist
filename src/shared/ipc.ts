@@ -517,6 +517,11 @@ export type JobMergeState = 'pending' | 'merged' | 'discarded' | 'unchanged' | '
 
 export interface JobDiff {
   commit: string
+  /**
+   * The merge base with the repository's HEAD the diff counts from. The merge refuses to go on when it has
+   * changed, since it would then apply changes the diff did not show.
+   */
+  base: string
   stat: string
   patch: string
   /** The submodules whose changes the worktree holds but no merge takes in (`AgentJob.worktree.submodules`). */
@@ -963,7 +968,7 @@ export interface RendererApi {
 
   jobCancel(id: string): Promise<void>
   /** Merges the worktree's changes into the user's repository, or discards them. The diff is what the user reviews before merging. */
-  jobMerge(id: string, commit: string): Promise<void>
+  jobMerge(id: string, commit: string, base: string): Promise<void>
   jobDiscard(id: string): Promise<void>
   jobDiff(id: string): Promise<JobDiff>
   jobList(): Promise<AgentJob[]>

@@ -43,10 +43,11 @@ describe('git service with an isolated worktree', () => {
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('hello\n')
     expect(git.commitAll(wt, 'asist: job').committed).toBe(true)
     expect(git.commitAll(wt, 'asist: job').committed).toBe(false)
-    const stat = git.diffStat(repo, 'asist/20260908-job')
+    const base = git.headCommit(repo)
+    const stat = git.diffStat(repo, base, 'asist/20260908-job')
     expect(stat).toContain('a.txt')
     expect(stat).toContain('b.txt')
-    expect(git.diffPatch(repo, 'asist/20260908-job')).toContain('+world')
+    expect(git.diffPatch(repo, base, 'asist/20260908-job')).toContain('+world')
     expect(git.isClean(repo)).toBe(true)
     expect(git.mergeNoFf(repo, 'asist/20260908-job', 'asist: job')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('new\n')
@@ -125,7 +126,7 @@ describe('git service with an isolated worktree', () => {
     // A regenerated lockfile of 5 MB, more than the 4 MB that git's output is otherwise read into.
     fs.writeFileSync(path.join(wt, 'package-lock.json'), `${'x'.repeat(99)}\n`.repeat(50_000))
     git.commitAll(wt, 'job')
-    const patch = git.diffPatch(repo, 'asist/lockfile')
+    const patch = git.diffPatch(repo, git.headCommit(repo), 'asist/lockfile')
     expect(patch.startsWith('diff --git a/package-lock.json')).toBe(true)
     expect(patch.length).toBeLessThan(61_000)
   })
@@ -173,6 +174,53 @@ describe('git service with an isolated worktree', () => {
     expect(scratch.map(([, state]) => state)).toEqual(scratch.map(() => 'free'))
     expect(fs.existsSync(lock)).toBe(false)
   })
+
+  it('brings the index up to HEAD when nothing is left to commit, so that a job whose staged change was undone on disk settles', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/undone')
+    const base = git.headCommit(repo)
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+    run(wt, ['add', '-A'])
+    run(wt, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'agent work'])
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'tried something\n')
+    run(wt, ['add', 'a.txt'])
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'hello\n')
+    expect(git.commitAll(wt, 'asist: job', base).committed).toBe(false)
+    expect(git.isSettled(wt)).toBe(true)
+  })
+
+  it('settles a worktree whose commit was made but whose index a crash left behind', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/crashed')
+    const base = git.headCommit(repo)
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+    // What commitAll does up to moving the branch, with the index never brought up to the new commit.
+    const staging = path.join(root, 'crashed-index')
+    fs.copyFileSync(path.resolve(wt, run(wt, ['rev-parse', '--git-path', 'index'])), staging)
+    const env = { ...process.env, GIT_INDEX_FILE: staging }
+    execFileSync('git', ['add', '-A'], { cwd: wt, env })
+    const tree = execFileSync('git', ['write-tree'], { cwd: wt, env, encoding: 'utf8' }).trim()
+    const commit = run(wt, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit-tree', tree, '-p', base, '-m', 'asist: job'])
+    run(wt, ['update-ref', 'HEAD', commit, base])
+    expect(git.isSettled(wt)).toBe(false)
+    expect(git.commitAll(wt, 'asist: job', base).committed).toBe(false)
+    expect(git.isSettled(wt)).toBe(true)
+    expect(git.headCommit(wt)).toBe(commit)
+  })
+
+  it('commits a change to thousands of paths, whose raw diff passes the output buffer git is otherwise read into', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/vendored')
+    const base = git.headCommit(repo)
+    const folder = path.join(wt, 'vendor', 'package')
+    fs.mkdirSync(folder, { recursive: true })
+    // 14,000 names of 200 characters make the raw diff about 4.4 MB, past the 4 MB git's output is otherwise read into.
+    for (let i = 0; i < 14_000; i++) fs.writeFileSync(path.join(folder, `${String(i).padStart(5, '0')}-${'x'.repeat(195)}.js`), '')
+    expect(git.commitAll(wt, 'asist: job', base).committed).toBe(true)
+    expect(git.hasChanges(repo, base, git.headCommit(wt))).toBe(true)
+    expect(git.diffStat(repo, base, git.headCommit(wt))).toContain('14000 files changed')
+    expect(git.isSettled(wt)).toBe(true)
+  }, 120_000)
 
   it('puts the branch back and leaves the index as it was when git cannot bring the index up to the new commit', () => {
     fs.writeFileSync(path.join(repo, 'c.txt'), 'new\n')

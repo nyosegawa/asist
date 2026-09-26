@@ -18,7 +18,7 @@ import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
 import type { AgentProcess } from './agent-process-lifetime'
 import { recoverAgentProcess } from './agent-process-identity'
-import { assertWorktreeReview, captureWorktree, readWorktreeDiff } from './job-worktree'
+import { assertWorktreeReview, captureWorktree, discardStat, mergeBase, readWorktreeDiff } from './job-worktree'
 import * as projectIndex from './project-index'
 import { installSkill } from './memory-curation-skill'
 import * as git from './git'
@@ -487,18 +487,20 @@ export function relocateArtifacts(artifacts: string[] | undefined, worktreeDir: 
 
 /**
  * Merges the worktree's changes into the user's repository. A conflict aborts the merge and keeps the
- * worktree. It asks nobody: the caller has shown the diff and had it approved, or, for the memory
- * curation, checked that the diff stays inside the memory folder.
+ * worktree. It asks nobody: the caller has shown the diff counted from `base` and had it approved, or, for
+ * the memory curation, checked that the diff stays inside the memory folder.
  */
-export function merge(id: string, commit: string): AgentJob {
+export function merge(id: string, commit: string, base: string): AgentJob {
   ensureLoaded()
   const entry = jobs.get(id)
   if (!entry?.job.worktree) throw new Error(errorText('jobs.merging.noChanges', { id }))
   assertWriterStopped(entry.job)
   assertWorktreeReview(entry.job, commit)
   const wt = entry.job.worktree
+  // Another branch checked out since the review would take in changes the diff did not show.
+  if (mergeBase(wt, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
   // A job whose only changes were to submodules waits with nothing a merge would take in.
-  if (!git.diffStat(wt.repo, commit)) throw new Error(errorText('jobs.merging.noChanges', { id }))
+  if (!git.hasChanges(wt.repo, base, commit)) throw new Error(errorText('jobs.merging.noChanges', { id }))
   if (!git.isClean(wt.repo)) throw new Error(errorText('jobs.merging.dirtyRepo'))
   const outcome = git.mergeNoFf(wt.repo, commit, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
@@ -558,7 +560,7 @@ export function discardPreview(id: string): DiscardPreview {
     repo: worktree.repo,
     dir: worktree.dir,
     branch: worktree.branch,
-    stat: git.diffStat(worktree.repo, worktree.branch),
+    stat: discardStat(worktree),
     submodules: worktree.submodules ?? []
   }
 }

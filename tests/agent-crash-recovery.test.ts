@@ -121,7 +121,7 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
     expect(agent.get(job.id)).toMatchObject({ status: 'stopping', processIdentity: job.processIdentity })
     expect(fs.existsSync(job.cwd)).toBe(true)
     expect(() => agent!.diff(job.id)).toThrow(writerRunning)
-    expect(() => agent!.merge(job.id, 'unreviewed')).toThrow(writerRunning)
+    expect(() => agent!.merge(job.id, 'unreviewed', 'unreviewed')).toThrow(writerRunning)
     expect(() => agent!.discard(job.id)).toThrow(writerRunning)
     await expect(agent.continueJob(job.id, 'continue')).rejects.toThrow(writerRunning)
     await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)

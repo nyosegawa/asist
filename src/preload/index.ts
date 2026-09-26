@@ -108,7 +108,7 @@ const api: RendererApi = {
   onSetupProgress: subscribe(IpcChannel.SetupProgress),
 
   jobCancel: (id) => ipcRenderer.invoke(IpcChannel.JobCancel, id),
-  jobMerge: (id, commit) => ipcRenderer.invoke(IpcChannel.JobMerge, id, commit),
+  jobMerge: (id, commit, base) => ipcRenderer.invoke(IpcChannel.JobMerge, id, commit, base),
   jobDiscard: (id) => ipcRenderer.invoke(IpcChannel.JobDiscard, id),
   jobDiff: (id) => ipcRenderer.invoke(IpcChannel.JobDiff, id),
   jobList: () => ipcRenderer.invoke(IpcChannel.JobList),

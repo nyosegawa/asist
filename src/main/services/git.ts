@@ -123,6 +123,13 @@ const SUBMODULE_MODE = '160000'
 /** A pathspec that names exactly this path and whatever lies under it. */
 const literal = (file: string): string => `:(literal)${file}`
 
+/**
+ * For output that grows with the number of changed paths. A job that adds a large package passes the default
+ * 4 MB, and git would then be stopped on every attempt to settle the job: 14,000 new paths of 200 characters
+ * made a raw diff of 4.4 MB (2026-09-26).
+ */
+const WHOLE = { maxBuffer: Infinity }
+
 export interface CommitOutcome {
   committed: boolean
   /** The submodule entries, and .gitmodules, that differed from `base` and that the commit kept as base has them. */
@@ -145,8 +152,8 @@ export interface CommitOutcome {
 export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOutcome {
   const head = hasHead(dir) ? headCommit(dir) : null
   // The status does not show a submodule entry that was committed in dir since base, which has to be put back too.
-  const pending = git(dir, ['status', '--porcelain']).trim() !== '' ||
-    (head !== null && submoduleEntries(git(dir, ['diff-tree', '-r', '-z', '--no-renames', base, head])).length > 0)
+  const pending = git(dir, ['status', '--porcelain'], WHOLE).trim() !== '' ||
+    (head !== null && submoduleEntries(git(dir, ['diff-tree', '-r', '-z', '--no-renames', base, head], WHOLE)).length > 0)
   if (!pending) return { committed: false, leftOut: [] }
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
   const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
@@ -155,10 +162,16 @@ export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOu
     if (fs.existsSync(index)) fs.copyFileSync(index, staging)
     const env = { GIT_INDEX_FILE: staging }
     git(dir, ['add', '-A'], { env })
-    const leftOut = head ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env })) : []
+    const leftOut = head ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env, ...WHOLE })) : []
     if (leftOut.length > 0) git(dir, ['restore', '--staged', `--source=${base}`, '--', ...leftOut.map(literal)], { env })
     const tree = git(dir, ['write-tree'], { env }).trim()
-    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) return { committed: false, leftOut }
+    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) {
+      // Nothing is left to commit, but the index can still disagree with HEAD: a change staged and then
+      // undone on disk, or a commit whose index was never brought up to it before a crash. Left so, the
+      // job would never count as settled.
+      git(dir, ['add', '-A'])
+      return { committed: false, leftOut }
+    }
     const commit = git(dir, [
       '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
     ]).trim()
@@ -262,21 +275,41 @@ function writtenWhileUninitialized(folder: string): boolean {
  */
 export function isSettled(dir: string, leftOut: readonly string[] = []): boolean {
   const excluded = leftOut.map((file) => `:(exclude,literal)${file}`)
-  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', ...excluded]).trim() === ''
-}
-
-/** The commit a merge of `commit` into the repository's HEAD starts from. */
-export function mergeBase(repo: string, commit: string): string {
-  return git(repo, ['merge-base', 'HEAD', commit]).trim()
+  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', ...excluded], WHOLE).trim() === ''
 }
 
 /**
- * A summary of what a merge of `commit` would bring into the repository's HEAD: the changes since their merge
- * base, not since the commit a job started from, whose branch may have taken in the user's own commits since.
- * An empty string means nothing.
+ * The commit a merge of `commit` into the repository's HEAD starts from, or null when they share no history,
+ * as with a branch made by `checkout --orphan`, or when HEAD has no commit yet.
  */
-export function diffStat(repo: string, commit: string): string {
-  return git(repo, ['diff', '--stat', `HEAD...${commit}`]).trim()
+export function mergeBase(repo: string, commit: string): string | null {
+  if (!hasHead(repo)) return null
+  try {
+    return git(repo, ['merge-base', 'HEAD', commit]).trim()
+  } catch (error) {
+    // merge-base exits with 1 and prints nothing when the two have no common ancestor.
+    if ((error as { status?: number }).status === 1) return null
+    throw error
+  }
+}
+
+/** Whether anything changed from base to commit. */
+export function hasChanges(repo: string, base: string, commit: string): boolean {
+  try {
+    git(repo, ['diff', '--quiet', base, commit])
+    return false
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return true
+    throw error
+  }
+}
+
+/**
+ * A summary of the changes from base to commit, listing at most the first 500 files before its total line.
+ * An empty string means nothing changed.
+ */
+export function diffStat(repo: string, base: string, commit: string): string {
+  return git(repo, ['diff', '--stat', '--stat-count=500', base, commit]).trim()
 }
 
 export interface DiffEntry {
@@ -285,23 +318,22 @@ export interface DiffEntry {
   mode: string
 }
 
-/** Every path a merge of `commit` would change (see diffStat), with its mode afterwards. Renames count as a deletion and an addition. */
-export function diffEntries(repo: string, commit: string): DiffEntry[] {
-  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', `HEAD...${commit}`]))
+/** Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an addition. */
+export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
+  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', base, commit], WHOLE))
     .map((entry) => ({ path: entry.path, mode: entry.newMode }))
 }
 
 /**
- * The patch of what a merge of `commit` would bring in (see diffStat), cut at the limit. git is stopped once
- * its output passes four bytes for each character kept, so a diff of any size is read only that far; a
- * character takes at most three bytes of UTF-8, so what was read always reaches past the limit. The note on
- * the cut is part of the patch, which the merge view shows and the LLM reads in get_agent_job, so it is
- * written in the language of the conversation.
+ * The diff from base to commit, cut at the limit. git is stopped once its output passes four bytes for each
+ * character kept, so a diff of any size is read only that far; a character takes at most three bytes of
+ * UTF-8, so what was read always reaches past the limit. The note on the cut is part of the patch, which the
+ * merge view shows and the LLM reads in get_agent_job, so it is written in the language of the conversation.
  */
-export function diffPatch(repo: string, commit: string, maxChars = 60_000): string {
+export function diffPatch(repo: string, base: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = git(repo, ['diff', `HEAD...${commit}`], { maxBuffer: maxChars * 4 })
+    patch = git(repo, ['diff', base, commit], { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }

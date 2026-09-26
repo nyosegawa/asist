@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
     isGitRepo: vi.fn(() => false),
     startIsolated: vi.fn(() => ({ id: 'w1', title: 'fix', cwd: '/ws/wt', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } })),
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
-    diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '', submodules: [] })),
+    diff: vi.fn(() => ({ commit: 'reviewed', base: 'merge-base', stat: 'README.md | 2 +-', patch: '', submodules: [] })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
     discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-', submodules: [] }))
   },
@@ -517,7 +517,7 @@ describe('brain tools registry', () => {
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     const merged = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, ctx)
     expect(JSON.parse(merged.content)).toEqual({ merged: true, jobId: 'w1', repo: '/repo' })
-    expect(mocks.agent.merge).toHaveBeenCalledWith('w1', 'reviewed')
+    expect(mocks.agent.merge).toHaveBeenCalledWith('w1', 'reviewed', 'merge-base')
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     mocks.agent.merge.mockReturnValueOnce({ id: 'w1', mergeState: 'conflict' } as never)
     const conflict = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, ctx)
@@ -564,6 +564,17 @@ describe('brain tools registry', () => {
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'older' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
+    expect(mocks.requestConfirm).not.toHaveBeenCalled()
+    expect(mocks.agent.merge).not.toHaveBeenCalled()
+  })
+
+  it('refuses to merge a job with nothing to merge before asking the user about it', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', stat: '', patch: '', submodules: ['vendor/sub'] })
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain(ja('jobs.merging.noChanges', { id: 'w1' }))
     expect(mocks.requestConfirm).not.toHaveBeenCalled()
     expect(mocks.agent.merge).not.toHaveBeenCalled()
   })

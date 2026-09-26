@@ -74,20 +74,29 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const conflict = job.mergeState === 'conflict'
-  useEffect(() => {
+  const loadDiff = (): void => {
     setDiff(null)
-    setError(null)
-    if (conflict) return
     void window.api
       .jobDiff(job.id)
       .then(setDiff)
       .catch((err: unknown) => setError(cleanError(err)))
+  }
+  useEffect(() => {
+    setError(null)
+    if (conflict) {
+      setDiff(null)
+      return
+    }
+    loadDiff()
   }, [job.id, conflict, job.mergeState, job.worktree?.commit])
-  const act = (run: () => Promise<void>): void => {
+  const act = (run: () => Promise<void>, onFailure?: () => void): void => {
     setBusy(true)
     setError(null)
     void run()
-      .catch((err: unknown) => setError(cleanError(err)))
+      .catch((err: unknown) => {
+        setError(cleanError(err))
+        onFailure?.()
+      })
       .finally(() => setBusy(false))
   }
   return (
@@ -116,7 +125,13 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       )}
       <Actions>
         {!conflict && (
-          <Action tone="primary" disabled={busy || !diff?.stat} onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit))}>
+          <Action
+            tone="primary"
+            disabled={busy || !diff?.stat}
+            // The diff on the card can be out of date once the repository has another branch checked out, and
+            // main refuses the merge then, so the card shows the current one beside the reason.
+            onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit, diff.base), loadDiff)}
+          >
             {t('jobs.card.merge.merge')}
           </Action>
         )}

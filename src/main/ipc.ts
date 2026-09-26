@@ -409,8 +409,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.TtsPrepareCancel, () => qwenTts.cancelPreparation())
 
   handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
-  handle(IpcChannel.JobMerge, (_e, id: string, commit: string) => {
-    agent.merge(String(id), commit)
+  handle(IpcChannel.JobMerge, (_e, id: string, commit: string, base: string) => {
+    agent.merge(String(id), String(commit), String(base))
   })
   handle(IpcChannel.JobDiscard, (_e, id: string) => {
     agent.discard(String(id))
