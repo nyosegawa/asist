@@ -1,32 +1,54 @@
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { baseName, dirName, isAbsolutePath, pathInside, samePath, trimTrailingSeparator } from '@shared/file-path'
+import { baseName, dirName, isAbsolutePath, pathInside, pathNames, samePath, trimTrailingSeparator } from '@shared/file-path'
 
-const posixPaths = ['/', '/Users', '/Users/me/repo', '/Users/me/repo/', '/Users/me//repo/a.md', 'rel', 'rel/a.md', 'rel/a/']
+const posixPaths = [
+  '/',
+  '//',
+  '/Users',
+  '/Users/me/repo',
+  '/Users/me/repo/',
+  '/Users/me//repo/a.md',
+  '//a',
+  '///a',
+  '//server/share/a',
+  '/Users/me/a\\b.txt',
+  '/Users/me/dir\\',
+  'rel',
+  'rel/a.md',
+  'rel/a/',
+  'rel\\a.md',
+  ''
+]
 const windowsPaths = [
   'C:\\',
   'C:/',
+  'C:',
   'C:\\Users',
   'C:\\Users\\me\\repo',
   'C:\\Users\\me\\repo\\',
   'C:/Users/me/repo/a.md',
   'C:\\Users/me\\repo/a.md',
   'C:rel\\a.md',
+  '\\\\server\\share',
+  '\\\\server\\share\\',
   '\\\\server\\share\\docs\\a.md',
-  'rel\\a.md'
+  '\\Users\\me'
 ]
 
 describe('file-path', () => {
   it('takes "/", a drive letter with either separator and a UNC path as absolute, and nothing relative to a folder or a drive', () => {
-    for (const p of ['/Users/me', 'C:\\Users\\me', 'C:/Users/me', 'c:\\', '\\\\server\\share\\a.md']) expect(isAbsolutePath(p)).toBe(true)
-    for (const p of ['rel/a.md', 'rel\\a.md', 'C:rel', '~/a.md', '', './a']) expect(isAbsolutePath(p)).toBe(false)
+    for (const p of ['/Users/me', 'C:\\Users\\me', 'C:/Users/me', 'c:\\', '\\\\server\\share\\a.md']) expect([p, isAbsolutePath(p)]).toEqual([p, true])
+    for (const p of ['rel/a.md', 'rel\\a.md', 'C:rel', '~/a.md', '', './a', '\\\\n', '\\Users\\me']) expect([p, isAbsolutePath(p)]).toEqual([p, false])
   })
 
-  it('gives the same name and folder as path.posix for POSIX paths', () => {
+  it('gives exactly what path.posix gives for a path that is not in a Windows form, where "\\" belongs to a name', () => {
     for (const p of posixPaths) {
       expect([p, baseName(p)]).toEqual([p, path.posix.basename(p)])
-      expect([p, path.posix.normalize(dirName(p))]).toEqual([p, path.posix.normalize(path.posix.dirname(p))])
+      expect([p, dirName(p)]).toEqual([p, path.posix.dirname(p)])
     }
+    expect(trimTrailingSeparator('/Users/me/dir\\')).toBe('/Users/me/dir\\')
+    expect(pathInside('/a', '/a\\b')).toBeNull()
   })
 
   it('gives the same name and folder as path.win32 for Windows paths, whichever separator they use', () => {
@@ -36,17 +58,15 @@ describe('file-path', () => {
     }
   })
 
-  it('keeps the server and share of a UNC path together as its root', () => {
-    expect(dirName('\\\\server\\share\\a.md')).toBe('\\\\server\\share\\')
-    expect(dirName('\\\\server\\share\\')).toBe('\\\\server\\share\\')
-    expect(baseName('\\\\server\\share\\')).toBe('')
+  it('returns the folder of a Windows path as the beginning of the path as written', () => {
+    for (const p of windowsPaths) expect([p, p.startsWith(dirName(p))]).toEqual([p, true])
   })
 
-  it('returns the folder as the beginning of the path as written', () => {
-    for (const p of [...posixPaths, ...windowsPaths]) {
-      const folder = dirName(p)
-      if (folder !== '.') expect([p, p.startsWith(folder)]).toEqual([p, true])
-    }
+  it('lists the names after the root, splitting a Windows path at either separator', () => {
+    expect(pathNames('/Users/me//repo/')).toEqual(['Users', 'me', 'repo'])
+    expect(pathNames('/Users/me/a\\b.txt')).toEqual(['Users', 'me', 'a\\b.txt'])
+    expect(pathNames('C:\\Users/me\\repo')).toEqual(['Users', 'me', 'repo'])
+    expect(pathNames('\\\\server\\share\\docs\\a.md')).toEqual(['docs', 'a.md'])
   })
 
   it('trims the separators at the end but keeps a root whole', () => {
@@ -76,5 +96,6 @@ describe('file-path', () => {
   it('compares a POSIX path exactly apart from a trailing separator', () => {
     expect(samePath('/Users/me/asist', '/Users/me/asist/')).toBe(true)
     expect(samePath('/Users/me/asist', '/Users/me/Asist')).toBe(false)
+    expect(samePath('/Users/me/dir', '/Users/me/dir\\')).toBe(false)
   })
 })

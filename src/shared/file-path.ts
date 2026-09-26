@@ -1,26 +1,32 @@
 /**
  * Path handling for shared and renderer code, which cannot import node:path. A path reaches them as the
- * OS wrote it, so each function takes both the POSIX form and the Windows forms: a drive letter followed
- * by either separator, as git writes C:/Users/..., and a UNC path \\server\share\....
+ * OS wrote it, and its form decides the rules: a path in a Windows form, starting with a drive letter or
+ * "\" as in \\server\share, takes both separators as Windows does, and every other path follows the POSIX
+ * rules, where "\" is part of a name. Each function gives what path.posix or path.win32 gives for its form.
  */
 
-/** The start of an absolute path: "/", a drive letter with either separator, or the "\\" of a UNC path. */
-export const ABSOLUTE_PATH_START = String.raw`(?:/|[A-Za-z]:[\\/]|\\\\)`
+const DRIVE = /^[A-Za-z]:/
+const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/])/
 
-const ABSOLUTE = new RegExp(`^${ABSOLUTE_PATH_START}`)
-const WINDOWS_FORM = /^(?:[A-Za-z]:|\\\\)/
+/** Whether p is written in a Windows form: a drive letter, or "\" as in \\server\share and \folder. */
+const isWindowsForm = (p: string): boolean => DRIVE.test(p) || p.startsWith('\\')
 
-const isSeparator = (char: string | undefined): boolean => char === '/' || char === '\\'
+type SeparatorTest = (char: string | undefined) => boolean
+
+const posixSeparator: SeparatorTest = (char) => char === '/'
+const windowsSeparator: SeparatorTest = (char) => char === '/' || char === '\\'
+
+const separatorOf = (p: string): SeparatorTest => (isWindowsForm(p) ? windowsSeparator : posixSeparator)
 
 /**
- * How many characters of p name its root: "/" or "\", a drive such as "C:" or "C:\", or "\\server\share\"
- * with the separator after the share. A relative path has none.
+ * How many characters of p name its root. POSIX has "/" alone; Windows has a drive such as "C:" or "C:\",
+ * "\\server\share\" with the separator after the share, and "\" for the root of the current drive.
  */
 function rootLength(p: string): number {
-  if (/^[A-Za-z]:/.test(p)) return isSeparator(p[2]) ? 3 : 2
-  const unc = /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+[\\/]?/.exec(p)
-  if (unc) return unc[0].length
-  return isSeparator(p[0]) ? 1 : 0
+  if (!isWindowsForm(p)) return p.startsWith('/') ? 1 : 0
+  if (DRIVE.test(p)) return windowsSeparator(p[2]) ? 3 : 2
+  const unc = /^\\\\[^\\/]+[\\/]+[^\\/]+[\\/]?/.exec(p)
+  return unc ? unc[0].length : 1
 }
 
 /** Whether p names a place without depending on a current folder or a current drive. */
@@ -30,42 +36,90 @@ export function isAbsolutePath(p: string): boolean {
 
 /** p without the separators at its end, except those that belong to its root, so "/" and "C:\" stay as they are. */
 export function trimTrailingSeparator(p: string): string {
+  const isSeparator = separatorOf(p)
   const root = rootLength(p)
   let end = p.length
   while (end > root && isSeparator(p[end - 1])) end--
   return p.slice(0, end)
 }
 
-/** The last name in p, as path.basename gives it; the root alone has none. */
+/** The last name in p, as path.basename gives it. */
 export function baseName(p: string): string {
-  const trimmed = trimTrailingSeparator(p)
-  const root = rootLength(trimmed)
-  let start = trimmed.length
-  while (start > root && !isSeparator(trimmed[start - 1])) start--
-  return trimmed.slice(start)
+  const isSeparator = separatorOf(p)
+  let start = isWindowsForm(p) && DRIVE.test(p) ? 2 : 0
+  let end = -1
+  for (let i = p.length - 1; i >= start; i--) {
+    if (!isSeparator(p[i])) {
+      if (end === -1) end = i + 1
+    } else if (end !== -1) {
+      start = i + 1
+      break
+    }
+  }
+  return end === -1 ? '' : p.slice(start, end)
 }
 
 /**
- * The folder that holds p, as path.dirname gives it: always the beginning of p as written, the root for
- * a name directly under it, and "." for a single relative name.
+ * The folder that holds p: exactly what path.posix.dirname gives for a POSIX path, and for a Windows path
+ * the root for a name directly under it and otherwise the beginning of p up to the separators before the
+ * last name. A single relative name gives ".".
  */
 export function dirName(p: string): string {
+  if (!isWindowsForm(p)) return posixDirName(p)
   const root = rootLength(p)
   let end = trimTrailingSeparator(p).length
-  while (end > root && !isSeparator(p[end - 1])) end--
-  while (end > root && isSeparator(p[end - 1])) end--
-  return end === 0 ? '.' : p.slice(0, end)
+  while (end > root && !windowsSeparator(p[end - 1])) end--
+  while (end > root && windowsSeparator(p[end - 1])) end--
+  return p.slice(0, end)
+}
+
+/** path.posix.dirname, including its "//" for a name under a path that starts with two slashes. */
+function posixDirName(p: string): string {
+  if (p === '') return '.'
+  const hasRoot = p.startsWith('/')
+  let end = -1
+  let afterName = false
+  for (let i = p.length - 1; i >= 1; i--) {
+    if (p[i] !== '/') afterName = true
+    else if (afterName) {
+      end = i
+      break
+    }
+  }
+  if (end === -1) return hasRoot ? '/' : '.'
+  return hasRoot && end === 1 ? '//' : p.slice(0, end)
+}
+
+/** The names in p after its root, in order, leaving out the empty ones between repeated separators. */
+export function pathNames(p: string): string[] {
+  const isSeparator = separatorOf(p)
+  const names: string[] = []
+  let name = ''
+  for (const char of p.slice(rootLength(p))) {
+    if (!isSeparator(char)) name += char
+    else if (name) {
+      names.push(name)
+      name = ''
+    }
+  }
+  if (name) names.push(name)
+  return names
+}
+
+/** The separator p is shown with: "\" for a path in a Windows form and "/" for any other. */
+export function displaySeparator(p: string): string {
+  return isWindowsForm(p) ? '\\' : '/'
 }
 
 /**
- * Whether two absolute paths name the same place as written. A path in the Windows form compares without
- * regard to the separator or the letter case, as Windows matches names; a POSIX path compares exactly.
+ * Whether two absolute paths name the same place as written. Two paths in a Windows form compare without
+ * regard to the separator or the letter case, as Windows matches names; any other pair compares exactly.
  * Neither side is looked up on disk, so a link and its target differ.
  */
 export function samePath(a: string, b: string): boolean {
   const left = trimTrailingSeparator(a)
   const right = trimTrailingSeparator(b)
-  if (!WINDOWS_FORM.test(left) || !WINDOWS_FORM.test(right)) return left === right
+  if (!isWindowsForm(left) || !isWindowsForm(right)) return left === right
   const folded = (p: string): string => p.replace(/\//g, '\\').toLowerCase()
   return folded(left) === folded(right)
 }
@@ -76,6 +130,7 @@ export function samePath(a: string, b: string): boolean {
  * compared as samePath compares them.
  */
 export function pathInside(root: string, p: string): string | null {
+  const isSeparator = separatorOf(root)
   const base = trimTrailingSeparator(root)
   if (!samePath(p.slice(0, base.length), base)) return null
   const rest = p.slice(base.length)

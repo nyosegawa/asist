@@ -33,6 +33,14 @@ describe('asist-file:// URLs and paths', () => {
     expect(filePathFromUrl('asist-file://relative/a.png')).toBeNull()
   })
 
+  it('refuses a URL with a host, localhost included, on macOS and on Windows', async () => {
+    const { filePathFromUrl } = await load()
+    for (const windows of [false, true]) {
+      expect(filePathFromUrl('asist-file://localhost/etc/passwd', { windows })).toBeNull()
+      expect(filePathFromUrl('asist-file://nas/team/a.pdf', { windows })).toBeNull()
+    }
+  })
+
   it('keeps a #, a ? or a % in a file name as part of the path rather than a fragment or a query', async () => {
     const { fileUrl, filePathFromUrl } = await load()
     for (const file of ['/Users/me/Documents/C# notes.pdf', '/Users/me/Documents/why?.png', '/Users/me/Documents/Issue #12.png', '/Users/me/Documents/100%.png']) {
@@ -57,13 +65,12 @@ describe('asist-file:// URLs and paths', () => {
   it('writes a Windows path with its drive letter as file:// does and reads the same path back', async () => {
     const { fileUrl, filePathFromUrl } = await load()
     const windows = { windows: true }
-    for (const file of ['C:\\Users\\me\\Documents\\大川俊介.md', 'D:\\work\\C# notes\\why?.png', 'C:\\Users\\me\\100%.png', '\\\\nas\\team\\Q1, Q2.pdf']) {
+    for (const file of ['C:\\Users\\me\\Documents\\大川俊介.md', 'D:\\work\\C# notes\\why?.png', 'C:\\Users\\me\\100%.png', 'C:\\r\\Q1, Q2.pdf']) {
       const url = fileUrl(file, windows)
       expect([file, filePathFromUrl(url, windows)]).toEqual([file, file])
       expect([file, new URL(url).hash, new URL(url).search]).toEqual([file, '', ''])
     }
     expect(fileUrl('C:\\Users\\me\\a b.png', windows)).toBe('asist-file:///C:/Users/me/a%20b.png')
-    expect(fileUrl('\\\\nas\\team\\a.pdf', windows)).toBe('asist-file://nas/team/a.pdf')
   })
 
   it('reads the file a Windows page names in a relative link, and refuses a path without a drive or with an escaped separator', async () => {

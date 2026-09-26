@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
@@ -122,6 +122,21 @@ describe('allowedPath, the path check of show_files, asist-file:// and Reveal in
     writeFileSync(path.join(base, 'Reports', 'a.pdf'), 'x')
     expect(allowedPath(path.join(base, 'reports', 'a.pdf'), [base])).toBe(path.join(base, 'Reports', 'a.pdf'))
     expect(allowedPath(path.join(base, 'Reports', 'not-yet.pdf'), [base])).toBe(path.join(base, 'Reports', 'not-yet.pdf'))
+  })
+
+  it('allows the files under the other roots when one root cannot be resolved because its parent is unreadable', () => {
+    const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-roots-')))
+    mkdirSync(path.join(base, 'past', 'job'), { recursive: true })
+    mkdirSync(path.join(base, 'now'))
+    writeFileSync(path.join(base, 'now', 'report.md'), '# report')
+    chmodSync(path.join(base, 'past'), 0o000)
+    try {
+      const roots = [path.join(base, 'past', 'job'), path.join(base, 'now')]
+      expect(allowedPath(path.join(base, 'now', 'report.md'), roots)).toBe(path.join(base, 'now', 'report.md'))
+      expect(allowedPath(path.join(base, 'elsewhere.md'), roots)).toBeNull()
+    } finally {
+      chmodSync(path.join(base, 'past'), 0o700)
+    }
   })
 
   it('allows every path when the root folder "/" is an allowed root', () => {

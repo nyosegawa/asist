@@ -33,22 +33,34 @@ export function allowedPath(target: string, allowedRoots: readonly string[], sys
   const paths = system.path
   const windows = paths === path.win32
   if (!paths.isAbsolute(target)) return null
-  // NTFS opens "report.md:name" as the stream "name" of report.md, data that no listing of the folder shows.
-  if (windows && target.slice(paths.parse(target).root.length).includes(':')) return null
-  const writtenRoots = allowedRoots.filter((root) => paths.isAbsolute(root))
-  const roots = writtenRoots.flatMap((root) => realPath(root, system) ?? [])
+  const roots = allowedRoots.filter((root) => paths.isAbsolute(root))
   if (windows) {
+    // NTFS opens "report.md:name" as the stream "name" of report.md, data that no listing of the folder shows.
+    if (target.slice(paths.parse(target).root.length).includes(':')) return null
     // Resolving a path on a server connects to it and hands it the user's Windows credentials, so a target
-    // has to be on the drive or the share of an allowed root before the disk is asked about it.
+    // written on a drive or a share that no root is written on is refused before the disk is asked. A link
+    // under a root that points to another server is still followed.
     const volume = (p: string): string => paths.parse(paths.normalize(p)).root.toLowerCase()
-    if (![...writtenRoots, ...roots].some((root) => volume(root) === volume(target))) return null
+    if (!roots.some((root) => volume(root) === volume(target))) return null
   }
   const resolved = realPath(target, system)
   if (resolved === null) return null
   // Windows matches names regardless of letter case.
   const key = windows ? (p: string): string => p.toLowerCase() : (p: string): string => p
-  // path.join leaves a single separator at the end, so a root such as "/" or "C:\" is a prefix of every path on it too.
-  const allowed = roots.some((root) => key(resolved) === key(root) || key(resolved).startsWith(key(paths.join(root, paths.sep))))
+  const allowed = roots.some((root) => {
+    let resolvedRoot: string | null
+    try {
+      resolvedRoot = realPath(root, system)
+    } catch {
+      // A root the OS refuses to resolve, such as the folder of a past job whose parent became unreadable,
+      // allows nothing, and must not make the files under the other roots unreadable. A target inside it
+      // fails to resolve itself and throws above.
+      return false
+    }
+    if (resolvedRoot === null) return false
+    // path.join leaves a single separator at the end, so a root such as "/" or "C:\" is a prefix of every path on it too.
+    return key(resolved) === key(resolvedRoot) || key(resolved).startsWith(key(paths.join(resolvedRoot, paths.sep)))
+  })
   return allowed ? resolved : null
 }
 
