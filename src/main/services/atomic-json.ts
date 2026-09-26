@@ -23,7 +23,33 @@ const TRANSIENT_RENAME_ERRORS = new Set(['EPERM', 'EBUSY', 'EACCES'])
 
 /** A name in the target's folder that no other write shares, so that two overlapping writes never fill the same temporary file. */
 function temporaryPathBeside(target: string): string {
-  return `${target}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+  return `${target}.${randomBytes(6).toString('hex')}.tmp`
+}
+
+const isTemporaryOf = (target: string, name: string): boolean => {
+  const base = path.basename(target)
+  return name.startsWith(base) && /^\.[0-9a-f]{12}\.tmp$/.test(name.slice(base.length))
+}
+
+/**
+ * The temporary files of the writes this process has started and not finished. Any other temporary file
+ * of a target was left by a write that never finished, because the app quit or crashed in the middle of
+ * it, and ASIST runs as a single instance, so nothing will finish it. Nothing else would ever remove it,
+ * and one left by a save of the secrets still holds a key the user may have deleted since.
+ */
+const unfinished = new Set<string>()
+
+/** The temporary files among names, the entries of target's folder, that no write of this process is filling. */
+function abandonedBeside(target: string, names: string[]): string[] {
+  return names
+    .filter((name) => isTemporaryOf(target, name))
+    .map((name) => path.join(path.dirname(target), name))
+    .filter((file) => !unfinished.has(file))
+}
+
+/** The save does not depend on the leftover, and the next save of the target tries again. */
+const leftoverStays = (file: string, error: unknown): void => {
+  console.warn(`atomic write: ${path.basename(file)} could not be removed:`, error)
 }
 
 /** The wait before the next attempt at the rename, or null when the error is final. */
@@ -69,15 +95,21 @@ export async function replaceFileAtomic(
   signal?: AbortSignal
 ): Promise<void> {
   signal?.throwIfAborted()
-  await fs.mkdir(path.dirname(target), { recursive: true })
   const temporary = temporaryPathBeside(target)
+  unfinished.add(temporary)
   try {
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    for (const file of abandonedBeside(target, await fs.readdir(path.dirname(target)))) {
+      await fs.rm(file, { force: true }).catch((error: unknown) => leftoverStays(file, error))
+    }
     await fill(temporary)
     signal?.throwIfAborted()
     await renameOver(temporary, target)
   } catch (error) {
     await fs.rm(temporary, { force: true }).catch(() => undefined)
     throw error
+  } finally {
+    unfinished.delete(temporary)
   }
 }
 
@@ -92,6 +124,13 @@ export function writeFileAtomic(target: string, data: string, signal?: AbortSign
 /** The same write for a caller that reads and writes synchronously. */
 export function writeFileAtomicSync(target: string, data: string): void {
   fsSync.mkdirSync(path.dirname(target), { recursive: true })
+  for (const file of abandonedBeside(target, fsSync.readdirSync(path.dirname(target)))) {
+    try {
+      fsSync.rmSync(file, { force: true })
+    } catch (error) {
+      leftoverStays(file, error)
+    }
+  }
   const temporary = temporaryPathBeside(target)
   try {
     fsSync.writeFileSync(temporary, data, { encoding: 'utf8', mode: FILE_MODE, flag: 'wx', flush: true })

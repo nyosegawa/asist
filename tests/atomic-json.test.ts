@@ -131,3 +131,50 @@ describe('overlapping writes', () => {
     expect(fs.readdirSync(directory)).toEqual(['state.json'])
   })
 })
+
+describe('temporary files a write never finished', () => {
+  // A write the app quit or crashed in the middle of leaves its temporary file, named as every write names one.
+  const abandoned = (target: string): string => {
+    const file = `${target}.0123456789ab.tmp`
+    fs.writeFileSync(file, '"half written"')
+    return file
+  }
+
+  it('are removed by the next write of the same target, and one of another target is left alone', async () => {
+    abandoned(target)
+    const other = abandoned(path.join(directory, 'other.json'))
+
+    await writeJsonFileAtomic(target, 'after')
+    expect(fs.readdirSync(directory).sort()).toEqual([path.basename(other), 'state.json'])
+
+    abandoned(target)
+    writeJsonFileAtomicSync(target, 'again')
+    expect(fs.readdirSync(directory).sort()).toEqual([path.basename(other), 'state.json'])
+    expect(saved()).toBe('again')
+  })
+
+  it('does not include the temporary file of a write of this process that is still running', async () => {
+    const rename = fsp.rename.bind(fsp)
+    let entered!: () => void
+    const firstRenaming = new Promise<void>((resolve) => (entered = resolve))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.spyOn(fsp, 'rename')
+      .mockImplementationOnce(async (from, to) => {
+        entered()
+        await gate
+        await rename(from, to)
+      })
+      .mockImplementation(rename)
+
+    const first = writeJsonFileAtomic(target, 'first')
+    await firstRenaming
+    await writeJsonFileAtomic(target, 'second')
+    writeJsonFileAtomicSync(target, 'third')
+    release()
+    await first
+
+    expect(saved()).toBe('first')
+    expect(fs.readdirSync(directory)).toEqual(['state.json'])
+  })
+})
