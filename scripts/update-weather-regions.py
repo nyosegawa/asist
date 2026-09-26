@@ -27,8 +27,8 @@ for pref, pref_name, code, name in re.findall(r"=\s*'(\d+),([^,]+),(\d+),([^']+)
 by_name = {(m['prefectureId'], m['name']): m for m in municipalities}
 codes = {m['code'] for m in municipalities}
 # The villages of the Northern Territories have no forecast area of the Japan Meteorological Agency.
-# They are checked before any search by name, which would give 泊村 among them the area and the code
-# of 古宇郡泊村.
+# They are checked before any search by name, which would give "泊村" among them the area and the code
+# of "古宇郡泊村".
 northern_territories = {'01695', '01696', '01697', '01698', '01699', '01700'}
 missing = []
 aliases = []
@@ -47,8 +47,8 @@ for m in municipalities:
         missing.append(m); continue
     chosen = subareas[0]
     if area['class20s'][chosen]['name'] == m['name'] and chosen[:5] != m['code']:
-        # muni.js keeps some municipalities under an older code as well, as it keeps 富谷市 under 04423,
-        # the code of 富谷町. When another entry already carries the code found here, this one is that
+        # muni.js keeps some municipalities under an older code as well, as it keeps "富谷市" under 04423,
+        # the code of "富谷町". When another entry already carries the code found here, this one is that
         # municipality again and is left out.
         if chosen[:5] in codes:
             aliases.append(m); continue

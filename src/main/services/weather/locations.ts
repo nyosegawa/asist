@@ -33,7 +33,7 @@ for (const place of regions.municipalities) {
 /**
  * The municipalities a name stands for. A municipality without a forecast area is listed so that its
  * name is answered with location_unavailable rather than not found, so when it shares its name with
- * one that has an area, as 国後郡泊村 does with 古宇郡泊村 in 北海道, the name means the one with the area.
+ * one that has an area, as "国後郡泊村" does with "古宇郡泊村" in Hokkaido, the name means the one with the area.
  */
 function named(requested: string): Municipality[] {
   const all = names.get(requested) ?? []

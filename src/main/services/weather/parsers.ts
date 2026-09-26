@@ -17,7 +17,7 @@ export const numeric = (value: unknown): number | null =>
 
 /**
  * The icons of a sky the Japan Meteorological Agency writes in words. Fog has no icon of its own and is
- * drawn as cloud, as Open-Meteo's fog is; code 209 is 霧 alone and would otherwise read as no sky at all.
+ * drawn as cloud, as Open-Meteo's fog is; code 209 is "霧" alone and would otherwise read as no sky at all.
  */
 export function condition(label: string): WeatherCondition | null {
   const found: WeatherIcon[] = []

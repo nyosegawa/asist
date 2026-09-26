@@ -62,7 +62,7 @@ describe('resolving a weather location', () => {
   })
   it('resolves a municipality listed once, and a name shared with a place without a forecast to the place with one', () => {
     expect(resolve('宮城県富谷市').municipalityCode).toBe('04216')
-    // 国後郡泊村 has no forecast area, so 泊村 is 古宇郡泊村.
+    // "国後郡泊村" has no forecast area, so "泊村" is "古宇郡泊村".
     expect(resolve('北海道泊村').municipalityCode).toBe('01403')
     expect(resolve('泊村').municipalityCode).toBe('01403')
     expect(resolveWeatherLocation('色丹村')).toMatchObject({ status: 'location_unavailable' })
