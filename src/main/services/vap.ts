@@ -145,7 +145,7 @@ let prepareController: AbortController | null = null
 let onState: ((state: VapState) => void) | null = null
 /**
  * The worker has been running and nothing asked it to stop, so a worker that died on its own is started
- * again. A start that fails to load clears it: loading takes several seconds of CPU, which a worker that
+ * again. A restart that fails to load clears it: loading takes several seconds of CPU, which a worker that
  * cannot load would repeat on every watchdog tick.
  */
 let resident = false
