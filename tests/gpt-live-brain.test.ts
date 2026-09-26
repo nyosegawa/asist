@@ -252,6 +252,35 @@ describe('GPT-Live in front of brain', () => {
     await engine.stop()
   })
 
+  it('hands a backchannel the user says during the reading to the next request, without a turn or a record of its own', async () => {
+    mocks.rounds.push(async (round) => round.text('明日は晴れです。', '傘はいりません。'))
+    mocks.rounds.push(async (round) => round.text('どういたしまして。'))
+    const { engine, socket, turnEvents } = await setup()
+    socket.input('明日の天気は')
+    socket.delegate('dlg1')
+    await vi.advanceTimersByTimeAsync(600)
+    await turnsDone(turnEvents)
+    const recordsBefore = readLog().length
+    socket.output('明日は晴れですよ。')
+    socket.input('うん')
+    await vi.advanceTimersByTimeAsync(1600)
+    // The voice read on without delegating, so the backchannel waits for the next turn.
+    expect(startedTurns(turnEvents)).toHaveLength(1)
+    expect(readLog()).toHaveLength(recordsBefore)
+    socket.output('傘はいらないですね。')
+    await vi.advanceTimersByTimeAsync(1600)
+    socket.input('ありがとう')
+    socket.delegate('dlg2')
+    await vi.advanceTimersByTimeAsync(600)
+    await turnsDone(turnEvents)
+
+    expect(readLog().flatMap((r) => (r.kind === 'user' ? [r.text] : []))).toEqual(['明日の天気は', 'うん\nありがとう'])
+    const next = mocks.requests[1].messages
+    expect(next.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(textOf(next[2])).toMatch(/うん\nありがとう$/)
+    await engine.stop()
+  })
+
   it('records none of the line the voice says after it delegates, so the request starts and ends with the user’s words', async () => {
     mocks.rounds.push(async (round) => round.text('晴れです。'))
     const { engine, socket, turnEvents } = await setup()

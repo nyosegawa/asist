@@ -32,7 +32,8 @@ import type { TranscriptRole } from './transcripts'
  * records the utterances it is handed and its own replies, and the screen shows brain's text. What the
  * voice says besides is content-free by its instructions, and nothing marks where its reading of one
  * reply ends and the next begins, so its transcript could not be put under the right turn. The input
- * transcript is shown on screen while the user speaks.
+ * transcript is shown on screen while the user speaks, one line per utterance, and every utterance
+ * reaches brain: the one a delegation takes, together with those before it that no delegation took.
  *
  * A session is append-only and starts blank when it is reopened, so the recent history is handed over as
  * the initial context every time it opens.
@@ -125,6 +126,15 @@ export class GptLiveEngine extends LiveEngineBase {
   private readonly panelsByTurn = new Map<number, Set<string>>()
   /** The id the user's utterance in progress is shown under on screen, taken with its first fragment. */
   private utteranceId: number | null = null
+  /**
+   * The utterances that went quiet before a delegation took them, oldest first: the voice answered
+   * them by itself, or its delegation came late. The next brain turn the engine starts is handed them
+   * ahead of its own input, which brain records as that turn's user text. They are not recorded as
+   * turns of their own, because the history attaches records only to the newest turn with an input,
+   * and a user-only turn recorded while brain's turn runs would take that turn's messages and tool
+   * results away from it.
+   */
+  private unhanded: string[] = []
 
   constructor(
     info: LiveEngineInfo,
@@ -136,6 +146,8 @@ export class GptLiveEngine extends LiveEngineBase {
 
   override async stop(): Promise<void> {
     await super.stop()
+    // Turning the microphone off ends the conversation, so nothing heard before it waits for the next start.
+    this.unhanded = []
     this.unsubscribeTurns()
   }
 
@@ -197,7 +209,12 @@ export class GptLiveEngine extends LiveEngineBase {
     await ready
   }
 
-  protected async closeSession(): Promise<void> {
+  protected async closeSession(reason: 'idle' | 'stop' | 'error'): Promise<void> {
+    // The idle close comes only after the conversation has been quiet for liveIdleSeconds, and the
+    // voice's next session starts without what was said before it. A request made after that is a new
+    // one, and handing it the old utterances would have brain answer what the user had left. A session
+    // that ended on a fault did not end the conversation, so they wait for the next turn.
+    if (reason === 'idle') this.unhanded = []
     const socket = this.socket
     this.socket = null
     if (!socket) return
@@ -265,15 +282,24 @@ export class GptLiveEngine extends LiveEngineBase {
     }
     // A stop meanwhile ended the delegation, and closed the user's line as it was heard.
     if (!this.enabled) return
-    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
+    // A delegation that comes after its utterance went quiet finds nothing in progress, and the
+    // utterance is among the unhanded ones.
+    const text = this.withUnhanded(this.takeUserUtterance()) || promptText(conversationLocale(), NO_TRANSCRIPT)
     this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     this.touch()
   }
 
-  /** Hands the user's utterance to brain, which records it, and closes its line on screen under the id it was shown with. */
+  /** Takes the user's utterance in progress, closing its line on screen under the id it was shown with. */
   private takeUserUtterance(): string {
     const text = this.transcripts.take('user')
     if (text) this.closeUserLine(text)
+    return text
+  }
+
+  /** The input of a brain turn, after the utterances no delegation took, one per line. */
+  private withUnhanded(input: string): string {
+    const text = [...this.unhanded, input].filter(Boolean).join('\n')
+    this.unhanded = []
     return text
   }
 
@@ -292,12 +318,10 @@ export class GptLiveEngine extends LiveEngineBase {
     this.events.emit('event', { type: 'userTranscript', turnId: this.userLineId(), text, final: false })
   }
 
-  /**
-   * An utterance no delegation took, because it went quiet first or the engine stopped. The voice
-   * answered it by itself or not at all, and it stays on screen without being recorded.
-   */
+  /** An utterance that went quiet, or was still arriving when the engine stopped, before a delegation took it. */
   protected onTranscriptFinal(_role: TranscriptRole, text: string): void {
     this.closeUserLine(text)
+    this.unhanded.push(text)
   }
 
   /**
@@ -332,7 +356,10 @@ export class GptLiveEngine extends LiveEngineBase {
   async sendText(text: string): Promise<void> {
     await this.ensureOpen()
     this.think(`${marker(conversationLocale(), 'typedInputForVoice')} ${text}`)
-    this.deps.beginTurn(text, true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
+    // Typed input takes the spoken utterances before it too: left for a later delegation, they would
+    // reach brain after the typed text, though the user said them first. The turn is still marked as
+    // typed, since the typed text is what it answers.
+    this.deps.beginTurn(this.withUnhanded(text), true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
     this.touch()
   }
 

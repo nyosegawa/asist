@@ -352,6 +352,80 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('hands brain an utterance that went quiet before the delegation arrived', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気を調べて', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(1600)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(2200)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['明日の天気を調べて'])
+    expect(events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [e.text] : []))).toEqual(['明日の天気を調べて'])
+    expect(mocks.record).not.toHaveBeenCalled()
+    await engine.stop()
+  })
+
+  it('hands brain what the user said before the voice asked back together with the answer, as one input in order, and shows each on a line of its own', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'あれ調べて', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(1600)
+    socket.emit({ type: 'session.output_transcript.delta', delta: '何を調べる?', event_id: 'b', start_ms: 1, end_ms: 2 })
+    await vi.advanceTimersByTimeAsync(800)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気', event_id: 'c', start_ms: 2, end_ms: 3 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 3, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['あれ調べて\n明日の天気'])
+    const finals = events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [[e.turnId, e.text]] : []))
+    expect(finals).toEqual([[100, 'あれ調べて'], [101, '明日の天気']])
+    expect(mocks.record).not.toHaveBeenCalled()
+    await engine.stop()
+  })
+
+  it('hands typed input the utterances said before it, ahead of the typed text', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'タイマーをかけたい', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(1600)
+    await engine.sendText('3分')
+    expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([['タイマーをかけたい\n3分', true]])
+    await engine.stop()
+  })
+
+  it('does not hand a request made after the session closed for quiet what was said before that', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].started()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].emit({ type: 'session.input_transcript.delta', delta: 'おはよう', event_id: 'a', start_ms: 0, end_ms: 1 })
+    engine.activity(false)
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(sockets[0].closed).toBe(true)
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[1]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気は', event_id: 'b', start_ms: 0, end_ms: 1 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(600)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['明日の天気は'])
+    await engine.stop()
+  })
+
   it('hands the whole utterance to brain when its transcript only begins after the delegation, and closes one line for it', async () => {
     const { engine, sockets, events, beginTurn } = await setup()
     engine.activity(true)
@@ -440,7 +514,8 @@ describe('GptLiveEngine', () => {
     const socket = sockets[1]
     socket.started()
     await saying
-    // The next utterance is a line of its own, which the stopped delegation does not take for brain.
+    // The next utterance is a line of its own, which the stopped delegation does not take for brain,
+    // and the next delegation hands brain nothing heard before the stop.
     socket.emit({ type: 'session.output_transcript.delta', delta: 'うん。', event_id: 'b', start_ms: 1, end_ms: 2 })
     await vi.advanceTimersByTimeAsync(100)
     socket.emit({ type: 'session.input_transcript.delta', delta: 'はい', event_id: 'c', start_ms: 2, end_ms: 3 })
@@ -448,6 +523,9 @@ describe('GptLiveEngine', () => {
     const finals = events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [[e.turnId, e.text]] : []))
     expect(finals).toEqual([[100, '明日の天気は'], [101, 'はい']])
     expect(beginTurn).not.toHaveBeenCalled()
+    socket.emit({ type: 'session.delegation.created', event_id: 'd2', offset_ms: 3, delegation: { id: 'dlg2', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(2200)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['はい'])
     expect(mocks.record).not.toHaveBeenCalled()
     // Nobody has spoken since the start, so a session the provider ends stays closed.
     socket.fire('close', 1000, '')
