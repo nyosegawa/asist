@@ -1127,6 +1127,19 @@ export const files = defineMessages({
       'pt-BR': 'Voltar à página',
       'es-419': 'Volver a la página',
       'es-ES': 'Volver a la página'
+    },
+    moreColumns: {
+      'ja-JP': { other: '他 {count} 列' },
+      'en-US': { one: '{count} more column', other: '{count} more columns' },
+      'fr-FR': { one: '{count} colonne de plus', other: '{count} colonnes de plus' },
+      'de-DE': { one: 'noch {count} Spalte', other: 'noch {count} Spalten' },
+      'hi-IN': { one: '{count} और कॉलम', other: '{count} और कॉलम' },
+      'id-ID': { other: '{count} kolom lagi' },
+      'it-IT': { one: '{count} altra colonna', other: 'Altre {count} colonne' },
+      'ko-KR': { other: '외 {count}열' },
+      'pt-BR': { one: 'mais {count} coluna', other: 'mais {count} colunas' },
+      'es-419': { one: '{count} columna más', other: '{count} columnas más' },
+      'es-ES': { one: '{count} columna más', other: '{count} columnas más' }
     }
   },
   source: {

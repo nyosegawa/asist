@@ -13,6 +13,13 @@ import { useT } from '@/i18n'
  */
 const CARD_ROWS = 20
 const FOCUS_ROWS = 500
+/**
+ * The columns the table keeps. The frame scrolls sideways as well as down, so this is how far it is worth
+ * scrolling rather than what fits: the focus frame is 850px wide at window size l and the demo sheet's
+ * columns are 136 to 200px (measured 2026-09-26), so 50 columns are about eight frames across. With the
+ * 500 rows that keeps the table to about 25,000 cells.
+ */
+const FOCUS_COLUMNS = 50
 
 export interface SheetCell {
   text: string
@@ -21,10 +28,11 @@ export interface SheetCell {
 export interface SheetRows {
   name: string
   header: string[]
-  /** The rows below the header, as many as the focus view shows. */
+  /** The rows below the header, as many as the focus view shows, each cut to the columns it shows. */
   rows: SheetCell[][]
-  /** Every row below the header, counted for the note on how many are left out. */
+  /** Every row below the header and every column, counted for the notes on how many are left out. */
   rowCount: number
+  columnCount: number
 }
 
 const hasValue = (cell: XLSX.CellObject | undefined): cell is XLSX.CellObject => cell !== undefined && cell.v !== undefined && cell.v !== null
@@ -48,18 +56,18 @@ function usedRange(sheet: XLSX.WorkSheet): XLSX.Range | null {
 /** Turns a sheet into a header and rows. A sheet with no value gets neither. */
 export function sheetToRows(name: string, sheet: XLSX.WorkSheet): SheetRows {
   const range = usedRange(sheet)
-  if (!range) return { name, header: [], rows: [], rowCount: 0 }
+  if (!range) return { name, header: [], rows: [], rowCount: 0, columnCount: 0 }
   const grid: SheetCell[][] = []
   for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + FOCUS_ROWS); r++) {
     const row: SheetCell[] = []
-    for (let c = range.s.c; c <= range.e.c; c++) {
+    for (let c = range.s.c; c <= Math.min(range.e.c, range.s.c + FOCUS_COLUMNS - 1); c++) {
       const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined
       row.push(hasValue(cell) ? { text: cell.w ?? String(cell.v), numeric: cell.t === 'n' } : { text: '', numeric: false })
     }
     grid.push(row)
   }
   const [header, ...rows] = grid
-  return { name, header: header.map((cell) => cell.text), rows, rowCount: range.e.r - range.s.r }
+  return { name, header: header.map((cell) => cell.text), rows, rowCount: range.e.r - range.s.r, columnCount: range.e.c - range.s.c + 1 }
 }
 
 async function parseXlsx(bytes: ArrayBuffer): Promise<SheetRows[]> {
@@ -89,6 +97,7 @@ export const XlsxViewer: Viewer = ({ item, mode, size }) => {
   const limit = mode === 'card' ? CARD_ROWS : FOCUS_ROWS
   const shown = sheet.rows.slice(0, limit)
   const rest = sheet.rowCount - shown.length
+  const restColumns = sheet.columnCount - sheet.header.length
   return (
     <Frame mode={mode} size={size}>
       {sheets.length > 1 && (
@@ -127,6 +136,7 @@ export const XlsxViewer: Viewer = ({ item, mode, size }) => {
         </table>
       )}
       {rest > 0 && <p className="fv-note">{t('files.viewer.moreLines', { count: rest })}</p>}
+      {restColumns > 0 && <p className="fv-note">{t('files.viewer.moreColumns', { count: restColumns })}</p>}
     </Frame>
   )
 }
