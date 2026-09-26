@@ -1,0 +1,14 @@
+Image 1: style reference only (material, colors, lighting). Do not copy its scene or characters.
+
+Use: a sprite sheet of decorative props for an animated promo video; each prop will be cut out and animated on its own.
+Subject: six separate props arranged in a neat 3 by 2 grid, each one centered in its own cell with wide empty space around it, none touching or overlapping:
+1. a small desk calendar with two lavender binder rings, a periwinkle-blue header band and a cream page with a few small pastel dots (no numbers, no letters)
+2. a periwinkle-blue envelope with a cream letter peeking out of the top
+3. a round soft-yellow sun with short rounded rays and a tiny happy face
+4. a fluffy white cloud made of round puffs
+5. a small stack of three cream-gold coins, slightly fanned
+6. a round mint-green badge with a thick white check mark
+Scene: none, isolated props on a transparent background, no ground, no cast shadows.
+Style: soft 3D clay-and-felt miniature exactly like the reference: matte felt texture with fine fibers, rounded chunky shapes, pastel periwinkle, lavender, cream, mint and soft yellow, soft studio light from the upper left, gentle ambient occlusion, cute.
+Composition: straight-on view, all six props at a similar visual size, evenly spaced grid.
+Avoid: text, numbers, labels, grid lines, borders, extra props.
