@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
-import { tmpdir } from 'node:os'
+import { devNull, tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from './conversation-locale'
 import { childEnv, removeVariables } from './child-env'
+import { platformCapabilities } from './platform'
 import { resourcePath } from './resource-path'
 
 /**
@@ -15,11 +16,14 @@ import { resourcePath } from './resource-path'
  */
 
 /**
- * The git that ships in resources/git. The one in /usr/bin only asks to install the Command Line Tools
- * when they are missing, and the memory repository is opened at every start.
+ * The git that ships in resources/git: built from source on macOS, and MinGit on Windows, whose git.exe
+ * is the real one rather than the wrapper in cmd/. The one in /usr/bin only asks to install the Command
+ * Line Tools when they are missing, Windows has none, and the memory repository is opened at every start.
  */
 export function gitPath(): string {
-  return resourcePath(path.join('git', 'bin', 'git'))
+  return platformCapabilities().os === 'windows'
+    ? resourcePath(path.join('git', 'mingw64', 'bin', 'git.exe'))
+    : resourcePath(path.join('git', 'bin', 'git'))
 }
 
 /**
@@ -30,7 +34,19 @@ export function gitPath(): string {
 export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = childEnv({}, parent)
   removeVariables(env, (key) => key.startsWith('GIT_'))
-  return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+  const isolated = { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull }
+  if (platformCapabilities().os !== 'windows') return isolated
+  // git.exe puts its own mingw64\bin and usr\bin, where sh and the coreutils of hooks and scripts are,
+  // at the front of PATH only when MSYSTEM is unset. MinGit's etc/gitattributes is read even without the
+  // system configuration unless GIT_ATTR_NOSYSTEM is set. A job's worktree can nest deeper than MAX_PATH.
+  removeVariables(isolated, (key) => key === 'MSYSTEM')
+  return {
+    ...isolated,
+    GIT_ATTR_NOSYSTEM: '1',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.longpaths',
+    GIT_CONFIG_VALUE_0: 'true'
+  }
 }
 
 interface GitOptions {
