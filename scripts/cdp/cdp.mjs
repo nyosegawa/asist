@@ -25,6 +25,7 @@ function chromePath() {
   if (!found) throw new Error('Chrome が見つかりません。CHROME_BIN に実行ファイルの場所を書いてください')
   return found
 }
+
 /**
  * The paths of the demo. They resolve against the demo a run starts for itself, or, when a run attaches to
  * a Chrome that is already open, against the page that Chrome shows.
