@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 
 interface FieldDraftOptions<T> {
   format: (value: T) => string
@@ -24,19 +24,32 @@ interface FieldDraftProps {
  */
 export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOptions<T>): FieldDraftProps {
   const shown = format(saved)
-  // What was typed over the saved text. It stays on screen while its save is under way, including after a
-  // save that failed, and gives way once the saved value changes, by that save or from anywhere else.
-  const [draft, setDraft] = useState<{ text: string; over: string } | null>(null)
+  // What was typed over the saved text, and whether it has gone to be saved. It stays on screen while its
+  // save is under way, including after a save that failed, and gives way once the saved value changes, by
+  // that save or from anywhere else.
+  const [draft, setDraft] = useState<{ text: string; over: string; sent: boolean } | null>(null)
   const editing = draft !== null && draft.over === shown
+  const leave = (): void => {
+    if (!editing || draft.sent) return
+    const value = parse(draft.text)
+    if (value === null || format(value) === shown) {
+      setDraft(null)
+      return
+    }
+    setDraft({ ...draft, sent: true })
+    save(value)
+  }
+  // The field also goes away while it has focus, as when Escape closes the settings, and Chromium sends no
+  // blur then, so what was typed is saved on unmount by the same rule.
+  const leaveOnUnmount = useRef(leave)
+  useEffect(() => {
+    leaveOnUnmount.current = leave
+  })
+  useEffect(() => () => leaveOnUnmount.current(), [])
   return {
     value: editing ? draft.text : shown,
-    onChange: (event: ChangeEvent<FieldElement>) => setDraft({ text: event.target.value, over: shown }),
-    onBlur: () => {
-      if (!editing) return
-      const value = parse(draft.text)
-      if (value === null || format(value) === shown) setDraft(null)
-      else save(value)
-    },
+    onChange: (event: ChangeEvent<FieldElement>) => setDraft({ text: event.target.value, over: shown, sent: false }),
+    onBlur: leave,
     onKeyDown: (event: KeyboardEvent<FieldElement>) => {
       if (event.key === 'Enter' && event.currentTarget instanceof HTMLInputElement) event.currentTarget.blur()
     }

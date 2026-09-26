@@ -335,6 +335,30 @@ describe('settings fields that are saved once the user leaves them', () => {
     expect(folder.value).toBe('/Users/demo/ab')
     await act(async () => answers.splice(0).forEach((answer) => answer()))
     expect(folder.value).toBe('/Users/demo/ab')
+    // The folder has been saved once, and the page going away does not save it again.
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('saves a typed folder when the page goes away while the field still has focus, as when Escape closes the settings', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    folder.focus()
+    await act(async () => type(folder, '/Users/demo/projects'))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/projects' }]])
+  })
+
+  it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    days.focus()
+    await act(async () => type(days, '0'))
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings).not.toHaveBeenCalled()
   })
 
   it('lets a second readable folder be typed on a new line, and saves the list without blank lines once the field is left', async () => {
