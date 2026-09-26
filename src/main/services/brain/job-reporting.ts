@@ -1,5 +1,5 @@
 import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
-import type { TurnPlaybackAckStatus } from '@shared/ipc'
+import type { TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
 import { errMessage } from '@shared/api-errors'
 import { PlaybackDeliveryTracker, type PlaybackDeliveryOutcome } from '@shared/playback-delivery'
 import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
@@ -8,7 +8,7 @@ import type { TurnHandle } from '@shared/turn-scheduler'
 import { conversationLocale } from '../conversation-locale'
 import * as agentRunner from '../agent'
 import { beginTurn, type TurnInput } from './index'
-import { conversationOwner, currentSpeechRoute, history, record, turnScheduler } from './session'
+import { conversationOwner, currentSpeechRoute, events, history, record, turnScheduler } from './session'
 import type { SpeechRoute } from './speech-route'
 
 /**
@@ -20,6 +20,8 @@ import type { SpeechRoute } from './speech-route'
 
 const JOB_REPORT_PLAYBACK_TIMEOUT_MS = 3 * 60_000
 const MAX_JOB_REPORT_ATTEMPTS = 5
+/** How often a report held at the hard limit looks again whether the history has room, which only reads a number in memory. */
+const HISTORY_ROOM_POLL_MS = 5_000
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
 const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'noSummary' | 'noReason', PromptText>> = {
@@ -62,22 +64,57 @@ async function waitForIdle(): Promise<void> {
 }
 
 /**
- * Whether the report of a turn reached the user. Only the TTS route plays segments in the renderer,
- * so only there does delivery wait for the renderer to say that the body started playing. The other
- * routes produce no segment to wait for: without speech the report reaches the user as text on screen,
- * and with a voice model in front the model has been handed the report, so a turn that ran to its end
- * without an abort has delivered it.
+ * Waits until a turn can answer a report, which uses up none of the report's attempts. At the hard
+ * limit a turn only says that the history is being summarized, and that would pass for the report, so
+ * the report waits for a summary that succeeds. It starts none itself: the turns and the idle
+ * compaction do, and a report that did would call a summary that keeps failing, as while offline, back
+ * to back.
  */
-async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<PlaybackDeliveryOutcome> {
-  if (route.kind !== 'tts') {
-    try {
-      await handle.completion
-    } catch (error) {
-      console.error('job report turn failed:', errMessage(error))
-      return 'interrupted'
-    }
-    return handle.signal.aborted ? 'interrupted' : 'started'
+async function waitForRoomInHistory(): Promise<void> {
+  // A report can come before any turn has read the history, which looks empty until then.
+  history.ensureLoaded()
+  while (history.needsCompaction() === 'block') await sleep(HISTORY_ROOM_POLL_MS)
+}
+
+/** 'started' when the report reached the user, and otherwise why it did not. */
+type ReportOutcome = PlaybackDeliveryOutcome | 'failed'
+
+/**
+ * Whether the report of a turn reached the user. A turn that ended on an error, such as a failed API
+ * call, said a sentence about the failure instead, so it never counts, however that sentence reached
+ * the user.
+ */
+async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<ReportOutcome> {
+  let failed = false
+  const watch = (event: TurnEvent): void => {
+    if (event.type === 'error' && event.turnId === handle.turnId) failed = true
   }
+  events.on('event', watch)
+  try {
+    const reached = await (route.kind === 'tts' ? playbackStart(handle) : turnEnd(handle))
+    return failed ? 'failed' : reached
+  } finally {
+    events.off('event', watch)
+  }
+}
+
+/**
+ * The routes other than TTS produce no segment to wait for: without speech the report reaches the user
+ * as text on screen, and with a voice model in front the model has been handed the report, so a turn
+ * that ran to its end without an abort has delivered it.
+ */
+async function turnEnd(handle: TurnHandle): Promise<PlaybackDeliveryOutcome> {
+  try {
+    await handle.completion
+  } catch (error) {
+    console.error('job report turn failed:', errMessage(error))
+    return 'interrupted'
+  }
+  return handle.signal.aborted ? 'interrupted' : 'started'
+}
+
+/** Only the TTS route plays segments in the renderer, which says when the body of the report started playing. */
+async function playbackStart(handle: TurnHandle): Promise<PlaybackDeliveryOutcome> {
   // The run of beginTurn starts on a microtask, so the tracking is always registered before started or
   // segment reaches the renderer. An abort on the main side counts as not played and is queued again.
   const delivery = playbackDeliveries.expect(handle.turnId)
@@ -164,17 +201,7 @@ export function initJobReporting(): void {
         // loop keeps waiting until an idle-only start succeeds.
         for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
           await waitForIdle()
-          // At the hard limit a turn only says that the history is being summarized, which would pass
-          // for the report, so the report waits for the summary. A summary that fails uses up an attempt.
-          // The history is read first, since a report can come before any turn has read it.
-          history.ensureLoaded()
-          if (history.needsCompaction() === 'block') {
-            await history.compact('limit')
-            if (history.needsCompaction() === 'block') {
-              console.warn(`job report waits for the history to be summarized; retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`)
-              continue
-            }
-          }
+          await waitForRoomInHistory()
           const route = currentSpeechRoute()
           const handle = beginTurn(notice, {}, 'interject', true, { route })
           if (!handle) {

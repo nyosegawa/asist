@@ -5,7 +5,7 @@ import path from 'node:path'
 import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
-import type { TurnEvent } from '@shared/ipc'
+import type { TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
 import type { ConversationMessage, ConversationPart, ConversationResult, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
@@ -198,6 +198,16 @@ function runToDone(brain: Brain, text: string): Promise<number> {
       if (event.type === 'done' && event.turnId === turnId) resolve(turnId)
     })
     const turnId = brain.startTurn(text)
+  })
+}
+
+/** The renderer's side of the playback acknowledgement, fed with brain's events the way conversation.ts feeds it. */
+function acknowledgeLikeTheRenderer(brain: Brain, acknowledgePlayback: (turnId: number, status: TurnPlaybackAckStatus) => void): void {
+  const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
+  brain.events.on('event', (e) => {
+    if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
+    if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
+    if (e.type === 'done') acks.finishTurn(e.turnId)
   })
 }
 
@@ -584,37 +594,64 @@ describe('brain turn', () => {
     expect(textOf(history.toMessages().at(-1)!)).toBe(sentence)
   })
 
-  it('holds a job report while the history is at its hard limit and reports it once the summary is done, not with the sentence about the summary', async () => {
-    const { brain, events } = await loadBrain()
-    const { conversationLog, history, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports it once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const { completeText } = await import('../src/main/services/llm')
-    // The log is on disk and no turn has read it yet, as right after the app starts.
-    for (let i = 0; i < 50; i++) {
-      conversationLog.append({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
-      conversationLog.append({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    try {
+      const { brain, events } = await loadBrain()
+      const { conversationLog, history, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+      const { compactionJob } = await import('../src/main/services/maintenance')
+      // The log is on disk and no turn has read it yet, as right after the app starts.
+      for (let i = 0; i < 50; i++) {
+        conversationLog.append({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+        conversationLog.append({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+      }
+      history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
+      // The network is down, so every summary fails at once.
+      let online = false
+      vi.mocked(completeText).mockImplementation(async () => {
+        if (!online) throw new Error('fetch failed')
+        return { text: '以前の会話の引き継ぎ', stop: 'end' }
+      })
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      const agent = await import('../src/main/services/agent')
+      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(completeText).not.toHaveBeenCalled()
+      // The idle compaction fails more times than a report has attempts.
+      for (let i = 0; i < 6; i++) {
+        await compactionJob.run()
+        await vi.advanceTimersByTimeAsync(60_000)
+      }
+      expect(mocks.requests).toEqual([])
+      online = true
+      await compactionJob.run()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(mocks.requests).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.requests).toHaveLength(1)
+      expect(events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))).toEqual(['調査が終わりました。'])
+    } finally {
+      vi.mocked(completeText).mockImplementation(async () => ({ text: '', stop: 'end' }))
+      vi.useRealTimers()
     }
-    history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
-    let finishSummary!: (text: string) => void
-    vi.mocked(completeText).mockReturnValueOnce(new Promise((resolve) => { finishSummary = (text) => resolve({ text, stop: 'end' }) }))
+  })
+
+  it.each(['tts', 'silent'] as const)('reports a finished job again when the turn meant to report it fails with an API error, on the %s route', async (kind) => {
+    mocks.rounds.push(async () => { throw Object.assign(new Error('invalid request'), { status: 400 }) })
     mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+    if (kind === 'silent') mocks.ttsEngine = 'none'
+    const { brain, events } = await loadBrain()
     const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
-    const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
-    brain.events.on('event', (e) => {
-      if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
-      if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
-      if (e.type === 'done') acks.finishTurn(e.turnId)
-    })
+    acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
     initJobReporting()
     const agent = await import('../src/main/services/agent')
     agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
-    await vi.waitFor(() => expect(completeText).toHaveBeenCalledOnce())
-    finishSummary('以前の会話の引き継ぎ')
-    await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
-    // A report counted as not delivered goes out again at once, so a second request would have started by now.
-    await new Promise((resolve) => setTimeout(resolve, 200))
-    expect(mocks.requests).toHaveLength(1)
-    const segments = events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))
-    expect(segments).toEqual(['調査が終わりました。'])
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'done' && e.fullText === '調査が終わりました。')).toBe(true))
+    expect(mocks.requests).toHaveLength(2)
   })
 
   it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
@@ -629,12 +666,7 @@ describe('brain turn', () => {
       for (let i = 0; i < 4; i++) mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
       const { brain } = await loadBrain()
       const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
-      const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
-      brain.events.on('event', (e) => {
-        if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
-        if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
-        if (e.type === 'done') acks.finishTurn(e.turnId)
-      })
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
       initJobReporting()
       const agent = await import('../src/main/services/agent')
       agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
@@ -993,13 +1025,7 @@ describe('brain turn', () => {
     const { setSpeechRoute } = await import('../src/main/services/brain/session')
     if (kind === 'live') setSpeechRoute(liveRoute)
     const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
-    // The renderer's side of the acknowledgement, fed with brain's events the way conversation.ts feeds it.
-    const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
-    brain.events.on('event', (e) => {
-      if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
-      if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
-      if (e.type === 'done') acks.finishTurn(e.turnId)
-    })
+    acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
     initJobReporting()
     const agent = await import('../src/main/services/agent')
     agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
