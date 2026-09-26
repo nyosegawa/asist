@@ -200,6 +200,23 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('shows a memory again once the session has had more audio since it than its sliding window can be assumed to keep', async () => {
+    const { engine, sessions } = await setup()
+    const notes = (session: FakeSession): number => session.contents.filter((content) => JSON.stringify(content).includes(CAFE.text)).length
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店は混んでる', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(session)).toBe(1)
+    // Ten minutes of audio reach the session, which its context compression may have cut the note from.
+    for (let i = 0; i < 60; i++) engine.pushAudio(new Float32Array(160_000))
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店は何時まで', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(session)).toBe(2)
+    await engine.stop()
+  })
+
   it('shows no memory that a recall result already gave the session', async () => {
     const recalled: ToolExecution = { ...result('{"hits":[{"id":"m-cafe"}]}'), value: { hits: [{ id: 'm-cafe' }] } }
     const { engine, sessions } = await setup(() => Object.assign(Promise.resolve(recalled), { completion: Promise.resolve() }))
