@@ -577,6 +577,7 @@ export const mockApi: RendererApi = {
   jobDiff: async () => ({
     commit: 'abc',
     base: 'a0c',
+    into: 'main',
     stat: ' README.md | 3 +++\n 1 file changed, 3 insertions(+)',
     patch: '+## 注意\n+\n+設定ファイルの形式は変わることがあります。',
     submodules: []

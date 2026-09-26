@@ -89,7 +89,7 @@ const api = {
   taskUpdate: vi.fn(async (id: string): Promise<Task> => taskOf(id, id, 'done', 0)),
   notesList: vi.fn(async () => []),
   jobLog: vi.fn(async () => []),
-  jobDiff: vi.fn(async () => ({ commit: 'abc', base: 'a0c', stat: '1 file changed', patch: '', submodules: [] })),
+  jobDiff: vi.fn(async () => ({ commit: 'abc', base: 'a0c', into: 'main', stat: '1 file changed', patch: '', submodules: [] as string[] })),
   jobMerge: vi.fn(async () => {}),
   jobDiscard: vi.fn(async () => {}),
   panelFetch: vi.fn(async (_type: string, props: Record<string, unknown>) => ({ props: { ...props, items: demoFileItems(props.paths as string[]) }, source: 'files' })),
@@ -446,6 +446,7 @@ describe('agent job card', () => {
     expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('merge')
     expect(api.jobDiff).toHaveBeenCalledWith(DEMO_JOB.id)
     expect(card.querySelector('.aj-diff')?.textContent).toContain('1 file changed')
+    expect(card.querySelector('.aj-path')?.textContent).toBe(t('jobs.card.merge.path', { branch: 'asist/x', into: 'main', repo: '/r' }))
     await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
     expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, 'abc', 'a0c')
     expect(card.querySelector('.aj-summary')).toBeNull()
@@ -458,7 +459,7 @@ describe('agent job card', () => {
       jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],
       logs: {}
     })
-    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'a0c', stat: ' vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'a0c', into: 'main', stat: ' vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
     const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
     expect(card.querySelector('.aj-merge')?.textContent).toContain(t('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x' }))
     const [merge] = [...card.querySelectorAll<HTMLButtonElement>('.aj-merge .card-action')]
@@ -473,7 +474,7 @@ describe('agent job card', () => {
     })
     api.jobMerge.mockRejectedValueOnce(new Error(errorText('jobs.merging.baseChanged')))
     const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
-    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'b1d', stat: '2 files changed', patch: '', submodules: [] })
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'b1d', into: 'main', stat: '2 files changed', patch: '', submodules: [] })
     await act(async () => card.querySelector<HTMLButtonElement>('.aj-merge .card-action')!.click())
     expect(api.jobDiff).toHaveBeenCalledTimes(2)
     expect(card.querySelector('.aj-diff')?.textContent).toContain('2 files changed')

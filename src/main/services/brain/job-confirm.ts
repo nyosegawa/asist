@@ -64,7 +64,7 @@ export function mergeConfirmation(job: { title: string; repo: string }, review: 
     message: t('jobs.confirm.mergeMessage'),
     detail: [
       t('jobs.confirm.job', { title: job.title }),
-      t('jobs.confirm.mergeInto', { repo: job.repo }),
+      t('jobs.confirm.mergeInto', { into: review.into, repo: job.repo }),
       '',
       review.stat
     ].join('\n'),

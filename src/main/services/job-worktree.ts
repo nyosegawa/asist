@@ -115,6 +115,7 @@ export function readWorktreeDiff(job: AgentJob): JobDiff {
   return {
     commit,
     base,
+    into: git.checkedOut(worktree.repo),
     stat: git.diffStat(worktree.repo, base, commit),
     patch: git.diffPatch(worktree.repo, base, commit),
     submodules: touchedSubmodules(worktree, base, commit)

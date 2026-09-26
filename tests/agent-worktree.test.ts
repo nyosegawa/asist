@@ -331,6 +331,32 @@ it.each([
   expect(() => agent.discard(job.id)).toThrow(nothing)
 })
 
+it('names the branch checked out in the repository as the one a merge goes into, as when one was cut from the same commit after the review', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.diff(job.id).into).toBe('main')
+  const main = git(repo, 'rev-parse', 'main')
+  git(repo, 'switch', '-q', '-c', 'hotfix')
+  const review = agent.diff(job.id)
+  expect(review.into).toBe('hotfix')
+  agent.merge(job.id, review.commit, review.base)
+  expect(git(repo, 'show', 'hotfix:new.txt')).toBe('from job')
+  expect(git(repo, 'rev-parse', 'main')).toBe(main)
+})
+
+it('names the commit a merge moves when the repository has no branch checked out', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  git(repo, 'switch', '-q', '--detach')
+  const { into } = agent.diff(job.id)
+  expect(into.length).toBeGreaterThanOrEqual(7)
+  expect(git(repo, 'rev-parse', 'HEAD').startsWith(into)).toBe(true)
+})
+
 it('refuses to discard a job that changed nothing', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })

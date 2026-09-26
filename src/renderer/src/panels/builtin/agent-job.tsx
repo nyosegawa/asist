@@ -89,6 +89,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
     }
     loadDiff()
   }, [job.id, conflict, job.mergeState, job.worktree?.commit])
+  const worktree = job.worktree!
   const act = (run: () => Promise<void>, onFailure?: () => void): void => {
     setBusy(true)
     setError(null)
@@ -107,10 +108,14 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
     >
       <p className="aj-text">{t(conflict ? 'jobs.card.merge.conflictText' : 'jobs.card.merge.text')}</p>
       <p className="aj-path">
-        {job.worktree?.branch} → {job.worktree?.repo}
+        {diff
+          ? t('jobs.card.merge.path', { branch: worktree.branch, into: diff.into, repo: worktree.repo })
+          : `${worktree.branch} → ${worktree.repo}`}
       </p>
       {diff && diff.submodules.length > 0 && (
-        <p className="aj-text">{t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: job.worktree?.branch ?? '' })}</p>
+        <p className="aj-text">
+          {t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: worktree.branch })}
+        </p>
       )}
       {diff && (
         <pre className="aj-diff">
@@ -128,8 +133,9 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
           <Action
             tone="primary"
             disabled={busy || !diff?.stat || diff.submodules.length > 0}
-            // The diff on the card can be out of date once the repository has another branch checked out, and
-            // main refuses the merge then, so the card shows the current one beside the reason.
+            // The diff on the card is out of date once the merge base has moved, as when a branch that parts from
+            // the job at another commit is checked out, and main refuses the merge then, so the card shows the
+            // current one beside the reason.
             onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit, diff.base), loadDiff)}
           >
             {t('jobs.card.merge.merge')}

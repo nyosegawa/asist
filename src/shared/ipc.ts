@@ -527,6 +527,12 @@ export interface JobDiff {
    * changed, since it would then apply changes the diff did not show.
    */
   base: string
+  /**
+   * The branch checked out in the repository when the diff was read, which the merge goes into, or the
+   * abbreviated commit when HEAD is detached. A branch cut from the same commit keeps the merge base, so
+   * the merge does not refuse it, and the user reads here where the changes go.
+   */
+  into: string
   stat: string
   patch: string
   /** The submodules the job touched, which keep ASIST from merging it (see `AgentJob.worktree.submodules`). */
