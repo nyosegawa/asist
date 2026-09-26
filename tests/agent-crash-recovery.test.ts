@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import type { AgentJob } from '@shared/ipc'
+import { buildStartArgs } from '@shared/agent-cli'
 import { AGENT_PROCESS_TOKEN, captureProcessIdentity, inspectProcessIdentity, recoverAgentProcess } from '../src/main/services/agent-process-identity'
 
 const ja = createTranslator('ja-JP')
@@ -183,6 +184,27 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
       expect(errors).toEqual([])
       expect(fs.readFileSync(touched, 'utf8')).toBe('saved')
     }
+  })
+
+  it.each(['codex', 'claude'] as const)('hands %s a prompt larger than the argument limit of macOS once it may start', async (engine) => {
+    // A memory curation prompt with a week of transcripts: 1.2 MB, more than the 1 MB macOS allows all the
+    // arguments of a process, which failed the spawn with E2BIG.
+    const prompt = `${'あ'.repeat(400_000)}\n-- the last line`
+    const cli = path.join(root, 'cli.sh')
+    fs.writeFileSync(cli, '#!/bin/sh\necho "read $(wc -c | tr -d \' \') bytes"\n', { mode: 0o755 })
+    vi.stubEnv(engine === 'codex' ? 'CODEX_CLI_PATH' : 'CLAUDE_CLI_PATH', cli)
+    const { launchAgentProcess } = await import('../src/main/services/agent-process')
+    const job: AgentJob = { id: 'large', title: 'fixture', prompt, cwd: root, engine, readonly: false, status: 'running', startedAt: Date.now() }
+    const received: string[] = []
+    const errors: Error[] = []
+    const managed = launchAgentProcess(job, buildStartArgs(job), {
+      onSpawn: (identity) => { group = identity.pid },
+      onEvent: (event) => { if (event.kind === 'raw') received.push(event.text) },
+      onStderr: () => {}, onError: (error) => errors.push(error), onExit: () => {}
+    })
+    await managed.completion
+    expect(errors).toEqual([])
+    expect(received).toEqual([`read ${Buffer.byteLength(prompt)} bytes`])
   })
 
   it('rejects completion and releases the waiter when the exit callback of a normal exit fails', async () => {

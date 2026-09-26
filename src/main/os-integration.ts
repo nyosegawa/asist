@@ -1,4 +1,4 @@
-import { isJobTerminal } from '@shared/job-status'
+import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
 import {
   app,
   globalShortcut,
@@ -93,7 +93,7 @@ export function setupOsIntegration(window: BrowserWindow): void {
   agent.events.on('event', (event) => {
     if (event.type !== 'update') return
     const job = event.job
-    if (!isJobTerminal(job.status) || notified.has(job.id)) return
+    if (isBackgroundJob(job) || !isJobTerminal(job.status) || notified.has(job.id)) return
     notified.add(job.id)
     if (window.isVisible() && window.isFocused()) return
     if (job.status === 'done') notify(t('app.notify.jobDone'), job.title)

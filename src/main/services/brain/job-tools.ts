@@ -172,6 +172,12 @@ export function agentTool(locale: ConversationLocale): Def {
   }
 }
 
+/**
+ * An absolute path written in a text. The slash must not continue a word, a number or another path, so
+ * that the "/20" of a date such as 9/20, or the slashes of a URL, are not taken for one.
+ */
+const ABSOLUTE_PATH = /(?<![\w./:~-])\/[^\s"'、。()（）]+/
+
 export function projectTools(language: PromptLanguage): Def[] {
   return [
     {
@@ -211,7 +217,7 @@ export function projectTools(language: PromptLanguage): Def[] {
         // When the index has nothing, a path written in the memories serves as another name for the place.
         if (candidates.length === 0) {
           for (const hit of await memory.search(name, { limit: 5, kinds: ['section'] }, signal)) {
-            const path = /\/[^\s"'、。()（）]+/.exec(hit.record.text)?.[0]
+            const path = ABSOLUTE_PATH.exec(hit.record.text)?.[0]
             if (path && !candidates.some((c) => c.path === path)) {
               candidates.push({ name: hit.record.text, path, lastUsed: hit.record.date })
             }

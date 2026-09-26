@@ -2,8 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
+
+const ja = createTranslator('ja-JP')
 
 const mocks = vi.hoisted(() => ({ root: '', launch: vi.fn() }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
@@ -205,4 +208,114 @@ it('returns ownership to the parent and starts no continuation process when the 
   expect(mocks.launch).toHaveBeenCalledOnce()
   expect(agent.list()).toHaveLength(1)
   expect(agent.diff(parent.id).patch).toContain('+parent')
+})
+
+it('keeps the whole log readable after a restart that appended a line to it', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  mocks.launch.mock.calls[0][2].onEvent({ kind: 'assistant-text', text: '再起動の前' })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'x\n')
+  const before = agent.getLog(job.id)
+  // The restart settles the worktree the process left behind, which adds a line before anyone reads the log.
+  vi.resetModules()
+  const restored = await import('../src/main/services/agent')
+  expect(restored.get(job.id)?.mergeState).toBe('pending')
+  const after = restored.getLog(job.id)
+  expect(after.slice(0, before.length)).toEqual(before)
+  expect(after.length).toBeGreaterThan(before.length)
+})
+
+it('runs a job started for a folder inside a repository in that folder of the worktree, and merges it back there', async () => {
+  fs.mkdirSync(path.join(repo, 'packages', 'web'), { recursive: true })
+  fs.writeFileSync(path.join(repo, 'packages', 'web', 'index.ts'), 'export {}\n')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-qm', 'package')
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('このフォルダのテストを直す', { cwd: path.join(repo, 'packages', 'web') })
+  expect(mocks.launch.mock.calls[0][0].cwd).toBe(path.join(job.worktree!.dir, 'packages', 'web'))
+  fs.writeFileSync(path.join(job.cwd, 'index.test.ts'), 'test\n')
+  const handlers = mocks.launch.mock.calls[0][2]
+  handlers.onEvent({ kind: 'init', model: 'codex', sessionId: 'session' })
+  handlers.onEvent({ kind: 'file-change', paths: [path.join(job.cwd, 'index.test.ts')] })
+  handlers.onExit(0)
+  agent.merge(job.id, agent.diff(job.id).commit)
+  expect(fs.readFileSync(path.join(repo, 'packages', 'web', 'index.test.ts'), 'utf8')).toBe('test\n')
+  expect(agent.get(job.id)?.artifacts).toEqual([path.join(repo, 'packages', 'web', 'index.test.ts')])
+  expect(fs.existsSync(job.worktree!.dir)).toBe(false)
+  // Once merged, the job carries on in a fresh worktree, in the same folder.
+  const next = await agent.continueJob(job.id, '続き')
+  expect(path.relative(next.worktree!.dir, next.cwd)).toBe(path.join('packages', 'web'))
+  expect(fs.existsSync(path.join(next.cwd, 'index.test.ts'))).toBe(true)
+})
+
+it('refuses a folder that is not committed and leaves no worktree or branch behind', async () => {
+  fs.mkdirSync(path.join(repo, 'drafts'))
+  fs.writeFileSync(path.join(repo, 'drafts', 'note.md'), 'untracked\n')
+  const agent = await import('../src/main/services/agent')
+  const named = path.join(repo, 'drafts')
+  expect(() => agent.startIsolated('下書きを直す', { cwd: named })).toThrow(errorText('jobs.start.folderNotCommitted', { path: named }))
+  expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1)
+  expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
+  expect(agent.list()).toEqual([])
+})
+
+it.each([
+  ['a post-checkout hook fails', (): void => {
+    // The hook Git LFS installs exits 2 when an app opened from Finder has no git-lfs on its PATH.
+    fs.writeFileSync(path.join(repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 2\n', { mode: 0o755 })
+  }, {}],
+  ['preparing the worktree fails', (): void => {}, { prepareWorktree: (): void => { throw new Error('skill missing') } }],
+  ['the new job cannot be saved', (): void => {
+    vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw new Error('disk full') })
+  }, {}]
+])('starts nothing and leaves no worktree, branch or running job behind when %s', async (_case, arrange, options) => {
+  const agent = await import('../src/main/services/agent')
+  agent.list()
+  arrange()
+  expect(() => agent.startIsolated('修正する', { cwd: repo, ...options })).toThrow()
+  expect(mocks.launch).not.toHaveBeenCalled()
+  expect(agent.list()).toEqual([])
+  expect(git(repo, 'worktree', 'list').split('\n')).toHaveLength(1)
+  expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
+})
+
+it('reports a job state that cannot be saved while the agent runs in its log instead of throwing into the output listener', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => { throw new Error('disk full') })
+  expect(() => mocks.launch.mock.calls[0][2].onEvent({ kind: 'init', model: 'codex', sessionId: 'session' })).not.toThrow()
+  const texts = agent.getLog(job.id).map((line) => ('text' in line.event ? line.event.text : ''))
+  expect(texts).toContain(ja('jobs.log.saveFailed', { detail: 'disk full' }))
+})
+
+describe('a repository with a submodule', () => {
+  beforeEach(() => {
+    const sub = path.join(mocks.root, 'sub')
+    fs.mkdirSync(sub)
+    git(sub, 'init', '-q', '-b', 'main')
+    git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 's')
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'vendor/sub')
+    git(repo, 'commit', '-qm', 'submodule')
+  })
+
+  it('removes the worktree of a job that changed nothing after the agent initialized the submodule', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('ビルドが通るか確かめる', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.mergeState).toBe('unchanged')
+    expect(fs.existsSync(job.cwd)).toBe(false)
+  })
+
+  it('removes the worktree once a job whose agent initialized the submodule is merged', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    agent.merge(job.id, agent.diff(job.id).commit)
+    expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
+    expect(fs.existsSync(job.cwd)).toBe(false)
+    expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
+  })
 })
