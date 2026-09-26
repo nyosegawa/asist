@@ -11,19 +11,8 @@ export type { SystemLayer }
  * happened.
  */
 
-export type CacheMissReason =
-  | 'first'
-  | 'hit'
-  | 'ttl'
-  | 'tools'
-  | 'system_base'
-  | 'system_memory'
-  | 'system_summary'
-  | 'system_other'
-  | 'messages'
-  | 'unknown'
-
-export const CACHE_MISS_REASONS: readonly CacheMissReason[] = [
+/** Each system layer has a reason of its own, `system_` followed by the layer's name. */
+export const CACHE_MISS_REASONS = [
   'first',
   'hit',
   'ttl',
@@ -31,14 +20,11 @@ export const CACHE_MISS_REASONS: readonly CacheMissReason[] = [
   'system_base',
   'system_memory',
   'system_summary',
-  'system_other',
   'messages',
   'unknown'
-]
+] as const
 
-export const isCacheMissReason = (value: unknown): value is CacheMissReason =>
-  typeof value === 'string' && (CACHE_MISS_REASONS as readonly string[]).includes(value)
-
+export type CacheMissReason = (typeof CACHE_MISS_REASONS)[number]
 
 export interface RequestFingerprint {
   at: number
@@ -94,8 +80,8 @@ export function diagnoseCacheMiss(
     const before = previous.systemLayers[i]
     const after = next.systemLayers[i]
     if (before?.hash === after?.hash && before?.name === after?.name) continue
-    const name = after?.name ?? before?.name ?? 'other'
-    return name === 'base' ? 'system_base' : name === 'memory' ? 'system_memory' : name === 'summary' ? 'system_summary' : 'system_other'
+    // A layer that was added or dropped is named by the request that has it.
+    return `system_${(after ?? before).name}`
   }
   const stablePrefix = previous.messages.length - 1
   for (let i = 0; i < stablePrefix; i++) {
