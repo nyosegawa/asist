@@ -115,8 +115,12 @@ const LOG_ASSISTANT: PromptText = { ja: `アシスタント`, en: `Assistant` }
 const LOG_TOOL: PromptText = { ja: `ツール`, en: `tool` }
 const LOG_TOOL_FAILED: PromptText = { ja: ` → 失敗`, en: ` -> failed` }
 
-/** A system notice interrupted before any reply is withdrawn, because the retry of the report puts it back. */
-const withdrawn = (turn: HistoryTurn): boolean => Boolean(turn.notice) && turn.interrupted === 'before-reply'
+/**
+ * A system notice that got no reply, because it was interrupted or failed before any, is withdrawn:
+ * the report is tried again, or it was never said, and the attempts must not read as conversation.
+ */
+const withdrawn = (turn: HistoryTurn): boolean =>
+  Boolean(turn.notice) && (turn.interrupted === 'before-reply' || (Boolean(turn.failed) && !turn.assistant))
 
 /** The part of what was spoken that is not already in the text of the assistant messages sent during the turn. */
 function unsentReply(turn: HistoryTurn): string {

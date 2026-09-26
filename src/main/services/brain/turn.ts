@@ -120,6 +120,25 @@ export interface TurnRuntime {
   route?: SpeechRoute
 }
 
+/** How a turn ended, for a caller that has to know whether it answered, such as job reporting. */
+export interface TurnOutcome {
+  /** Whether any text of the model's reply went out, to the reply line and to the speech route. */
+  replied: boolean
+  /** Set when the turn ended on an error, with whether trying it again later can succeed. */
+  failed?: { retryable: boolean }
+}
+
+/** A turn that runs, and the promise of how it ended. */
+export interface BrainTurnHandle extends TurnHandle {
+  outcome: Promise<TurnOutcome>
+}
+
+/**
+ * Only an error that can pass, such as a dropped network or an overloaded provider, is worth trying
+ * again. A rejected key, a spent balance, a refusal or the round limit fails the same way every time.
+ */
+const failure = (err: unknown): TurnOutcome['failed'] => ({ retryable: !(err instanceof TurnStopError) && isTransientApiError(err) })
+
 export function abortTurn(turnId: number): void {
   turnScheduler.abort(turnId)
 }
@@ -135,7 +154,8 @@ export function beginTurn(
   origin: TurnOrigin,
   onlyIfIdle: boolean,
   runtime: TurnRuntime = {}
-): TurnHandle | null {
+): BrainTurnHandle | null {
+  let ended: TurnOutcome = { replied: false }
   const run = async ({ turnId, signal, hold }: TurnRunContext): Promise<void> => {
     emit({
       type: 'started',
@@ -143,14 +163,14 @@ export function beginTurn(
       origin,
       requestId: options.clientRequestId
     })
-    await runTurn(turnId, input, options, signal, hold, runtime.route ?? currentSpeechRoute())
+    ended = await runTurn(turnId, input, options, signal, hold, runtime.route ?? currentSpeechRoute())
   }
   const handle = onlyIfIdle ? turnScheduler.startIfIdle(run) : turnScheduler.start(run)
   if (!handle) return null
   // runTurn converts errors into user-facing ones itself, but a regression that lets one escape must
   // not become an unhandled rejection.
   void handle.completion.catch((err) => console.error('turn scheduler failed:', errMessage(err)))
-  return handle
+  return { ...handle, outcome: handle.completion.then(() => ended, () => ended) }
 }
 
 type TurnOrigin = 'user' | 'interject' | 'live'
@@ -162,7 +182,7 @@ async function runTurn(
   signal: AbortSignal,
   hold: TurnRunContext['hold'],
   route: SpeechRoute
-): Promise<void> {
+): Promise<TurnOutcome> {
   const userText = input.text
   // The conversation language is read once at the start of the turn, so that every note, the system
   // prompt and the tool results of this turn speak the same language even if the setting changes.
@@ -296,7 +316,7 @@ async function runTurn(
       emit({ type: 'error', turnId, message: errorMessage(err) })
     }
     emit({ type: 'done', turnId, fullText: '' })
-    return
+    return signal.aborted ? { replied: false } : { replied: false, failed: failure(err) }
   }
   // The conversation log is authoritative, so the record is written once the notes are settled; on an
   // early end the path above stores the input as it stands.
@@ -530,7 +550,8 @@ async function runTurn(
       emit({ type: 'delta', turnId, text: visibleReply })
       for (const sentence of assembler.push(visibleReply)) synth.push(sentence)
       await closeReply()
-      return
+      // The sentence is the app's, not an answer to the input.
+      return { replied: false }
     }
     const messages: ConversationMessage[] = history.toMessages()
     let completed = false
@@ -626,14 +647,16 @@ async function runTurn(
       throw new TurnStopError('spoken.turnStopped')
     }
     await closeReply()
+    return { replied: visibleReply !== '' }
   } catch (err) {
     if (signal.aborted) {
       // On a barge-in, what was spoken so far is kept with a marker. Even when nothing was spoken the
       // user's utterance stays and the marker goes on the assistant side, so that a sequence such as
       // "明日の天気" followed by "あ、明後日で" keeps its context. A system notice interrupted before
-      // any reply is withdrawn by the history, because the retry of the report puts it back.
+      // any reply is withdrawn by the history, as is one that failed before any.
       recordAssistant(visibleReply, { interrupted: visibleReply ? 'while-speaking' : 'before-reply' })
       emit({ type: 'done', turnId, fullText: visibleReply })
+      return { replied: visibleReply !== '' }
     } else {
       // Only a TurnStopError, such as hitting the round limit, and a failure of the API itself end the
       // turn with a prepared sentence, which is said aloud in the language of the conversation.
@@ -645,6 +668,7 @@ async function runTurn(
       emitUsage()
       emit({ type: 'error', turnId, message: friendly })
       emit({ type: 'done', turnId, fullText: visibleReply || friendly })
+      return { replied: visibleReply !== '', failed: failure(err) }
     }
   }
 }

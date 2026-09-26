@@ -4,4 +4,4 @@
  * reporting, uses only startTurn, beginTurn, abortTurn and events.
  */
 export { events } from './session'
-export { abortTurn, beginTurn, startTurn, type TurnInput, type TurnRuntime } from './turn'
+export { abortTurn, beginTurn, startTurn, type BrainTurnHandle, type TurnInput, type TurnOutcome, type TurnRuntime } from './turn'

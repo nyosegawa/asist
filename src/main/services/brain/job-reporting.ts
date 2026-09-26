@@ -1,14 +1,13 @@
 import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
-import type { TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
+import type { AgentJob, TurnPlaybackAckStatus } from '@shared/ipc'
 import { errMessage } from '@shared/api-errors'
 import { PlaybackDeliveryTracker, type PlaybackDeliveryOutcome } from '@shared/playback-delivery'
 import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
 import { marker } from '@shared/conversation-markers'
-import type { TurnHandle } from '@shared/turn-scheduler'
 import { conversationLocale } from '../conversation-locale'
 import * as agentRunner from '../agent'
-import { beginTurn, type TurnInput } from './index'
-import { conversationOwner, currentSpeechRoute, events, history, record, turnScheduler } from './session'
+import { beginTurn, type BrainTurnHandle, type TurnInput } from './index'
+import { conversationOwner, currentSpeechRoute, history, record, turnScheduler } from './session'
 import type { SpeechRoute } from './speech-route'
 
 /**
@@ -22,6 +21,12 @@ const JOB_REPORT_PLAYBACK_TIMEOUT_MS = 3 * 60_000
 const MAX_JOB_REPORT_ATTEMPTS = 5
 /** How often a report held at the hard limit looks again whether the history has room, which only reads a number in memory. */
 const HISTORY_ROOM_POLL_MS = 5_000
+/**
+ * The pauses before trying again a report whose turn failed on an error that can pass, such as a
+ * dropped network or an overloaded provider. Tried again at once, it only says the same failure again;
+ * together the pauses last seven and a half minutes, which outlasts a short outage.
+ */
+const FAILED_REPORT_PAUSES_MS = [30_000, 60_000, 120_000, 240_000]
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
 const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'noSummary' | 'noReason', PromptText>> = {
@@ -68,53 +73,38 @@ async function waitForIdle(): Promise<void> {
  * limit a turn only says that the history is being summarized, and that would pass for the report, so
  * the report waits for a summary that succeeds. It starts none itself: the turns and the idle
  * compaction do, and a report that did would call a summary that keeps failing, as while offline, back
- * to back.
+ * to back. An engine that owns the conversation takes the report without the history, so the wait ends
+ * when one starts.
  */
 async function waitForRoomInHistory(): Promise<void> {
   // A report can come before any turn has read the history, which looks empty until then.
   history.ensureLoaded()
-  while (history.needsCompaction() === 'block') await sleep(HISTORY_ROOM_POLL_MS)
-}
-
-/** 'started' when the report reached the user, and otherwise why it did not. */
-type ReportOutcome = PlaybackDeliveryOutcome | 'failed'
-
-/**
- * Whether the report of a turn reached the user. A turn that ended on an error, such as a failed API
- * call, said a sentence about the failure instead, so it never counts, however that sentence reached
- * the user.
- */
-async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<ReportOutcome> {
-  let failed = false
-  const watch = (event: TurnEvent): void => {
-    if (event.type === 'error' && event.turnId === handle.turnId) failed = true
-  }
-  events.on('event', watch)
-  try {
-    const reached = await (route.kind === 'tts' ? playbackStart(handle) : turnEnd(handle))
-    return failed ? 'failed' : reached
-  } finally {
-    events.off('event', watch)
-  }
+  while (!conversationOwner() && history.needsCompaction() === 'block') await sleep(HISTORY_ROOM_POLL_MS)
 }
 
 /**
- * The routes other than TTS produce no segment to wait for: without speech the report reaches the user
- * as text on screen, and with a voice model in front the model has been handed the report, so a turn
- * that ran to its end without an abort has delivered it.
+ * 'started' when the report reached the user, and otherwise why it did not: 'failed' for a turn that
+ * failed before it replied and may succeed later, and 'lasting' for one that will fail the same way.
  */
-async function turnEnd(handle: TurnHandle): Promise<PlaybackDeliveryOutcome> {
-  try {
-    await handle.completion
-  } catch (error) {
-    console.error('job report turn failed:', errMessage(error))
-    return 'interrupted'
-  }
-  return handle.signal.aborted ? 'interrupted' : 'started'
+type ReportOutcome = PlaybackDeliveryOutcome | 'failed' | 'lasting'
+
+/**
+ * Whether the report reached the user, which is when the turn's reply had text: on the TTS route once
+ * a body segment of the turn started playing, and on the other routes once the reply was produced. A
+ * turn that failed before it replied said only a sentence about the failure, however that reached the
+ * user, while one sentence that failed to synthesize, or a failure after the report was said, does
+ * not take back what was already said.
+ */
+async function reportDelivery(handle: BrainTurnHandle, route: SpeechRoute): Promise<ReportOutcome> {
+  const reached = route.kind === 'tts' ? await playbackStart(handle) : 'started'
+  const ended = await handle.outcome
+  if (ended.replied) return reached
+  if (!ended.failed) return 'interrupted'
+  return ended.failed.retryable ? 'failed' : 'lasting'
 }
 
 /** Only the TTS route plays segments in the renderer, which says when the body of the report started playing. */
-async function playbackStart(handle: TurnHandle): Promise<PlaybackDeliveryOutcome> {
+async function playbackStart(handle: BrainTurnHandle): Promise<PlaybackDeliveryOutcome> {
   // The run of beginTurn starts on a microtask, so the tracking is always registered before started or
   // segment reaches the renderer. An abort on the main side counts as not played and is queued again.
   const delivery = playbackDeliveries.expect(handle.turnId)
@@ -138,6 +128,90 @@ async function playbackStart(handle: TurnHandle): Promise<PlaybackDeliveryOutcom
   return delivery
 }
 
+/** The notice a turn is given for a finished job, in the language the conversation is held in now. */
+function reportNotice(job: AgentJob): Required<Pick<TurnInput, 'notice'>> & TurnInput {
+  const locale = conversationLocale()
+  const artifacts = (job.artifacts ?? []).slice(-5)
+  const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
+  const mergeNote =
+    job.mergeState === 'pending'
+      ? promptText(locale, REPORT.mergePending)
+      : job.worktree && job.mergeState === 'unchanged'
+        ? promptText(locale, REPORT.mergeUnchanged)
+        : ''
+  const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
+  return job.status === 'done'
+    ? {
+        notice: 'job-done',
+        text: fillPrompt(promptText(locale, REPORT.done), {
+          ...values,
+          summary: (job.summary ?? promptText(locale, REPORT.noSummary)).slice(0, 500)
+        })
+      }
+    : {
+        notice: 'job-error',
+        text: fillPrompt(promptText(locale, REPORT.error), {
+          ...values,
+          summary: (job.summary ?? promptText(locale, REPORT.noReason)).slice(0, 200)
+        })
+      }
+}
+
+/**
+ * Reports a finished job once a turn can take it, and tries again while it did not reach the user.
+ * User input can arrive between the wait and the start, and must not be taken over, so the loop keeps
+ * waiting until an idle-only start succeeds.
+ */
+async function deliverReport(jobId: string): Promise<void> {
+  let failures = 0
+  for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
+    await waitForIdle()
+    await waitForRoomInHistory()
+    // The report is written only now, after waits that can be long: the job may have been merged or
+    // discarded meanwhile, and an engine may have taken the conversation over.
+    const job = agentRunner.get(jobId)
+    if (!job) {
+      console.warn(`job report dropped, the job is gone: ${jobId}`)
+      reportedJobs.add(jobId)
+      return
+    }
+    const notice = reportNotice(job)
+    // An engine that owns the conversation, such as Gemini Live, is handed the notice and reports it in
+    // context. The notice is written to the conversation log here, while the wording of the report is
+    // recorded on that side from the output transcript.
+    const owner = conversationOwner()
+    if (owner) {
+      record({ kind: 'notice', turnId: turnScheduler.allocateTurnId(), notice: notice.notice, text: notice.text })
+      await owner.notify(notice.text)
+      reportedJobs.add(jobId)
+      return
+    }
+    const route = currentSpeechRoute()
+    const handle = beginTurn(notice, {}, 'interject', true, { route })
+    if (!handle) {
+      attempt--
+      continue
+    }
+    const outcome = await reportDelivery(handle, route)
+    if (outcome === 'started') {
+      reportedJobs.add(jobId)
+      return
+    }
+    // The turn has said what failed, once, and saying it again cannot change it.
+    if (outcome === 'lasting') {
+      console.error(`job report failed on an error that trying again cannot fix: ${jobId}`)
+      reportedJobs.add(jobId)
+      return
+    }
+    console.warn(`job report was not played (${outcome}); retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`)
+    if (outcome === 'failed' && attempt < MAX_JOB_REPORT_ATTEMPTS) {
+      await sleep(FAILED_REPORT_PAUSES_MS[Math.min(failures, FAILED_REPORT_PAUSES_MS.length - 1)])
+      failures++
+    }
+  }
+  console.error(`job report could not be delivered after retries: ${jobId}`)
+}
+
 export function initJobReporting(): void {
   agentRunner.events.on('event', (event) => {
     if (event.type !== 'update') return
@@ -157,68 +231,10 @@ export function initJobReporting(): void {
       return
     }
     reportingJobs.add(job.id)
-    const locale = conversationLocale()
-    const artifacts = (job.artifacts ?? []).slice(-5)
-    const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
-    const mergeNote =
-      job.mergeState === 'pending'
-        ? promptText(locale, REPORT.mergePending)
-        : job.worktree && job.mergeState === 'unchanged'
-          ? promptText(locale, REPORT.mergeUnchanged)
-          : ''
-    const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
-    const notice: TurnInput =
-      job.status === 'done'
-        ? {
-            notice: 'job-done',
-            text: fillPrompt(promptText(locale, REPORT.done), {
-              ...values,
-              summary: (job.summary ?? promptText(locale, REPORT.noSummary)).slice(0, 500)
-            })
-          }
-        : {
-            notice: 'job-error',
-            text: fillPrompt(promptText(locale, REPORT.error), {
-              ...values,
-              summary: (job.summary ?? promptText(locale, REPORT.noReason)).slice(0, 200)
-            })
-          }
     // The notice is not read out verbatim: the LLM reports it in the flow of the conversation, and waits if speech is in progress.
     reportQueue = reportQueue
       .catch((error) => console.error('previous job report failed:', errMessage(error)))
-      .then(async () => {
-        // An engine that owns the conversation, such as Gemini Live, is handed the notice and reports
-        // it in context. The notice is written to the conversation log here, while the wording of the
-        // report is recorded on that side from the output transcript.
-        const owner = conversationOwner()
-        if (owner) {
-          record({ kind: 'notice', turnId: turnScheduler.allocateTurnId(), notice: notice.notice!, text: notice.text })
-          await owner.notify(notice.text)
-          reportedJobs.add(job.id)
-          return
-        }
-        // User input can arrive between the wait and the start, and must not be taken over, so the
-        // loop keeps waiting until an idle-only start succeeds.
-        for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
-          await waitForIdle()
-          await waitForRoomInHistory()
-          const route = currentSpeechRoute()
-          const handle = beginTurn(notice, {}, 'interject', true, { route })
-          if (!handle) {
-            attempt--
-            continue
-          }
-          const outcome = await reportDelivery(handle, route)
-          if (outcome === 'started') {
-            reportedJobs.add(job.id)
-            return
-          }
-          console.warn(
-            `job report was not played (${outcome}); retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`
-          )
-        }
-        console.error(`job report could not be delivered after retries: ${job.id}`)
-      })
+      .then(() => deliverReport(job.id))
       .catch((error) => console.error('job report failed:', errMessage(error)))
       .finally(() => {
         reportingJobs.delete(job.id)
