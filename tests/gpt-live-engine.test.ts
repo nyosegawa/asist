@@ -435,14 +435,14 @@ describe('GptLiveEngine', () => {
     await vi.advanceTimersByTimeAsync(0)
     socket.emit({ type: 'session.input_transcript.delta', delta: 'えっと明日の', event_id: 'a', start_ms: 0, end_ms: 1 })
     await vi.advanceTimersByTimeAsync(300)
-    await engine.sendText('会議の予定')
+    await engine.sendText('ペンを買っておいて')
     expect(events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [e.text] : []))).toEqual(['えっと明日の'])
     await vi.advanceTimersByTimeAsync(1600)
     socket.emit({ type: 'session.input_transcript.delta', delta: '教えて', event_id: 'b', start_ms: 1, end_ms: 2 })
     socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 2, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
     await vi.advanceTimersByTimeAsync(600)
     expect(beginTurn.mock.calls.map((c) => [c[0], c[1]])).toEqual([
-      [`えっと明日の\n${marker('ja-JP', 'typedInputNote')} 会議の予定`, false],
+      [`えっと明日の\n${marker('ja-JP', 'typedInputNote')} ペンを買っておいて`, false],
       ['教えて', false]
     ])
     await engine.stop()
