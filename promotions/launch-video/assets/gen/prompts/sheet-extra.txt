@@ -1,0 +1,16 @@
+Image 1: layout template. It shows six empty dashed frames in a 3 by 2 grid on a transparent canvas.
+Image 2: style reference only (material, colors, lighting). Do not copy its scene or characters.
+
+Use: a sprite sheet of decorative props for an animated promo video; each prop will be cut out along the frames of Image 1.
+Subject: draw exactly one prop inside each frame, left to right, top to bottom:
+1. a wide fluffy white cloud made of three round puffs, flat at the bottom
+2. a small fluffy white cloud made of two round puffs
+3. a pale blue-gray rain cloud with three short periwinkle raindrops hanging below it
+4. a folded newspaper in cream and light gray, with plain gray bars instead of any text
+5. a plump four-pointed sparkle star in soft yellow
+6. a small periwinkle-blue desktop microphone with a lavender grille on a short round stand
+Each prop is centred in its frame and fits entirely inside it with a clear margin.
+The dashed frames are guides only: do not draw them. The result contains only the six props on a transparent background.
+Scene: none, isolated props, no ground, no cast shadows, no glow or haze around the props.
+Style: soft 3D clay-and-felt miniature exactly like Image 2: matte felt texture with fine fibers, rounded chunky shapes, pastel periwinkle, lavender, cream, mint and soft yellow, soft studio light from the upper left, gentle ambient occlusion, cute.
+Avoid: text, letters, numbers, frame lines, borders, grid lines, extra props.

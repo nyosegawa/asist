@@ -1,0 +1,9 @@
+Image 1: character reference. Draw exactly this small robot mascot.
+Image 2: style reference only (material, colors, lighting). Do not copy its scene or the girl.
+
+Use: a cut-out character for an animated promo video; it will be animated and composited over a pastel background.
+Subject: the robot from Image 1 jumping for joy in mid-air, both arms thrown up high, feet off the ground and tucked slightly, antenna ball bouncing; its two cyan eyes are happy upward arcs (like ^ ^). Keep the exact design: rounded-square periwinkle-blue felt head, dark navy glossy visor, lavender round ear discs on both sides, a short antenna with a lavender ball, a small rounded periwinkle-blue body, stubby arms with round mitten hands, short legs with round feet.
+Scene: none, isolated character on a transparent background, no ground, no floor, no cast shadow.
+Style: soft 3D clay-and-felt miniature exactly like the references: matte felt texture with fine fibers, rounded chunky shapes, pastel palette, soft studio light from the upper left, gentle ambient occlusion, cute and friendly.
+Composition: full body centered, front view, the whole figure inside the frame with a generous empty margin on every side.
+Avoid: text, logos, extra characters, motion lines, confetti, background objects, outlines, drop shadows.

@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'assets/bgm'
 URL = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 
-# The structure follows the scenes of the video (see README.md).
+# Lyria returned 58 s for the 40 s this prompt asks for (measured on 2026-09-26), and the video is
+# timed to the whole track.
 COMMON = """Instrumental only, no vocals.
 Quiet, unobtrusive background music for a 40-second product video about a friendly voice assistant on the Mac, set in a soft pastel clay-diorama world.
 It must stay in the background: low and even dynamics, soft attacks, no loud drums, no drops, no risers, no big climax, nothing harsh or bright.
