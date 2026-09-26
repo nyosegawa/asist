@@ -3,10 +3,15 @@ import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { formatMessage } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 
-const mocks = vi.hoisted(() => ({ conversationLocale: 'ja-JP', region: 'JP' }))
+const mocks = vi.hoisted(() => ({
+  conversationLocale: 'ja-JP',
+  region: 'JP',
+  searchCalendar: vi.fn(async (_query: { start: string; end: string }) => ({ events: [] }))
+}))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: mocks.conversationLocale, region: mocks.region })
 }))
+vi.mock('../src/main/services/calendar', () => ({ searchCalendar: mocks.searchCalendar }))
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
 
 type Fetch = ReturnType<typeof vi.fn>
@@ -42,6 +47,13 @@ describe('the requests a card makes for the conversation language and the region
     mocks.conversationLocale = 'de-DE'
     await fetchPanel('clock', { city: 'Berlin' })
     expect(urls[0]).toContain('language=de')
+  })
+
+  it('looks a Japanese city up under its English name whether or not it ends in 都, 府 or 市', async () => {
+    const urls: string[] = []
+    respond({ results: [{ name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
+    for (const city of ['京都', '京都府', '京都市']) await fetchPanel('clock', { city })
+    expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['Kyoto', 'Kyoto', 'Kyoto'])
   })
 
   it('keeps the Japanese request of the clock card unchanged', async () => {
@@ -121,5 +133,37 @@ describe('the news card', () => {
     respond(`<rss>${item}</rss>`, [])
     const { props } = await fetchPanel('news', { topic: 'AI' })
     expect((props.items as { title: string }[])[0].title).toBe('5 &lt; 6 &amp; Q&A')
+  })
+
+  it('reads the publisher of an item from a source element that carries its url', async () => {
+    const item =
+      '<item><title>見出し - NHK</title><link>https://news.google.com/rss/articles/x</link>' +
+      '<pubDate>Fri, 25 Sep 2026 01:00:00 GMT</pubDate><source url="https://www3.nhk.or.jp">NHK</source></item>'
+    respond(`<rss><channel>${item}</channel></rss>`, [])
+    const { props } = await fetchPanel('news', { topic: 'AI' })
+    expect((props.items as { source: string }[])[0].source).toBe('NHK')
+  })
+})
+
+describe('the calendar card', () => {
+  // In New York, 2026-11-01 has 25 hours, so the week after 2026-10-26 lasts 7 days and one hour.
+  let zone: string | undefined
+  beforeEach(() => {
+    zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    if (zone === undefined) delete process.env.TZ
+    else process.env.TZ = zone
+  })
+
+  it('searches next week up to its last midnight when this week is asked for at the weekend, across a change of the clocks', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 24, 12), toFake: ['Date'] })
+    await fetchPanel('calendar', { range: 'week' })
+    expect(mocks.searchCalendar).toHaveBeenLastCalledWith(
+      { start: new Date(2026, 9, 19).toISOString(), end: new Date(2026, 10, 2).toISOString() },
+      expect.any(AbortSignal)
+    )
   })
 })

@@ -4,6 +4,7 @@ import { conversationLocale, region } from './conversation-locale'
 import { weatherPanelProps } from './weather'
 import { withTimeoutSignal } from '@shared/abort'
 import { includesNextWeek, resolveCalendarRange, summarizeCalendarEvents, type CalendarRange } from '@shared/calendar'
+import { addDays } from '@shared/calendar-layout'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { searchCalendar } from './calendar'
 import { getMailService } from './mail'
@@ -64,9 +65,10 @@ async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult
 }
 
 async function geocode(place: string, signal: AbortSignal): Promise<GeoResult> {
-  const raw = place.trim().replace(/(都|府|県|市)$/, '')
-  const candidates = [JP_PLACES[raw] ?? raw]
-  const result = await geocodeOnce(candidates[0], signal)
+  const name = place.trim()
+  // The suffix is dropped only after the name as given misses the table, or 京都 would be looked up as 京.
+  const bare = name.replace(/(都|府|県|市)$/, '')
+  const result = await geocodeOnce(JP_PLACES[name] ?? JP_PLACES[bare] ?? bare, signal)
   if (result) return result
   throw new Error(errorText('panels.errors.placeNotFound', { place }))
 }
@@ -132,7 +134,8 @@ const news: Fetcher = async (props, signal) => {
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 6).map((m) => {
     const block = m[1]
     const pick = (tag: string): string => {
-      const raw = block.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1] ?? ''
+      // Google News writes the publisher as <source url="…">, so an element may carry attributes.
+      const raw = block.match(new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`))?.[1] ?? ''
       return raw
         .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
         .replace(/&lt;/g, '<')
@@ -162,7 +165,7 @@ const calendar: Fetcher = async (props, signal) => {
   const query = typeof props.query === 'string' && props.query.trim() ? props.query.trim() : undefined
   // Asked for "this week" on a weekend, the search reaches into next week in one call, while the card
   // still shows only the events inside this week.
-  const searchUntilMs = includesNextWeek(now, window.range) ? window.untilMs + 7 * 86400000 : window.untilMs
+  const searchUntilMs = includesNextWeek(now, window.range) ? addDays(new Date(window.untilMs), 7).getTime() : window.untilMs
   const result = await searchCalendar(
     { start: new Date(window.fromMs).toISOString(), end: new Date(searchUntilMs).toISOString(), ...(query ? { query } : {}) },
     signal
