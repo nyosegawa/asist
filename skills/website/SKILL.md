@@ -19,7 +19,7 @@ The landing page is `website/src/components/Landing.astro`, its style `website/s
 
 - Look at the page at desktop width and at phone width (about 390 px). Sections appear on scroll (`data-in`), so scroll to what you changed before judging it.
 - The dev server listens on this Mac only. To open it from a phone, start it with `npm run website -- --host` for the check alone: that serves it on every network the Mac is on, including shared Wi-Fi.
-- Pictures in `website/public/` are also used by the promotional video (`promotions/x-promo-video/`). When one changes, say so in the report, since the next video changes with it.
+- Pictures in `website/public/` are also used by the promotional video (`promotions/launch-video/`), and `website/og/art.png` by its YouTube thumbnail. When one changes, say so in the report, since the next video or thumbnail changes with it.
 - A change reaches main through a pull request like any other (`pull-request`). Publish from main, never from a branch.
 
 ## 2. Write the documentation

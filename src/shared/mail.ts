@@ -353,6 +353,11 @@ export interface MailDraft {
   origin: 'agent' | 'screen'
   createdAt: number
   updatedAt: number
+  /**
+   * When a send of the draft started. It is stored before the message is handed to SMTP and cleared only
+   * when the send fails, so a draft that went out can never be sent again, even when removing it fails.
+   */
+  sendStartedAt: number | null
 }
 
 /** A new message saved as a draft. A reply draft is made only by change_mail's reply. */

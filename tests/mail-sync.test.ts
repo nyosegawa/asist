@@ -182,6 +182,32 @@ describe('MailAccountSync', () => {
     expect(cache.uidValidity('a1', 'inbox')).toBe('2')
   })
 
+  it('asks the list to reload when a new UIDVALIDITY empties a folder, whether or not anything of the new generation is fetched', async () => {
+    const { imap, cache, sync, onChanged } = setup()
+    imap.put('INBOX', { uid: 5, subject: '前の世代', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const inbox = imap.folders.get('INBOX')!
+    inbox.uidValidity = 2n
+    inbox.messages.clear()
+    onChanged.mockClear()
+    await sync.syncNow()
+    expect(cache.list({ view: 'inbox' }).total).toBe(0)
+    expect(onChanged).toHaveBeenCalled()
+    // The message list of the new generation cannot be read, and the old messages are gone all the same.
+    imap.put('INBOX', { subject: '二つ目の世代', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'b' })
+    await sync.syncNow()
+    expect(cache.list({ view: 'inbox' }).total).toBe(1)
+    inbox.uidValidity = 3n
+    imap.failSearch = true
+    onChanged.mockClear()
+    await sync.syncNow()
+    expect(sync.state).toBe('error')
+    expect(cache.list({ view: 'inbox' }).total).toBe(0)
+    expect(onChanged).toHaveBeenCalled()
+    await sync.stop()
+  })
+
   it('uses the thread id and labels the Gmail server reports, and keeps the All Mail copy of an inbox message out of archive', async () => {
     const { imap, cache, sync } = setup({ gmail: true })
     imap.put('INBOX', { subject: '見積もりの相談', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: 'q', threadId: '77', labels: ['\\Inbox'], messageId: '<q@x>' })
@@ -225,6 +251,70 @@ describe('MailAccountSync', () => {
     await vi.advanceTimersByTimeAsync(1_001)
     expect(connects()).toBe(attemptsBefore + 1)
     await sync.stop()
+  })
+
+  it('shows a failed refetch that IDLE started as the account error, fetches the folder again on the periodic sync, and reconnects when the connection broke', async () => {
+    const { imap, cache, sync, server } = setup()
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(sync.state).toBe('connected')
+    imap.failSearch = true
+    imap.arrive('INBOX', { subject: '届いた', from: tanaka, to: me, date: new Date(NOW), text: 'x' })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe(t('mail.errors.sync.folderFailed', { box: t('mail.boxes.inbox'), reason: t('mail.errors.sync.noMessageList') }))
+    imap.failSearch = false
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(sync.state).toBe('connected')
+    expect(cache.list({ view: 'inbox' }).messages.map((m) => m.subject)).toEqual(['届いた'])
+    // The connection breaks during the next refetch.
+    imap.search = async () => {
+      imap.drop('socket hang up')
+      throw new Error('socket hang up')
+    }
+    imap.arrive('INBOX', { subject: '切れる前に届いた', from: tanaka, to: me, date: new Date(NOW), text: 'y' })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe('socket hang up')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(server.instances).toHaveLength(2)
+    expect(sync.state).toBe('connected')
+    expect(cache.list({ view: 'inbox' }).messages.map((m) => m.subject)).toEqual(['切れる前に届いた', '届いた'])
+    await sync.stop()
+  })
+
+  it('keeps the error of a folder that failed while another folder is fetched successfully', async () => {
+    const { imap, sync } = setup({ account: { folders: { sent: 'Missing', archive: null, trash: null } } })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const sentFailed = t('mail.errors.sync.folderFailed', { box: t('mail.boxes.sent'), reason: 'no such mailbox: Missing' })
+    expect(sync.error).toBe(sentFailed)
+    imap.arrive('INBOX', { subject: '届いた', from: tanaka, to: me, date: new Date(NOW), text: 'x' })
+    await vi.advanceTimersByTimeAsync(150)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe(sentFailed)
+    await sync.stop()
+  })
+
+  it('ends a connection that opens after stop() was called, and runs nothing on it', async () => {
+    const { imap, sync } = setup()
+    let open!: () => void
+    const opened = new Promise<void>((resolve) => (open = resolve))
+    const connect = imap.connect.bind(imap)
+    imap.connect = async () => {
+      await opened
+      await connect()
+    }
+    sync.start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sync.state).toBe('connecting')
+    const stopping = sync.stop()
+    open()
+    await stopping
+    expect(imap.usable).toBe(false)
+    expect(imap.calls).toContain('logout')
+    expect(imap.calls.some((call) => call.startsWith('open:'))).toBe(false)
+    expect(sync.state).toBe('off')
   })
 
   it('returns a cached body, downloads one that is missing, and throws for a message that is not there', async () => {
