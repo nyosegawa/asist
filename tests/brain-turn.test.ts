@@ -5,7 +5,7 @@ import path from 'node:path'
 import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
-import type { TurnEvent } from '@shared/ipc'
+import type { AgentJob, TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
 import type { ConversationMessage, ConversationPart, ConversationResult, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
@@ -36,7 +36,8 @@ interface RoundEmitter {
   untilAborted: () => Promise<never>
 }
 
-type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason }>
+/** A round that returns `usage: null` finished without the provider's usage, as a Cerebras stream cut after its finish reason does. */
+type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason; usage?: null }>
 
 const USAGE = { input: 100, cacheRead: 900, cacheCreation: 0, output: 20 }
 
@@ -89,13 +90,13 @@ class FakeStream {
         })
     }
     const partial = await this.script(emitter)
-    return { message: { role: 'assistant', parts: [...this.parts] }, stop: partial.stop ?? 'end', usage: USAGE }
+    return { message: { role: 'assistant', parts: [...this.parts] }, stop: partial.stop ?? 'end', usage: partial.usage === null ? null : USAGE }
   }
 }
 
 const mocks = vi.hoisted(() => ({
   userData: '',
-  rounds: [] as Array<(round: RoundEmitter) => Promise<{ stop?: StopReason }>>,
+  rounds: [] as RoundScript[],
   requests: [] as Array<{ messages: ConversationMessage[]; system: Array<{ text: string }> }>,
   fetchPanel: vi.fn(),
   conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
@@ -103,6 +104,8 @@ const mocks = vi.hoisted(() => ({
   ttsEngine: 'voicevox',
   /** Holds every synthesis until the turn is aborted, as a slow speech engine does. */
   holdSynthesis: false,
+  /** The agent jobs as the agent service keeps them. */
+  jobs: new Map<string, AgentJob>(),
   contextBlock: (): string | null => null,
   workClip: async (): Promise<unknown> => null
 }))
@@ -112,7 +115,7 @@ vi.mock('../src/main/services/store', () => ({
 }))
 vi.mock('../src/main/services/llm', () => ({
   providerKey: () => mocks.key,
-  quickText: vi.fn(async () => ''),
+  completeText: vi.fn(async (): Promise<{ text: string; stop: StopReason }> => ({ text: '', stop: 'end' })),
   streamConversation: (request: { messages: ConversationMessage[]; system: Array<{ text: string }>; signal?: AbortSignal }) => {
     mocks.requests.push({ messages: structuredClone(request.messages), system: request.system })
     const script = mocks.rounds.shift()
@@ -151,7 +154,7 @@ vi.mock('../src/main/services/agent', () => ({
   contextBlock: () => mocks.contextBlock(),
   findActive: () => undefined,
   start: vi.fn(),
-  get: () => undefined,
+  get: (id: string) => mocks.jobs.get(id),
   userJob: vi.fn(),
   list: () => [],
   getLog: () => [],
@@ -198,6 +201,25 @@ function runToDone(brain: Brain, text: string): Promise<number> {
       if (event.type === 'done' && event.turnId === turnId) resolve(turnId)
     })
     const turnId = brain.startTurn(text)
+  })
+}
+
+const FINISHED_JOB = { id: 'j1', title: '調査', status: 'done', summary: '完了した' } as AgentJob
+
+/** A job that has finished, as the agent service keeps it and announces it. */
+async function finishJob(job: AgentJob = FINISHED_JOB): Promise<void> {
+  mocks.jobs.set(job.id, job)
+  const agent = await import('../src/main/services/agent')
+  agent.events.emit('event', { type: 'update', job })
+}
+
+/** The renderer's side of the playback acknowledgement, fed with brain's events the way conversation.ts feeds it. */
+function acknowledgeLikeTheRenderer(brain: Brain, acknowledgePlayback: (turnId: number, status: TurnPlaybackAckStatus) => void): void {
+  const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
+  brain.events.on('event', (e) => {
+    if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
+    if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
+    if (e.type === 'done') acks.finishTurn(e.turnId)
   })
 }
 
@@ -249,6 +271,7 @@ describe('brain turn', () => {
     mocks.key = 'test-key'
     mocks.ttsEngine = 'voicevox'
     mocks.holdSynthesis = false
+    mocks.jobs = new Map()
     mocks.contextBlock = () => null
     mocks.workClip = async () => null
   })
@@ -279,6 +302,21 @@ describe('brain turn', () => {
       ['assistant', '明日は晴天です。']
     ])
     expect(readLog()[1]).toMatchObject({ kind: 'message', role: 'assistant', parts: [{ type: 'text', text: '明日は晴天です。' }] })
+  })
+
+  it('reports no token counts for a turn whose round finished without its usage, and keeps the history estimating its context', async () => {
+    mocks.rounds.push(async (round) => {
+      round.text('晴天です。')
+      return { usage: null }
+    })
+    const { brain, events } = await loadBrain()
+    const { history } = await import('../src/main/services/brain/session')
+    await runToDone(brain, '明日の天気は')
+    const metrics = events.find((e) => e.type === 'metrics' && 'toolCalls' in e.timings)
+    expect(metrics).toMatchObject({ timings: { toolCalls: 0 } })
+    expect(metrics && metrics.type === 'metrics' && 'inputTokens' in metrics.timings).toBe(false)
+    // A measured context of no tokens would hold off compaction until the next measurement.
+    expect(history.contextTokens).toBeGreaterThan(0)
   })
 
   it('resumes exactly once after a disconnect that happens mid-reply, carrying the confirmed text and the tool results', async () => {
@@ -480,7 +518,7 @@ describe('brain turn', () => {
   it.each(['user', 'notice'] as const)('lets a %s turn proceed over the limit without waiting for compaction, which folds only the turns up to its start', async (kind) => {
     const { brain, events } = await loadBrain()
     const { history, record, LIMIT_TOKENS } = await import('../src/main/services/brain/session')
-    const { quickText } = await import('../src/main/services/llm')
+    const { completeText } = await import('../src/main/services/llm')
     history.ensureLoaded()
     // The 30 most recent turns are kept, so more than that are recorded here.
     for (let i = 0; i < 50; i++) {
@@ -489,8 +527,8 @@ describe('brain turn', () => {
     }
     history.noteContextTokens(LIMIT_TOKENS + 1, history.revision)
     let finishSummary!: (text: string) => void
-    const heldSummary = new Promise<string>((resolve) => { finishSummary = resolve })
-    vi.mocked(quickText).mockReturnValueOnce(heldSummary)
+    const heldSummary = new Promise<{ text: string; stop: StopReason }>((resolve) => { finishSummary = (text) => resolve({ text, stop: 'end' }) })
+    vi.mocked(completeText).mockReturnValueOnce(heldSummary)
     const input = kind === 'notice'
       ? { text: '作業が完了しました', notice: 'job-done' as const }
       : { text: '明日の天気は' }
@@ -499,7 +537,7 @@ describe('brain turn', () => {
     try {
       // Compaction starts, but the turn sends its request with the current history instead of waiting for the summary.
       await vi.waitFor(() => expect(events.some((e) => e.type === 'done' && e.turnId === first.turnId)).toBe(true), { timeout: 1000 })
-      expect(quickText).toHaveBeenCalledOnce()
+      expect(completeText).toHaveBeenCalledOnce()
       expect(mocks.requests).toHaveLength(1)
       expect(mocks.requests[0].messages.length).toBe(101)
       expect(history.summary).toBe('')
@@ -510,7 +548,7 @@ describe('brain turn', () => {
     // The 30 turns that were most recent at the start (20 to 49) and the turns recorded afterwards stay as they are,
     // while turns 0 to 19 become the summary.
     expect(history.summary).toBe('以前の会話の引き継ぎ')
-    const log = vi.mocked(quickText).mock.calls[0][1]
+    const log = vi.mocked(completeText).mock.calls[0][3]
     expect(log).toContain('ユーザー: 以前の質問19')
     expect(log).not.toContain('以前の質問20')
     const contents = (await historyMessages()).map(textOf)
@@ -527,6 +565,185 @@ describe('brain turn', () => {
     await runToDone(brain, '続けて')
     expect(mocks.requests[1].messages.length).toBe(63)
     expect(mocks.requests[1].system.some((block) => block.text.includes('以前の会話の引き継ぎ'))).toBe(true)
+  })
+
+  it('answers a turn at the hard limit at once, saying the history is being summarized, and never waits for the summary, even after one fails', async () => {
+    const { brain, events } = await loadBrain()
+    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    const { completeText } = await import('../src/main/services/llm')
+    history.ensureLoaded()
+    for (let i = 0; i < 50; i++) {
+      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    }
+    history.noteContextTokens(HARD_LIMIT_TOKENS + 1_000_000, history.revision)
+    let failSummary!: (error: Error) => void
+    vi.mocked(completeText).mockReturnValueOnce(new Promise((_, reject) => { failSummary = reject }))
+    const said = (turnId: number): string => events.flatMap((e) => (e.type === 'segment' && e.turnId === turnId ? [e.segment.text] : [])).join('')
+    const sentence = createTranslator('ja-JP')('spoken.historyFull')
+
+    // The summary is still being written while both of these turns are answered.
+    expect(said(await runToDone(brain, '明日の天気は'))).toBe(sentence)
+    expect(said(await runToDone(brain, 'まだですか'))).toBe(sentence)
+    expect(completeText).toHaveBeenCalledOnce()
+    failSummary(new Error('overloaded'))
+    await history.compact('quiet')
+    // After the failure the next turn starts another summary and is answered without waiting for it either.
+    const callsBefore = vi.mocked(completeText).mock.calls.length
+    vi.mocked(completeText).mockReturnValueOnce(new Promise(() => {}))
+    const third = await runToDone(brain, 'もう一度')
+    expect(said(third)).toBe(sentence)
+    expect(vi.mocked(completeText).mock.calls.length).toBe(callsBefore + 1)
+    expect(mocks.requests).toEqual([])
+
+    // It is the app's reply, shown once as the reply line and not as a failure.
+    const ofThird = events.filter((e) => e.turnId === third)
+    expect(ofThird.filter((e) => e.type === 'error')).toEqual([])
+    expect(ofThird.flatMap((e) => (e.type === 'delta' ? [e.text] : [])).join('')).toBe(sentence)
+    expect(ofThird.at(-1)).toMatchObject({ type: 'done', fullText: sentence })
+    // The history holds what was said, so a later model does not read the request as left undone.
+    expect(readLog().findLast((r) => r.kind === 'assistant')).toMatchObject({ turnId: third, text: sentence })
+    expect(readLog().findLast((r) => r.kind === 'assistant')).not.toHaveProperty('failed')
+    expect(textOf(history.toMessages().at(-1)!)).toBe(sentence)
+  })
+
+  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports the job as it is by then, once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    const { completeText } = await import('../src/main/services/llm')
+    try {
+      const { brain, events } = await loadBrain()
+      const { conversationLog, history, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+      const { compactionJob } = await import('../src/main/services/maintenance')
+      // The log is on disk and no turn has read it yet, as right after the app starts.
+      for (let i = 0; i < 50; i++) {
+        conversationLog.append({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+        conversationLog.append({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+      }
+      history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
+      // The network is down, so every summary fails at once.
+      let online = false
+      vi.mocked(completeText).mockImplementation(async () => {
+        if (!online) throw new Error('fetch failed')
+        return { text: '以前の会話の引き継ぎ', stop: 'end' }
+      })
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      const waitingForMerge = { ...FINISHED_JOB, worktree: { dir: '/w', repo: '/r', branch: 'b', base: 'c' }, mergeState: 'pending' } as AgentJob
+      await finishJob(waitingForMerge)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(completeText).not.toHaveBeenCalled()
+      // The user throws the changes away from the job panel while the report waits.
+      const discarded = { ...waitingForMerge, mergeState: 'discarded' } as AgentJob
+      mocks.jobs.set('j1', discarded)
+      // The idle compaction fails more times than a report has attempts.
+      for (let i = 0; i < 6; i++) {
+        await compactionJob.run()
+        await vi.advanceTimersByTimeAsync(60_000)
+      }
+      expect(mocks.requests).toEqual([])
+      online = true
+      await compactionJob.run()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(mocks.requests).toHaveLength(1)
+      const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+      expect(textOf(mocks.requests[0].messages.at(-1)!)).toBe(reportNotice(discarded).text)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.requests).toHaveLength(1)
+      expect(events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))).toEqual(['調査が終わりました。'])
+    } finally {
+      vi.mocked(completeText).mockImplementation(async () => ({ text: '', stop: 'end' }))
+      vi.useRealTimers()
+    }
+  })
+
+  /** A history at the hard limit, recorded the way the conversation records it. */
+  async function historyAtHardLimit(): Promise<void> {
+    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    history.ensureLoaded()
+    for (let i = 0; i < 50; i++) {
+      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    }
+    history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
+  }
+
+  it('hands a report held at the hard limit to a voice engine that took the conversation over meanwhile', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      await historyAtHardLimit()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(60_000)
+      const { setConversationOwner } = await import('../src/main/services/brain/session')
+      const notify = vi.fn(async () => {})
+      setConversationOwner({ notify, say: async () => {} })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(notify).toHaveBeenCalledOnce()
+      expect(mocks.requests).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports nothing for a job that is gone by the time the history has room', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      await historyAtHardLimit()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(60_000)
+      mocks.jobs.delete('j1')
+      const { completeText } = await import('../src/main/services/llm')
+      vi.mocked(completeText).mockResolvedValueOnce({ text: '以前の会話の引き継ぎ', stop: 'end' })
+      const { compactionJob } = await import('../src/main/services/maintenance')
+      await compactionJob.run()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.requests).toEqual([])
+      expect(readLog().filter((r) => r.kind === 'notice')).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tells in the report whether the changes of a job were taken in, thrown away, or are still waiting, and asks only while they wait', async () => {
+    await loadBrain()
+    const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+    const worktree = { dir: '/w', repo: '/r', branch: 'b', base: 'c' }
+    const notices = (['pending', 'merged', 'discarded'] as const).map((mergeState) => reportNotice({ ...FINISHED_JOB, worktree, mergeState } as AgentJob).text)
+    expect(new Set([...notices, reportNotice(FINISHED_JOB).text]).size).toBe(4)
+    expect(notices.map((text) => text.includes('merge_agent_job'))).toEqual([true, false, false])
+  })
+
+  it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      mocks.rounds.push(async (round) => {
+        // A slow model, or a tool that runs long before the first sentence.
+        await new Promise((resolve) => setTimeout(resolve, 4 * 60_000))
+        round.text('調査が終わりました。')
+        return {}
+      })
+      for (let i = 0; i < 4; i++) mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      const { brain } = await loadBrain()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(mocks.requests).toHaveLength(1)
+      expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('returns tool results in the order of the calls, marks a failure with isError, and logs each tool name and result length', async () => {
@@ -876,16 +1093,9 @@ describe('brain turn', () => {
     const { setSpeechRoute } = await import('../src/main/services/brain/session')
     if (kind === 'live') setSpeechRoute(liveRoute)
     const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
-    // The renderer's side of the acknowledgement, fed with brain's events the way conversation.ts feeds it.
-    const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
-    brain.events.on('event', (e) => {
-      if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
-      if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
-      if (e.type === 'done') acks.finishTurn(e.turnId)
-    })
+    acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
     initJobReporting()
-    const agent = await import('../src/main/services/agent')
-    agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+    await finishJob()
     await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
     // A report counted as not delivered goes out again at once, so a second request would have started by now.
     await new Promise((resolve) => setTimeout(resolve, 200))

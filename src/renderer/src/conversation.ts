@@ -26,7 +26,7 @@ import {
   useTurnStore, useTaskStore, useNoteStore, useMailStore } from '@/state/stores'
 import { useConfirmStore } from '@/state/confirm'
 import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
-import { displayError } from '@/display-error'
+import { displayError, errorMessageOf } from '@/display-error'
 
 /** The conversation orchestrator, wiring the voice pipeline, brain, panels and feed. It initializes once, when App mounts. */
 
@@ -71,24 +71,18 @@ function lastAssistantText(): string {
 const planner = new BridgePlanner({
   plan: (input) => window.api.bridgePlan(input),
   onPlan: (plan) => {
-    if (plan.bridge) useTurnStore.getState().setRouterNote(translate('hud.router.bridge', { text: plan.bridge }))
+    if (plan.bridge) useTurnStore.getState().setRouterNote({ kind: 'bridge', text: plan.bridge })
   },
   onFailure: (error) => {
     console.warn('bridge plan failed:', error)
-    useTurnStore.getState().setRouterNote(translate('hud.router.bridgeFailed'))
+    useTurnStore.getState().setRouterNote({ kind: 'bridgeFailed' })
   }
 })
 
 /** The aizuchi classifier runs on every partial recognition; the latest result at speech end picks the aizuchi. Without the worker no aizuchi sounds. */
 const classifier = new AizuchiClassifierFeed({
   classify: (input) => window.api.aizuchiClassify(input),
-  onResult: (result) =>
-    useTurnStore.getState().setRouterNote(
-      translate('hud.router.aizuchi', {
-        kind: translate(`hud.aizuchiClass.${result.cls}`),
-        percent: Math.round(result.prob * 100)
-      })
-    ),
+  onResult: (result) => useTurnStore.getState().setRouterNote({ kind: 'aizuchi', cls: result.cls, percent: Math.round(result.prob * 100) }),
   onFailure: (error) => console.warn('aizuchi classify failed:', error)
 })
 
@@ -108,7 +102,8 @@ const opening = new TurnOpening({
   play: (clip, role) => speechPlayer.playClip(clip.audio, clip.text, { role }),
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
-  onBridgeOutcome: noteBridgeOutcome
+  onBridgeOutcome: noteBridgeOutcome,
+  withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })
 const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
@@ -261,7 +256,7 @@ async function initializeConversation(): Promise<void> {
   // A "うん" or "はい" spoken during playback was taken as an aizuchi, so playback keeps going
   // instead of stopping.
   voiceController.events.on('userBackchannel', () => {
-    useTurnStore.getState().setRouterNote(translate('hud.router.heardAsBackchannel'))
+    useTurnStore.getState().setRouterNote({ kind: 'heardAsBackchannel' })
     const heard = heardTurn()
     if (heard >= 0) turnMetrics.increment(heard, 'userBackchannels')
   })
@@ -305,12 +300,12 @@ async function initializeConversation(): Promise<void> {
     const heard = playback.heardDuring(startedAt, speechEndAt + vadMs)
     const cleaned = stripClipEcho(text, heard.filter((sound) => sound.clip).map((sound) => sound.text))
     if (!cleaned) {
-      useTurnStore.getState().setRouterNote(translate('hud.router.droppedClipEcho'))
+      useTurnStore.getState().setRouterNote({ kind: 'droppedClipEcho' })
       opening.cancel(startedAt)
       return
     }
     if (isSelfEcho(cleaned, heard.map((sound) => sound.text))) {
-      useTurnStore.getState().setRouterNote(translate('hud.router.droppedSelfEcho'))
+      useTurnStore.getState().setRouterNote({ kind: 'droppedSelfEcho' })
       opening.cancel(startedAt)
       return
     }
@@ -462,7 +457,10 @@ function enableMic(): Promise<void> {
   return liveMode() ? liveVoice.enable() : voiceController.enable()
 }
 
-/** Turns the microphone on when the user chose to have it on at launch. */
+/**
+ * Turns the microphone on when the user chose to have it on at launch: at launch, and again once the
+ * setup or the notice of the risks that held it off has been answered.
+ */
 export function startMicAtLaunch(): void {
   if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
 }
@@ -474,12 +472,7 @@ function handleLiveEvent(event: LiveEvent): void {
   switch (event.type) {
     case 'connection': {
       live.setConnection(event.state, event.detail)
-      const state = translate(`hud.connection.${event.state}`)
-      turn.setRouterNote(
-        event.detail
-          ? translate('hud.router.liveDetail', { state, detail: event.detail })
-          : translate('hud.router.live', { state })
-      )
+      turn.setRouterNote({ kind: 'live', state: event.state, ...(event.detail ? { detail: event.detail } : {}) })
       if (event.state === 'open' && liveVoice.current === 'on') turn.setPhase('listen')
       break
     }
@@ -520,7 +513,7 @@ function handleLiveEvent(event: LiveEvent): void {
       // transcript arrives later with the same turn id and rewrites that line.
       speechPlayer.streamClear()
       if (liveAiLineId !== null) feed.update(liveAiLineId, { streaming: false })
-      turn.setRouterNote(translate('hud.router.interrupted'))
+      turn.setRouterNote({ kind: 'interrupted' })
       break
     }
     case 'latency':
@@ -530,8 +523,8 @@ function handleLiveEvent(event: LiveEvent): void {
       live.setUsage(event.usage)
       break
     case 'error':
-      useToastStore.getState().push({ kind: 'error', title: translate('voice.liveFailed'), body: event.message })
-      feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message.slice(0, 120) } } })
+      useToastStore.getState().push({ kind: 'error', title: translate('voice.liveFailed'), body: displayError(event.message) })
+      feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message } } })
       break
   }
 }
@@ -625,16 +618,16 @@ async function finishUserTurnStart(requestId: string, turnId: number): Promise<b
 
 function failUserTurnStart(requestId: string, error: unknown): void {
   if (pendingRequestId !== requestId && activeRequestId !== requestId) return
+  opening.withdraw()
   pendingRequestId = null
   activeRequestId = null
   turnMetrics.discardRequest(requestId)
   aiLineId = null
-  const message = displayError(error)
   const turn = useTurnStore.getState()
   turn.setActiveTurn(-1)
   turn.setPhase('idle')
-  useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyStartFailed'), body: message })
-  useFeedStore.getState().append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: message.slice(0, 120) } } })
+  useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyStartFailed'), body: displayError(error) })
+  useFeedStore.getState().append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: errorMessageOf(error) } } })
 }
 
 /**
@@ -712,24 +705,6 @@ export async function sendTypedMessage(text: string): Promise<void> {
   }
 }
 
-/** What the HUD calls the tool the turn is running. A tool with no name of its own is shown by its own name. */
-function toolLabel(name: string, detail?: string): string {
-  switch (name) {
-    case 'web_search':
-      return detail ? translate('hud.tool.webSearchQuery', { query: detail }) : translate('hud.tool.webSearch')
-    case 'run_agent_task':
-      return translate('hud.tool.runAgent')
-    case 'get_agent_job':
-      return translate('hud.tool.checkJobs')
-    case 'cancel_agent_job':
-      return translate('hud.tool.cancelJob')
-    case 'recall':
-      return translate('hud.tool.recall')
-    default:
-      return name.startsWith('show_') ? translate('hud.tool.card', { name: name.slice('show_'.length) }) : name
-  }
-}
-
 export function handleTurnEvent(event: TurnEvent): void {
   const turn = useTurnStore.getState()
   const feed = useFeedStore.getState()
@@ -795,12 +770,7 @@ export function handleTurnEvent(event: TurnEvent): void {
       speechPlayer.pushSegmentAudio(event.turnId, event.index, event.samples, event.last)
       break
     case 'tool': {
-      turn.setRouterNote(
-        translate('hud.router.tool', {
-          tool: toolLabel(event.name, event.detail),
-          status: translate(`hud.toolStatus.${event.status}`)
-        })
-      )
+      turn.setRouterNote({ kind: 'tool', name: event.name, status: event.status, ...(event.detail ? { detail: event.detail } : {}) })
       break
     }
     case 'panel': {
@@ -820,6 +790,7 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'done': {
       interjectPlayback.finishTurn(event.turnId)
+      if (!event.fullText) opening.withdraw()
       usePanelStore.getState().dismissLoadingOwnedBy(event.turnId)
       if (aiLineId !== null) feed.update(aiLineId, { streaming: false })
       if (!speechPlayer.isPlaying && !speechPlayer.isStreaming) turn.setPhase(liveVoice.current === 'on' ? 'listen' : 'idle')
@@ -831,8 +802,8 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'error': {
       interjectPlayback.finishTurn(event.turnId)
-      useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyFailed'), body: event.message })
-      feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message.slice(0, 120) } } })
+      useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyFailed'), body: displayError(event.message) })
+      feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message } } })
       break
     }
   }

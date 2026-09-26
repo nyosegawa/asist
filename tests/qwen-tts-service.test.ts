@@ -163,6 +163,26 @@ describe('Qwen3-TTS service', () => {
     expect(result.readUInt32LE(40) / 2 / RATE).toBeLessThan(0.7)
   })
 
+  it('lets a slow reading of a sentence full of digits finish, and still cuts one that rambles on past it', async () => {
+    const text = '暗証番号は4桁で、8264です。'
+    const reading = collect(qwen.stream({ ...REQUEST, text }))
+    await settle()
+    const child = children[0]
+    const first = child.input.find((message) => message.text === text)!.id
+    // 6.2 s: a reading measured at 5.9 s lost its last digit to an allowance counted by characters alone.
+    for (let seq = 0; seq < 13; seq++) say(child, { type: 'chunk', id: first, seq, pcm: voiced() })
+    say(child, { type: 'end', id: first, samples: 0 })
+    expect(await reading / RATE).toBeGreaterThan(6.2)
+    expect(child.input).not.toContainEqual({ type: 'cancel', id: first })
+
+    const rambling = collect(qwen.stream({ ...REQUEST, text }))
+    await settle()
+    const second = child.input.filter((message) => message.text === text)[1].id
+    for (let seq = 0; seq < 40; seq++) say(child, { type: 'chunk', id: second, seq, pcm: voiced() })
+    expect(await rambling / RATE).toBeLessThan(8)
+    expect(child.input).toContainEqual({ type: 'cancel', id: second })
+  })
+
   it('gives up on a clip the model never reads plausibly instead of caching a bad one', async () => {
     const wav = qwen.synthesizeWav({ ...REQUEST, text: 'うん。' })
     const outcome = wav.then(() => 'resolved', (error: Error) => error.message)

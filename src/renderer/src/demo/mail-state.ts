@@ -22,8 +22,8 @@ export const demoDraft = (id: string): MailDraft => {
   return draft
 }
 /** A send asked for by voice becomes a draft instead. sayings.ts calls this. */
-export function createDemoDraft(seed: Omit<MailDraft, 'id' | 'createdAt' | 'updatedAt'>): MailDraft {
-  const draft: MailDraft = { ...seed, id: `draft-${Date.now().toString(36)}`, createdAt: Date.now(), updatedAt: Date.now() }
+export function createDemoDraft(seed: Omit<MailDraft, 'id' | 'createdAt' | 'updatedAt' | 'sendStartedAt'>): MailDraft {
+  const draft: MailDraft = { ...seed, id: `draft-${Date.now().toString(36)}`, createdAt: Date.now(), updatedAt: Date.now(), sendStartedAt: null }
   commitDrafts([draft, ...drafts])
   return draft
 }

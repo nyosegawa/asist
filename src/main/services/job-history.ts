@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import { z } from 'zod'
 import type { AgentJob } from '@shared/ipc'
+import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { isJobTerminal } from '@shared/job-status'
-import { errorMessage } from './i18n'
 import { storedContent, type StoredFormat } from '@shared/stored-format'
 import { dataPath, removeData, writeJson } from './store'
 import { openStoredFileSync } from './stored-file'
@@ -93,12 +93,12 @@ export function readJobHistory(): AgentJob[] {
     source = fs.readFileSync(file, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw new Error(errorText('jobs.history.unreadable', { file, detail: errorMessage(error) }))
+    throw new Error(errorText('jobs.history.unreadable', { file, detail: errMessage(error) }))
   }
   try {
     return openStoredFileSync(file, JSON.parse(source) as unknown, JOBS_FORMAT)
   } catch (error) {
-    throw new Error(errorText('jobs.history.invalid', { file, detail: errorMessage(error) }))
+    throw new Error(errorText('jobs.history.invalid', { file, detail: errMessage(error) }))
   }
 }
 

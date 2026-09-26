@@ -1,4 +1,4 @@
-import type { SystemLayer } from './conversation'
+import { SYSTEM_LAYER_NAMES, type SystemLayer } from './conversation'
 
 export type { SystemLayer }
 
@@ -11,19 +11,8 @@ export type { SystemLayer }
  * happened.
  */
 
-export type CacheMissReason =
-  | 'first'
-  | 'hit'
-  | 'ttl'
-  | 'tools'
-  | 'system_base'
-  | 'system_memory'
-  | 'system_summary'
-  | 'system_other'
-  | 'messages'
-  | 'unknown'
-
-export const CACHE_MISS_REASONS: readonly CacheMissReason[] = [
+/** Each system layer has a reason of its own, `system_` followed by the layer's name. */
+export const CACHE_MISS_REASONS = [
   'first',
   'hit',
   'ttl',
@@ -31,18 +20,16 @@ export const CACHE_MISS_REASONS: readonly CacheMissReason[] = [
   'system_base',
   'system_memory',
   'system_summary',
-  'system_other',
   'messages',
   'unknown'
-]
+] as const
 
-export const isCacheMissReason = (value: unknown): value is CacheMissReason =>
-  typeof value === 'string' && (CACHE_MISS_REASONS as readonly string[]).includes(value)
-
+export type CacheMissReason = (typeof CACHE_MISS_REASONS)[number]
 
 export interface RequestFingerprint {
   at: number
-  systemLayers: Array<{ name: SystemLayer['name']; hash: string }>
+  /** The hash of each layer sent, by name. A layer that was left out has none. */
+  systemLayers: Partial<Record<SystemLayer['name'], string>>
   tools: string
   messages: string[]
 }
@@ -67,7 +54,7 @@ export function fingerprintRequest(input: {
 }): RequestFingerprint {
   return {
     at: input.at,
-    systemLayers: input.systemLayers.map((layer) => ({ name: layer.name, hash: hashText(layer.text) })),
+    systemLayers: Object.fromEntries(input.systemLayers.map((layer) => [layer.name, hashText(layer.text)])),
     tools: hashText(JSON.stringify(input.tools)),
     messages: input.messages.map((message) => hashText(JSON.stringify(message)))
   }
@@ -89,13 +76,10 @@ export function diagnoseCacheMiss(
   if (!previous) return 'first'
   if (next.at - previous.at >= ttlMs) return 'ttl'
   if (previous.tools !== next.tools) return 'tools'
-  const layers = Math.max(previous.systemLayers.length, next.systemLayers.length)
-  for (let i = 0; i < layers; i++) {
-    const before = previous.systemLayers[i]
-    const after = next.systemLayers[i]
-    if (before?.hash === after?.hash && before?.name === after?.name) continue
-    const name = after?.name ?? before?.name ?? 'other'
-    return name === 'base' ? 'system_base' : name === 'memory' ? 'system_memory' : name === 'summary' ? 'system_summary' : 'system_other'
+  // The layers go out in one order, so the first one whose text changed, or that appeared or went
+  // away, is where the cached prefix broke.
+  for (const name of SYSTEM_LAYER_NAMES) {
+    if (previous.systemLayers[name] !== next.systemLayers[name]) return `system_${name}`
   }
   const stablePrefix = previous.messages.length - 1
   for (let i = 0; i < stablePrefix; i++) {

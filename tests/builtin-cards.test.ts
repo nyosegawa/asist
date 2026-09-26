@@ -703,7 +703,7 @@ describe('mail draft card', () => {
   const reply = DEMO_MAIL_DRAFTS[1]
   beforeEach(() => {
     useSettingsStore.setState({ settings: { mail: { enabled: true, accounts: DEMO_MAIL_ACCOUNTS, defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } } as AppSettings })
-    useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true })
+    useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true, sending: [] })
     useToastStore.setState({ toasts: [] })
   })
 
@@ -767,6 +767,29 @@ describe('mail draft card', () => {
     expect(useViewStore.getState().open).toMatchObject({ app: 'mail', box: 'drafts', pane: { kind: 'draft', id: reply.id } })
   })
 
+  it('offers no send for a draft whose send started, says it can only be discarded, and discards it', async () => {
+    const started = DEMO_MAIL_DRAFTS.find((item) => item.sendStartedAt !== null)!
+    const card = await renderAt(spec('mail-draft', { draftId: started.id }), S)
+    expect(card.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
+    const actions = [...card.querySelectorAll<HTMLButtonElement>('.card-action')]
+    expect(actions.map((action) => action.textContent)).not.toContain(t('mail.send'))
+    expect(card.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)?.disabled).toBe(true)
+    await act(async () => actions.find((action) => action.textContent === t('mail.composer.discard'))!.click())
+    expect(api.mailDraftRemove).toHaveBeenCalledWith(started.id)
+    expect(api.mailDraftSend).not.toHaveBeenCalled()
+  })
+
+  it('keeps saying the draft is being sent while its own send is under way, though main has recorded the start', async () => {
+    let finish!: (value: unknown) => void
+    api.mailDraftSend.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never)
+    const card = await renderAt(spec('mail-draft', { draftId: draft.id }), L)
+    await act(async () => card.querySelector<HTMLButtonElement>('.card-action')!.click())
+    await act(async () => useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS.map((item) => (item.id === draft.id ? { ...item, sendStartedAt: Date.now() } : item)) }))
+    expect(card.querySelector('.card-action')?.textContent).toBe(t('mail.sending'))
+    expect(card.querySelector('[role="status"]')).toBeNull()
+    await act(async () => finish({ saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '田中' }) }))
+  })
+
   it('says so when the draft has been sent or discarded', async () => {
     useMailStore.setState({ drafts: [], draftsLoaded: true })
     const card = await renderAt(spec('mail-draft', { draftId: 'gone' }), L)
@@ -819,7 +842,8 @@ describe('numbers and times on cards', () => {
     expect(elapsedLabel(ja, 192_000)).toBe(ja('jobs.elapsed.minutes', { minutes: 3, seconds: 12 }))
     expect(elapsedLabel(ja, 3_720_000)).toBe(ja('jobs.elapsed.hours', { hours: 1, minutes: '02' }))
     expect(elapsedLabel(createTranslator('en-US'), 3_720_000)).toBe('1h 02m')
-    const now = Date.parse('2026-09-15T12:00:00+09:00')
+    // A time more than a week old is written as its date in the Mac's time zone, so now is noon on that clock.
+    const now = new Date(2026, 8, 15, 12).getTime()
     expect(relativeTime(now - 30_000, now)).toBe(t('cardsTime.justNow'))
     expect(relativeTime(now - 5 * 60_000, now)).toBe(t('cardsTime.minutesAgo', { count: 5 }))
     expect(relativeTime(now - 2 * 3_600_000, now)).toBe(t('cardsTime.hoursAgo', { count: 2 }))

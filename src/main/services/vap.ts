@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
 import { app } from 'electron'
-import type { SetupProgress, VapState, VapStatus } from '@shared/ipc'
+import type { AppSettings, SetupProgress, VapState, VapStatus } from '@shared/ipc'
+import { conversationFeatures } from '@shared/conversation-locale'
 import { parseVapWorkerLine } from '@shared/vap-protocol'
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
@@ -26,6 +27,13 @@ import { createEnvironment, environmentCurrent, installRequirements, recordEnvir
  */
 
 const WORKER_READY_TIMEOUT_MS = 120_000
+/**
+ * How often a resident worker that stopped on its own is started again within RESTART_WINDOW_MS. One that
+ * keeps crashing after it has loaded would otherwise load again on every watchdog tick, several seconds
+ * of CPU each time, until the app quits.
+ */
+const RESTART_LIMIT = 3
+const RESTART_WINDOW_MS = 10 * 60_000
 /** The generation of the Python environment. Raising it after a requirements change rebuilds the environment. */
 const RUNTIME_LOCK_VERSION = 2
 const VAP_RUNTIME_VERSION = '2'
@@ -142,6 +150,13 @@ let startInFlight: Promise<boolean> | null = null
 let prepareInFlight: Promise<{ ok: boolean; message: string }> | null = null
 let prepareController: AbortController | null = null
 let onState: ((state: VapState) => void) | null = null
+/**
+ * The worker has been running and nothing asked it to stop, so a worker that died on its own is started
+ * again. A restart that fails to load clears it: loading takes several seconds of CPU, which a worker that
+ * cannot load would repeat on every watchdog tick.
+ */
+let resident = false
+let restartTimestamps: number[] = []
 let quitHookRegistered = false
 
 function runtimeDir(): string {
@@ -172,11 +187,15 @@ export function runtimeInstalled(): boolean {
   return environmentCurrent(runtimeDir(), STAMP)
 }
 
+function workerRunning(): boolean {
+  return Boolean(child && workerReady && child.exitCode === null)
+}
+
 export function installationStatus(): VapStatus {
   return {
     runtimeInstalled: runtimeInstalled(),
     modelsInstalled: missingModels().length === 0,
-    running: Boolean(child && workerReady && child.exitCode === null)
+    running: workerRunning()
   }
 }
 
@@ -186,6 +205,31 @@ function registerQuitHook(): void {
   app.on('will-quit', () => {
     stop()
   })
+}
+
+/** Whether the worker should be running: it was resident, and the setting and the conversation's language still want it. */
+export function wanted(settings: AppSettings): boolean {
+  return resident && settings.vapEnabled && conversationFeatures(settings.conversationLocale).maai
+}
+
+/**
+ * Starts a resident worker again after it stopped on its own, keeping the conversation's state handler.
+ * Past the limit of restarts it waits for the conversation to start it.
+ */
+export async function restart(): Promise<boolean> {
+  if (workerRunning()) return true
+  if (startInFlight) return startInFlight
+  const now = Date.now()
+  restartTimestamps = restartTimestamps.filter((time) => now - time < RESTART_WINDOW_MS)
+  if (restartTimestamps.length >= RESTART_LIMIT) {
+    console.warn('vap: the worker keeps stopping; it is left off until the microphone is turned on again')
+    resident = false
+    return false
+  }
+  restartTimestamps.push(now)
+  const ready = await start()
+  if (!ready) resident = false
+  return ready
 }
 
 function handleStdoutLine(line: string): void {
@@ -202,7 +246,7 @@ function handleStdoutLine(line: string): void {
   }
   if (message.type === 'fatal') {
     console.warn(`vap: worker fatal: ${message.error}`)
-    stop()
+    stopWorker()
     return
   }
   onState?.(message.state)
@@ -249,8 +293,8 @@ function workerArgs(): string[] {
 }
 
 async function startWorker(): Promise<boolean> {
-  if (child && workerReady && child.exitCode === null) return true
-  stop()
+  if (workerRunning()) return true
+  stopWorker()
   if (!runtimeInstalled()) return false
   if (missingModels().length > 0) return false
   if (!fs.existsSync(resourcePath('vap_worker.py'))) return false
@@ -279,17 +323,18 @@ async function startWorker(): Promise<boolean> {
   // EPIPE, which becomes an uncaught exception unless the stream has a listener.
   spawned.stdin.on('error', (error) => {
     console.warn(`vap: worker input failed: ${error.message}`)
-    if (child === spawned) stop()
+    if (child === spawned) stopWorker()
   })
 
   const ready = await waitUntilReady(spawned)
-  if (!ready && child === spawned) stop()
+  if (!ready && child === spawned) stopWorker()
+  if (ready) resident = true
   return ready
 }
 
 /** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
 function start(): Promise<boolean> {
-  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
+  if (workerRunning()) return Promise.resolve(true)
   if (startInFlight) return startInFlight
   const operation = startWorker().finally(() => {
     if (startInFlight === operation) startInFlight = null
@@ -322,7 +367,14 @@ export function pushAudio(user: Float32Array, assistant: Float32Array): void {
   child.stdin.write(Buffer.from(interleaved.buffer, interleaved.byteOffset, interleaved.byteLength))
 }
 
+/** Stops the worker for good, until the conversation or a preparation starts it again. */
 export function stop(): void {
+  resident = false
+  restartTimestamps = []
+  stopWorker()
+}
+
+function stopWorker(): void {
   const stale = child
   child = null
   workerReady = false

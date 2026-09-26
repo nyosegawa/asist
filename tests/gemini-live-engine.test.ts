@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
+import { readErrorText } from '@shared/i18n/error-text'
 import type { LiveEvent, TurnEvent } from '@shared/ipc'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
@@ -395,9 +397,10 @@ describe('GeminiLiveEngine', () => {
   })
 
   it('reports an error once: as the failure to connect before the setup, and as an error after it', async () => {
-    const { t } = await import('../src/main/services/i18n')
+    const t = createTranslator('ja-JP')
     const { engine, sessions, events } = await setup()
-    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [e.message] : []))
+    // The screen words each message as the renderer does.
+    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [readErrorText(e.message, 'ja-JP') ?? e.message] : []))
     engine.activity(true)
     await vi.advanceTimersByTimeAsync(0)
     sessions[0].params.callbacks.onerror(new Error('quota exceeded'))

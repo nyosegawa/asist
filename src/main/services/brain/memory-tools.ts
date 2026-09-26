@@ -58,7 +58,8 @@ export function memoryTools(language: PromptLanguage): Def[] {
             })
           }
         },
-        required: ['query']
+        required: ['query'],
+        additionalProperties: false
       },
       parallel: true,
       timeoutMs: LOCAL_TIMEOUT_MS,

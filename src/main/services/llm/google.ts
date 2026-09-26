@@ -4,7 +4,7 @@ import type { ConversationMessage, ConversationRequest, ConversationResult, Sear
 import type { RoundUsage } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { effortFor, modelLabel, type Effort } from '@shared/llm-catalog'
-import { AdapterStream, statusError, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
+import { AdapterStream, statusError, streamCutOff, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
 
 /**
  * Google, calling the Gemini API's generateContent through @google/genai.
@@ -196,6 +196,8 @@ class GoogleStream extends AdapterStream {
         }
       }
     }
+    // A blocked prompt gets no candidate and so no finish reason; any other response ends on one.
+    if (finish === undefined && blocked === undefined) streamCutOff(request.signal, 'Gemini')
     this.closeText()
     if (grounding?.webSearchQueries?.length || query) {
       const suggestions = grounding?.searchEntryPoint?.renderedContent
@@ -208,7 +210,7 @@ class GoogleStream extends AdapterStream {
     else if (blocked || (finish && REFUSALS.has(finish))) stop = 'refusal'
     else if (finish === FinishReason.MAX_TOKENS) stop = 'max_tokens'
     else if (finish === FinishReason.STOP) stop = 'end'
-    else throw new Error(`Gemini: the response ended on an unknown finish reason (${finish ?? 'none'})`)
+    else throw new Error(`Gemini: the response ended on an unknown finish reason (${finish})`)
 
     return { message: { role: 'assistant', parts: [...this.parts], native: this.nativeSnapshot() }, stop, usage: roundUsage(usage, grounding) }
   }

@@ -1,5 +1,5 @@
-import { resolveWeatherCard } from '../weather'
-import { weatherCardKeyOf, type WeatherData } from '@shared/weather'
+import { resolveWeatherCard, WeatherIssueError } from '../weather'
+import { weatherCardKeyOf, type WeatherData, type WeatherIssue } from '@shared/weather'
 import { PANEL_CATALOG, type PanelCatalogEntry } from '@shared/panel-catalog'
 import type { AgentJob, PanelEvent, TurnEvent } from '@shared/ipc'
 import type { SearchSource, ToolSpec } from '@shared/conversation'
@@ -36,7 +36,7 @@ import { agentTool, jobTools, projectTools } from './job-tools'
 import { memoryTools } from './memory-tools'
 import { miniAppTools } from './mini-app-tools'
 import { noteTools } from './note-tools'
-import { cardError, detail, issueText } from './tool-error-text'
+import { badInput, cardError, detail } from './tool-error-text'
 
 /**
  * The client tools the conversation model can call, held in a registry. One tool is one definition
@@ -100,6 +100,9 @@ function panelTool(entry: PanelCatalogEntry, language: PromptLanguage): Def {
   }
 }
 
+/** A place that names no weather card, which the model is to settle with the user rather than report as a failure. */
+const issueResult = (issue: WeatherIssue, language: PromptLanguage): Record<string, unknown> => ({ ...issue, hint: issue.hint[language] })
+
 async function runPanelTool(
   entry: PanelCatalogEntry,
   input: Record<string, unknown>,
@@ -109,7 +112,7 @@ async function runPanelTool(
 ): Promise<unknown> {
   const type = entry.type
   const parsed = entry.schema.safeParse(input)
-  if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
+  if (!parsed.success) throw badInput(parsed.error.issues, language)
   // A default the schema filled in may be a packed pair, so the fetcher and the card see one language.
   // Only a field the model left out can hold one; what it wrote may quote text from outside.
   const given = Object.fromEntries(
@@ -124,10 +127,14 @@ async function runPanelTool(
   if (type === 'weather') {
     signal.throwIfAborted()
     const place = resolveWeatherCard(String(given.location))
-    if ('status' in place) return { ...place, hint: place.hint[language] }
-    const result = await fetchPanel(type, given, signal).catch((err: unknown) => {
+    if ('status' in place) return issueResult(place, language)
+    let result: Awaited<ReturnType<typeof fetchPanel>>
+    try {
+      result = await fetchPanel(type, given, signal)
+    } catch (err) {
+      if (err instanceof WeatherIssueError) return issueResult(err.issue, language)
       throw failure(err)
-    })
+    }
     signal.throwIfAborted()
     const weather = result.props.weather as WeatherData
     const key = weatherCardKeyOf(place.cardId, weather.targetDate)
@@ -220,10 +227,6 @@ const jobBrief = (j: AgentJob): Record<string, unknown> => ({
 
 /** What this file says to the model, in both prompt languages. */
 const TEXTS = {
-  badInput: (issues: string): PromptText => ({
-    ja: `入力が不正: ${issues}。スキーマに合わせて呼び直すこと。`,
-    en: `Invalid input: ${issues}. Call again with input that matches the schema.`
-  }),
   timerFailed: (reason: string): PromptText => ({
     ja: `タイマー開始に失敗: ${reason}。秒数を見直して呼び直すこと。`,
     en: `The timer could not be started: ${reason}. Check the number of seconds and call again.`

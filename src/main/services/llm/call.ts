@@ -1,6 +1,6 @@
 import type { LlmPurpose } from '@shared/api-usage'
 import { llmCost } from '@shared/api-pricing'
-import { textOf, userText, type ConversationRequest, type ConversationStream, type JsonSchema } from '@shared/conversation'
+import { textOf, userText, type ConversationRequest, type ConversationStream, type JsonSchema, type StopReason } from '@shared/conversation'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { LLM_PROVIDER_INFO, type ConversationModel, type LlmProvider } from '@shared/llm-catalog'
@@ -41,17 +41,22 @@ function recordCall(purpose: LlmPurpose, model: ConversationModel, usage: RoundU
 
 /**
  * A response that fails or is aborted is not recorded: its usage never arrives, even though the
- * provider may bill the tokens it produced before the failure.
+ * provider may bill the tokens it produced before the failure. Neither is one that finished without
+ * its usage, which is only logged.
  */
 export function streamConversation(request: ConversationRequest, purpose: LlmPurpose): ConversationStream {
   const stream = ADAPTERS[request.model.provider].stream(request, requireKey(request.model.provider))
   stream.final().then(
-    (result) => recordCall(purpose, request.model, result.usage),
+    (result) => {
+      if (result.usage) recordCall(purpose, request.model, result.usage)
+      else console.warn(`llm: a ${purpose} response of ${request.model.id} finished without its usage, so it is not recorded`)
+    },
     () => {}
   )
   return stream
 }
 
+/** The text of a one-shot response and why it stopped: one cut off by the output limit still returns what it wrote. */
 export async function completeText(
   model: ConversationModel,
   locale: ConversationLocale,
@@ -60,7 +65,7 @@ export async function completeText(
   maxTokens: number,
   signal: AbortSignal,
   purpose: LlmPurpose
-): Promise<string> {
+): Promise<{ text: string; stop: StopReason }> {
   const stream = streamConversation({
     model,
     locale,
@@ -71,7 +76,8 @@ export async function completeText(
     messages: [userText(user)],
     signal
   }, purpose)
-  return textOf((await stream.final()).message)
+  const result = await stream.final()
+  return { text: textOf(result.message), stop: result.stop }
 }
 
 /** Nothing here validates the result: the provider's structured output is what makes it match the schema. */

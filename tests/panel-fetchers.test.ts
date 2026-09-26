@@ -147,6 +147,28 @@ describe('a card that cannot be filled', () => {
     }
   })
 
+  it('words a request that got no answer for the screen, and keeps what fetch said in the log', async () => {
+    const en = createTranslator('en-US')
+    const failed = (code: string, message: string): TypeError =>
+      new TypeError('fetch failed', { cause: Object.assign(new Error(message), { code }) })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(failed('ENOTFOUND', 'getaddrinfo ENOTFOUND open.er-api.com'))))
+    const offline = (await fetchPanel('fx', { base: 'USD', quote: 'EUR' }).catch((err: unknown) => err)) as Error
+    expect(readErrorText(offline.message, 'en-US')).toBe(en('panels.errors.unreachable', { host: 'open.er-api.com' }))
+    expect(warn.mock.calls.flat().map(String).join(' ')).toContain('fetch failed')
+    expect(((offline.cause as Error).cause as Error).message).toBe('getaddrinfo ENOTFOUND open.er-api.com')
+
+    // The network settings do not fix a certificate, so the card does not say to check them.
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(failed('DEPTH_ZERO_SELF_SIGNED_CERT', 'self-signed certificate'))))
+    const untrusted = (await fetchPanel('news', { topic: 'AI' }).catch((err: unknown) => err)) as Error
+    expect(readErrorText(untrusted.message, 'en-US')).toBe(en('panels.errors.connectFailed', { host: 'news.google.com' }))
+
+    // A time limit reaches the card as it is, which words it itself.
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(timeout)))
+    await expect(fetchPanel('fx', { base: 'USD', quote: 'EUR' })).rejects.toBe(timeout)
+  })
+
   it('refuses a clock without a city in a message the screen words', async () => {
     respond({ results: [] }, [])
     await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message, 'en-US') !== null)

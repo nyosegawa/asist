@@ -38,7 +38,6 @@ import { usageDays } from './services/usage-ledger'
 import { available as agentAvailable } from './services/agent-process'
 import { fetchPanel } from './services/panel-fetchers'
 import {
-  apiKeyConfigured,
   configuredModels,
   configuredApiKeyAvailable,
   providerKey,
@@ -174,7 +173,6 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     const qwenInstalled = qwenTts.installationStatus()
     return {
       services,
-      apiKeyConfigured: apiKeyConfigured(),
       asr: asrStatus,
       qwenTts: {
         label: QWEN_TTS_MODEL.label,

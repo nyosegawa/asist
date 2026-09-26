@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { CalendarEvent } from '../src/shared/calendar'
+import { calendarDateLabel, detailCalendarEvent, type CalendarEvent } from '../src/shared/calendar'
 import {
   cellPlan,
   eventsOn,
@@ -121,6 +121,18 @@ describe('events of a day', () => {
     const late = event({ start: day(15, 13), end: day(15, 14) })
     const yesterday = event({ start: day(14, 22), end: day(15, 0) })
     expect(eventsOn([late, yesterday, early, allDay], day(15))).toEqual([allDay, early, late])
+  })
+
+  it('puts an event without length at midnight on the day it starts in every view, as the model is told', () => {
+    const reminder = event({ start: day(16), end: day(16) })
+    // The list view and the day's popup.
+    expect(eventsOn([reminder], day(16))).toEqual([reminder])
+    expect(eventsOn([reminder], day(15))).toEqual([])
+    // The month view's cells and the week view's columns.
+    const { days } = weekLayout(monday, [reminder])
+    expect(days.map((d) => d.timed.length)).toEqual([0, 0, 1, 0, 0, 0, 0])
+    expect(layoutBlocks(days[2].timed, days[2].date)).toMatchObject([{ startMin: 0 }])
+    expect(detailCalendarEvent('ja-JP', reminder).date).toBe(calendarDateLabel('ja-JP', day(16)))
   })
 })
 

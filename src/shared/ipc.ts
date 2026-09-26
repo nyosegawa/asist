@@ -268,7 +268,7 @@ export interface TurnTimings {
   toolCalls?: number
   /** The stream dropped after the reply had started and was resumed with a request to continue. */
   resumed?: boolean
-  /** The context was over the limit, so it was compacted synchronously before the request went out. */
+  /** The context was over the limit, so a compaction started in the background before the request went out. */
   compacted?: boolean
   /** How many memories the look-ahead injected and roughly how many tokens they took. Zero means the search found nothing. */
   injectedMemories?: number
@@ -341,6 +341,10 @@ export type TurnEvent =
   | { type: 'app'; turnId: number; open: MiniAppTarget | null }
   | { type: 'metrics'; turnId: number; timings: TurnTimings }
   | { type: 'done'; turnId: number; fullText: string }
+  /**
+   * Why the turn failed: the message of an error as it was thrown, key and all, which the renderer words when it
+   * shows it, or the sentence the assistant said in place of a reply.
+   */
   | { type: 'error'; turnId: number; message: string }
 
 /** Whether the renderer really started the interject audio or discarded it before it began. */
@@ -384,6 +388,7 @@ export type LiveEvent =
   /** Milliseconds from the end of the user's utterance to the first audio that arrived. */
   | { type: 'latency'; responseMs: number; connectMs?: number }
   | { type: 'usage'; usage: LiveUsage }
+  /** The message of an error as it was thrown, key and all, which the renderer words when it shows it. */
   | { type: 'error'; message: string }
 
 export interface LiveStartResult {
@@ -639,8 +644,6 @@ export interface AppStatus {
 /** What first-time setup shows about installation progress, as opposed to plain liveness. */
 export interface SetupStatus {
   services: AppStatus
-  /** Whether each provider of the configured models has a key that can be read. Whether it authenticates is `services.llm`. */
-  apiKeyConfigured: boolean
   asr: {
     selectedModel: AsrModel
     resolvedModel: ResolvedAsrModel

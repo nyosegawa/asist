@@ -1,4 +1,3 @@
-import type { MessageKey } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { languageOf, usesJmaWeather } from '@shared/conversation-locale'
 import {
@@ -12,6 +11,7 @@ import { conversationLocale, region } from '../conversation-locale'
 import { resolveWeatherLocation } from './locations'
 import { fetchGlobalWeather } from './open-meteo'
 import { fetchWeather } from './jma'
+import { WeatherIssueError } from './issue'
 
 /**
  * Which source answers is decided by the region setting on every call: Japan is the Japan
@@ -19,18 +19,7 @@ import { fetchWeather } from './jma'
  * other region is Open-Meteo, which resolves the place by geocoding it.
  */
 
-export { fetchWeather }
-
-/**
- * Why a card cannot show the weather of a place the table of Japan does not resolve. show_weather
- * answers the model with the issue itself before anything is fetched; these are for a fetch that
- * reaches the table anyway, whose failure the screen words.
- */
-const ISSUE_ERRORS = {
-  location_not_found: 'panels.errors.placeNotFound',
-  location_ambiguous: 'cardsWeather.errors.placeAmbiguous',
-  location_unavailable: 'cardsWeather.errors.noForecastArea'
-} as const satisfies Record<WeatherIssue['status'], MessageKey>
+export { fetchWeather, WeatherIssueError }
 
 /**
  * Which card a place name stands for, or why it names no place, without fetching anything. The table of
@@ -57,7 +46,7 @@ export async function weatherPanelProps(
   if (usesJmaWeather(region())) {
     refuseOtherDay(japanDate(Date.now() + (date === 'tomorrow' ? 86400_000 : 0)))
     const location = resolveWeatherLocation(name)
-    if ('status' in location) throw new Error(errorText(ISSUE_ERRORS[location.status], { place: name }))
+    if ('status' in location) throw new WeatherIssueError(location)
     return { props: { location: name, date, weather: await fetchWeather(location, date, signal) } }
   }
   // Which day it is where the place stands is known only once its zone is, which the geocoding answers.

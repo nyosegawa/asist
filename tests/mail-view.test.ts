@@ -7,6 +7,7 @@ import { MAX_BULK_CHANGE, mailListQuerySchema, messageIdOf, type MailListQuery, 
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { MailView, readRows } from '../src/renderer/src/ui/mail/MailView'
+import { mailDraftCard } from '../src/renderer/src/panels/builtin/mail-draft'
 import { useMailStore, useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from '../src/renderer/src/demo/fixtures/mail'
@@ -48,7 +49,7 @@ beforeEach(() => {
   useSettingsStore.setState({
     settings: { mail: { enabled: true, accounts: DEMO_MAIL_ACCOUNTS, defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } } as AppSettings
   })
-  useMailStore.setState({ status: demoMailStatus(DEMO_MAIL_MESSAGES), revision: 0, drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true })
+  useMailStore.setState({ status: demoMailStatus(DEMO_MAIL_MESSAGES), revision: 0, drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true, sending: [] })
   useToastStore.setState({ toasts: [] })
   useViewStore.getState().closeApp()
   useViewStore.getState().openApp({ app: 'mail' })
@@ -308,6 +309,44 @@ describe('composing and Escape', () => {
     expect(view.querySelector('.ml-composer')).toBeNull()
   })
 
+  it('offers no send for a draft whose send started, says it can only be discarded, and discards it', async () => {
+    const started = DEMO_MAIL_DRAFTS.find((draft) => draft.sendStartedAt !== null)!
+    const view = await render()
+    await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: started.id }))
+    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    expect(form.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
+    expect(form.querySelector('button[type="submit"]')).toBeNull()
+    expect(form.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)?.disabled).toBe(true)
+    await act(async () => form.requestSubmit())
+    expect(api.mailDraftSend).not.toHaveBeenCalled()
+    await act(async () => [...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('mail.composer.discard'))!.click())
+    expect(api.mailDraftRemove).toHaveBeenCalledWith(started.id)
+  })
+
+  it('shows the composer a send under way from the draft card on the same draft, not a send that started and was left', async () => {
+    const draft = DEMO_MAIL_DRAFTS[0]
+    let finish!: (value: unknown) => void
+    api.mailDraftSend.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never)
+    const card = { key: `mail-draft:${draft.id}`, type: 'mail-draft', slot: 'right' as const, state: 'ready' as const, props: { draftId: draft.id }, createdAt: 0, updatedAt: 0 }
+    await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: draft.id }))
+    await act(async () =>
+      root.render(React.createElement(React.Fragment, null, React.createElement(MailView, { open: true }), React.createElement('div', { className: 'card-host' }, React.createElement(mailDraftCard.Body, { spec: card, size: 'l' }))))
+    )
+    await act(async () => container.querySelector<HTMLButtonElement>('.card-host .card-action')!.click())
+    // Main records the start of the send in the draft while it runs.
+    await act(async () => useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS.map((item) => (item.id === draft.id ? { ...item, sendStartedAt: Date.now() } : item)) }))
+    const form = container.querySelector<HTMLFormElement>('.ml-composer')!
+    expect(form.querySelector('[role="status"]')).toBeNull()
+    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    expect([submit.textContent, submit.disabled]).toEqual([t('mail.sending'), true])
+    expect([...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('mail.composer.discard'))?.disabled).toBe(true)
+    // The mail goes out and main cannot remove the draft, which keeps the start of its send.
+    await act(async () => finish({ saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '田中' }) }))
+    expect(form.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
+    expect(form.querySelector('button[type="submit"]')).toBeNull()
+    expect(api.mailDraftSend).toHaveBeenCalledOnce()
+  })
+
   it('creates the draft in main and closes the composer when the save-as-draft button is pressed', async () => {
     const view = await render()
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
@@ -326,7 +365,7 @@ describe('composing and Escape', () => {
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.drafts')))!.click())
     expect(view.querySelector('.ml-view[aria-pressed="true"]')?.textContent).toContain(`${t('mail.boxes.drafts')}${DEMO_MAIL_DRAFTS.length}`)
     // The reply answers a message whose subject already starts with "Re:", and the row shows the subject it is sent with.
-    expect(texts('.ml-row-subject')).toEqual(['季節のご挨拶', 'Re: 採用面談の候補日'])
+    expect(texts('.ml-row-subject')).toEqual(['季節のご挨拶', 'Re: 採用面談の候補日', '打合せの資料'])
     // A reply's row names where it goes, which Reply-To moved away from the sender of the original.
     expect(texts('.ml-row-from')[1]).toBe('To: 採用チーム')
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click())

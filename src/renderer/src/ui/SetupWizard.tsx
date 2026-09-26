@@ -6,6 +6,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { defaultRegion, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
 import { UI_LOCALE_NAMES } from '@shared/i18n'
 import { useSettingsStore, useStatusStore } from '@/state/stores'
+import { startMicAtLaunch } from '@/conversation'
 import { voiceController } from '@/voice/VoiceController'
 import { speechPlayer } from '@/voice/SpeechPlayer'
 import { microphoneCaptureErrorMessage, verifyMicrophoneCapture } from '@/voice/microphone-access'
@@ -297,7 +298,7 @@ export function SetupWizard(): React.JSX.Element | null {
         systemTtsVerified
       })
       useSettingsStore.setState({ settings: completed })
-      if (mode === 'voice' && autoMic) void voiceController.enable()
+      startMicAtLaunch()
     } catch (err) {
       setError(displayError(err))
       await refresh().catch(() => null)

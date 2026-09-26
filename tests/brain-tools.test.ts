@@ -138,6 +138,23 @@ describe('brain tools registry', () => {
     expect(required).toEqual([])
   })
 
+  it('tells the model to write no field a tool does not name, in every object of every tool', async () => {
+    const { tools } = await load()
+    const open: string[] = []
+    const visit = (schema: unknown, where: string): void => {
+      if (!schema || typeof schema !== 'object') return
+      const node = schema as Record<string, unknown>
+      if (node.type === 'object' && node.properties && node.additionalProperties !== false) open.push(where)
+      for (const [field, value] of Object.entries(node.properties ?? {})) visit(value, `${where}.${field}`)
+      if (node.items) visit(node.items, `${where}[]`)
+      for (const branch of ['anyOf', 'oneOf', 'allOf'] as const) {
+        for (const [index, value] of ((node[branch] ?? []) as unknown[]).entries()) visit(value, `${where}|${index}`)
+      }
+    }
+    for (const spec of tools()) visit(spec.inputSchema, spec.name)
+    expect(open).toEqual([])
+  })
+
   it('hands the fetcher what the model wrote as it is, even text from outside that looks like a packed pair', async () => {
     mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'Google News' })
     const { executeClientTool } = await load()
@@ -277,6 +294,24 @@ describe('brain tools registry', () => {
       expect(events).toEqual([])
     }
     expect(mocks.fetchPanel).not.toHaveBeenCalled()
+  })
+
+  it('asks the model to settle a place the geocoding does not know with the user, as it does for one the table of Japan does not know', async () => {
+    mocks.settings.region = 'DE'
+    try {
+      // What the geocoding throws for a name it does not know (weather-open-meteo.test.ts).
+      const { WeatherIssueError } = await import('../src/main/services/weather/issue')
+      const hint = { ja: 'どこの天気かユーザーに確かめる', en: 'Ask the user where' }
+      mocks.fetchPanel.mockRejectedValueOnce(new WeatherIssueError({ status: 'location_not_found', requestedLocation: 'Atlantis', hint }))
+      const { executeClientTool } = await load()
+      const { ctx, events } = makeCtx()
+      const result = await executeClientTool('show_weather', { location: 'Atlantis' }, ctx)
+      expect(result.isError).toBe(false)
+      expect(JSON.parse(result.content)).toEqual({ status: 'location_not_found', requestedLocation: 'Atlantis', hint: hint.ja })
+      expect(events).toEqual([])
+    } finally {
+      mocks.settings.region = 'JP'
+    }
   })
 
   it('returns the fetched weather as it is and creates the card under the resolved area and date', async () => {

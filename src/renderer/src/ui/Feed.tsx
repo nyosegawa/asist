@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { sendTypedMessage } from '@/conversation'
+import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 import { speechPlayer } from '@/voice/SpeechPlayer'
 import { useFeedStore, useTurnStore, type FeedLine } from '@/state/stores'
@@ -41,10 +42,17 @@ function karaokeText(text: string, karaoke: Karaoke): React.ReactNode {
   )
 }
 
+/** How much of an error a system line shows; the toast that came with it shows the whole. */
+const ERROR_LINE_MAX = 120
+
 /** The text of a system line, drawn from the dictionary each time so that it follows the language of the interface. */
 function SystemLine({ line }: { line: FeedLine }): React.JSX.Element {
   const t = useT()
-  const text = line.message ? (line.message.key === 'conversation.error' ? t(line.message.key, line.message.values) : t(line.message.key)) : line.text
+  const text = line.message
+    ? line.message.key === 'conversation.error'
+      ? t(line.message.key, { message: displayError(line.message.values.message).slice(0, ERROR_LINE_MAX) })
+      : t(line.message.key)
+    : line.text
   return (
     <div className="self-center rounded-full border border-holo-line/70 px-3.5 py-1 font-mono text-[9.5px] tracking-[0.14em] text-holo-dim">
       {text}

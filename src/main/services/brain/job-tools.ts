@@ -102,7 +102,8 @@ export function agentTool(locale: ConversationLocale): Def {
           })
         }
       },
-      required: ['prompt']
+      required: ['prompt'],
+      additionalProperties: false
     },
     parallel: false,
     timeoutMs: CONFIRM_TIMEOUT_MS,
@@ -203,7 +204,8 @@ export function projectTools(language: PromptLanguage): Def[] {
             })
           }
         },
-        required: ['name']
+        required: ['name'],
+        additionalProperties: false
       },
       parallel: true,
       timeoutMs: LOCAL_TIMEOUT_MS,
@@ -253,7 +255,8 @@ export function projectTools(language: PromptLanguage): Def[] {
           },
           path: { type: 'string', description: bilingual({ ja: '絶対パス', en: 'The absolute path.' }) }
         },
-        required: ['name', 'path']
+        required: ['name', 'path'],
+        additionalProperties: false
       },
       parallel: false,
       timeoutMs: LOCAL_TIMEOUT_MS,
@@ -276,7 +279,8 @@ export function projectTools(language: PromptLanguage): Def[] {
 const jobIdInput = {
   type: 'object',
   properties: { jobId: { type: 'string', description: bilingual({ ja: 'ジョブID', en: 'The job id.' }) } },
-  required: ['jobId']
+  required: ['jobId'],
+  additionalProperties: false
 } satisfies JsonSchema
 
 function requireJob(input: Record<string, unknown>): ReturnType<typeof agentRunner.get> & object {
@@ -360,7 +364,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
             })
           }
         },
-        required: ['jobId', 'prompt']
+        required: ['jobId', 'prompt'],
+        additionalProperties: false
       },
       parallel: false,
       timeoutMs: CONFIRM_TIMEOUT_MS,
@@ -414,7 +419,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
             })
           }
         },
-        required: ['jobId', 'commit']
+        required: ['jobId', 'commit'],
+        additionalProperties: false
       },
       parallel: false,
       timeoutMs: CONFIRM_TIMEOUT_MS,

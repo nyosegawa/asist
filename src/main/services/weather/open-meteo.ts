@@ -1,3 +1,4 @@
+import type { PromptText } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import {
   placeCardId,
@@ -8,6 +9,7 @@ import {
   type WeatherDay
 } from '@shared/weather'
 import { WeatherCache } from './cache'
+import { WeatherIssueError } from './issue'
 
 /**
  * The weather anywhere outside Japan, from Open-Meteo (https://open-meteo.com). It needs no key and
@@ -24,6 +26,12 @@ const DAYS = 7
 const HOURS_STEP = 3
 
 const cache = new WeatherCache()
+
+/** What the model is told when the geocoding knows no place of the name, in both prompt languages. */
+const NOT_FOUND_HINT: PromptText = {
+  ja: 'その名前の場所が見つかりません。どこの天気か、都市名と国名をユーザーに確かめてください。',
+  en: 'No place has that name. Ask the user which city and country they mean.'
+}
 const json = (text: string): Record<string, unknown> => {
   const data: unknown = JSON.parse(text)
   if (!data || typeof data !== 'object' || Array.isArray(data))
@@ -71,7 +79,7 @@ export async function geocodePlace(
       text(place.timezone) !== null
   )
   if (usable.length === 0)
-    throw new Error(errorText('cardsWeather.errors.placeNotFound', { place: requested }))
+    throw new WeatherIssueError({ status: 'location_not_found', requestedLocation: requested, hint: NOT_FOUND_HINT })
   const chosen = usable.find((place) => place.country_code === region) ?? usable[0]
   return {
     source: 'open-meteo',
