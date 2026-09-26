@@ -10,6 +10,7 @@ import {
   firstOfMonth,
   dayKey,
   daysInMonth,
+  eventsOn,
   mondayOf,
   parseDayKey,
   sameMonth,
@@ -30,8 +31,10 @@ import {
   type Anchor,
   type Draft
 } from './cards'
+import { occurrenceKey } from './EventChips'
 import { fmtMonth } from './format'
 import { MonthView } from './MonthView'
+import { Notice } from './Notice'
 import { calendarColors, colorOf, type CalendarAccount } from './palette'
 import { ScheduleView } from './ScheduleView'
 import { Sidebar } from './Sidebar'
@@ -47,13 +50,6 @@ const VIEWS = [
   ['week', 'calendar.screen.week'],
   ['list', 'calendar.screen.list']
 ] as const satisfies ReadonlyArray<readonly [CalendarViewMode, MessageKey]>
-/** `fullAccess` is left out: the notice that carries a hint is drawn only while access is missing. */
-const ACCESS_HINT = {
-  notDetermined: 'calendar.access.notDetermined',
-  denied: 'calendar.access.denied',
-  restricted: 'calendar.access.restricted',
-  writeOnly: 'calendar.access.writeOnly'
-} as const satisfies Record<Exclude<CalendarStatus['authorization'], 'fullAccess'>, MessageKey>
 
 /**
  * How far either side of the day the calendar is placed on an event it was asked to show is looked for,
@@ -101,7 +97,12 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
   const [miniCursor, setMiniCursor] = useState(cursor)
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set())
   const [popover, setPopover] = useState<Popover | null>(null)
-  const [eventAnchor, setEventAnchor] = useState<{ eventId: string; anchor: Anchor } | null>(null)
+  /**
+   * The occurrence whose details are open and where they are placed. EventKit gives every occurrence of
+   * a repeating event the same id, so the store's eventId says which event is open and this says which
+   * of its occurrences.
+   */
+  const [shown, setShown] = useState<{ eventId: string; occurrence: string; anchor: Anchor } | null>(null)
   const weekScroll = useRef(7 * HOUR_PX)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -173,27 +174,30 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
     if (status && !ready && eventId) update('calendar', { eventId: null })
   }, [status, ready, eventId, update])
 
-  // Details opened from outside the screen have no chip that was pressed, so they are placed beside the
-  // event's chip, or over the middle of the view when the chip is not drawn, as in a full month cell.
+  // Details opened from outside the screen have no chip that was pressed. They show the occurrence on
+  // the day the calendar is placed on, or the first one listed, and are placed beside its chip, or over
+  // the middle of the view when the chip is not drawn, as in a full month cell.
   useLayoutEffect(() => {
     if (!eventId) {
-      if (eventAnchor) setEventAnchor(null)
+      if (shown) setShown(null)
       return
     }
-    if (eventAnchor?.eventId === eventId || !events.some((e) => e.id === eventId)) return
+    const occurrences = events.filter((e) => e.id === eventId)
+    if (shown?.eventId === eventId || occurrences.length === 0) return
+    const occurrence = occurrenceKey(eventsOn(occurrences, selected)[0] ?? occurrences[0])
     const root = rootRef.current
     if (!root) return
-    const chip = [...root.querySelectorAll<HTMLElement>('[data-event-id]')].find((el) => el.dataset.eventId === eventId)
+    const chip = [...root.querySelectorAll<HTMLElement>('[data-occurrence]')].find((el) => el.dataset.occurrence === occurrence)
     if (chip) {
       chip.scrollIntoView({ block: 'nearest' })
-      setEventAnchor({ eventId, anchor: anchorOf(chip) })
+      setShown({ eventId, occurrence, anchor: anchorOf(chip) })
       return
     }
     const body = root.querySelector<HTMLElement>('.cal-view')
     if (!body) return
     const rect = body.getBoundingClientRect()
-    setEventAnchor({ eventId, anchor: anchorOf(body, new DOMRect(rect.left + rect.width / 2, rect.top + rect.height / 4, 0, 0)) })
-  }, [eventId, eventAnchor, events])
+    setShown({ eventId, occurrence, anchor: anchorOf(body, new DOMRect(rect.left + rect.width / 2, rect.top + rect.height / 4, 0, 0)) })
+  }, [eventId, shown, events, selected])
 
   const closeCards = (): void => {
     setPopover(null)
@@ -233,7 +237,7 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
   const step = (n: number): void => goTo(view === 'week' ? addDays(selected, 7 * n) : shiftMonths(selected, n))
   const openEvent = (event: CalendarEvent, el: HTMLElement): void => {
     setPopover(null)
-    setEventAnchor({ eventId: event.id, anchor: anchorOf(el) })
+    setShown({ eventId: event.id, occurrence: occurrenceKey(event), anchor: anchorOf(el) })
     update('calendar', { eventId: event.id })
   }
   const openDay = (day: string, el: HTMLElement): void => {
@@ -274,9 +278,12 @@ export function CalendarView({ open }: { open: boolean }): React.JSX.Element {
       : t('calendar.screen.monthRange', { from: fmtMonth(locale, from), until: fmtMonth(locale, until) })
   }
 
-  const popoverEvent = eventId ? events.find((e) => e.id === eventId) : undefined
-  const popoverAnchor = eventAnchor?.eventId === eventId ? eventAnchor.anchor : null
-  const body = !ready ? (
+  const details = shown?.eventId === eventId ? shown : null
+  const popoverEvent = details ? events.find((e) => occurrenceKey(e) === details.occurrence) : undefined
+  const popoverAnchor = details?.anchor
+  // A failure to list the events replaces the view too, since the events drawn would be those of a
+  // range that is no longer on screen.
+  const body = !ready || error ? (
     <Notice
       settings={settings}
       status={status}
@@ -436,65 +443,3 @@ function editorCalendarLabel(
   const account = status?.calendars.find((c) => c.id === calendarId)
   return account ? `${account.source} / ${account.title}` : null
 }
-
-function Notice({
-  settings,
-  status,
-  error,
-  onSettings,
-  onRetry,
-  onRequestAccess
-}: {
-  settings: { enabled: boolean; readCalendarIds: string[] } | undefined
-  status: CalendarStatus | null
-  error: string
-  onSettings: () => void
-  onRetry: () => void
-  onRequestAccess: () => void
-}): React.JSX.Element {
-  const t = useT()
-  const button = 'cal-btn'
-  if (error)
-    return (
-      <div className="cal-notice" role="alert">
-        <p>{error}</p>
-        <button className={button} onClick={onRetry}>
-          {t('common.retry')}
-        </button>
-      </div>
-    )
-  if (!settings?.enabled)
-    return (
-      <div className="cal-notice">
-        <p>{t('calendar.notice.disabled')}</p>
-        <button className={button} onClick={onSettings}>
-          {t('calendar.notice.openSettings')}
-        </button>
-      </div>
-    )
-  if (!status) return <div className="cal-notice">{t('calendar.notice.checking')}</div>
-  if (status.authorization !== 'fullAccess')
-    return (
-      <div className="cal-notice">
-        <p>{t(ACCESS_HINT[status.authorization])}</p>
-        {status.authorization === 'notDetermined' ? (
-          <button className={button} onClick={onRequestAccess}>
-            {t('calendar.notice.requestAccess')}
-          </button>
-        ) : (
-          <button className={button} onClick={() => void window.api.calendarOpenPrivacy()}>
-            {t('calendar.notice.openPrivacy')}
-          </button>
-        )}
-      </div>
-    )
-  return (
-    <div className="cal-notice">
-      <p>{t('calendar.notice.noCalendars')}</p>
-      <button className={button} onClick={onSettings}>
-        {t('calendar.notice.openSettings')}
-      </button>
-    </div>
-  )
-}
-

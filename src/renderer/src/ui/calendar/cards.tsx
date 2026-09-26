@@ -4,7 +4,7 @@ import type { Translate } from '@shared/i18n'
 import type { CalendarChange, CalendarEvent } from '@shared/calendar'
 import { addDays, dayKey, daysBetween, eventsOn, lastInstant, parseDayKey } from '@shared/calendar-layout'
 import { useT, useFormatLocale } from '@/i18n'
-import { BarChip, TimedChip, type OpenEvent } from './EventChips'
+import { BarChip, TimedChip, occurrenceKey, type OpenEvent } from './EventChips'
 import { dayClasses, fmtDateFull, fmtTime, fmtTimeRange, weekdayNames } from './format'
 import { colorOf, type CalendarAccount } from './palette'
 
@@ -213,13 +213,13 @@ export function DayCard({
         {list.map((event) =>
           event.allDay ? (
             <BarChip
-              key={event.id}
+              key={occurrenceKey(event)}
               bar={{ event, c0: 0, c1: 0, contLeft: false, contRight: false, lane: 0 }}
               color={colorOf(colors, event.calendarId)}
               onOpen={onOpenEvent}
             />
           ) : (
-            <TimedChip key={event.id} event={event} color={colorOf(colors, event.calendarId)} onOpen={onOpenEvent} />
+            <TimedChip key={occurrenceKey(event)} event={event} color={colorOf(colors, event.calendarId)} onOpen={onOpenEvent} />
           )
         )}
       </div>

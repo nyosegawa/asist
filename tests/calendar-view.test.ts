@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '../src/shared/i18n'
+import { errorText } from '../src/shared/i18n/error-text'
 import type { CalendarEvent } from '../src/shared/calendar'
 import type { AppSettings } from '../src/shared/settings'
 import { CalendarView } from '../src/renderer/src/ui/calendar/CalendarView'
@@ -142,7 +143,7 @@ it('edits an event that crosses midnight with its end day shown, and saves it wi
   calendarEvents.mockResolvedValue([overnight])
   calendarChange.mockResolvedValue({ saved: true, operation: 'update', event: overnight, sync: 'macOSに保存しました' })
   await render()
-  await act(async () => container.querySelector<HTMLButtonElement>(`[data-event-id="${overnight.id}"]`)!.click())
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-ev.is-timed')!.click())
   await act(async () => container.querySelector<HTMLButtonElement>(`[aria-label="${t('calendar.event.edit')}"]`)!.click())
   const form = container.querySelector<HTMLFormElement>('.cal-create-form')!
   expect([...form.querySelectorAll<HTMLInputElement>('input[type=date]')].map((input) => input.value)).toEqual(['2026-09-15', '2026-09-16'])
@@ -151,6 +152,37 @@ it('edits an event that crosses midnight with its end day shown, and saves it wi
     operation: 'update',
     eventId: overnight.id,
     event: expect.objectContaining({ start: new Date(overnight.start).toISOString(), end: new Date(overnight.end).toISOString() })
+  })
+})
+
+it('shows why the events could not be listed while the calendar is ready, and lists them on retry', async () => {
+  calendarEvents.mockRejectedValue(new Error(errorText('calendar.errors.noReadCalendars')))
+  await render()
+  expect(container.querySelector('.cal-notice[role=alert]')?.textContent).toContain(t('calendar.errors.noReadCalendars'))
+  calendarEvents.mockResolvedValue(events)
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-notice button')!.click())
+  await act(async () => {})
+  expect(container.querySelector('.cal-notice')).toBeNull()
+  expect(text('.cal-ev.is-bar')).toEqual(['箱根'])
+})
+
+describe('a repeating event, whose occurrences share one id', () => {
+  const standup = (d: number): CalendarEvent => ({ ...event({ title: '朝会', recurring: true }), id: 'weekly', start: day(d, 9), end: day(d, 9, 30) })
+
+  it('opens the details of the occurrence that was pressed', async () => {
+    calendarEvents.mockResolvedValue([standup(15), standup(22)])
+    await render()
+    const chips = [...container.querySelectorAll<HTMLButtonElement>('.cal-ev.is-timed')]
+    await act(async () => chips[1].click())
+    expect(container.querySelector('.cal-pop.is-event .cal-pop-when')?.textContent).toContain('2026年9月22日')
+  })
+
+  it('opens the occurrence on the day it was asked for from outside the screen', async () => {
+    calendarEvents.mockResolvedValue([standup(15), standup(22)])
+    await render()
+    await act(async () => useViewStore.getState().openApp({ app: 'calendar', view: 'month', date: '2026-09-22', eventId: 'weekly' }))
+    await act(async () => {})
+    expect(container.querySelector('.cal-pop.is-event .cal-pop-when')?.textContent).toContain('2026年9月22日')
   })
 })
 
