@@ -3,7 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
-import { ConfirmSheet } from '../src/renderer/src/ui/ConfirmSheet'
+import { CONFIRM_ARM_MS, ConfirmSheet } from '../src/renderer/src/ui/ConfirmSheet'
 import { askConfirm, useConfirmStore } from '../src/renderer/src/state/confirm'
 import { displayError } from '../src/renderer/src/display-error'
 
@@ -22,6 +22,7 @@ const request = { id: 'c1', title: t('mail.confirm.title'), message: 'この内�
 const later = { id: 'c2', title: t('calendar.confirm.title'), message: 'この内容で予定を保存しますか？', detail: '9月15日 10:00 打合せ', confirmLabel: t('common.save'), destructive: false }
 
 beforeEach(() => {
+  vi.useFakeTimers()
   vi.stubGlobal('React', React)
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
@@ -35,11 +36,20 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 async function render(): Promise<void> {
   await act(async () => root.render(React.createElement(ConfirmSheet)))
 }
+
+/** Lets the request on screen be on screen long enough for a press to answer it. */
+async function armed(): Promise<void> {
+  await act(async () => vi.advanceTimersByTime(CONFIRM_ARM_MS))
+}
+
+const pressPrimary = (): Promise<void> => act(async () => container.querySelector<HTMLButtonElement>('.cal-primary')!.click())
+const pressEscape = (): Promise<void> => act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
 
 describe('ConfirmSheet', () => {
   it('shows the message and the confirm button, then returns true to main and closes when confirm is pressed', async () => {
@@ -50,7 +60,8 @@ describe('ConfirmSheet', () => {
     expect(sheet.querySelector('h2')?.textContent).toBe(request.message)
     expect(sheet.querySelector('.confirm-detail')?.textContent).toBe(request.detail)
     expect(document.activeElement?.textContent).toBe(t('common.cancel'))
-    await act(async () => sheet.querySelector<HTMLButtonElement>('.cal-primary')!.click())
+    await armed()
+    await pressPrimary()
     expect(api.confirmResolve).toHaveBeenCalledWith('c1', true)
     expect(container.querySelector('.confirm-sheet')).toBeNull()
   })
@@ -58,8 +69,9 @@ describe('ConfirmSheet', () => {
   it('returns false to main once when Escape cancels, and does not answer a second time', async () => {
     await render()
     await act(async () => useConfirmStore.getState().open(request))
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    await armed()
+    await pressEscape()
+    await pressEscape()
     expect(api.confirmResolve).toHaveBeenCalledTimes(1)
     expect(api.confirmResolve).toHaveBeenCalledWith('c1', false)
     expect(container.querySelector('.confirm-sheet')).toBeNull()
@@ -88,6 +100,7 @@ describe('ConfirmSheet', () => {
     })
     const sheet = container.querySelector('.confirm-sheet')!
     expect(sheet.querySelector('.confirm-head')).toBeNull()
+    await armed()
     await act(async () => sheet.querySelector<HTMLButtonElement>('.confirm-destructive')!.click())
     await expect(answer).resolves.toBe(true)
     expect(api.confirmResolve).not.toHaveBeenCalled()
@@ -115,9 +128,11 @@ describe('ConfirmSheet', () => {
     await act(async () => useConfirmStore.getState().open(request))
     await act(async () => useConfirmStore.getState().open(later))
     expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(request.message)
-    await act(async () => container.querySelector<HTMLButtonElement>('.cal-primary')!.click())
+    await armed()
+    await pressPrimary()
     expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(later.message)
-    await act(async () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    await armed()
+    await pressEscape()
     expect(api.confirmResolve.mock.calls).toEqual([
       ['c1', true],
       ['c2', false]
@@ -130,9 +145,33 @@ describe('ConfirmSheet', () => {
     await act(async () => useConfirmStore.getState().open(request))
     await act(async () => useConfirmStore.getState().open(later))
     await act(async () => useConfirmStore.getState().close(later.id))
+    await armed()
     await act(async () => container.querySelector<HTMLButtonElement>('.cal-btn')!.click())
     expect(api.confirmResolve.mock.calls).toEqual([['c1', false]])
     expect(container.querySelector('.confirm-sheet')).toBeNull()
+  })
+
+  it('ignores every press until a request has been on screen for a moment, and starts that wait again for the next request', async () => {
+    await render()
+    await act(async () => useConfirmStore.getState().open(request))
+    await act(async () => useConfirmStore.getState().open(later))
+    await act(async () => vi.advanceTimersByTime(CONFIRM_ARM_MS - 1))
+    await pressPrimary()
+    await pressEscape()
+    await act(async () => container.querySelector<HTMLElement>('.confirm-backdrop')!.click())
+    expect(api.confirmResolve).not.toHaveBeenCalled()
+    await act(async () => vi.advanceTimersByTime(1))
+    await pressPrimary()
+    // The second press of a double click lands on the next request, which has taken the same place.
+    await pressPrimary()
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(later.message)
+    expect(api.confirmResolve.mock.calls).toEqual([['c1', true]])
+    await armed()
+    await pressPrimary()
+    expect(api.confirmResolve.mock.calls).toEqual([
+      ['c1', true],
+      ['c2', true]
+    ])
   })
 
   it('draws the confirming button as a warning for an operation that removes something, whichever side asked', async () => {

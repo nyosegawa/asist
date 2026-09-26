@@ -6,12 +6,22 @@ import { useConfirmStore } from '@/state/confirm'
 import '@/assets/confirm.css'
 
 /**
+ * How long a newly shown confirmation ignores the controls that answer it. The next request waiting from
+ * main appears in the same place the moment the one before it is answered, and without this a double
+ * press on that answer would answer the new request unread. A timer rather than the entrance animation
+ * sets it, because reduced motion turns the animation off.
+ */
+export const CONFIRM_ARM_MS = 500
+
+/**
  * The one confirmation sheet of the app. Main asks through it before a mail goes to the trash, before
  * a calendar change and before an operation coming from the Agent, and the screens ask through it
  * before a delete or a discard. It lies over a workspace and over the dock, and it offers the
- * operation to run or cancelling. Escape cancels. The answer goes out exactly once, to main or to the
- * screen that asked. The header appears only for a request with a title, and the confirming button is
- * drawn as a warning only for an operation that removes something.
+ * operation to run or cancelling. Escape cancels. A press within CONFIRM_ARM_MS of a request appearing,
+ * whether on a button, with Enter on the focused button, on the backdrop or with Escape, does nothing.
+ * The answer goes out exactly once, to main or to the screen that asked. The header appears only for a
+ * request with a title, and the confirming button is drawn as a warning only for an operation that
+ * removes something.
  */
 export function ConfirmSheet(): React.JSX.Element {
   const request = useConfirmStore((s) => s.request)
@@ -23,9 +33,15 @@ export function ConfirmSheet(): React.JSX.Element {
   const [answeringId, setAnsweringId] = useState<string | null>(null)
   const answering = request !== null && answeringId === request.id
   const cancelRef = useRef<HTMLButtonElement>(null)
+  // A ref, because the Escape handler registered when a request appears has to see the delay end.
+  const armedId = useRef<string | null>(null)
 
   useEffect(() => {
     if (!request) return
+    const id = request.id
+    const arm = setTimeout(() => {
+      armedId.current = id
+    }, CONFIRM_ARM_MS)
     cancelRef.current?.focus()
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
@@ -33,12 +49,15 @@ export function ConfirmSheet(): React.JSX.Element {
       void answer(false)
     }
     window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    return () => {
+      clearTimeout(arm)
+      window.removeEventListener('keydown', onKey, true)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id])
 
   const answer = async (approved: boolean): Promise<void> => {
-    if (!request || answering) return
+    if (!request || answering || armedId.current !== request.id) return
     setAnsweringId(request.id)
     try {
       if (request.resolve) request.resolve(approved)
