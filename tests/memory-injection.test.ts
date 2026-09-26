@@ -7,6 +7,7 @@ import {
   injectionPageOf,
   memoryIdsInToolResult
 } from '@shared/memory-injection'
+import { createToolRegistry, executeTool, type ToolRegistry } from '@shared/tool-registry'
 
 let seq = 0
 const unit = (text: string, extra: Partial<MemoryUnit> = {}): MemoryUnit => ({
@@ -96,14 +97,34 @@ describe('buildMemoryInjection', () => {
 })
 
 describe('memoryIdsInToolResult', () => {
-  it('collects the ids from the hits of recall', () => {
-    expect(memoryIdsInToolResult('recall', '{"hits":[{"id":"m1","text":"a"},{"id":"m2"}],"count":2}')).toEqual(['m1', 'm2'])
+  const registry = (hits: unknown[]): ToolRegistry<null> =>
+    createToolRegistry<null>([
+      { name: 'recall', description: { ja: '', en: '' }, inputSchema: { type: 'object' }, parallel: true, timeoutMs: 1000, maxResultChars: 3000, run: () => ({ hits, count: hits.length }) },
+      { name: 'show_weather', description: { ja: '', en: '' }, inputSchema: { type: 'object' }, parallel: true, timeoutMs: 1000, maxResultChars: 3000, run: () => ({ hits }) },
+      { name: 'broken', description: { ja: '', en: '' }, inputSchema: { type: 'object' }, parallel: true, timeoutMs: 1000, maxResultChars: 3000, run: () => { throw new Error('down') } }
+    ])
+  const run = (tools: ToolRegistry<null>, name: string) => executeTool(tools, name, {}, null, new AbortController().signal, 'ja')
+
+  it('collects the ids from the hits of recall', async () => {
+    const tools = registry([{ id: 'm1', text: 'a' }, { id: 'm2' }])
+    expect(memoryIdsInToolResult('recall', await run(tools, 'recall'))).toEqual(['m1', 'm2'])
   })
 
-  it('returns nothing for another tool, for a result that is not JSON, and for entries without an id', () => {
-    expect(memoryIdsInToolResult('show_weather', '{"hits":[{"id":"m1"}]}')).toEqual([])
-    expect(memoryIdsInToolResult('recall', 'recall の実行に失敗した')).toEqual([])
-    expect(memoryIdsInToolResult('recall', '{"hits":[{"text":"no id"},{"id":5}]}')).toEqual([])
-    expect(memoryIdsInToolResult('recall', '{"hits":"nope"}')).toEqual([])
+  it('collects the ids of the hits a shortened recall result still shows, although a note goes before its JSON', async () => {
+    // Five hits of about 700 characters, as five sections near the 800-character cap return, pass the 3000 of recall.
+    const body = '本人の上司で、打ち合わせの前に資料を確かめる人。'.repeat(30)
+    const hits = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, page: '大川俊介', heading: `見出し${i}`, kind: 'section', text: body }))
+    const execution = await run(registry(hits), 'recall')
+    expect(execution.truncated).toBe(true)
+    const shown = hits.map((hit) => hit.id).filter((id) => execution.content.includes(`"${id}"`))
+    expect(shown.length).toBeGreaterThan(0)
+    expect(memoryIdsInToolResult('recall', execution)).toEqual(shown)
+  })
+
+  it('returns nothing for another tool, for a failed run, and for entries without an id', async () => {
+    expect(memoryIdsInToolResult('show_weather', await run(registry([{ id: 'm1' }]), 'show_weather'))).toEqual([])
+    expect(memoryIdsInToolResult('recall', await run(registry([]), 'broken'))).toEqual([])
+    expect(memoryIdsInToolResult('recall', await run(registry([{ text: 'no id' }, { id: 5 }]), 'recall'))).toEqual([])
+    expect(memoryIdsInToolResult('recall', { value: { hits: 'nope' } })).toEqual([])
   })
 })

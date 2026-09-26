@@ -150,7 +150,7 @@ function createEngine(): LiveEngineBase {
       record({ kind: 'user', turnId, text })
     },
     recordTool: (turnId, name, input, execution) => {
-      const memoryIds = execution.isError ? [] : memoryIdsInToolResult(name, execution.content)
+      const memoryIds = execution.isError ? [] : memoryIdsInToolResult(name, execution)
       record({
         kind: 'tool',
         turnId,
