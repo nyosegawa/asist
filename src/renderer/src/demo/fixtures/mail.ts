@@ -256,8 +256,9 @@ export function demoReplyOf(message: MailMessage, replyAll: boolean): MailReply 
 const interview = DEMO_MAIL_MESSAGES.find((m) => m.folder === 'inbox' && m.uid === 1040)!
 
 /**
- * The drafts: one new message asked for by voice, and one reply to everyone on a message in the inbox whose
- * Reply-To names a team address, so that the reply goes to that address and not to its sender.
+ * The drafts: one new message asked for by voice, one reply to everyone on a message in the inbox whose
+ * Reply-To names a team address, so that the reply goes to that address and not to its sender, and one whose
+ * send started, as when it went out but could not be removed, which can only be discarded.
  */
 export const DEMO_MAIL_DRAFTS: MailDraft[] = [
   {
@@ -285,6 +286,19 @@ export const DEMO_MAIL_DRAFTS: MailDraft[] = [
     createdAt: ago(1),
     updatedAt: ago(1),
     sendStartedAt: null
+  },
+  {
+    id: 'draft-started',
+    accountId: 'demo-work',
+    to: ['佐藤 美咲 <sato@example.co.jp>'],
+    cc: [],
+    subject: '打合せの資料',
+    body: '佐藤さん\n\n本日の打合せの資料をお送りします。ご確認ください。',
+    reply: null,
+    origin: 'screen',
+    createdAt: ago(3),
+    updatedAt: ago(3),
+    sendStartedAt: ago(2.9)
   }
 ]
 

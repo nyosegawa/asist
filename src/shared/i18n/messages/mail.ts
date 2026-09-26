@@ -869,6 +869,19 @@ export const mail = defineMessages({
       'pt-BR': 'Criado por voz',
       'es-419': 'Por voz',
       'es-ES': 'Creado de viva voz'
+    },
+    sendStarted: {
+      'ja-JP': 'もう届いているかもしれないので、この下書きは捨てることだけができます',
+      'en-US': 'This mail may already have gone out, so the draft can only be discarded.',
+      'fr-FR': "Ce message est peut-être déjà parti, le brouillon ne peut donc plus qu'être abandonné.",
+      'de-DE': 'Diese E-Mail ist vielleicht schon hinausgegangen, deshalb lässt sich der Entwurf nur noch verwerfen.',
+      'hi-IN': 'यह मेल शायद पहले ही जा चुकी है, इसलिए इस ड्राफ़्ट को सिर्फ़ छोड़ा जा सकता है।',
+      'id-ID': 'Email ini mungkin sudah terkirim, jadi draf ini hanya bisa dibuang.',
+      'it-IT': 'Questo messaggio potrebbe essere già partito, quindi la bozza può solo essere scartata.',
+      'ko-KR': '이 메일은 이미 나갔을 수 있어서 이 임시 저장 메일은 버리기만 할 수 있습니다.',
+      'pt-BR': 'Esta mensagem talvez já tenha saído, então o rascunho só pode ser descartado.',
+      'es-419': 'Es posible que este mensaje ya haya salido, así que el borrador solo se puede descartar.',
+      'es-ES': 'Es posible que este mensaje ya haya salido, así que el borrador solo se puede descartar.'
     }
   },
   reader: {

@@ -740,6 +740,29 @@ describe('mail draft card', () => {
     expect(useViewStore.getState().open).toMatchObject({ app: 'mail', box: 'drafts', pane: { kind: 'draft', id: reply.id } })
   })
 
+  it('offers no send for a draft whose send started, says it can only be discarded, and discards it', async () => {
+    const started = DEMO_MAIL_DRAFTS.find((item) => item.sendStartedAt !== null)!
+    const card = await renderAt(spec('mail-draft', { draftId: started.id }), S)
+    expect(card.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
+    const actions = [...card.querySelectorAll<HTMLButtonElement>('.card-action')]
+    expect(actions.map((action) => action.textContent)).not.toContain(t('mail.send'))
+    expect(card.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)?.disabled).toBe(true)
+    await act(async () => actions.find((action) => action.textContent === t('mail.composer.discard'))!.click())
+    expect(api.mailDraftRemove).toHaveBeenCalledWith(started.id)
+    expect(api.mailDraftSend).not.toHaveBeenCalled()
+  })
+
+  it('keeps saying the draft is being sent while its own send is under way, though main has recorded the start', async () => {
+    let finish!: (value: unknown) => void
+    api.mailDraftSend.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never)
+    const card = await renderAt(spec('mail-draft', { draftId: draft.id }), L)
+    await act(async () => card.querySelector<HTMLButtonElement>('.card-action')!.click())
+    await act(async () => useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS.map((item) => (item.id === draft.id ? { ...item, sendStartedAt: Date.now() } : item)) }))
+    expect(card.querySelector('.card-action')?.textContent).toBe(t('mail.sending'))
+    expect(card.querySelector('[role="status"]')).toBeNull()
+    await act(async () => finish({ saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '田中' }) }))
+  })
+
   it('says so when the draft has been sent or discarded', async () => {
     useMailStore.setState({ drafts: [], draftsLoaded: true })
     const card = await renderAt(spec('mail-draft', { draftId: 'gone' }), L)

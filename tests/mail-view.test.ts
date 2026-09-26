@@ -308,6 +308,20 @@ describe('composing and Escape', () => {
     expect(view.querySelector('.ml-composer')).toBeNull()
   })
 
+  it('offers no send for a draft whose send started, says it can only be discarded, and discards it', async () => {
+    const started = DEMO_MAIL_DRAFTS.find((draft) => draft.sendStartedAt !== null)!
+    const view = await render()
+    await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: started.id }))
+    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    expect(form.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
+    expect(form.querySelector('button[type="submit"]')).toBeNull()
+    expect(form.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)?.disabled).toBe(true)
+    await act(async () => form.requestSubmit())
+    expect(api.mailDraftSend).not.toHaveBeenCalled()
+    await act(async () => [...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('mail.composer.discard'))!.click())
+    expect(api.mailDraftRemove).toHaveBeenCalledWith(started.id)
+  })
+
   it('creates the draft in main and closes the composer when the save-as-draft button is pressed', async () => {
     const view = await render()
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
@@ -326,7 +340,7 @@ describe('composing and Escape', () => {
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.drafts')))!.click())
     expect(view.querySelector('.ml-view[aria-pressed="true"]')?.textContent).toContain(`${t('mail.boxes.drafts')}${DEMO_MAIL_DRAFTS.length}`)
     // The reply answers a message whose subject already starts with "Re:", and the row shows the subject it is sent with.
-    expect(texts('.ml-row-subject')).toEqual(['季節のご挨拶', 'Re: 採用面談の候補日'])
+    expect(texts('.ml-row-subject')).toEqual(['季節のご挨拶', 'Re: 採用面談の候補日', '打合せの資料'])
     // A reply's row names where it goes, which Reply-To moved away from the sender of the original.
     expect(texts('.ml-row-from')[1]).toBe('To: 採用チーム')
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click())

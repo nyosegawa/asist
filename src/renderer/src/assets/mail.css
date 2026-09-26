@@ -643,6 +643,10 @@
   font-size: 12px;
   color: var(--ui-tone-red-text);
 }
+/* Where the send hint stands for any other draft, so that the line takes no height of its own. */
+.cal-pop-actions .ml-hint-started {
+  color: var(--ui-tone-peach-text);
+}
 .ml-draft-mark {
   color: rgb(from var(--color-holo-peach) r g b / 0.7);
 }

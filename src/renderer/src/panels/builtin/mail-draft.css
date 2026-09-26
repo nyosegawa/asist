@@ -86,3 +86,15 @@
 .card[data-size='focus'] .md-body {
   font-size: 13px;
 }
+/* The line that stands in for the send button of a draft whose send started. In Japanese it is 35px at s
+   and 42px at m and l, and the card stays 417px at s, well inside every size (measured 2026-09-26). */
+.md-started {
+  padding: 8px 12px 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ui-tone-peach-text);
+}
+.card[data-size='s'] .md-started {
+  padding: 6px 10px 0;
+  font-size: 10px;
+}

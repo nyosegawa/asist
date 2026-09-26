@@ -149,11 +149,12 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
   const t = useT()
   const account = accounts.find((item) => item.id === draft.accountId)
   const busy = editor.busy === 'send' || editor.busy === 'discard'
+  const locked = busy || editor.sendStarted
   const ready = editor.fields.body.trim().length > 0 && (draft.reply !== null || splitRecipients(editor.fields.to).length > 0)
   const stopEscape = stopEscapeWith(onClose)
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
-    if (!ready || busy) return
+    if (!ready || locked) return
     const summary = await editor.send()
     if (summary) {
       onNotice({ kind: 'ok', title: draft.reply ? t('mail.done.reply') : t('mail.done.send'), body: summary })
@@ -206,18 +207,18 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
               className="cal-field is-wide"
               placeholder={t('mail.composer.recipientsHint')}
               value={editor.fields.to}
-              disabled={busy}
+              disabled={locked}
               onChange={(event) => editor.set({ to: event.target.value })}
               onKeyDown={stopEscape}
             />
           </label>
           <label className="ml-field">
             <span>Cc</span>
-            <input aria-label="Cc" className="cal-field is-wide" value={editor.fields.cc} disabled={busy} onChange={(event) => editor.set({ cc: event.target.value })} onKeyDown={stopEscape} />
+            <input aria-label="Cc" className="cal-field is-wide" value={editor.fields.cc} disabled={locked} onChange={(event) => editor.set({ cc: event.target.value })} onKeyDown={stopEscape} />
           </label>
           <label className="ml-field">
             <span>{t('mail.fields.subject')}</span>
-            <input aria-label={t('mail.fields.subject')} className="cal-field is-wide" value={editor.fields.subject} disabled={busy} onChange={(event) => editor.set({ subject: event.target.value })} onKeyDown={stopEscape} />
+            <input aria-label={t('mail.fields.subject')} className="cal-field is-wide" value={editor.fields.subject} disabled={locked} onChange={(event) => editor.set({ subject: event.target.value })} onKeyDown={stopEscape} />
           </label>
         </>
       )}
@@ -227,7 +228,7 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
         placeholder={t('mail.fields.body')}
         autoFocus
         value={editor.fields.body}
-        disabled={busy}
+        disabled={locked}
         onChange={(event) => editor.set({ body: event.target.value })}
         onKeyDown={stopEscape}
       />
@@ -237,13 +238,21 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
         </p>
       )}
       <div className="cal-pop-actions">
-        <span className="cal-pop-hint">{t('mail.composer.sendHint')}</span>
+        {editor.sendStarted ? (
+          <span className="cal-pop-hint ml-hint-started" role="status">
+            {t('mail.drafts.sendStarted')}
+          </span>
+        ) : (
+          <span className="cal-pop-hint">{t('mail.composer.sendHint')}</span>
+        )}
         <button type="button" className="cal-btn is-danger" disabled={busy} onClick={() => void discard()}>
           {t('mail.composer.discard')}
         </button>
-        <button type="submit" className="cal-primary" disabled={!ready || busy}>
-          {editor.busy === 'send' ? t('mail.sending') : t('mail.send')}
-        </button>
+        {!editor.sendStarted && (
+          <button type="submit" className="cal-primary" disabled={!ready || busy}>
+            {editor.busy === 'send' ? t('mail.sending') : t('mail.send')}
+          </button>
+        )}
       </div>
     </form>
   )

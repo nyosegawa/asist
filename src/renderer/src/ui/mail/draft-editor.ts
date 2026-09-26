@@ -27,6 +27,11 @@ export function useDraftEditor(draft: MailDraft | null): {
   set: (patch: Partial<DraftFields>) => void
   dirty: boolean
   busy: 'save' | 'send' | 'discard' | null
+  /**
+   * A send of the draft started and did not fail, so the mail may have gone out and the draft can only be
+   * discarded. A send under way in this editor does not count; its button already says it is sending.
+   */
+  sendStarted: boolean
   error: string
   /** The summary once the draft has been sent, or null on failure, with the reason in `error`. */
   send: () => Promise<string | null>
@@ -103,6 +108,7 @@ export function useDraftEditor(draft: MailDraft | null): {
     }
   }
 
-  return { fields, set, dirty, busy, error, send, discard }
+  const sendStarted = (draft?.sendStartedAt ?? null) !== null && busy !== 'send'
+  return { fields, set, dirty, busy, sendStarted, error, send, discard }
 }
 
