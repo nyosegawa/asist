@@ -439,10 +439,17 @@ interface MailState {
   /** Every draft main has stored. The "下書き" box of the mail view and the draft cards read it. */
   drafts: MailDraft[]
   draftsLoaded: boolean
+  /**
+   * The drafts this window has asked main to send and not yet heard back about. Every send starts from a
+   * draft editor in this window, so the card and the composer open on the same draft both know that a send
+   * is under way, while main already records its start in the draft.
+   */
+  sending: string[]
   refresh: () => Promise<void>
   loadDrafts: () => Promise<void>
   apply: (status: MailStatus) => void
   applyDrafts: (drafts: MailDraft[]) => void
+  setSending: (id: string, sending: boolean) => void
   bump: () => void
 }
 
@@ -451,6 +458,7 @@ export const useMailStore = create<MailState>((set) => ({
   revision: 0,
   drafts: [],
   draftsLoaded: false,
+  sending: [],
   refresh: async () => {
     try {
       set({ status: await window.api.mailStatus() })
@@ -467,6 +475,7 @@ export const useMailStore = create<MailState>((set) => ({
   },
   apply: (status) => set({ status }),
   applyDrafts: (drafts) => set({ drafts, draftsLoaded: true }),
+  setSending: (id, sending) => set((s) => ({ sending: sending ? [...s.sending, id] : s.sending.filter((item) => item !== id) })),
   bump: () => set((s) => ({ revision: s.revision + 1 }))
 }))
 

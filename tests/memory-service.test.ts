@@ -235,6 +235,41 @@ describe('memory service', () => {
     expect(mocks.embed).toHaveBeenCalledOnce()
   })
 
+  it('answers a turn\'s search after the one memory being embedded, not after the rest of the backlog', async () => {
+    await enableEmbeddingWithOnePage()
+    fs.writeFileSync(memoryFile('pages', '松葉軒.md'), MATSUBAKEN)
+    fs.writeFileSync(memoryFile('pages', '鴨川.md'), '# 鴨川\n\n## 要約\n本人は週末に鴨川沿いを走る。\n\n## 距離\n一回に十キロほど。\n')
+    // The worker answers in arrival order, as embedding_worker.py does.
+    const queue: Array<{ kind: EmbeddingKind; texts: readonly string[]; answer: () => void }> = []
+    mocks.embed.mockImplementation((texts, kind) => new Promise((resolve) => {
+      queue.push({ kind, texts, answer: () => resolve(texts.map(() => new Float32Array([1, 0]))) })
+    }))
+    // The rebuild starts embedding the five memories without vectors in the background.
+    service.reindex()
+    const embedding = service.embedMissing()
+    await vi.waitFor(() => expect(queue).toHaveLength(1))
+    const search = service.search('鴨川で走る距離', { mode: 'utterance' })
+    await vi.waitFor(() => expect(queue.map((request) => request.kind)).toContain('query'))
+
+    let unitsAhead = 0
+    for (;;) {
+      const request = queue.shift()!
+      request.answer()
+      if (request.kind === 'query') break
+      unitsAhead += request.texts.length
+      await vi.waitFor(() => expect(queue.length).toBeGreaterThan(0))
+    }
+    await search
+    expect(unitsAhead).toBe(1)
+
+    while (service.embeddingStatus().converting) {
+      queue.shift()?.answer()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(await embedding).toBe(5)
+    expect(service.embeddingStatus()).toMatchObject({ embedded: 5, total: 5 })
+  })
+
   it('stores no result of the earlier model when the model changes during the computation, and computes again with the current one', async () => {
     await enableEmbeddingWithOnePage()
     const first = deferredVectors()

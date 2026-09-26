@@ -18,6 +18,7 @@ export const SCREENS = {
   notes: { label: 'メモ', group: '画面' },
   'notes/note': { label: 'メモ(会話から一件を開く)', group: '画面' },
   'mail/message': { label: 'メール(会話からメッセージを開く)', group: '画面' },
+  'mail/draft-started': { label: 'メール(送信を始めた下書き)', group: '画面' },
   'calendar/event': { label: 'カレンダー(会話から週表示で予定を開く)', group: '画面' },
   'settings/persona': { label: 'キャラクター', group: '設定のページ' },
   'settings/voice': { label: '声', group: '設定のページ' },

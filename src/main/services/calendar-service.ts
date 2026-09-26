@@ -10,6 +10,7 @@ import {
   type CalendarEvent,
   type CalendarStatus
 } from '@shared/calendar'
+import { overlaps } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
 import type { AppSettings } from '@shared/settings'
 import { t } from './i18n'
@@ -71,28 +72,13 @@ export class CalendarService {
     signal?: AbortSignal
   ): Promise<{ events: CalendarEvent[]; total: number }> {
     const input = calendarSearchSchema.parse(value)
-    const settings = this.enabled()
-    if (!settings.readCalendarIds.length) throw new Error(errorText('calendar.errors.noReadCalendars'))
-    const events = z
-      .array(calendarEventSchema)
-      .parse(
-        await this.deps.native(
-          {
-            operation: 'search',
-            calendarIds: settings.readCalendarIds,
-            start: input.start,
-            end: input.end
-          },
-          signal
-        )
-      )
-      .filter(
-        (event) =>
-          !input.query ||
-          `${event.title}\n${event.location}`
-            .toLocaleLowerCase()
-            .includes(input.query.toLocaleLowerCase())
-      )
+    const events = (await this.eventsIn(input.start, input.end, signal)).filter(
+      (event) =>
+        !input.query ||
+        `${event.title}\n${event.location}`
+          .toLocaleLowerCase()
+          .includes(input.query.toLocaleLowerCase())
+    )
     // Never silently truncate a calendar: callers must narrow their range when it is too large.
     if (events.length > SEARCH_EVENT_LIMIT)
       throw new Error(errorText('calendar.errors.tooManyEvents', { limit: SEARCH_EVENT_LIMIT }))
@@ -102,19 +88,19 @@ export class CalendarService {
   /** The events in the range the calendar screen shows. Unlike a search it has no count limit, and the range reaches 62 days. */
   async list(value: unknown, signal?: AbortSignal): Promise<CalendarEvent[]> {
     const input = calendarListSchema.parse(value)
+    return this.eventsIn(input.start, input.end, signal)
+  }
+
+  private async eventsIn(start: string, end: string, signal?: AbortSignal): Promise<CalendarEvent[]> {
     const settings = this.enabled()
     if (!settings.readCalendarIds.length) throw new Error(errorText('calendar.errors.noReadCalendars'))
-    return z.array(calendarEventSchema).parse(
-      await this.deps.native(
-        {
-          operation: 'search',
-          calendarIds: settings.readCalendarIds,
-          start: input.start,
-          end: input.end
-        },
-        signal
-      )
-    )
+    const events = z
+      .array(calendarEventSchema)
+      .parse(await this.deps.native({ operation: 'search', calendarIds: settings.readCalendarIds, start, end }, signal))
+    // The helper asks EventKit from a minute before the range, so that an event without length at its
+    // start is matched however EventKit tests overlap, and the range is applied here, by the rule the
+    // calendar screen puts an event on a day with.
+    return events.filter((event) => overlaps(event, Date.parse(start), Date.parse(end)))
   }
 
   async change(value: unknown, signal: AbortSignal): Promise<CalendarChangeResult> {

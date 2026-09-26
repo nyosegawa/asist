@@ -6,12 +6,15 @@ import type { AppSettings, AppStatus, SetupProgress, SetupStatus } from '@shared
 import { createTranslator, type Translate, type UiLocale } from '@shared/i18n'
 import { SetupWizard } from '../src/renderer/src/ui/SetupWizard'
 import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stores'
+import { voiceController } from '../src/renderer/src/voice/VoiceController'
+import { liveVoice } from '../src/renderer/src/voice/LiveVoice'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
 vi.mock('@/voice/VoiceController', () => ({
   voiceController: { prepareLocalAsr: vi.fn(async () => 'ok'), cancelLocalAsrPreparation: vi.fn(), enable: vi.fn() }
 }))
 vi.mock('@/voice/SpeechPlayer', () => ({ speechPlayer: { playClip: vi.fn() } }))
+vi.mock('@/voice/LiveVoice', () => ({ liveVoice: { enable: vi.fn(), current: 'off' } }))
 vi.mock('@/voice/microphone-access', () => ({ verifyMicrophoneCapture: vi.fn(async () => {}), microphoneCaptureErrorMessage: (err: unknown) => String(err) }))
 
 /** First-run setup: the provider choice decides the pair of models, the voice mode skips steps, and what completion hands to main. */
@@ -46,7 +49,9 @@ const api = {
     if (patch.ttsEngine) status = { ...status, ttsEngine: patch.ttsEngine, tts: patch.ttsEngine === 'system' }
     return settings
   }),
-  completeSetup: vi.fn(async () => ({ ...settings, onboardingVersion: 1 })),
+  // As in main, the microphone at launch is kept only for a way of talking that listens.
+  completeSetup: vi.fn(async (request: { voiceMode: string; micAutoStart: boolean }) =>
+    ({ ...settings, onboardingVersion: 1, micAutoStart: request.voiceMode !== 'text' && request.micAutoStart })),
   onSetupProgress: vi.fn((listener: (progress: SetupProgress) => void) => {
     progressListener = listener
     return () => {}
@@ -144,6 +149,8 @@ beforeEach(async () => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   for (const fn of Object.values(api)) fn.mockClear()
+  vi.mocked(voiceController.enable).mockClear()
+  vi.mocked(liveVoice.enable).mockClear()
   useSettingsStore.setState({ settings })
   useStatusStore.setState({ status })
   container = document.createElement('div')
@@ -307,5 +314,28 @@ describe('first-run setup', () => {
     const bar = container.querySelector('[role="progressbar"]')
     expect(bar?.getAttribute('aria-valuenow')).toBe('29')
     expect(container.querySelector('.st-progress-label')?.textContent).toContain('576.3 / 1974 MB')
+  })
+
+  it('turns the microphone on at the end of a voice setup through the gate every other switch uses, for the engine the settings choose', async () => {
+    settings = { ...settings, voiceEngine: 'gpt-live' } as AppSettings
+    status = { ...status, asr: true, tts: true }
+    await render()
+    await toModel(ja)
+    await verifyKey(ja)
+    await press(ja('setup.next'))
+    await press(ja('setup.speaking.voice.title'))
+    await press(ja('setup.next'))
+    await press(ja('setup.next'))
+    await press(ja('setup.next'))
+    await press(ja('setup.mic.check'))
+    await act(async () => container.querySelector<HTMLInputElement>('.su-check input')!.click())
+    await press(ja('setup.next'))
+    await flush()
+    await press(ja('setup.next'))
+    await press(ja('setup.start'))
+
+    expect(api.completeSetup).toHaveBeenCalledWith(expect.objectContaining({ voiceMode: 'server', micAutoStart: true }))
+    expect(liveVoice.enable).toHaveBeenCalledOnce()
+    expect(voiceController.enable).not.toHaveBeenCalled()
   })
 })

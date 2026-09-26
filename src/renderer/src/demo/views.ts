@@ -10,7 +10,7 @@ import { useConfirmStore } from '@/state/confirm'
 import type { ScreenName } from './screens'
 import { prepareSetupDemo } from './setup-demo'
 import { DEMO_NOTES } from './fixtures/notes'
-import { DEMO_MAIL_MESSAGES } from './fixtures/mail'
+import { DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES } from './fixtures/mail'
 
 /**
  * How the demo opens each screen and state. The names and how they appear in the list live in
@@ -115,6 +115,7 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   notes: { open: () => view().openApp({ app: 'notes' }) },
   'notes/note': { open: () => view().openApp({ app: 'notes', noteId: DEMO_NOTES[2].id }) },
   'mail/message': { open: () => view().openApp({ app: 'mail', messageId: DEMO_MAIL_MESSAGES[0].id }) },
+  'mail/draft-started': { open: () => view().openApp({ app: 'mail', draftId: DEMO_MAIL_DRAFTS[2].id }) },
   'calendar/event': { open: () => void openCalendarEvent('リリース判定') },
 
   'settings/persona': settingsPage('persona'),
