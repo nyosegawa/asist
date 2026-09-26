@@ -16,8 +16,7 @@ import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
 import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
-import type { AgentProcess } from './agent-process-lifetime'
-import { recoverAgentProcess } from './agent-process-identity'
+import { recoverAgentProcess, type AgentProcess } from './agent-process/posix'
 import {
   assertMergeable,
   assertWorktreePresent,

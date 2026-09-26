@@ -5,11 +5,10 @@ import fs from 'node:fs'
 import type { AgentEngine, AgentJob, AgentProcessIdentity } from '@shared/ipc'
 import { createClaudeStreamParser, createCodexStreamParser, type AgentStreamEvent, type AgentStreamParser } from '@shared/agent-stream'
 import { errorText } from '@shared/i18n/error-text'
-import { getSettings } from './settings'
-import { t } from './i18n'
-import { AGENT_PROCESS_TOKEN, captureProcessIdentity } from './agent-process-identity'
-import { manageAgentProcess, type AgentProcess } from './agent-process-lifetime'
-import { childEnv } from './child-env'
+import { getSettings } from '../settings'
+import { t } from '../i18n'
+import { AGENT_PROCESS_TOKEN, captureProcessIdentity, manageAgentProcess, type AgentProcess } from './posix'
+import { childEnv } from '../child-env'
 
 /** Finding, launching and parsing the output of the CLI. Approving a job and updating its state is agent.ts. */
 
