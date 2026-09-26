@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { addDays, lastInstant, parseDayKey } from './calendar-layout'
 import { promptText, weekdayName, type ConversationLocale, type PromptText } from './conversation-locale'
 import { errorText } from './i18n/error-text'
 import { bilingual } from './tool-registry'
@@ -164,12 +165,6 @@ export function calendarWindow(now: Date, range: CalendarRange): { fromMs: numbe
 export const includesNextWeek = (now: Date, range: CalendarRange | 'custom'): boolean =>
   range === 'week' && (now.getDay() === 0 || now.getDay() === 6)
 
-/** Midnight of the local calendar day `YYYY-MM-DD` on this machine. */
-const localMidnight = (date: string): number => {
-  const [y, m, d] = date.split('-').map(Number)
-  return new Date(y, m - 1, d).getTime()
-}
-
 /** The input of show_calendar: either `range`, or `from` and `to` as local calendar days with `to` included. */
 export interface CalendarRangeInput {
   range?: CalendarRange
@@ -182,11 +177,14 @@ export interface CalendarResolvedRange {
   untilMs: number
 }
 
-/** The window the card and the fetch actually use. `from` and `to` win over `range`, which defaults to today. */
+/**
+ * The window the card and the fetch actually use. `from` and `to` win over `range`, which defaults to
+ * today, and are local calendar days of this machine that show_calendar's schema has checked exist.
+ */
 export function resolveCalendarRange(input: CalendarRangeInput, now: Date): CalendarResolvedRange {
   if (input.from && input.to) {
-    const fromMs = localMidnight(input.from)
-    const untilMs = localMidnight(input.to) + DAY_MS
+    const fromMs = parseDayKey(input.from).getTime()
+    const untilMs = addDays(parseDayKey(input.to), 1).getTime()
     if (!(untilMs > fromMs)) throw new Error(errorText('calendar.errors.rangeOrder'))
     if (untilMs - fromMs > MAX_SEARCH_DAYS * DAY_MS)
       throw new Error(errorText('calendar.errors.rangeTooLong', { days: MAX_SEARCH_DAYS }))
@@ -268,9 +266,7 @@ export function isoWithOffset(at: number, timeZone: string): string {
 }
 
 export function summarizeCalendarEvent(locale: ConversationLocale, event: CalendarEvent): CalendarEventSummary {
-  // The `end` of an all-day event is midnight of the following day, so its last day is one
-  // millisecond before `end`.
-  const lastDay = calendarDateLabel(locale, event.allDay ? event.end - 1 : event.end)
+  const lastDay = calendarDateLabel(locale, lastInstant(event))
   const date = calendarDateLabel(locale, event.start)
   return {
     id: event.id,
@@ -312,10 +308,11 @@ export interface CalendarSummary {
   nextWeek?: { range: string; events: CalendarEventDetail[] }
 }
 
-const rangeLabel = (locale: ConversationLocale, fromMs: number, untilMs: number): string =>
-  untilMs - fromMs <= DAY_MS
-    ? calendarDateLabel(locale, fromMs)
-    : `${calendarDateLabel(locale, fromMs)}${promptText(locale, TEXTS.between)}${calendarDateLabel(locale, untilMs - 1)}`
+function rangeLabel(locale: ConversationLocale, fromMs: number, untilMs: number): string {
+  const first = calendarDateLabel(locale, fromMs)
+  const last = calendarDateLabel(locale, untilMs - 1)
+  return first === last ? first : `${first}${promptText(locale, TEXTS.between)}${last}`
+}
 
 /**
  * The result of show_calendar and the material for the prefetched note. Each event's date and time
@@ -344,7 +341,7 @@ export function summarizeCalendarEvents(
     events: inWindow
   }
   if (includesNextWeek(now, window.range)) {
-    summary.nextWeek = { range: rangeLabel(locale, window.untilMs, window.untilMs + 7 * DAY_MS), events: later }
+    summary.nextWeek = { range: rangeLabel(locale, window.untilMs, addDays(new Date(window.untilMs), 7).getTime()), events: later }
   }
   return summary
 }

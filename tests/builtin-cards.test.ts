@@ -17,7 +17,7 @@ import { tableAmounts } from '@/panels/builtin/fx'
 import { diffLabel, offsetMinutes, phaseOf, zoned } from '@/panels/builtin/clock'
 import { remainingText } from '@/panels/builtin/timer'
 import { elapsedLabel } from '@/panels/builtin/agent-job'
-import { relativeTime } from '@/panels/primitives/format'
+import { relativeDayLabel, relativeTime } from '@/panels/primitives/format'
 import { DEMO_CALENDAR_CARD } from '@/demo/fixtures/calendar'
 import { DEMO_FX } from '@/demo/fixtures/finance'
 import { DEMO_JOB, DEMO_JOB_LOG, DEMO_JOBS } from '@/demo/fixtures/jobs'
@@ -251,6 +251,19 @@ describe('calendar card', () => {
     expect(behind.querySelector('.ca-now')).toBeNull()
     expect(behind.querySelector('.card-hero p')?.textContent).toBe(t('cardsTime.yesterday'))
     expect(behind.querySelector<HTMLElement>('.ca-event')?.dataset.past).toBeUndefined()
+  })
+
+  it('shows a range of one day as that day when daylight saving time makes the day 25 hours long', async () => {
+    const zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const fromMs = new Date(2026, 10, 1).getTime()
+      const card = await renderAt(spec('calendar', { range: 'custom', fromMs, untilMs: new Date(2026, 10, 2).getTime(), events: [] }), L)
+      expect(card.querySelector('.card-hero p')?.textContent).toBe(relativeDayLabel(fromMs))
+    } finally {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    }
   })
 
   it('shows the empty state when there is no event, and gives the week list one heading per day', async () => {

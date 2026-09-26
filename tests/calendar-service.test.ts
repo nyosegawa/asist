@@ -413,4 +413,33 @@ describe('calendar dates', () => {
       else process.env.TZ = previous
     }
   })
+  it('covers and names whole days in a range that holds a change of daylight saving time', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'America/New_York'
+      const fallBack = resolveCalendarRange({ from: '2026-11-01', to: '2026-11-01' }, new Date(2026, 9, 20))
+      expect(fallBack.untilMs).toBe(new Date(2026, 10, 2).getTime())
+      expect(summarizeCalendarEvents('en-US', [], new Date(2026, 9, 20), fallBack).range).toBe('2026-11-01 (Sun)')
+      // Asked about "this week" on a Saturday, next week runs from 2026-03-02 over the day clocks spring forward.
+      const saturday = new Date(2026, 1, 28, 12)
+      const week = summarizeCalendarEvents('en-US', [], saturday, resolveCalendarRange({ range: 'week' }, saturday))
+      expect(week.nextWeek?.range).toBe('2026-03-02 (Mon) to 2026-03-08 (Sun)')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+  it('tells the model that an event ending at midnight is on the day it starts', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      const late = { ...event, start: Date.parse('2026-09-15T22:00:00+09:00'), end: Date.parse('2026-09-16T00:00:00+09:00') }
+      expect(detailCalendarEvent('ja-JP', late)).toMatchObject({ date: '2026-09-15(火)', time: '22:00–00:00' })
+      const overnight = { ...late, end: Date.parse('2026-09-16T02:00:00+09:00') }
+      expect(detailCalendarEvent('ja-JP', overnight).date).toBe('2026-09-15(火) 〜 2026-09-16(水)')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
 })

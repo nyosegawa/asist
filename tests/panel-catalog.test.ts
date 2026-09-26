@@ -24,3 +24,12 @@ describe('panel catalog keys', () => {
     expect(second).not.toBe(first)
   })
 })
+
+describe('panel catalog input', () => {
+  it('refuses a calendar range whose from or to is not a day of the calendar', () => {
+    const calendar = catalogByType.get('calendar')!
+    expect(calendar.schema.safeParse({ from: '2026-09-01', to: '2026-09-31' }).success).toBe(false)
+    expect(calendar.schema.safeParse({ from: '2026-02-29', to: '2026-03-01' }).success).toBe(false)
+    expect(calendar.schema.safeParse({ from: '2028-02-29', to: '2028-09-30' }).success).toBe(true)
+  })
+})
