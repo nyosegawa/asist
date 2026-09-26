@@ -11,7 +11,7 @@ import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { HistoryMessage } from '../brain/history'
-import { liveRoute } from '../brain/speech-route'
+import { liveRoute, type SpokenTurn } from '../brain/speech-route'
 import type { TurnHandle } from '@shared/turn-scheduler'
 import { decodeOutput } from './audio'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -257,23 +257,29 @@ export class GptLiveEngine extends LiveEngineBase {
     }
     // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
     if (!this.enabled) return
-    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
+    // The voice's line closes on screen under the id it was shown with, and what it said stays with the
+    // exchange brain takes over.
     this.transcripts.flush('assistant')
-    const handle = this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
+    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
+    const handle = this.deps.beginTurn(text, false, liveRoute((sentence, turn) => this.say(sentence, delegationId, turn)))
     if (!handle) return
-    this.adoptTurn(handle.turnId)
+    this.handOver(handle.turnId)
     this.touch()
   }
 
   /** A job report or an interrupting utterance, read by the voice model outside any delegation. */
-  sayOutsideDelegation(sentence: string, signal?: AbortSignal): Promise<void> {
-    return this.say(sentence, null, signal)
+  sayOutsideDelegation(sentence: string, turn: SpokenTurn): Promise<void> {
+    return this.say(sentence, null, turn)
   }
 
-  /** Hands one of brain's sentences to the voice model, opening the session first if it is closed. */
-  private async say(sentence: string, delegationId: string | null, signal?: AbortSignal): Promise<void> {
+  /**
+   * Hands one of brain's sentences to the voice model, opening the session first if it is closed. What
+   * the voice says from here on belongs to the turn the sentence comes from.
+   */
+  private async say(sentence: string, delegationId: string | null, turn: SpokenTurn): Promise<void> {
     await this.ensureOpen()
-    if (signal?.aborted) return
+    if (!this.enabled || turn.signal.aborted) return
+    this.adoptTurn(turn.turnId)
     this.send({ type: 'session.commentary.append', delegation_id: delegationId, content: sentence })
     this.touch()
   }
@@ -286,7 +292,7 @@ export class GptLiveEngine extends LiveEngineBase {
   async sendText(text: string): Promise<void> {
     await this.ensureOpen()
     this.think(`${marker(conversationLocale(), 'typedInputForVoice')} ${text}`)
-    const handle = this.deps.beginTurn(text, true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
+    const handle = this.deps.beginTurn(text, true, liveRoute((sentence, turn) => this.say(sentence, null, turn)))
     if (!handle) return
     this.adoptTurn(handle.turnId)
     this.touch()

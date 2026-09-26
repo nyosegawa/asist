@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationPart } from '@shared/conversation'
 import { estimateTokens } from '@shared/token-estimate'
+import type { ConversationLocale } from '@shared/conversation-locale'
 import { buildMemoryInjection, type InjectableMemory, type MemoryInjection } from '@shared/memory-injection'
 import { interruptedBeforeReply, interruptedWhileSpeaking } from '@shared/turn-recovery'
 
@@ -16,6 +17,7 @@ function makeHistory(opts?: {
   compressAtTokens?: number
   limitTokens?: number
   hardLimitTokens?: number
+  locale?: ConversationLocale
 }): { history: ConversationHistory; checkpoints: HistoryCheckpoint[]; errors: string[] } {
   const checkpoints: HistoryCheckpoint[] = []
   const errors: string[] = []
@@ -27,7 +29,7 @@ function makeHistory(opts?: {
     load: () => opts?.stored ?? [],
     saveCheckpoint: (checkpoint) => checkpoints.push(structuredClone(checkpoint)),
     summarize: opts?.summarize ?? (async () => '要約'),
-    locale: () => 'ja-JP',
+    locale: () => opts?.locale ?? 'ja-JP',
     onError: (stage, err) => errors.push(`${stage}: ${err instanceof Error ? err.message : String(err)}`)
   })
   return { history, checkpoints, errors }
@@ -251,6 +253,27 @@ describe('ConversationHistory, derived from the conversation log', () => {
     history.noteContextTokens(1_000, history.revision)
     await history.compact('limit')
     expect(history.lastJobStatus()).toBeNull()
+  })
+
+  it('makes the assistant records of one turn one reply in the order they came, so a reply read in two sessions is not sent twice', () => {
+    const { history } = makeHistory()
+    history.apply(user(1, '明日の天気は'))
+    history.apply(message(1, 'assistant', [{ type: 'text', text: '明日は晴れです。最高気温は20度です。' }]))
+    history.apply(assistant(1, '明日は晴れです。'))
+    history.apply(assistant(1, '最高気温は20度です。'))
+    expect(history.toMessages().map((m) => [m.role, textOf(m)])).toEqual([
+      ['user', '[2026/9/8(火) 16:48] 明日の天気は'],
+      ['assistant', '明日は晴れです。最高気温は20度です。']
+    ])
+    expect(history.toTranscript()).toEqual([
+      { role: 'user', content: '明日の天気は' },
+      { role: 'assistant', content: '明日は晴れです。最高気温は20度です。' }
+    ])
+    const { history: english } = makeHistory({ locale: 'en-US' })
+    english.apply(user(1, 'Weather tomorrow?'))
+    english.apply(assistant(1, 'It will be sunny.'))
+    english.apply(assistant(1, 'The high is 20 degrees.'))
+    expect(english.toTranscript().at(-1)).toEqual({ role: 'assistant', content: 'It will be sunny. The high is 20 degrees.' })
   })
 
   it('turns a record that carries only an assistant reply into a standalone assistant message', () => {

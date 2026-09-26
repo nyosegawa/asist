@@ -217,7 +217,7 @@ export function start(): Promise<LiveStartResult> {
     if (created instanceof GptLiveEngine) {
       // A job report or an interrupting utterance is read by the voice model as commentary with no
       // delegation id.
-      setSpeechRoute(liveRoute((sentence, signal) => created.sayOutsideDelegation(sentence, signal)))
+      setSpeechRoute(liveRoute((sentence, turn) => created.sayOutsideDelegation(sentence, turn)))
     } else if (created instanceof GeminiLiveEngine) {
       setConversationOwner(created)
     }

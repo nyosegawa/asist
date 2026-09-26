@@ -248,6 +248,21 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('records an utterance that follows one the model has not answered yet under a turn of its own', async () => {
+    const { engine, sessions } = await setup()
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: '大阪の天気', finished: true } } })
+    session.message({ serverContent: { inputTranscription: { text: 'あ、やっぱり京都で', finished: true } } })
+    session.message({ serverContent: { outputTranscription: { text: '京都は晴れです。' } } })
+    session.message({ serverContent: { turnComplete: true } })
+    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([
+      { kind: 'user', turnId: 200, text: '大阪の天気' },
+      { kind: 'user', turnId: 201, text: 'あ、やっぱり京都で' },
+      { kind: 'assistant', turnId: 201, text: '京都は晴れです。' }
+    ])
+    await engine.stop()
+  })
+
   it('answers a timed-out write at once, and holds a write from a later message until the earlier one has stopped working', async () => {
     const first = held()
     const { engine, sessions, executeTool } = await setup((name) => (name === 'run_agent_task' ? first.task : finished('archived')))

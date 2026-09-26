@@ -55,21 +55,27 @@ export const silentRoute: SpeechRoute = {
   open: () => ({ push: () => {}, drain: () => Promise.resolve() })
 }
 
+/** The turn a sentence handed to the voice model comes from, which what the voice says is recorded under. */
+export interface SpokenTurn {
+  turnId: number
+  signal: AbortSignal
+}
+
 /**
  * The route that hands sentences to the voice model. `say` sends one sentence and opens the
  * connection first if it is closed. Pushes are chained one after another, because the sentences have
  * to be read in the order they were sent.
  */
-export function liveRoute(say: (sentence: string, signal: AbortSignal) => Promise<void>): SpeechRoute {
+export function liveRoute(say: (sentence: string, turn: SpokenTurn) => Promise<void>): SpeechRoute {
   return {
     kind: 'live',
-    open: ({ signal }) => {
+    open: ({ turnId, signal }) => {
       let tail: Promise<void> = Promise.resolve()
       return {
         push: (sentence) => {
           const text = sentence.trim()
           if (!text) return
-          tail = tail.then(() => (signal.aborted ? undefined : say(text, signal))).catch((err) => {
+          tail = tail.then(() => (signal.aborted ? undefined : say(text, { turnId, signal }))).catch((err) => {
             if (!signal.aborted) console.error('live speech route failed:', err)
           })
         },

@@ -95,6 +95,13 @@ export type PromptText = Readonly<Record<PromptLanguage, string>>
 export const promptText = (locale: ConversationLocale, text: PromptText): string => text[promptLanguage(locale)]
 
 /**
+ * Joins stretches of speech said one after another into one text. Japanese runs its sentences
+ * together, and every other language of the conversation puts a space between them.
+ */
+export const joinSpeech = (locale: ConversationLocale, parts: readonly string[]): string =>
+  parts.filter(Boolean).join(locale === 'ja-JP' ? '' : ' ')
+
+/**
  * The weekday names a date written for the model carries, spelled out here rather than read from
  * `Intl`, so that the same day always reads the same whatever data the machine happens to hold.
  */

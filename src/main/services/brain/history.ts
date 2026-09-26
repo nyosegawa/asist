@@ -1,5 +1,5 @@
 import { userText, type ConversationMessage } from '@shared/conversation'
-import { promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
+import { joinSpeech, promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
 import { estimateTokens } from '@shared/token-estimate'
 import { interruptedBeforeReply, interruptedWhileSpeaking, markInterruptedReply } from '@shared/turn-recovery'
 import type { ConversationRecord } from './conversation-log'
@@ -246,8 +246,10 @@ export class ConversationHistory {
       return
     }
     this.addedTokens += estimateTokens(record.text)
-    if (own && !hasReply(own)) {
-      own.assistant = record.text
+    // A voice model that reads a turn's reply across two sessions records what it said in each, and
+    // the reply is both, in order.
+    if (own) {
+      own.assistant = joinSpeech(this.options.locale(), [own.assistant ?? '', record.text])
       if (record.interrupted) own.interrupted = record.interrupted
       if (record.failed) own.failed = true
       own.records.push(record)
