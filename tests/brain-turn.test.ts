@@ -10,6 +10,7 @@ import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
 import { lastRoundNote } from '@shared/tool-round'
 import { interruptedBeforeReply, interruptedWhileSpeaking, resumeAfterDisconnectNote } from '@shared/turn-recovery'
+import { InterjectPlaybackAcks } from '@/interject-playback'
 
 const LAST_ROUND_NOTE = lastRoundNote('ja-JP')
 const INTERRUPTED_BEFORE_REPLY = interruptedBeforeReply('ja-JP')
@@ -96,14 +97,20 @@ const mocks = vi.hoisted(() => ({
   rounds: [] as Array<(round: RoundEmitter) => Promise<{ stop?: StopReason }>>,
   requests: [] as Array<{ messages: ConversationMessage[]; system: Array<{ text: string }> }>,
   fetchPanel: vi.fn(),
-  conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US'
+  conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
+  key: 'test-key' as string | undefined,
+  ttsEngine: 'voicevox',
+  /** Holds every synthesis until the turn is aborted, as a slow speech engine does. */
+  holdSynthesis: false,
+  contextBlock: (): string | null => null,
+  workClip: async (): Promise<unknown> => null
 }))
 
 vi.mock('../src/main/services/store', () => ({
   dataPath: (...parts: string[]) => path.join(mocks.userData, ...parts)
 }))
 vi.mock('../src/main/services/llm', () => ({
-  providerKey: () => 'test-key',
+  providerKey: () => mocks.key,
   quickText: vi.fn(async () => ''),
   streamConversation: (request: { messages: ConversationMessage[]; system: Array<{ text: string }>; signal?: AbortSignal }) => {
     mocks.requests.push({ messages: structuredClone(request.messages), system: request.system })
@@ -118,6 +125,7 @@ vi.mock('../src/main/services/settings', () => ({
     conversationLocale: mocks.conversationLocale,
     region: 'JP',
     persona: '',
+    ttsEngine: mocks.ttsEngine,
     conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' },
     bridgeModel: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
     conversationLogRetentionDays: 30,
@@ -125,11 +133,16 @@ vi.mock('../src/main/services/settings', () => ({
   })
 }))
 vi.mock('../src/main/services/tts', () => ({
-  synthesizeSentence: async () => ({ kind: 'whole', audio: null, phonemes: null })
+  synthesizeSentence: async (_text: string, signal?: AbortSignal) => {
+    if (mocks.holdSynthesis) {
+      await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true }))
+    }
+    return { kind: 'whole', audio: null, phonemes: null }
+  }
 }))
 vi.mock('../src/main/services/agent', () => ({
   events: mitt(),
-  contextBlock: () => null,
+  contextBlock: () => mocks.contextBlock(),
   findActive: () => undefined,
   start: vi.fn(),
   get: () => undefined,
@@ -142,7 +155,7 @@ vi.mock('../src/main/services/agent', () => ({
   merge: vi.fn(),
   discard: vi.fn()
 }))
-vi.mock('../src/main/services/aizuchi', () => ({ randomClip: async () => null }))
+vi.mock('../src/main/services/aizuchi', () => ({ randomClip: () => mocks.workClip() }))
 vi.mock('../src/main/services/memory', () => ({
   promptBlock: () => null,
   list: () => [{ id: 'm1', file: 'pages/中野.md', line: 3, kind: 'section', page: '中野', heading: '要約', aliases: [], text: '最寄り駅は中野', date: '2026-09-01', order: 0 }],
@@ -192,6 +205,20 @@ const readLog = (): Array<Record<string, unknown>> => {
 
 const lastUserParts = (request: { messages: ConversationMessage[] }): ConversationPart[] => request.messages.at(-1)!.parts
 
+/** The tool calls with no result in the message right after them, which the API refuses with a 400. */
+function unansweredCalls(messages: ConversationMessage[]): string[] {
+  return messages.flatMap((message, i) => {
+    if (message.role !== 'assistant') return []
+    const next = messages[i + 1]
+    return message.parts.flatMap((part) =>
+      part.type === 'tool_call' && !(next?.role === 'user' && next.parts.some((p) => p.type === 'tool_result' && p.callId === part.id)) ? [part.id] : []
+    )
+  })
+}
+
+const liveRoute = { kind: 'live' as const, open: () => ({ push: () => {}, drain: async () => {} }) }
+const weatherPanel = { props: { location: '東京都', weather: { targetDate: '2026-09-16', summary: '晴天' } }, source: 'test' }
+
 describe('brain turn', () => {
   // The first import of the brain transforms its whole module graph, and the imports after vi.resetModules
   // reuse that work. It took 399 ms alone but 5762 ms while `npm run demo:fit` kept three headless
@@ -211,6 +238,11 @@ describe('brain turn', () => {
     mocks.rounds = []
     mocks.requests = []
     mocks.conversationLocale = 'ja-JP'
+    mocks.key = 'test-key'
+    mocks.ttsEngine = 'voicevox'
+    mocks.holdSynthesis = false
+    mocks.contextBlock = () => null
+    mocks.workClip = async () => null
   })
 
   it('speaks the reply of a normal turn, keeps it in the history and the conversation log, and reports usage in metrics', async () => {
@@ -447,7 +479,7 @@ describe('brain turn', () => {
       record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
       record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
     }
-    history.noteContextTokens(LIMIT_TOKENS + 1)
+    history.noteContextTokens(LIMIT_TOKENS + 1, history.revision)
     let finishSummary!: (text: string) => void
     const heldSummary = new Promise<string>((resolve) => { finishSummary = resolve })
     vi.mocked(quickText).mockReturnValueOnce(heldSummary)
@@ -739,4 +771,27 @@ describe('brain turn', () => {
     expect(readLog().map((r) => r.kind)).toEqual(['user', 'message'])
   })
 
+  it.each(['silent', 'live'] as const)('reports a finished job once, not once per attempt, when the %s route plays no segment', async (kind) => {
+    for (let i = 0; i < 5; i++) mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+    if (kind === 'silent') mocks.ttsEngine = 'none'
+    const { brain } = await loadBrain()
+    const { setSpeechRoute } = await import('../src/main/services/brain/session')
+    if (kind === 'live') setSpeechRoute(liveRoute)
+    const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+    // The renderer's side of the acknowledgement, fed with brain's events the way conversation.ts feeds it.
+    const acks = new InterjectPlaybackAcks(async (turnId, status) => { acknowledgePlayback(turnId, status) })
+    brain.events.on('event', (e) => {
+      if (e.type === 'started' && e.origin === 'interject') acks.track(e.turnId)
+      if (e.type === 'segment' && acks.markSegmentQueued(e.segment)) acks.markSegmentStarted(e.segment)
+      if (e.type === 'done') acks.finishTurn(e.turnId)
+    })
+    initJobReporting()
+    const agent = await import('../src/main/services/agent')
+    agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+    await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
+    // A report counted as not delivered goes out again at once, so a second request would have started by now.
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(mocks.requests).toHaveLength(1)
+    expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
+  })
 })
