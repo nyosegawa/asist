@@ -269,6 +269,32 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('lets a later write run once a write that ignores its abort has had its time to stop, rather than holding every write for good', async () => {
+    const { createToolRegistry, executeTool, STOP_GRACE_MS } = await import('@shared/tool-registry')
+    const tool = (name: string, run: () => Promise<unknown>) => ({
+      name,
+      description: { ja: name, en: name },
+      inputSchema: { type: 'object' as const, properties: {} },
+      parallel: false,
+      timeoutMs: 1000,
+      maxResultChars: 500,
+      run
+    })
+    const registry = createToolRegistry([tool('run_agent_task', () => new Promise(() => {})), tool('change_mail', async () => 'archived')])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { engine, sessions } = await setup((name, input, ctx) => executeTool(registry, name, input, undefined, ctx.signal, 'ja'))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(1000)
+    session.message({ toolCall: { functionCalls: [{ id: 'b', name: 'change_mail', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['a'])
+    await vi.advanceTimersByTimeAsync(STOP_GRACE_MS)
+    expect(responseIds(session)).toEqual(['a', 'b'])
+    errors.mockRestore()
+    await engine.stop()
+  })
+
   it('answers the model with an error and marks the tool failed when the tool throws before it returns its task', async () => {
     const { engine, sessions, turnEvents } = await setup(() => {
       throw new Error('settings unreadable')
