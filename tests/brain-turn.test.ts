@@ -575,12 +575,12 @@ describe('brain turn', () => {
 
   it('holds a job report while the history is at its hard limit and reports it once the summary is done, not with the sentence about the summary', async () => {
     const { brain, events } = await loadBrain()
-    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    const { conversationLog, history, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
     const { completeText } = await import('../src/main/services/llm')
-    history.ensureLoaded()
+    // The log is on disk and no turn has read it yet, as right after the app starts.
     for (let i = 0; i < 50; i++) {
-      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
-      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+      conversationLog.append({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      conversationLog.append({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
     }
     history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
     let finishSummary!: (text: string) => void

@@ -166,6 +166,8 @@ export function initJobReporting(): void {
           await waitForIdle()
           // At the hard limit a turn only says that the history is being summarized, which would pass
           // for the report, so the report waits for the summary. A summary that fails uses up an attempt.
+          // The history is read first, since a report can come before any turn has read it.
+          history.ensureLoaded()
           if (history.needsCompaction() === 'block') {
             await history.compact('limit')
             if (history.needsCompaction() === 'block') {
