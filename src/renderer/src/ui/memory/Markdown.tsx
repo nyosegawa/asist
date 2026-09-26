@@ -57,12 +57,16 @@ function inline(text: string): ReactNode[] {
   let key = 0
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > last) out.push(text.slice(last, match.index))
-    if (match[1] !== undefined) out.push(<strong key={key++}>{match[1]}</strong>)
-    else out.push(
-      <button key={key++} type="button" className="my-link" onClick={() => void window.api.openExternal(match![3])}>
-        {match[2]}
-      </button>
-    )
+    if (match[1] !== undefined) {
+      out.push(<strong key={key++}>{match[1]}</strong>)
+    } else {
+      const url = match[3]
+      out.push(
+        <button key={key++} type="button" className="my-link" onClick={() => void window.api.openExternal(url)}>
+          {match[2]}
+        </button>
+      )
+    }
     last = match.index + match[0].length
   }
   if (last < text.length) out.push(text.slice(last))

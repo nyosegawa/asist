@@ -40,6 +40,8 @@ const SPEAKER: Record<'user' | 'assistant' | 'notice' | 'tool', PromptText> = {
 /**
  * Renders one day of the conversation log as lines of the form `[HH:MM #turnId] speaker: text`. A tool
  * contributes only its name, and an app notice is marked so that it is not read as the user speaking.
+ * The notes sent to the model with an utterance, on the user record or as a note record, are left
+ * out: the memories they show come from the memory this transcript is curated into.
  */
 export function renderTranscript(records: readonly TranscriptRecord[], locale: ConversationLocale): string {
   const label = (of: keyof typeof SPEAKER): string => promptText(locale, SPEAKER[of])
@@ -116,6 +118,11 @@ export const curationSkillSource = (locale: ConversationLocale): string =>
 
 /** Where the skill goes inside the worktree: claude reads .claude/skills and codex reads .agents/skills. */
 export const SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const
+/**
+ * The rules of the memory's markdown, which both skills' validate.mjs import from two folders above their
+ * scripts/: resources/skills in the app, and each of SKILL_DIRS in the worktree.
+ */
+export const FORMAT_MODULE = 'memory-format.mjs'
 /**
  * The .gitignore of the memory repository. The app copies the skill and AGENTS.md in on every run, so
  * they stay out of the memory commits.

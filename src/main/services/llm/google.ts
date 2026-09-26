@@ -214,7 +214,12 @@ class GoogleStream extends AdapterStream {
   }
 }
 
-/** Thinking tokens are billed as output, and grounding on Gemini 3 per search query the model runs. */
+/**
+ * Thinking tokens are billed as output, and grounding on Gemini 3 per search query the model runs. The
+ * results of a search fed back to the model within the response (toolUsePromptTokenCount) are left
+ * out: Google does not bill the context that grounding retrieves as input (its pricing page, checked
+ * 2026-09-26), and `input` is also read as the size of the conversation's context, which they never join.
+ */
 function roundUsage(usage: GenerateContentResponseUsageMetadata | undefined, grounding: GroundingMetadata | undefined): RoundUsage {
   const cachedTokens = usage?.cachedContentTokenCount ?? 0
   return {

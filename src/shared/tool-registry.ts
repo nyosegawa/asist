@@ -119,6 +119,11 @@ export interface ToolExecution {
   /** The length in characters before truncation. */
   resultLength: number
   truncated: boolean
+  /**
+   * The result as the model read it, before it became content: the tool's value with its arrays and strings
+   * shortened the way content shows them, or the text of a result that is a string. An error has none.
+   */
+  value?: unknown
 }
 
 /**
@@ -262,23 +267,24 @@ const INITIAL_LIMITS: ShrinkLimits = { arrayItems: 20, stringChars: 400 }
 const MIN_LIMITS: ShrinkLimits = { arrayItems: 1, stringChars: 24 }
 
 /**
- * Turns a tool's result into the string that goes into tool_result. A string is used as it is, with
- * the middle dropped when it exceeds the limit. An object becomes JSON, and when that exceeds the
- * limit the array counts and string lengths are shrunk step by step until it fits, so the JSON is
- * never cut off mid-structure.
+ * Turns a tool's result into the string that goes into tool_result, and returns beside it the value that
+ * string shows. A string is used as it is, with the middle dropped when it exceeds the limit. An object
+ * becomes JSON, and when that exceeds the limit the array counts and string lengths are shrunk step by
+ * step until it fits, so the JSON is never cut off mid-structure; a line saying so goes before it, which
+ * is why a caller that needs what the model saw reads `value` rather than parsing content.
  */
 export function formatToolResult(
   value: unknown,
   maxChars: number,
   language: PromptLanguage
-): { content: string; truncated: boolean; resultLength: number } {
+): { content: string; truncated: boolean; resultLength: number; value: unknown } {
   if (typeof value === 'string') {
     const result = truncateMiddle(value, maxChars, language)
-    return { content: result.text, truncated: result.truncated, resultLength: value.length }
+    return { content: result.text, truncated: result.truncated, resultLength: value.length, value: result.text }
   }
-  if (value === undefined) return { content: '', truncated: false, resultLength: 0 }
+  if (value === undefined) return { content: '', truncated: false, resultLength: 0, value }
   const full = JSON.stringify(value)
-  if (full.length <= maxChars) return { content: full, truncated: false, resultLength: full.length }
+  if (full.length <= maxChars) return { content: full, truncated: false, resultLength: full.length, value }
   let limits = { ...INITIAL_LIMITS }
   for (;;) {
     const shrunk = shrink(value, limits, language)
@@ -287,7 +293,8 @@ export function formatToolResult(
       return {
         content: `${TEXTS.cutJson(full.length)[language]}\n${text}`,
         truncated: true,
-        resultLength: full.length
+        resultLength: full.length,
+        value: shrunk.value
       }
     }
     if (limits.arrayItems <= MIN_LIMITS.arrayItems && limits.stringChars <= MIN_LIMITS.stringChars) {

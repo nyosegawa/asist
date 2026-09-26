@@ -3,16 +3,27 @@ import type { PromptText } from './conversation-locale'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { MemoryDocument, MemoryDocumentKind, MemoryPageInput, MemoryUnit, MemoryUnitKind } from './ipc'
+import {
+  INSTRUCTION_MAX_CHARS,
+  SECTION_MAX_CHARS,
+  SUMMARY_HEADING,
+  documentIssues,
+  instructionBody,
+  parsePage,
+  writtenInJapanese,
+  type DocumentIssue,
+  type ParsedPage
+} from '../../resources/skills/memory-format.mjs'
+
+export { instructionBody, parsePage }
 
 /**
  * Reading and writing the memory pages, which are markdown. They live in `userData/memory/`, and the
- * files are the memory itself. How to write them is specified in the references/format.md of the
- * curation skills under resources/skills; the only parts this code depends on are the frontmatter keys
- * aliases and updated, the `# name` line, the `## heading` lines, and the file names under journal/,
- * which holds ASIST's own journal. A heading and the body under it, called a section, is the
- * unit of search and injection, and its id is derived from the file path and the heading, so rewriting
- * the body leaves the unit identical. A page without any `## ` line is read as a single section named
- * "要約" or "Summary".
+ * files are the memory itself. How a document is read and what breaks its rules live in
+ * resources/skills/memory-format.mjs, which the curation skills' validate.mjs reads too; this file turns
+ * what it reads into units and list entries, and its findings into sentences. A heading and the body under
+ * it, called a section, is the unit of search and injection, and its id is derived from the file path and
+ * the heading, so rewriting the body leaves the unit identical.
  */
 
 /**
@@ -24,8 +35,8 @@ import type { MemoryDocument, MemoryDocumentKind, MemoryPageInput, MemoryUnit, M
  * them, one skill per form.
  */
 export const FIXED = {
-  /** The heading every page opens with, and the one a page without any `## ` line is read as. */
-  summary: { ja: '要約', en: 'Summary' },
+  /** The heading every page opens with, and the one the text above a document's first `## ` line is read as. */
+  summary: SUMMARY_HEADING,
   /** The heading the curation closes every journal entry with. */
   journalSelf: { ja: '今日の私', en: 'Myself today' },
   /** The heading the curation keeps on every page about a person, a place or a topic for its own view of them. */
@@ -45,154 +56,11 @@ export const FIXED = {
 export const JOURNAL_SELF_HEADINGS: readonly string[] = [FIXED.journalSelf.ja, FIXED.journalSelf.en]
 
 /**
- * Whether a piece of memory is written in Japanese. Kana decide it: of the eleven languages a
- * conversation can be held in, only Japanese writes them, and Japanese prose always contains them. A
- * heading this code has to supply itself, and the prefix of the text that gets embedded, follow from
- * this, so that a page keeps the form it was written in even after the conversation changed language.
+ * The form of a fixed text that fits the memory it is written into, told by its kana, so that the prefix of
+ * the text that gets embedded keeps the form the entry was written in after the conversation changed
+ * language.
  */
-export const writtenInJapanese = (text: string): boolean => /[\u3041-\u30ff]/.test(text)
-
-/** The form of a fixed text that fits the memory it is written into. */
 const fixedFor = (text: PromptText, markdown: string): string => text[writtenInJapanese(markdown) ? 'ja' : 'en']
-
-/** Whether a heading is the given fixed one, in either form. */
-const isFixed = (text: PromptText, heading: string): boolean => heading === text.ja || heading === text.en
-
-export interface PageFrontmatter {
-  present: boolean
-  aliases: string[]
-  /** Whether the frontmatter has an aliases key at all, even an empty one, which only a page may carry. */
-  hasAliases: boolean
-  updated: string | null
-  /** The keys an earlier form of the memory used, kind and links, which a page may no longer carry. */
-  obsoleteKeys: string[]
-}
-
-export interface PageSection {
-  /** The heading's line number, counted from one. A body without a heading reports its first line. */
-  line: number
-  heading: string
-  text: string
-}
-
-/**
- * A way the markdown breaks the rules this code depends on. It stays a value rather than a sentence,
- * because the sentence is written where the page is validated, in the language of the interface.
- */
-export type PageIssue =
-  | { kind: 'frontmatterUnclosed' }
-  | { kind: 'updatedNotDate' }
-  | { kind: 'obsoleteKey'; key: string }
-  | { kind: 'headingWithoutText'; line: number; heading: string }
-  | { kind: 'sectionTooLong'; line: number; heading: string }
-
-/**
- * The longest a section may be and the longest instruction.md may be, in characters without whitespace.
- * instruction.md goes whole into the system prompt of every turn, and a section is what one search hit
- * carries into a turn, so both are capped rather than left to grow with each curation. The skills'
- * validate.mjs checks the same numbers.
- */
-export const SECTION_MAX_CHARS = 800
-export const INSTRUCTION_MAX_CHARS = 2000
-
-/** The length the caps are measured in: characters, with the whitespace left out. */
-export const capLength = (text: string): number => Array.from(text.replace(/\s+/gu, '')).length
-
-const OBSOLETE_KEYS = new Set(['kind', 'links'])
-
-export interface ParsedPage {
-  title: string
-  /** Whether the page has its own `# name` line. */
-  titled: boolean
-  frontmatter: PageFrontmatter
-  sections: PageSection[]
-  issues: PageIssue[]
-}
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
-function parseList(value: string): string[] {
-  const inner = value.trim().replace(/^\[/, '').replace(/\]$/, '')
-  return inner
-    .split(',')
-    .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-    .filter(Boolean)
-}
-
-/**
- * Reads the frontmatter, the `key: value` lines fenced by `---`, and also reports the line the body
- * starts on. A list is accepted both as `[a, b]` on one line and as `  - a` lines that follow,
- * because the Agent writes both forms.
- */
-export function parseFrontmatter(lines: readonly string[]): { frontmatter: PageFrontmatter; bodyStart: number } {
-  const frontmatter: PageFrontmatter = { present: false, aliases: [], hasAliases: false, updated: null, obsoleteKeys: [] }
-  if (lines[0]?.trim() !== '---') return { frontmatter, bodyStart: 0 }
-  frontmatter.present = true
-  // The items of a list follow the key on lines of their own; those of an obsolete key are skipped.
-  let listKey: 'aliases' | 'skip' | null = null
-  for (let i = 1; i < lines.length; i++) {
-    const raw = lines[i]
-    if (raw.trim() === '---') return { frontmatter, bodyStart: i + 1 }
-    const item = /^\s+-\s*(.+)$/.exec(raw)
-    if (item && listKey) {
-      if (listKey === 'aliases') frontmatter.aliases.push(item[1].trim().replace(/^["']|["']$/g, ''))
-      continue
-    }
-    const match = /^([A-Za-z_]+)\s*:\s*(.*)$/.exec(raw)
-    if (!match) continue
-    const [, key, value] = match
-    listKey = null
-    if (OBSOLETE_KEYS.has(key)) {
-      frontmatter.obsoleteKeys.push(key)
-      if (!value.trim()) listKey = 'skip'
-    } else if (key === 'updated') frontmatter.updated = value.trim() || null
-    else if (key === 'aliases') {
-      frontmatter.hasAliases = true
-      frontmatter.aliases = parseList(value)
-      if (!value.trim()) listKey = 'aliases'
-    }
-  }
-  return { frontmatter, bodyStart: lines.length }
-}
-
-/** Reads a page, meaning user, pages or me, or a journal entry, one section per heading. */
-export function parsePage(markdown: string, fallbackTitle: string): ParsedPage {
-  const lines = markdown.split(/\r?\n/)
-  const { frontmatter, bodyStart } = parseFrontmatter(lines)
-  const issues: PageIssue[] = []
-  if (frontmatter.present && bodyStart === lines.length) issues.push({ kind: 'frontmatterUnclosed' })
-  if (frontmatter.updated && !DATE_PATTERN.test(frontmatter.updated)) issues.push({ kind: 'updatedNotDate' })
-  for (const key of frontmatter.obsoleteKeys) issues.push({ kind: 'obsoleteKey', key })
-  let title = fallbackTitle
-  let titled = false
-  const sections: PageSection[] = []
-  let current: PageSection | null = null
-  for (let i = bodyStart; i < lines.length; i++) {
-    const raw = lines[i]
-    if (/^# /.test(raw)) {
-      title = raw.slice(2).trim() || fallbackTitle
-      titled = true
-      continue
-    }
-    if (/^## /.test(raw)) {
-      current = { line: i + 1, heading: raw.slice(3).trim(), text: '' }
-      sections.push(current)
-      continue
-    }
-    if (!raw.trim()) continue
-    if (!current) {
-      // A body with no heading above it, as a short page has, becomes the section "要約" or "Summary".
-      current = { line: i + 1, heading: fixedFor(FIXED.summary, markdown), text: '' }
-      sections.push(current)
-    }
-    current.text = current.text ? `${current.text}\n${raw.trimEnd()}` : raw.trimEnd()
-  }
-  for (const section of sections) {
-    if (!section.text.trim()) issues.push({ kind: 'headingWithoutText', line: section.line, heading: section.heading })
-    else if (capLength(section.text) > SECTION_MAX_CHARS) issues.push({ kind: 'sectionTooLong', line: section.line, heading: section.heading })
-  }
-  return { title, titled, frontmatter, sections: sections.filter((s) => s.text.trim()), issues }
-}
 
 /**
  * A 16-digit id built from two 32-bit FNV-1a hashes. The same file path and key, which is a heading
@@ -326,49 +194,35 @@ export function documentOf(file: string, markdown: string): MemoryDocument {
   }
 }
 
+/** A finding of documentIssues as a sentence in the language of the interface. */
+function issueText(file: string, issue: DocumentIssue, t: Translate): string {
+  switch (issue.kind) {
+    case 'duplicateHeading':
+      return t('memory.check.duplicateHeading', { file, line: issue.line, heading: issue.heading, first: issue.first })
+    case 'headingWithoutText':
+      return t('memory.check.headingWithoutText', { file, line: issue.line, heading: issue.heading })
+    case 'sectionTooLong':
+      return t('memory.check.sectionTooLong', { file, line: issue.line, heading: issue.heading, limit: SECTION_MAX_CHARS })
+    case 'instructionTooLong':
+      return t('memory.check.instructionTooLong', { file, limit: INSTRUCTION_MAX_CHARS })
+    case 'firstHeading':
+      return t('memory.check.firstHeading', { file, heading: issue.heading })
+    case 'obsoleteKey':
+      return t('memory.check.obsoleteKey', { file, key: issue.key })
+    default:
+      return t(`memory.check.${issue.kind}`, { file })
+  }
+}
+
 /**
- * Checks the document against the rules this code depends on and returns what needs fixing, in the
+ * Checks the document against the rules of memory-format.mjs and returns what needs fixing, in the
  * language of the interface, or nothing when it is valid. Reading the whole directory and saving from
  * the screen apply the same rules.
  */
 export function validateDocument(file: string, markdown: string, t: Translate): string[] {
   const kind = documentKindOf(file)
   if (!kind) return [t('memory.check.wrongPlace', { file })]
-  const { title } = classifyFile(file)
-  const page = parsePage(markdown, title)
-  // parsePage reads a body with no heading above it as the summary section, so the sections alone cannot
-  // tell whether the document has a `## ` line, which the skills' validate.mjs requires.
-  const headed = /^## /m.test(markdown)
-  const errors = page.issues.map((issue) => {
-    switch (issue.kind) {
-      case 'headingWithoutText':
-        return t('memory.check.headingWithoutText', { file, line: issue.line, heading: issue.heading })
-      case 'sectionTooLong':
-        return t('memory.check.sectionTooLong', { file, line: issue.line, heading: issue.heading, limit: SECTION_MAX_CHARS })
-      case 'obsoleteKey':
-        return t('memory.check.obsoleteKey', { file, key: issue.key })
-      default:
-        return t(`memory.check.${issue.kind}`, { file })
-    }
-  })
-  if (kind === 'journal') {
-    if (!headed) errors.push(t('memory.check.noHeadings', { file }))
-    return errors
-  }
-  if (!page.titled) errors.push(t('memory.check.titleMissing', { file }))
-  if (kind === 'instruction') {
-    if (page.frontmatter.present) errors.push(t('memory.check.frontmatterNotAllowed', { file }))
-    if (!headed) errors.push(t('memory.check.noHeadings', { file }))
-    const body = page.sections.map((section) => section.heading + section.text).join('')
-    if (capLength(body) > INSTRUCTION_MAX_CHARS) errors.push(t('memory.check.instructionTooLong', { file, limit: INSTRUCTION_MAX_CHARS }))
-    return errors
-  }
-  if (!page.frontmatter.present) errors.push(t('memory.check.frontmatterMissing', { file }))
-  else if (kind !== 'page' && page.frontmatter.hasAliases) errors.push(t('memory.check.aliasesOnlyOnPages', { file }))
-  if (kind !== 'me' && !headed) errors.push(t('memory.check.noHeadings', { file }))
-  if (kind === 'page' && page.sections.length > 0 && !isFixed(FIXED.summary, page.sections[0].heading))
-    errors.push(t('memory.check.firstHeading', { file, heading: fixedFor(FIXED.summary, markdown) }))
-  return errors
+  return documentIssues(kind, markdown).map((issue) => issueText(file, issue, t))
 }
 
 export function parseMemoryPageInput(value: unknown): MemoryPageInput {

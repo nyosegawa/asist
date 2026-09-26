@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import type { TurnEvent } from '@shared/ipc'
-import { MINI_APPS, openMiniAppSchema, type MiniAppView } from '@shared/mini-apps'
+import { MINI_APPS, openMiniAppSchema, placeMiniApp, type MiniAppView } from '@shared/mini-apps'
 import { ToolError } from '@shared/tool-registry'
 import { describeOpenApp, miniAppTools, openAppNote, parseTarget } from '../src/main/services/brain/mini-app-tools'
 import { openMiniApp, reportOpenMiniApp } from '../src/main/services/mini-app-view'
-import { placeMiniApp } from '@/state/view'
 
-function run(name: string, input: Record<string, unknown> = {}): { result: unknown; events: TurnEvent[] } {
+/**
+ * Runs a tool against a renderer that answers each app event with the report of what it then shows:
+ * the requested view, or the view it had when `keep` stands for a user who keeps a draft.
+ */
+async function run(name: string, input: Record<string, unknown> = {}, keep = false): Promise<{ result: unknown; events: TurnEvent[] }> {
   const events: TurnEvent[] = []
   const tool = miniAppTools('en').find((def) => def.name === name)!
-  const result = tool.run(input, { turnId: 7, signal: new AbortController().signal, emit: (event) => events.push(event) }, new AbortController().signal)
+  const emit = (event: TurnEvent): void => {
+    events.push(event)
+    if (event.type !== 'app') return
+    const before = openMiniApp()
+    queueMicrotask(() => reportOpenMiniApp(keep ? before : event.open ? placeMiniApp(before, event.open) : null))
+  }
+  const result = await tool.run(input, { turnId: 7, signal: new AbortController().signal, emit }, new AbortController().signal)
   return { result, events }
 }
 
@@ -24,10 +33,19 @@ const views: MiniAppView[] = [
 ]
 
 describe('open_app', () => {
-  it('asks the renderer to open the mini app at the place the fields name', () => {
-    const { result, events } = run('open_app', { app: 'calendar', view: 'week', date: '2026-09-29', eventId: 'event-1' })
+  it('asks the renderer to open the mini app at the place the fields name, and says so once the screen shows it', async () => {
+    reportOpenMiniApp(null)
+    const { result, events } = await run('open_app', { app: 'calendar', view: 'week', date: '2026-09-29', eventId: 'event-1' })
     expect(events).toEqual([{ type: 'app', turnId: 7, open: { app: 'calendar', view: 'week', date: '2026-09-29', eventId: 'event-1' } }])
     expect(result).toEqual({ opened: 'calendar' })
+  })
+
+  it('says it did not open, and what the screen still shows, when the user keeps a draft', async () => {
+    const editing: MiniAppView = { app: 'notes', noteId: 'note-1', editing: true }
+    reportOpenMiniApp(editing)
+    expect((await run('open_app', { app: 'tasks' }, true)).result).toEqual({ opened: null, kept: describeOpenApp(editing, 'en') })
+    // Another note in the same mini app is turned down the same way, though Notes stays open.
+    expect((await run('open_app', { app: 'notes', noteId: 'note-2' }, true)).result).toEqual({ opened: null, kept: describeOpenApp(editing, 'en') })
   })
 
   it('opens every mini app with no field at all', () => {
@@ -52,14 +70,19 @@ describe('open_app', () => {
     expect(openMiniAppSchema.safeParse(placeMiniApp(null, leapDay)).success).toBe(true)
   })
 
-  it('sends nothing to the renderer when the input is refused', () => {
-    expect(() => run('open_app', { app: 'notes', jobId: 'job-1' })).toThrow(ToolError)
+  it('sends nothing to the renderer when the input is refused', async () => {
+    await expect(run('open_app', { app: 'notes', jobId: 'job-1' })).rejects.toThrow(ToolError)
   })
 })
 
 describe('close_app', () => {
-  it('asks the renderer to close the open mini app', () => {
-    expect(run('close_app').events).toEqual([{ type: 'app', turnId: 7, open: null }])
+  it('asks the renderer to close the open mini app, and says whether the screen closed it', async () => {
+    reportOpenMiniApp(views[1])
+    const closed = await run('close_app')
+    expect(closed.events).toEqual([{ type: 'app', turnId: 7, open: null }])
+    expect(closed.result).toEqual({ closed: true })
+    reportOpenMiniApp(views[5])
+    expect((await run('close_app', {}, true)).result).toEqual({ closed: false, kept: describeOpenApp(views[5], 'en') })
   })
 })
 
@@ -70,12 +93,12 @@ describe('the open mini app', () => {
     expect(describeOpenApp(views[3], 'en')).toContain('2026-09-22')
   })
 
-  it('is what get_open_app returns after the renderer reports it, and nothing once it reports none', () => {
+  it('is what get_open_app returns after the renderer reports it, and nothing once it reports none', async () => {
     reportOpenMiniApp(views[0])
-    expect(run('get_open_app').result).toMatchObject({ open: views[0] })
+    expect((await run('get_open_app')).result).toMatchObject({ open: views[0] })
     expect(openAppNote('en-US')).toContain('note-1')
     reportOpenMiniApp(null)
-    expect(run('get_open_app').result).toEqual({ open: null })
+    expect((await run('get_open_app')).result).toEqual({ open: null })
     expect(openAppNote('en-US')).toBeNull()
   })
 

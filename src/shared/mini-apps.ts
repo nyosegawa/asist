@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { dayKey } from './calendar-layout'
 import { MAIL_VIEWS } from './mail'
 
 /**
@@ -63,3 +64,59 @@ export type MiniAppTarget =
   | { app: 'jobs'; jobId?: string }
   | { app: 'memory'; file?: string }
   | { app: 'settings'; page?: SettingsPage }
+
+/**
+ * Where a target places a mini app. A field the target leaves out keeps what the open mini app shows,
+ * or what the mini app shows by itself when it is not open yet. A calendar moved to another day or
+ * view closes the event it showed, whose card would point at a chip no longer drawn, and a mail box
+ * changed without a message or draft closes the pane. The renderer places a mini app with it, and
+ * open_app works out from it what the renderer should report once the mini app is open.
+ */
+export function placeMiniApp(current: MiniAppView | null, target: MiniAppTarget, today = new Date()): MiniAppView {
+  switch (target.app) {
+    case 'notes': {
+      const base = current?.app === 'notes' ? current : { app: 'notes' as const, noteId: null, editing: false }
+      return target.noteId === undefined ? base : { app: 'notes', noteId: target.noteId, editing: false }
+    }
+    case 'tasks': {
+      const base = current?.app === 'tasks' ? current : { app: 'tasks' as const, view: 'board' as const, taskId: null }
+      return { app: 'tasks', view: target.view ?? base.view, taskId: target.taskId ?? base.taskId }
+    }
+    case 'mail': {
+      const base = current?.app === 'mail' ? current : { app: 'mail' as const, box: 'inbox' as const, accountId: null, query: '', pane: null }
+      const box = target.box ?? (target.draftId !== undefined ? 'drafts' : base.box)
+      const pane =
+        target.messageId !== undefined
+          ? { kind: 'message' as const, id: target.messageId }
+          : target.draftId !== undefined
+            ? { kind: 'draft' as const, id: target.draftId }
+            : box === base.box
+              ? base.pane
+              : null
+      return { app: 'mail', box, accountId: base.accountId, query: base.query, pane }
+    }
+    case 'calendar': {
+      const base = current?.app === 'calendar' ? current : { app: 'calendar' as const, view: 'month' as const, date: dayKey(today), eventId: null }
+      const view = target.view ?? base.view
+      const date = target.date ?? base.date
+      const eventId = target.eventId ?? (view === base.view && date === base.date ? base.eventId : null)
+      return { app: 'calendar', view, date, eventId }
+    }
+    case 'jobs': {
+      const base = current?.app === 'jobs' ? current : { app: 'jobs' as const, jobId: null }
+      return { app: 'jobs', jobId: target.jobId ?? base.jobId }
+    }
+    case 'memory': {
+      const base = current?.app === 'memory' ? current : { app: 'memory' as const, file: null }
+      return { app: 'memory', file: target.file ?? base.file }
+    }
+    case 'settings': {
+      const base = current?.app === 'settings' ? current : { app: 'settings' as const, page: 'conversation' as const }
+      return { app: 'settings', page: target.page ?? base.page }
+    }
+  }
+}
+
+/** Whether two views show the same thing. Parsing puts the keys of both in the schema's order. */
+export const sameMiniAppView = (a: MiniAppView | null, b: MiniAppView | null): boolean =>
+  JSON.stringify(openMiniAppSchema.parse(a)) === JSON.stringify(openMiniAppSchema.parse(b))

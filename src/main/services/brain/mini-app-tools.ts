@@ -7,11 +7,13 @@ import {
   SETTINGS_PAGES,
   TASK_VIEWS,
   localDate,
+  placeMiniApp,
+  sameMiniAppView,
   type MiniAppTarget,
   type MiniAppView
 } from '@shared/mini-apps'
 import { LOCAL_TIMEOUT_MS, ToolError, bilingual, type ToolDefinition } from '@shared/tool-registry'
-import { openMiniApp } from '../mini-app-view'
+import { nextOpenMiniApp, openMiniApp } from '../mini-app-view'
 import type { ToolContext } from './tools'
 
 /**
@@ -88,6 +90,25 @@ export function describeOpenApp(view: MiniAppView, language: PromptLanguage): st
   }
 }
 
+/**
+ * How long open_app and close_app wait for the screen. A mini app holding a draft that is not saved asks
+ * the user before it is left, and their answer is waited for as long as the approval of a job is.
+ */
+const ANSWER_TIMEOUT_MS = 300_000
+
+/**
+ * Asks the renderer to open a mini app, or to close the open one for null, and resolves with what the
+ * screen shows afterwards, which the renderer reports whether it made the change or the user kept a draft.
+ */
+function request(ctx: ToolContext, open: MiniAppTarget | null, signal: AbortSignal): Promise<MiniAppView | null> {
+  const shown = nextOpenMiniApp(signal)
+  ctx.emit({ type: 'app', turnId: ctx.turnId, open })
+  return shown
+}
+
+const keptText = (view: MiniAppView | null, language: PromptLanguage): string =>
+  view ? describeOpenApp(view, language) : STATE.nothingOpen[language]
+
 /** The note attached to a user utterance while a mini app is open, or null when only the conversation is on screen. */
 export function openAppNote(locale: ConversationLocale, view: MiniAppView | null = openMiniApp()): string | null {
   if (!view) return null
@@ -104,13 +125,13 @@ export function miniAppTools(language: PromptLanguage): Def[] {
           'ASIST のミニアプリを画面に開く。ミニアプリは Dock から開く画面で、一度に一つだけ開く。開いている間、会話は右に出る。',
           'notes=メモ(read_note / search_notes)、tasks=タスク(list_tasks)、mail=メール(list_mail / read_mail)、calendar=カレンダー(show_calendar / change_calendar)、jobs=Agent のジョブ(get_agent_job)、memory=記憶(recall)、settings=設定。',
           '場所を指す欄は、そのミニアプリのものだけを使う。id は各ツールの結果か、発話に付いた「開いているミニアプリ」の注から取り、推測しない。省いた欄は、そのミニアプリがふだん見せるものになる。',
-          '結果は { opened }。開いたことを一言で伝える。'
+          '結果は { opened }。開いたことを一言で伝える。保存していない下書きのあるミニアプリは、離れる前に本人に確かめる。本人が下書きを残すと opened は null になり、kept に画面が今見せているものが入る。そのときは開かなかったことを伝え、頼まれない限り開き直さない。'
         ].join('\n'),
         en: [
           "Opens one of ASIST's mini apps on screen. The mini apps are the screens opened from the Dock, one at a time; while one is open, the conversation moves to the right.",
           'notes = notes (read_note / search_notes), tasks = tasks (list_tasks), mail = mail (list_mail / read_mail), calendar = calendar (show_calendar / change_calendar), jobs = the agent jobs (get_agent_job), memory = the memory (recall), settings = the settings.',
           'Use only the fields that belong to the mini app you open. Take ids from the results of those tools or from the open-app note on the utterance, and never guess one. A field left out shows what the mini app shows by itself.',
-          'The result is { opened }. Say in a few words that it is open.'
+          'The result is { opened }. Say in a few words that it is open. A mini app holding a draft that is not saved asks the user before it is left; when they keep the draft, opened is null and kept says what the screen still shows. Then say that it did not open, and do not try again unless asked.'
         ].join('\n')
       },
       usage: {
@@ -141,19 +162,20 @@ export function miniAppTools(language: PromptLanguage): Def[] {
         additionalProperties: false
       },
       parallel: false,
-      timeoutMs: LOCAL_TIMEOUT_MS,
+      timeoutMs: ANSWER_TIMEOUT_MS,
       maxResultChars: 500,
-      run: (input, ctx) => {
+      run: async (input, ctx, signal) => {
         const target = parseTarget(input)
-        ctx.emit({ type: 'app', turnId: ctx.turnId, open: target })
-        return { opened: target.app }
+        const expected = placeMiniApp(openMiniApp(), target)
+        const shown = await request(ctx, target, signal)
+        return sameMiniAppView(shown, expected) ? { opened: target.app } : { opened: null, kept: keptText(shown, language) }
       }
     },
     {
       name: 'close_app',
       description: {
-        ja: '開いているミニアプリを閉じ、会話だけの画面に戻す。結果は { closed }。',
-        en: 'Closes the open mini app and goes back to the conversation alone. The result is { closed }.'
+        ja: '開いているミニアプリを閉じ、会話だけの画面に戻す。結果は { closed }。保存していない下書きがあると本人に確かめ、本人が下書きを残すと closed は false になり、kept に画面が今見せているものが入る。そのときは閉じなかったことを伝える。',
+        en: 'Closes the open mini app and goes back to the conversation alone. The result is { closed }. A mini app holding a draft that is not saved asks the user first; when they keep the draft, closed is false and kept says what the screen still shows, so say that it stayed open.'
       },
       usage: {
         ja: '「閉じて」「会話に戻って」と言われたとき',
@@ -161,11 +183,11 @@ export function miniAppTools(language: PromptLanguage): Def[] {
       },
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
       parallel: false,
-      timeoutMs: LOCAL_TIMEOUT_MS,
-      maxResultChars: 200,
-      run: (_input, ctx) => {
-        ctx.emit({ type: 'app', turnId: ctx.turnId, open: null })
-        return { closed: true }
+      timeoutMs: ANSWER_TIMEOUT_MS,
+      maxResultChars: 500,
+      run: async (_input, ctx, signal) => {
+        const shown = await request(ctx, null, signal)
+        return shown === null ? { closed: true } : { closed: false, kept: keptText(shown, language) }
       }
     },
     {
@@ -211,7 +233,8 @@ const STATE = {
   jobsEmpty: { ja: 'Agent のジョブ(jobs)を開いている。ジョブはまだない。', en: 'Jobs is open, with no job yet.' },
   memoryFile: { ja: '記憶(memory)を開いていて、{file} を表示している。', en: 'Memory is open, showing {file}.' },
   memoryEmpty: { ja: '記憶(memory)を開いている。表示している文書はない。', en: 'Memory is open, showing no document.' },
-  settings: { ja: '設定(settings)の {page} のページを開いている。', en: 'Settings is open on the {page} page.' }
+  settings: { ja: '設定(settings)の {page} のページを開いている。', en: 'Settings is open on the {page} page.' },
+  nothingOpen: { ja: 'ミニアプリは開いていない。', en: 'No mini app is open.' }
 } as const satisfies Record<string, PromptText>
 
 /** What the tools say to the model when an input is wrong, in both prompt languages. */

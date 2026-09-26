@@ -1,21 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
+import { isTransientApiError } from '@shared/api-errors'
 
 /** The OpenAI adapter. These tests run fake Responses API events and check the conversion to the ASIST types. */
 
 const mocks = vi.hoisted(() => ({
   events: [] as unknown[],
   failAfter: null as Error | null,
+  /** Runs once every event has been read, before the stream ends. */
+  atEnd: null as (() => void) | null,
   params: [] as Array<Record<string, unknown>>
 }))
 
 vi.mock('openai', () => ({
   default: class FakeOpenAI {
     responses = {
-      create: async (params: Record<string, unknown>) => {
+      create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
         mocks.params.push(params)
         return (async function* () {
-          for (const event of mocks.events) yield event
+          for (const event of mocks.events) {
+            // The openai package ends a stream quietly once its request is aborted.
+            if (options.signal.aborted) return
+            yield event
+          }
+          mocks.atEnd?.()
           if (mocks.failAfter) throw mocks.failAfter
         })()
       }
@@ -62,6 +70,7 @@ beforeEach(() => {
   vi.resetModules()
   mocks.events = []
   mocks.failAfter = null
+  mocks.atEnd = null
   mocks.params.length = 0
 })
 
@@ -206,9 +215,32 @@ describe('the OpenAI stream', () => {
     // The stream closes normally even after a failure, so without an error it would pass as an empty reply.
     mocks.events = [{ type: 'response.failed', response: { status: 'failed', error: { code: 'rate_limit_exceeded', message: 'slow down' } } }]
     await expect((await open()).stream.final()).rejects.toMatchObject({ status: 429 })
+  })
 
-    mocks.events = []
-    await expect((await open()).stream.final()).rejects.toThrow('without a completion event')
+  it('fails as a transient error when the server ends the stream before the completion event, as when a connection drops', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '大阪は' }]
+    const error = await (await open()).stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
+  it('keeps an answer whose completion event arrived before the timeout of the round fired', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '晴れです。' }, completed()]
+    const controller = new AbortController()
+    mocks.atEnd = () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    const result = await (await open({ signal: controller.signal })).stream.final()
+    // A finished reply taken for a cut one would be resumed and spoken again.
+    expect(result.stop).toBe('end')
+    expect(result.message.parts).toEqual([{ type: 'text', text: '晴れです。' }])
+  })
+
+  it('fails as a transient error when the timeout of the round cuts the response off', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '大阪は' }, { type: 'response.output_text.delta', delta: '晴れです。' }, completed()]
+    const controller = new AbortController()
+    const { stream } = await open({ signal: controller.signal })
+    stream.on('text', () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')))
+    const error = await stream.final().then(() => null, (reason: unknown) => reason)
+    // A transient failure is retried, or resumed from what was already spoken.
+    expect(isTransientApiError(error)).toBe(true)
   })
 
   it('fails instead of running a tool call whose arguments are broken', async () => {

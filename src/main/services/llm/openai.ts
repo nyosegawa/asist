@@ -11,7 +11,7 @@ import type { ConversationMessage, ConversationRequest, ConversationResult, Sear
 import type { RoundUsage } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { effortFor } from '@shared/llm-catalog'
-import { AdapterStream, parseToolArguments, statusError, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
+import { AdapterStream, parseToolArguments, statusError, streamCutOff, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
 
 /**
  * OpenAI, through the Responses API, because chat completions does not accept function tools and a
@@ -194,7 +194,7 @@ class OpenAIStream extends AdapterStream {
           throw new Error(`OpenAI: ${event.code ?? 'error'}: ${event.message}`)
       }
     }
-    if (!response) throw new Error('OpenAI: the stream ended without a completion event')
+    if (!response) streamCutOff(request.signal, 'OpenAI')
     if (citations) this.emitText(citations.flush())
     this.closeText()
     if (this.items.some((item) => item.type === 'web_search_call')) {

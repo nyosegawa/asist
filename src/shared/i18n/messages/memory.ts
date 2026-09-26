@@ -843,6 +843,19 @@ export const memory = defineMessages({
       'pt-BR': '{file}: o nome do arquivo precisa ser YYYY-MM-DD.md',
       'es-419': '{file}: el nombre del archivo debe ser YYYY-MM-DD.md',
       'es-ES': '{file}: el nombre del archivo debe ser YYYY-MM-DD.md'
+    },
+    duplicateHeading: {
+      'ja-JP': '{file}: {line} 行目、見出し「{heading}」が {first} 行目にもあります。同じ見出しは一つにまとめます',
+      'en-US': '{file}: line {line}, the heading "{heading}" is also on line {first}; merge the two into one',
+      'fr-FR': '{file} : ligne {line}, le titre « {heading} » figure aussi à la ligne {first} ; regroupez-les en un seul',
+      'de-DE': '{file}: Zeile {line}, die Überschrift „{heading}“ steht auch in Zeile {first}; fassen Sie beide zu einer zusammen',
+      'hi-IN': '{file}: पंक्ति {line}, शीर्षक "{heading}" पंक्ति {first} में भी है; दोनों को एक में मिलाएँ',
+      'id-ID': '{file}: baris {line}, judul “{heading}” juga ada di baris {first}; gabungkan keduanya jadi satu',
+      'it-IT': "{file}: riga {line}, il titolo «{heading}» c'è anche alla riga {first}; uniscili in uno solo",
+      'ko-KR': '{file}: {line}번째 줄, 제목 “{heading}”이(가) {first}번째 줄에도 있습니다. 같은 제목은 하나로 합칩니다',
+      'pt-BR': '{file}: linha {line}, o título “{heading}” também está na linha {first}; junte os dois em um só',
+      'es-419': '{file}: línea {line}, el encabezado «{heading}» también está en la línea {first}; júntalos en uno solo',
+      'es-ES': '{file}: línea {line}, el encabezado “{heading}” también está en la línea {first}; júntalos en uno solo'
     }
   },
   curation: {
@@ -1107,6 +1120,45 @@ export const memory = defineMessages({
       'pt-BR': 'As alterações vão além da pasta da memória, por isso não foram mescladas:\n{files}',
       'es-419': 'Los cambios salen de la carpeta de la memoria, así que no se fusionaron:\n{files}',
       'es-ES': 'Los cambios salen de la carpeta de la memoria, así que no se han fusionado:\n{files}'
+    },
+    notRegular: {
+      'ja-JP': '{file} は通常のファイルやフォルダではないため、読みませんでした',
+      'en-US': '{file} is not a regular file or folder, so it was not read',
+      'fr-FR': "{file} n'est ni un fichier ni un dossier ordinaire, il n'a donc pas été lu",
+      'de-DE': '{file} ist keine gewöhnliche Datei und kein gewöhnlicher Ordner und wurde daher nicht gelesen',
+      'hi-IN': '{file} सामान्य फ़ाइल या फ़ोल्डर नहीं है, इसलिए इसे पढ़ा नहीं गया',
+      'id-ID': '{file} bukan file atau folder biasa, jadi tidak dibaca',
+      'it-IT': '{file} non è un file o una cartella normale, quindi non è stato letto',
+      'ko-KR': '{file}은(는) 일반 파일이나 폴더가 아니어서 읽지 않았습니다',
+      'pt-BR': '{file} não é um arquivo nem uma pasta comum, por isso não foi lido',
+      'es-419': '{file} no es un archivo ni una carpeta común, así que no se leyó',
+      'es-ES': '{file} no es un archivo ni una carpeta normal, así que no se ha leído'
+    },
+    changedSinceOpened: {
+      'ja-JP': '開いたあとに内容が変わったため、保存しませんでした。「キャンセル」を押すと今の内容を表示します',
+      'en-US': 'It changed after you opened it, so it was not saved. Press "Cancel" to see the current version',
+      'fr-FR': "Modifié après l'ouverture, donc non enregistré. « Annuler » affiche la version actuelle",
+      'de-DE': 'Nach dem Öffnen geändert, daher nicht gespeichert. „Abbrechen“ zeigt die aktuelle Fassung',
+      'hi-IN': 'खोलने के बाद बदलाव हुआ, इसलिए सेव नहीं हुआ। "रद्द करें" से अभी का रूप दिखेगा',
+      'id-ID': 'Berubah setelah dibuka, jadi tidak disimpan. “Batal” menampilkan versi terbaru',
+      'it-IT': "Cambiato dopo l'apertura, quindi non salvato. «Annulla» mostra la versione attuale",
+      'ko-KR': '연 뒤에 내용이 바뀌어 저장하지 않았습니다. “취소”를 누르면 지금 내용을 표시합니다',
+      'pt-BR': 'Mudou depois de aberto, por isso não foi salvo. “Cancelar” mostra a versão atual',
+      'es-419': 'Cambió después de abrirlo, así que no se guardó. «Cancelar» muestra la versión actual',
+      'es-ES': 'Ha cambiado tras abrirlo y no se ha guardado. “Cancelar” muestra la versión actual'
+    },
+    removedSinceOpened: {
+      'ja-JP': '開いたあとに文書が消えたため、保存しませんでした。書いた内容を控えてから「キャンセル」を押してください',
+      'en-US': 'It was deleted after you opened it, so it was not saved. Copy what you wrote, then press "Cancel"',
+      'fr-FR': "Supprimé après l'ouverture, donc non enregistré. Copiez votre texte, puis cliquez sur « Annuler »",
+      'de-DE': 'Nach dem Öffnen gelöscht, daher nicht gespeichert. Kopieren Sie Ihren Text und wählen Sie „Abbrechen“',
+      'hi-IN': 'खोलने के बाद इसे हटा दिया गया, इसलिए सेव नहीं हुआ। लिखा हुआ कॉपी करें, फिर "रद्द करें" दबाएँ',
+      'id-ID': 'Dihapus setelah dibuka, jadi tidak disimpan. Salin tulisan Anda, lalu tekan “Batal”',
+      'it-IT': "Eliminato dopo l'apertura, quindi non salvato. Copia il testo, poi premi «Annulla»",
+      'ko-KR': '연 뒤에 문서가 삭제되어 저장하지 않았습니다. 쓴 내용을 복사한 뒤 “취소”를 누르세요',
+      'pt-BR': 'Excluído depois de aberto, por isso não foi salvo. Copie o que escreveu e clique em “Cancelar”',
+      'es-419': 'Se eliminó después de abrirlo, así que no se guardó. Copia lo que escribiste y haz clic en «Cancelar»',
+      'es-ES': 'Se ha eliminado tras abrirlo y no se ha guardado. Copia lo que has escrito y pulsa “Cancelar”'
     }
   }
 })
