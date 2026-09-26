@@ -2,6 +2,7 @@ import type { ConversationLocale } from './conversation-locale'
 import { journalHeading, marker } from './conversation-markers'
 import type { MemoryUnit } from './ipc'
 import { estimateTokens } from './token-estimate'
+import type { ToolExecution } from './tool-registry'
 
 /**
  * Prefetched injection. At the start of a turn the confirmed transcription searches memory, and the
@@ -103,19 +104,13 @@ export function buildMemoryInjection(
 }
 
 /**
- * The memory ids contained in a tool result, that is, in the JSON the model read. Only recall is
- * examined, and when the result was truncated by count the ids are only those the model actually saw.
- * Content that is not JSON yields nothing.
+ * The ids of the memories a tool's execution showed the model. Only recall shows any, as the ids of its
+ * hits, and they are read from the result as the model read it, so a result shortened by count yields
+ * only the hits that were left in. An error yields nothing.
  */
-export function memoryIdsInToolResult(name: string, content: string): string[] {
+export function memoryIdsInToolResult(name: string, execution: Pick<ToolExecution, 'value'>): string[] {
   if (name !== 'recall') return []
-  let value: unknown
-  try {
-    value = JSON.parse(content)
-  } catch {
-    return []
-  }
-  const items = (value as Record<string, unknown> | null)?.hits
+  const items = (execution.value as Record<string, unknown> | null | undefined)?.hits
   if (!Array.isArray(items)) return []
   const ids: string[] = []
   for (const item of items) {

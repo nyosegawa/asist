@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
+import { summarizeTurnUsage } from '@shared/turn-usage'
 
 /** The Google adapter. These tests run fake generateContentStream chunks and check the conversion to the ASIST types. */
 
@@ -192,6 +193,16 @@ describe('the Google stream', () => {
         suggestions: '<style>.chip{}</style><div class="container"><a class="chip" href="https://s.example">最新ニュース</a></div>'
       }
     ])
+  })
+
+  it('keeps the tokens of search results out of the context a grounded answer reports, since they are never sent again', async () => {
+    mocks.chunks = [
+      chunk([{ text: 'ニュースです。' }], { finishReason: 'STOP' }),
+      { usageMetadata: { promptTokenCount: 1000, cachedContentTokenCount: 900, toolUsePromptTokenCount: 3000, candidatesTokenCount: 20 } }
+    ]
+    const result = await (await open({ webSearch: true })).stream.final()
+    // The history compacts by this size, so search results counted in it would start a compaction early.
+    expect(summarizeTurnUsage([result.usage]).contextTokens).toBe(1000)
   })
 
   it('leaves a search call whose result never arrived out of what is sent back after a broken stream', async () => {

@@ -16,14 +16,17 @@ export function MemoryPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
   const locale = useFormatLocale()
   const when = new Intl.DateTimeFormat(locale, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   const [overview, setOverview] = useState<MemoryOverview | null>(null)
+  const [overviewError, setOverviewError] = useState<string | null>(null)
   const [curating, setCurating] = useState(false)
   const embeddingReady = embedding?.runtimeInstalled === true && embedding.modelInstalled
 
   const refresh = async (): Promise<void> => {
     try {
       setOverview(await window.api.memoryOverview())
-    } catch {
+      setOverviewError(null)
+    } catch (err) {
       setOverview(null)
+      setOverviewError(displayError(err))
     }
   }
   useEffect(() => {
@@ -46,8 +49,11 @@ export function MemoryPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
       .finally(() => setCurating(false))
   }
   const failure = overview?.lastFailure ?? null
-  const curationHint = overview?.unavailableReason
-    ? overview.unavailableReason
+  // The overview fails as a whole when main cannot read the curation's state file, and the curation cannot
+  // run until that file is fixed, so the status gives the reason rather than a state it does not know.
+  const unavailable = overviewError ?? overview?.unavailableReason ?? null
+  const curationHint = unavailable
+    ? unavailable
     : overview?.pendingJobId
       ? t('settingsMemory.curation.pending')
       : failure
@@ -86,14 +92,14 @@ export function MemoryPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
         title={t('settingsMemory.curation.title')}
         description={t('settingsMemory.curation.description')}
         action={
-          <Btn tone="primary" disabled={curating || Boolean(overview?.unavailableReason)} onClick={curate}>
+          <Btn tone="primary" disabled={curating || unavailable !== null} onClick={curate}>
             {curating ? t('settingsMemory.curation.starting') : t('settingsMemory.curation.start')}
           </Btn>
         }
       >
         <Row label={t('settingsMemory.curation.status')} hint={curationHint}>
-          <Chip tone={overview?.unavailableReason || (failure && !overview?.pendingJobId) ? 'warn' : overview?.pendingJobId ? 'cyan' : 'dim'}>
-            {overview?.unavailableReason
+          <Chip tone={unavailable || (failure && !overview?.pendingJobId) ? 'warn' : overview?.pendingJobId ? 'cyan' : 'dim'}>
+            {unavailable
               ? t('settingsMemory.curation.unavailable')
               : overview?.pendingJobId
                 ? t('settingsMemory.curation.waiting')

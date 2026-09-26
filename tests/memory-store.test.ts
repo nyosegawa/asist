@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -114,11 +114,11 @@ describe('the memory store', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
     const before = commits(dir)
-    const saved = store.writeDocument('pages/松葉軒.md', MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。'))
+    const saved = store.writeDocument('pages/松葉軒.md', MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。'), MATSUBAKEN)
     expect(saved).toMatchObject({ kind: 'page', title: '松葉軒', summary: '本人の行きつけの店。', headings: ['要約', '好み'] })
     expect(fs.readFileSync(path.join(dir, 'pages', '松葉軒.md'), 'utf8')).toContain('## 要約\n本人の行きつけの店。\n')
     expect(commits(dir)).toBe(before + 1)
-    expect(() => store.writeDocument('pages/松葉軒.md', '# 松葉軒\n\n## 好み\n辛さ控えめ\n')).toThrow(ja('memory.check.frontmatterMissing', { file: 'pages/松葉軒.md' }))
+    expect(() => store.writeDocument('pages/松葉軒.md', '# 松葉軒\n\n## 好み\n辛さ控えめ\n', store.readDocument('pages/松葉軒.md')!)).toThrow(ja('memory.check.frontmatterMissing', { file: 'pages/松葉軒.md' }))
     expect(store.readDocument('pages/松葉軒.md')).toContain('本人の行きつけの店。')
 
     const created = store.createPage(' 田中さん ', PAGE_TEMPLATE)
@@ -136,6 +136,96 @@ describe('the memory store', () => {
     expect(store.isClean()).toBe(true)
   })
 
+  it('refuses to save over a document that changed after the screen read it, and keeps what the other writer added', () => {
+    const dir = store.memoryDir()
+    const file = 'instruction.md'
+    fs.writeFileSync(path.join(dir, file), INSTRUCTION)
+    const opened = store.readDocument(file)!
+    // A curation is merged while the user edits the copy read before it.
+    const curated = opened.replace('- 猫のムギと暮らす', '- 猫のムギと暮らす\n- 最寄り駅は中野')
+    fs.writeFileSync(path.join(dir, file), curated)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'merge curation'])
+    const before = commits(dir)
+    const draft = opened.replace('- 予約サービスの企画担当', '- 予約サービスの企画担当(2026-09 から)')
+    expect(() => store.writeDocument(file, draft, opened)).toThrow(errorText('memory.errors.changedSinceOpened'))
+    expect(store.readDocument(file)).toBe(curated)
+    expect(commits(dir)).toBe(before)
+    // Saved over the version read now, the edit goes through.
+    store.writeDocument(file, curated.replace('- 予約サービスの企画担当', '- 予約サービスの企画担当(2026-09 から)'), curated)
+    expect(store.readDocument(file)).toContain('- 最寄り駅は中野')
+    expect(commits(dir)).toBe(before + 1)
+  })
+
+  it('refuses to save a page removed after the screen read it, rather than making it again', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    const opened = store.readDocument('pages/松葉軒.md')!
+    fs.rmSync(path.join(dir, 'pages', '松葉軒.md'))
+    const draft = opened.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(() => store.writeDocument('pages/松葉軒.md', draft, opened)).toThrow(errorText('memory.errors.removedSinceOpened'))
+    expect(store.readDocument('pages/松葉軒.md')).toBeNull()
+  })
+
+  it('leaves each file as it was when its commit fails, so that the same save can be made again', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'page'])
+    const before = commits(dir)
+    // A lock left behind by a git process that died stops every commit until it is removed.
+    fs.writeFileSync(path.join(dir, '.git', 'index.lock'), '')
+    const draft = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。')
+    expect(() => store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)).toThrow()
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    expect(() => store.createPage('田中さん', PAGE_TEMPLATE)).toThrow()
+    expect(store.readDocument('pages/田中さん.md')).toBeNull()
+    expect(() => store.deleteDocument('pages/松葉軒.md')).toThrow()
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    fs.rmSync(path.join(dir, '.git', 'index.lock'))
+    expect(store.isClean()).toBe(true)
+    store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)
+    expect(store.readDocument('pages/松葉軒.md')).toBe(draft)
+    expect(commits(dir)).toBe(before + 1)
+  })
+
+  it('refuses a named pipe at once instead of waiting for a writer, since git never shows one in a curation worktree', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    const pipe = path.join(dir, 'pages', 'x.md')
+    execFileSync('mkfifo', [pipe])
+    // A writer opens the pipe after 1.5 seconds, so that a read that waits ends instead of hanging the run.
+    spawn('sh', ['-c', `sleep 1.5; printf '# x\\n' > '${pipe}'`], { detached: true, stdio: 'ignore' }).unref()
+    const started = Date.now()
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+    expect(Date.now() - started).toBeLessThan(500)
+    expect(() => store.listDocuments()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+  })
+
+  it('reads no file through a symbolic link, neither one in place of a document nor one in place of pages/', () => {
+    const dir = store.memoryDir()
+    const outside = mkdtempSync(path.join(tmpdir(), 'asist-memory-outside-'))
+    fs.writeFileSync(path.join(outside, 'secret.md'), MATSUBAKEN)
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    fs.symlinkSync(path.join(outside, 'secret.md'), path.join(dir, 'user.md'))
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
+    expect(() => store.readDocument('user.md')).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
+    fs.rmSync(path.join(dir, 'user.md'))
+    fs.rmSync(path.join(dir, 'pages'), { recursive: true })
+    fs.symlinkSync(outside, path.join(dir, 'pages'))
+    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages' }))
+  })
+
+  it('writes a page name holding the dollar patterns of a replacement string as it was given, in the page and in the commit', () => {
+    const dir = store.memoryDir()
+    for (const name of ['Ke$$ha', 'A$&B', "C$'D", 'E$`F']) {
+      const created = store.createPage(name, PAGE_TEMPLATE)
+      expect(created).toMatchObject({ file: `pages/${name}.md`, title: name })
+      expect(fs.readFileSync(path.join(dir, created.file), 'utf8')).toContain(`\n# ${name}\n`)
+      expect(subjects(dir)[0]).toBe(`asist: ページを作る ${name}`)
+    }
+  })
+
   it('returns instruction.md without its title heading, and null when it is missing or empty', () => {
     const dir = store.memoryDir()
     expect(store.readInstruction()).toBeNull()
@@ -151,7 +241,7 @@ describe('the memory store', () => {
     mocks.conversationLocale = 'de-DE'
     const page = '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Summary\nThe ramen shop.\n'
     fs.writeFileSync(path.join(dir, 'pages', 'Matsubaken.md'), page)
-    store.writeDocument('pages/Matsubaken.md', page.replace('The ramen shop.', 'The ramen shop they keep going back to.'))
+    store.writeDocument('pages/Matsubaken.md', page.replace('The ramen shop.', 'The ramen shop they keep going back to.'), page)
     store.createPage('Tanaka', PAGE_TEMPLATE.replace('## 要約', '## Summary'))
     store.deleteDocument('pages/Tanaka.md')
     expect(subjects(dir).slice(0, 4)).toEqual([

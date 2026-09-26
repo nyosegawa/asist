@@ -25,7 +25,7 @@ import {
   useToastStore,
   useTurnStore, useTaskStore, useNoteStore, useMailStore } from '@/state/stores'
 import { useConfirmStore } from '@/state/confirm'
-import { startMiniAppReports, useViewStore } from '@/state/view'
+import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
 import { displayError } from '@/display-error'
 
 /** The conversation orchestrator, wiring the voice pipeline, brain, panels and feed. It initializes once, when App mounts. */
@@ -788,8 +788,8 @@ export function handleTurnEvent(event: TurnEvent): void {
       break
     }
     case 'app': {
-      if (event.open) useViewStore.getState().openApp(event.open)
-      else useViewStore.getState().closeApp()
+      const views = useViewStore.getState()
+      void (event.open ? views.openApp(event.open) : views.closeApp()).finally(reportMiniAppAnswer)
       break
     }
     case 'metrics': {
