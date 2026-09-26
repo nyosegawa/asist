@@ -294,6 +294,20 @@ describe('SpeechPlayer generations and queue ordering', () => {
     player.interrupt()
   })
 
+  it('does not read a listening aizuchi aloud through the system voice when its audio fails, and moves on', async () => {
+    vi.useFakeTimers()
+    const { player, synthesis } = await createHarness()
+    const idle = vi.fn()
+    player.events.on('idle', idle)
+
+    player.playClip('eA==', 'うん', { role: 'listening', volume: 0.4 })
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(synthesis.speak).not.toHaveBeenCalled()
+    expect(idle).toHaveBeenCalledOnce()
+    expect(player.isPlaying).toBe(false)
+  })
+
   it('advances the queue when AudioBufferSource onended is lost', async () => {
     vi.useFakeTimers()
     const { player, context, synthesis } = await createHarness()

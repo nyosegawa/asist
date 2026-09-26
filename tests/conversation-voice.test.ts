@@ -247,3 +247,69 @@ describe('the opening of a speech that never becomes a turn', () => {
     expect(roles).not.toContain('bridge')
   })
 })
+
+describe('echo of what the speaker played', () => {
+  const question = { turnId: 5, index: 0, text: 'クラシックとジャズ、どちらを再生しますか？', audio: 'eA==', phonemes: null }
+  const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+  it('lets the user answer with one of the options once the question has finished', async () => {
+    const turnStart = vi.fn(async () => 9)
+    await start({ turnStart })
+    player().events.emit('segmentstart', { segment: question, durationMs: 2500 })
+    player().events.emit('idle', { turnId: 5 })
+    // The user starts speaking after the echo of the question has died away.
+    await wait(300)
+    const startedAt = performance.now()
+    await wait(30)
+    utterance(speechEnd(startedAt), 'クラシック')
+    await flush()
+
+    expect(turnStart).toHaveBeenCalledOnce()
+    expect((turnStart.mock.calls[0] as unknown[])[0]).toBe('クラシック')
+  })
+
+  it('drops the same words when they were captured while the question was playing', async () => {
+    const turnStart = vi.fn(async () => 9)
+    await start({ turnStart })
+    const startedAt = performance.now()
+    player().events.emit('segmentstart', { segment: question, durationMs: 2500 })
+    await wait(30)
+    utterance(speechEnd(startedAt), 'クラシック')
+    await flush()
+
+    expect(turnStart).not.toHaveBeenCalled()
+  })
+
+  it('keeps the user\'s own "はい" when the only "はい。" clip started after the capture ended', async () => {
+    const turnStart = vi.fn(async () => 7)
+    await start({ turnStart })
+    const end = speechEnd(performance.now() - 2500)
+    // The opening aizuchi that speech end queued starts sounding once it is decoded.
+    await wait(5)
+    player().events.emit('segmentstart', {
+      segment: { turnId: -1, index: -1, text: 'はい。', audio: 'eA==', phonemes: null, clip: 'aizuchi' },
+      durationMs: 400
+    })
+    utterance(end, 'はい、それでお願いします。')
+    await flush()
+
+    expect((turnStart.mock.calls[0] as unknown[])[0]).toBe('はい、それでお願いします。')
+  })
+
+  it('strips a listening aizuchi that sounded during the capture off the end of the transcript', async () => {
+    const turnStart = vi.fn(async () => 7)
+    await start({ turnStart })
+    const startedAt = performance.now()
+    voice().events.emit('backchannel', { kind: 'continuer', source: 'text' })
+    const [audio, text] = player().playClip.mock.calls[0] as [string, string]
+    player().events.emit('segmentstart', {
+      segment: { turnId: -1, index: -1, text, audio, phonemes: null, clip: 'listening' },
+      durationMs: 300
+    })
+    await wait(5)
+    utterance(speechEnd(startedAt), '昨日の資料なんですけど、うん。')
+    await flush()
+
+    expect((turnStart.mock.calls[0] as unknown[])[0]).toBe('昨日の資料なんですけど')
+  })
+})

@@ -1,4 +1,5 @@
 import { searchTokens } from './memory-search'
+import type { SpeechSegment } from './ipc'
 
 /**
  * Detects self-echo: the assistant's own speech coming back through the microphone, getting
@@ -6,16 +7,64 @@ import { searchTokens } from './memory-search'
  * cases that get past echo cancellation and the VAD threshold boost.
  */
 
+/** How long reverberation and the tail of the echo linger in the microphone after playback ends. */
+export const ECHO_TAIL_MS = 250
+
+/** A sound ended this long ago cannot reach a capture that is still to be judged: a capture lasts at most 20 s, and its transcript follows within seconds. */
+const PLAYBACK_KEEP_MS = 60_000
+
+interface Sound {
+  text: string
+  clip: boolean
+  from: number
+  /** Infinity while the sound is still playing. */
+  to: number
+}
+
+/**
+ * What the speaker played and when, which tells what the microphone can have picked up during a
+ * capture: a sound reaches it only while it plays and for the echo tail after. An answer that
+ * repeats a word of the question once the question has finished is therefore never taken for its
+ * echo, and a clip that starts after the capture ended, such as the aizuchi played at speech end, is
+ * never stripped from it. Playback is sequential, so a sound ends when the next one starts or when
+ * playback stops.
+ */
+export class PlaybackLog {
+  private sounds: Sound[] = []
+
+  /** A segment started sounding at `at`. */
+  started(segment: Pick<SpeechSegment, 'text' | 'clip'>, at: number): void {
+    this.stopped(at)
+    this.sounds = this.sounds.filter((sound) => at - sound.to < PLAYBACK_KEEP_MS)
+    this.sounds.push({ text: segment.text, clip: segment.clip !== undefined, from: at, to: Infinity })
+  }
+
+  /** Playback stopped, or the queue ran empty, at `at`. */
+  stopped(at: number): void {
+    const last = this.sounds.at(-1)
+    if (last && last.to === Infinity) last.to = at
+  }
+
+  /** The sounds that played, or were still echoing, at some moment of a capture from `from` to `to`. `clip` marks a one-off clip such as an aizuchi. */
+  heardDuring(from: number, to: number): Array<{ text: string; clip: boolean }> {
+    return this.sounds
+      .filter((sound) => sound.text && sound.from < to && sound.to + ECHO_TAIL_MS > from)
+      .map(({ text, clip }) => ({ text, clip }))
+  }
+}
+
 export function normalizeForEcho(text: string): string {
   return text.replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase()
 }
 
 /**
- * Whether the utterance is an echo of a recent assistant reply. Besides full containment it accepts a
- * token overlap of 85%, because ASR output varies between passes. The tokens are the ones memory search
- * cuts, so a language written with spaces is compared word by word instead of across its word edges.
- * Very short utterances, such as an aizuchi, are never treated as an echo: the risk of a false positive
- * is too high.
+ * Whether the utterance is an echo of the assistant speech PlaybackLog reports as heard during its
+ * capture. The text alone cannot tell an answer that repeats a word of the question from the
+ * question's echo, which is why only what sounded during the capture is passed. Besides full
+ * containment it accepts a token overlap of 85%, because ASR output varies between passes. The tokens
+ * are the ones memory search cuts, so a language written with spaces is compared word by word instead
+ * of across its word edges. Very short utterances, such as an aizuchi, are never treated as an echo:
+ * the risk of a false positive is too high.
  */
 export function isSelfEcho(utterance: string, recentAssistantTexts: readonly string[]): boolean {
   const u = normalizeForEcho(utterance)
@@ -41,8 +90,8 @@ const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$
 /**
  * Removes an aizuchi clip such as "はい。" or "うん" that was played over the speaker while the
  * utterance was being captured and ended up at an edge of the transcription. isSelfEcho ignores short
- * texts to avoid false positives, so short aizuchi are handled here instead, and the caller is
- * responsible for calling this only when the clip's playback time overlaps the capture window.
+ * texts to avoid false positives, so short aizuchi are handled here instead, and the caller passes
+ * only the clips PlaybackLog reports as heard during the capture.
  *
  * - Only a clip matched at the start or the end is stripped. A match inside the sentence is left
  *   alone, so that an utterance such as "はいって返事して" survives intact.

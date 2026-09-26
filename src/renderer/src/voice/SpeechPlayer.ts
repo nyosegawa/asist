@@ -409,6 +409,11 @@ registerProcessor('speech-tap', TapProcessor)
         console.error('audio playback failed:', err)
       }
     }
+    // The system voice would read a listening aizuchi at full volume over the user, so it is skipped.
+    if (segment.clip === 'listening') {
+      void this.playNext(generation)
+      return
+    }
     this.playFallback(segment, generation)
   }
 

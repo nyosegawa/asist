@@ -1,6 +1,6 @@
 import { isJobTerminal } from '@shared/job-status'
 import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ipc'
-import { isSelfEcho, stripClipEcho } from '@shared/self-echo'
+import { isSelfEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { isLiveEngine, type VoiceEngine } from '@shared/voice-engine'
 import { safetyNoticePending } from '@shared/settings'
@@ -104,10 +104,7 @@ const opening = new TurnOpening({
     const settings = useSettingsStore.getState().settings
     return pickAizuchi(classification, { enabled: settings?.aizuchi ?? false, rate: settings?.aizuchiRate ?? 0 })
   },
-  play: (clip, role) => {
-    recordClip(clip.text)
-    speechPlayer.playClip(clip.audio, clip.text, { role })
-  },
+  play: (clip, role) => speechPlayer.playClip(clip.audio, clip.text, { role }),
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   onBridgeOutcome: noteBridgeOutcome
@@ -116,49 +113,8 @@ const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
 )
 
-/** Assistant utterances played recently, kept to recognize what the speaker leaks back into the microphone. */
-const recentSpeech: Array<{ text: string; t: number }> = []
-const SELF_ECHO_WINDOW_MS = 15_000
-
-function recordSpokenText(text: string): void {
-  const now = performance.now()
-  recentSpeech.push({ text, t: now })
-  while (recentSpeech.length > 0 && now - recentSpeech[0].t > SELF_ECHO_WINDOW_MS) {
-    recentSpeech.shift()
-  }
-}
-
-/** Reports a transcript that is the assistant's own speech coming back through the speaker. This is the last line of defense. */
-function isRecentSelfEcho(utterance: string): boolean {
-  const now = performance.now()
-  const texts = recentSpeech.filter((s) => now - s.t <= SELF_ECHO_WINDOW_MS).map((s) => s.text)
-  return isSelfEcho(utterance, texts)
-}
-
-/**
- * A record of the aizuchi clips that were played, such as "はい。" or "うん". `isSelfEcho` does not
- * judge short utterances, so that a genuine "はい" answer survives, and the echo of a short clip is
- * removed by time correlation instead: whether the clip actually sounded while the utterance was
- * captured. Listening aizuchi are played through WebAudio and therefore never reach the echo
- * canceller as a reference signal, so they mix into the capture easily.
- */
-const recentClips: Array<{ text: string; t: number }> = []
-const CLIP_WINDOW_HEAD_MS = 500
-
-function recordClip(text: string): void {
-  recentClips.push({ text, t: performance.now() })
-  while (recentClips.length > 8) recentClips.shift()
-}
-
-/** Strips the clips that sounded inside the capture window, from startedAt minus 500 ms until now, off the ends of the transcript. */
-function stripClipsInCaptureWindow(utterance: string, startedAt: number): string {
-  const now = performance.now()
-  const texts = recentClips
-    .filter((c) => c.t >= startedAt - CLIP_WINDOW_HEAD_MS && c.t <= now)
-    .map((c) => c.text)
-  if (texts.length === 0) return utterance
-  return stripClipEcho(utterance, texts)
-}
+/** What the speaker played and when, which tells what can have leaked back into the microphone during a capture. */
+const playback = new PlaybackLog()
 
 export function initConversation(): Promise<void> {
   if (initialization) return initialization
@@ -301,10 +257,7 @@ async function initializeConversation(): Promise<void> {
   // not stop the conversation.
   voiceController.events.on('backchannel', ({ kind }) => {
     const clip = pickListeningClip(kind)
-    if (clip?.audio) {
-      recordClip(clip.text)
-      speechPlayer.playClip(clip.audio, '', { role: 'listening', volume: 0.4 })
-    }
+    if (clip?.audio) speechPlayer.playClip(clip.audio, clip.text, { role: 'listening', volume: 0.4 })
   })
 
   // At speech end, as decided by VAD, the aizuchi sounds without waiting for the final transcript
@@ -332,15 +285,18 @@ async function initializeConversation(): Promise<void> {
   })
 
   voiceController.events.on('utterance', ({ text, vadMs, vadMode, asrMs, partialText, startedAt, speechEndAt }) => {
-    // The echo of the aizuchi clips that sounded during capture is stripped off the ends, and the
-    // utterance is dropped when nothing but echo is left.
-    const cleaned = stripClipsInCaptureWindow(text, startedAt)
+    // Only what sounded while this speech was captured can have come back through the microphone;
+    // the capture runs on through the hangover's silence, vadMs past speechEndAt. `isSelfEcho` does
+    // not judge short utterances, so that a genuine "はい" answer survives, and the echo of a short
+    // clip is stripped off the ends instead. The utterance is dropped when nothing but echo is left.
+    const heard = playback.heardDuring(startedAt, speechEndAt + vadMs)
+    const cleaned = stripClipEcho(text, heard.filter((sound) => sound.clip).map((sound) => sound.text))
     if (!cleaned) {
       useTurnStore.getState().setRouterNote(translate('hud.router.droppedClipEcho'))
       opening.cancel(startedAt)
       return
     }
-    if (isRecentSelfEcho(cleaned)) {
+    if (isSelfEcho(cleaned, heard.map((sound) => sound.text))) {
       useTurnStore.getState().setRouterNote(translate('hud.router.droppedSelfEcho'))
       opening.cancel(startedAt)
       return
@@ -442,7 +398,7 @@ async function initializeConversation(): Promise<void> {
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)
-    if (segment.text) recordSpokenText(segment.text)
+    playback.started(segment, performance.now())
     const t = useTurnStore.getState()
     if (segment.clip) {
       // An aizuchi is measured at the moment it actually sounds. Before the turn starts the value is
@@ -462,6 +418,7 @@ async function initializeConversation(): Promise<void> {
   })
 
   speechPlayer.events.on('idle', ({ turnId }) => {
+    playback.stopped(performance.now())
     const t = useTurnStore.getState()
     if (t.phase === 'speak') t.setPhase('idle')
     // A turn whose playback has finished is closed after the events counted during playback are

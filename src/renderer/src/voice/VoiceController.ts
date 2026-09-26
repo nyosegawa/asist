@@ -10,6 +10,7 @@ import {
 import type { ListeningAizuchi } from '@shared/ipc'
 import { shouldNod, type NodKind } from '@shared/nod'
 import { classifyOverlap } from '@shared/user-backchannel'
+import { ECHO_TAIL_MS } from '@shared/self-echo'
 import { errorText } from '@shared/i18n/error-text'
 import { whisperLanguageName } from '@shared/asr-models'
 import { MicCapture, StreamResampler } from './MicCapture'
@@ -39,9 +40,6 @@ export interface SpeechEnd {
   /** The aizuchi played during this capture, and whether the user carried on after each one. */
   listening: ListeningAizuchi[]
 }
-
-/** How long the threshold boost is held after playback ends, because the tail of the echo is still in the microphone. */
-const ECHO_TAIL_MS = 250
 
 /** A VAP estimate older than this is not used, which covers a stopped or backed-up worker. It allows the 80 ms frame, about 20 ms of inference and the IPC. */
 const VAP_STALE_MS = 500
