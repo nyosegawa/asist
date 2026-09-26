@@ -49,10 +49,14 @@ function reloadAizuchiBank(): void {
   const settings = useSettingsStore.getState().settings
   if (settings) void loadAizuchiBank(settings.conversationLocale)
 }
-/** The configured voice engine. A live engine both listens and speaks, so the feed shows its transcript instead of the brain's delta. */
+/** The configured voice engine. A live engine takes the microphone and the typed text instead of the voice pipeline and brain. */
 const voiceEngine = (): VoiceEngine => useSettingsStore.getState().settings?.voiceEngine ?? 'cascade'
 const liveMode = (): boolean => isLiveEngine(voiceEngine())
-/** The feed lines that carry a live transcript, one per turnId. The user transcript is held separately because it can arrive after the reply. */
+/**
+ * The feed lines that carry a live transcript, one per turnId. The user transcript is held separately
+ * because it can arrive after the reply. Only Gemini Live sends a transcript of the reply; GPT-Live sends
+ * the user's alone, and its replies arrive as brain's text.
+ */
 let liveAiLineId: number | null = null
 let liveAiTurnId = -1
 let liveUserLineId: number | null = null
@@ -744,9 +748,8 @@ export function handleTurnEvent(event: TurnEvent): void {
 
   switch (event.type) {
     case 'delta': {
-      // In live mode the feed shows the transcript of what was actually spoken, because the live
-      // voice rephrases the brain's sentences.
-      if (liveMode()) break
+      // Under GPT-Live the voice rewords brain's text as it reads it, and the feed shows brain's text,
+      // which is also what the conversation log keeps.
       if (aiLineId === null) {
         aiLineId = feed.append({ role: 'ai', text: '', turnId: event.turnId, streaming: true })
       }

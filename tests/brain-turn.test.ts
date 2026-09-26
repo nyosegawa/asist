@@ -993,7 +993,7 @@ describe('brain turn', () => {
     expect(readLog().some((r) => r.text === 'タイマーが終わりました。')).toBe(false)
   })
 
-  it('hands each sentence to the voice route, adds no aizuchi note, puts the division of roles in system, and records no assistant entry', async () => {
+  it('hands each sentence to the voice route, adds no aizuchi note, puts the division of roles in system, and records its own text as the reply', async () => {
     mocks.rounds.push(async (round) => {
       round.text('明日は', '晴天です。')
       return {}
@@ -1012,9 +1012,13 @@ describe('brain turn', () => {
     expect(JSON.stringify(lastUserParts(request))).not.toContain('相槌')
     expect(request.system[0].text).toContain('# 声の担当との分担')
     expect(request.system[0].text).not.toContain('# つなぎ文')
-    // The live engine records what was actually spoken from its output transcript, so brain keeps only the user turn
-    // and the shape sent to the API.
-    expect(readLog().map((r) => r.kind)).toEqual(['user', 'message'])
+    // The voice rewords the text as it reads it, and the log keeps brain's text, which the next request sends once.
+    expect(readLog().map((r) => [r.kind, r.text])).toEqual([
+      ['user', '明日の天気は'],
+      ['message', undefined],
+      ['assistant', '明日は晴天です。']
+    ])
+    expect((await historyMessages()).slice(1)).toEqual([said('明日は晴天です。')])
   })
 
   it('answers the tool call a response finished before the output limit, then asks for the rest, in the request and in the history', async () => {
@@ -1063,14 +1067,8 @@ describe('brain turn', () => {
     expect(readLog().map((r) => [r.kind, r.turnId])).toEqual([['user', handle.turnId], ['assistant', handle.turnId]])
   })
 
-  it('keeps the tool round trip of a turn whose voice model recorded its filler while the tool ran', async () => {
-    let turnId = -1
-    const { record } = await import('../src/main/services/brain/session')
-    mocks.fetchPanel.mockImplementation(async () => {
-      // GPT-Live records the transcript of its own filler under brain's turn once it goes quiet for 1.5 seconds.
-      record({ kind: 'assistant', turnId, text: 'ちょっと見てみますね。' })
-      return weatherPanel
-    })
+  it('sends the tool round trip and the reply of a turn GPT-Live read once each in the next request, with the prefix unchanged', async () => {
+    mocks.fetchPanel.mockResolvedValue(weatherPanel)
     mocks.rounds.push(async (round) => {
       round.toolUse('t1', 'show_weather', { location: '東京都' })
       return { stop: 'tool_calls' }
@@ -1084,13 +1082,12 @@ describe('brain turn', () => {
       return {}
     })
     const { brain } = await loadBrain()
-    const handle = brain.beginTurn({ text: '東京の天気' }, {}, 'live', false, { route: liveRoute })!
-    turnId = handle.turnId
-    await handle.completion
+    await brain.beginTurn({ text: '東京の天気' }, {}, 'live', false, { route: liveRoute })!.completion
     await brain.beginTurn({ text: 'ありがとう' }, {}, 'live', false, { route: liveRoute })!.completion
     const next = mocks.requests[2].messages
     expect(next.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user'])
     expect(next[1].parts).toEqual([{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '東京都' } }])
+    expect(next[3]).toEqual(said('晴天です。'))
     // The prefix the previous turn sent comes back unchanged, which keeps the prompt cache.
     expect(next.slice(0, 3)).toEqual(mocks.requests[1].messages)
   })

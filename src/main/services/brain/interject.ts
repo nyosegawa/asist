@@ -6,8 +6,8 @@ import { conversationOwner, currentSpeechRoute, emit, history, record, turnSched
  * Speaks a prepared sentence without going through the LLM. It goes to the session's speech route:
  * TTS in the classic setup, the voice side in GPT-Live. On an engine where the model itself decides
  * what to say (Gemini Live) the model reads the sentence and records it from its own output
- * transcript. Nothing starts while a user turn is in progress, and what was spoken is written to the
- * conversation log as an assistant utterance.
+ * transcript. Nothing starts while a user turn is in progress. The sentence reaches the screen as the
+ * text of its turn, as a reply does, and is written to the conversation log as an assistant utterance.
  */
 export async function interject(text: string): Promise<void> {
   const owner = conversationOwner()
@@ -21,14 +21,16 @@ export async function interject(text: string): Promise<void> {
     if (signal.aborted) return
     emit({ type: 'started', turnId, origin: 'interject' })
     history.ensureLoaded()
+    emit({ type: 'delta', turnId, text })
     const synth = route.open({ turnId, signal, emit })
     const assembler = new SegmentAssembler(conversationLocale())
     for (const s of assembler.push(text + '\n')) synth.push(s)
     for (const s of assembler.flush()) synth.push(s)
     await synth.drain()
-    if (signal.aborted) return
-    // When the voice side reads the text, the live engine records the output transcript of what was actually spoken.
-    if (route.kind === 'tts') record({ kind: 'assistant', turnId, text })
+    // A newer turn that took over meanwhile leaves unknown how much of the sentence was heard, so it is
+    // not recorded, but the turn still ends: under GPT-Live the newer turn comes from main, and the
+    // screen would otherwise keep the sentence's line open.
+    if (!signal.aborted) record({ kind: 'assistant', turnId, text })
     emit({ type: 'done', turnId, fullText: text })
   })
   if (!handle) return

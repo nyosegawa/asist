@@ -11,10 +11,11 @@ import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { HistoryMessage } from '../brain/history'
+import { turnScheduler } from '../brain/session'
 import { liveRoute } from '../brain/speech-route'
-import type { TurnHandle } from '@shared/turn-scheduler'
 import { decodeOutput } from './audio'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
+import type { TranscriptRole } from './transcripts'
 
 /**
  * GPT-Live-1. A full-duplex voice model listens and speaks, while decisions and tools are handed to brain
@@ -26,6 +27,12 @@ import { LiveEngineBase, type LiveEngineDeps } from './engine'
  * own voice. The delegation event carries no text of the utterance, so the transcript is picked up only
  * after it settles. Typed input goes straight to brain, and its reply is read as commentary with no
  * delegation id.
+ *
+ * The engine writes nothing to the conversation log, and the output transcript is not used at all. Brain
+ * records the utterances it is handed and its own replies, and the screen shows brain's text. What the
+ * voice says besides is content-free by its instructions, and nothing marks where its reading of one
+ * reply ends and the next begins, so its transcript could not be put under the right turn. The input
+ * transcript is shown on screen while the user speaks.
  *
  * A session is append-only and starts blank when it is reopened, so the recent history is handed over as
  * the initial context every time it opens.
@@ -52,10 +59,9 @@ const OPEN = 1
 export interface GptLiveDeps extends LiveEngineDeps {
   client: () => OpenAI | null
   connect: (client: OpenAI) => LiveSocket
-  beginTurn: (text: string, typed: boolean, route: ReturnType<typeof liveRoute>) => TurnHandle | null
+  beginTurn: (text: string, typed: boolean, route: ReturnType<typeof liveRoute>) => void
   /** Brain's turn events, which is how the voice model learns that a panel was opened. */
   onTurnEvent: (listener: (event: TurnEvent) => void) => () => void
-  emitTurn: (event: TurnEvent) => void
   /** The context handed over when the session opens. */
   instructions: () => string
   history: () => HistoryMessage[]
@@ -117,6 +123,8 @@ export class GptLiveEngine extends LiveEngineBase {
   private readonly unsubscribeTurns: () => void
   /** The kinds of panel opened during a delegated turn, told to the voice model when the turn is done. */
   private readonly panelsByTurn = new Map<number, Set<string>>()
+  /** The id the user's utterance in progress is shown under on screen, taken with its first fragment. */
+  private utteranceId: number | null = null
 
   constructor(
     info: LiveEngineInfo,
@@ -226,9 +234,6 @@ export class GptLiveEngine extends LiveEngineBase {
         this.lastInputDeltaAt = this.now()
         this.pushTranscript('user', event.delta)
         return
-      case 'session.output_transcript.delta':
-        this.pushTranscript('assistant', event.delta)
-        return
       case 'session.delegation.created':
         if (event.delegation.target === 'client') void this.delegate(event.delegation.id)
         return
@@ -254,19 +259,45 @@ export class GptLiveEngine extends LiveEngineBase {
    * transcript arrived at all, brain is told so instead of the voice model saying it could not hear.
    */
   private async delegate(delegationId: string): Promise<void> {
-    this.claimUserUtterance()
     const startedAt = this.now()
     while (!this.delegationSettled(startedAt)) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
+    // A stop meanwhile ended the delegation, and closed the user's line as it was heard.
     if (!this.enabled) return
     const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
-    this.transcripts.flush('assistant')
-    const handle = this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
-    if (!handle) return
-    this.adoptTurn(handle.turnId)
+    this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     this.touch()
+  }
+
+  /** Hands the user's utterance to brain, which records it, and closes its line on screen under the id it was shown with. */
+  private takeUserUtterance(): string {
+    const text = this.transcripts.take('user')
+    if (text) this.closeUserLine(text)
+    return text
+  }
+
+  private userLineId(): number {
+    this.utteranceId ??= turnScheduler.allocateTurnId()
+    return this.utteranceId
+  }
+
+  private closeUserLine(text: string): void {
+    this.events.emit('event', { type: 'userTranscript', turnId: this.userLineId(), text, final: true })
+    this.utteranceId = null
+  }
+
+  /** Only the input transcript is pushed, so the role is always the user's. */
+  protected onTranscriptDelta(_role: TranscriptRole, text: string): void {
+    this.events.emit('event', { type: 'userTranscript', turnId: this.userLineId(), text, final: false })
+  }
+
+  /**
+   * An utterance no delegation took, because it went quiet first or the engine stopped. The voice
+   * answered it by itself or not at all, and it stays on screen without being recorded.
+   */
+  protected onTranscriptFinal(_role: TranscriptRole, text: string): void {
+    this.closeUserLine(text)
   }
 
   /**
@@ -301,9 +332,7 @@ export class GptLiveEngine extends LiveEngineBase {
   async sendText(text: string): Promise<void> {
     await this.ensureOpen()
     this.think(`${marker(conversationLocale(), 'typedInputForVoice')} ${text}`)
-    const handle = this.deps.beginTurn(text, true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
-    if (!handle) return
-    this.adoptTurn(handle.turnId)
+    this.deps.beginTurn(text, true, liveRoute((sentence, signal) => this.say(sentence, null, signal)))
     this.touch()
   }
 
@@ -333,9 +362,5 @@ export class GptLiveEngine extends LiveEngineBase {
         )
       }
     }
-  }
-
-  protected emitTurn(event: TurnEvent): void {
-    this.deps.emitTurn(event)
   }
 }
