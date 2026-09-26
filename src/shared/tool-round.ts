@@ -1,13 +1,12 @@
 import type { ConversationMessage, ConversationPart } from './conversation'
 import { promptText, type ConversationLocale, type PromptText } from './conversation-locale'
+import { ToolCallOrder } from './tool-call-order'
 import type { ToolExecution, ToolExecutionTask } from './tool-registry'
 
 /**
- * Tool execution for one round. A tool starts as soon as its call is complete, and results keep the
- * order of the calls. Read-only tools run concurrently; a writing tool waits for everything submitted
- * before it and later tools wait for it, like a read-write lock. On abort, tools that have not started
- * get a synthesized "interrupted" result, because a tool call without a result makes the next request
- * invalid.
+ * Tool execution for one round. A tool starts as soon as its call is complete and ToolCallOrder lets
+ * it, and results keep the order of the calls. On abort, tools that have not started get a synthesized
+ * "interrupted" result, because a tool call without a result makes the next request invalid.
  */
 
 export interface ToolUseCall {
@@ -41,8 +40,7 @@ export function interruptedExecution(locale: ConversationLocale, name: string): 
 
 export class ToolRoundExecutor {
   private readonly entries: Array<{ call: ToolUseCall; task: Promise<ToolRoundResult>; completion: Promise<void> }> = []
-  private readonly inFlight: Promise<unknown>[] = []
-  private exclusiveTail: Promise<void> = Promise.resolve()
+  private readonly order = new ToolCallOrder()
   private readonly controller = new AbortController()
   readonly signal: AbortSignal
 
@@ -54,29 +52,21 @@ export class ToolRoundExecutor {
     return this.entries.length
   }
 
-  /** Starts the tool as soon as the lock allows. */
+  /** Starts the tool as soon as the order allows. */
   submit(call: ToolUseCall): Promise<ToolRoundResult> {
-    const parallel = this.options.isParallel(call.name)
-    const gate: Promise<void> = parallel
-      ? this.exclusiveTail
-      : Promise.allSettled(this.inFlight).then(() => undefined)
-    const invocation = gate.then(() => {
+    const invocation = this.order.run(this.options.isParallel(call.name), () => {
       if (this.signal.aborted) return null
       this.options.onStart?.(call)
-      // Returning the task itself would let `then` unwrap it and lose `completion`, so wrap it.
-      return { run: this.options.execute(call, this.signal) }
+      return this.options.execute(call, this.signal)
     })
-    const completion = invocation.then(async (started) => { await started?.run.completion })
+    const completion = invocation.then(async (started) => { await started?.work.completion })
     const task = invocation.then(async (started): Promise<ToolRoundResult> => {
       if (!started) return { call, execution: interruptedExecution(this.options.locale, call.name) }
-      const execution = await started.run
+      const execution = await started.work
       const result = { call, execution }
       if (!this.signal.aborted) this.options.onFinish?.(result)
       return result
     })
-    // A response timeout does not release the write lock: the tool's own work may still be running.
-    this.inFlight.push(completion)
-    if (!parallel) this.exclusiveTail = completion.then(() => undefined, () => undefined)
     this.entries.push({ call, task, completion })
     return task
   }

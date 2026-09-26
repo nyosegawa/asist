@@ -42,7 +42,12 @@ class FakeSession implements GeminiSession {
   }
 }
 
-type ExecuteTool = (name: string, input: Record<string, unknown>, ctx: { signal: AbortSignal }) => ToolExecutionTask | Promise<ToolExecution>
+type ExecuteTool = (name: string, input: Record<string, unknown>, ctx: { signal: AbortSignal }) => ToolExecutionTask
+
+const result = (content: string): ToolExecution => ({ content, isError: false, durationMs: 1, resultLength: content.length, truncated: false })
+
+/** A tool call whose answer and work have both ended. */
+const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve() })
 
 async function setup(execute?: ExecuteTool): Promise<{
   engine: import('../src/main/services/live/gemini-live').GeminiLiveEngine
@@ -56,7 +61,7 @@ async function setup(execute?: ExecuteTool): Promise<{
   const sessions: FakeSession[] = []
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
-  const executeTool = vi.fn(execute ?? (async (name: string) => ({ content: `{"shown":true,"panel":"${name}"}`, isError: false, durationMs: 5, resultLength: 10, truncated: false })))
+  const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
   const memoryInjection = vi.fn(async (text: string) => (text.includes('いつもの') ? '[記憶] いつもの店は中野のカフェ' : null))
   const engine = new GeminiLiveEngine(LIVE_ENGINE_INFO['gemini-live'], {
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
@@ -81,8 +86,6 @@ async function setup(execute?: ExecuteTool): Promise<{
   await engine.start()
   return { engine, sessions, events, turnEvents, executeTool, memoryInjection }
 }
-
-const result = (content: string): ToolExecution => ({ content, isError: false, durationMs: 1, resultLength: content.length, truncated: false })
 
 /** A tool call that runs until the test ends it, as one waiting for approval does. `finish` ends its work as well. */
 function held(): { task: ToolExecutionTask; answer: (content: string) => void; finish: () => void } {
@@ -223,73 +226,22 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
-  it('runs a writing call only after every call before it has ended, across messages, while reads run together', async () => {
-    const calls = new Map<string, ReturnType<typeof held>>()
-    const { engine, sessions, executeTool } = await setup((name) => {
-      const call = held()
-      calls.set(name, call)
-      return call.task
-    })
-    const started = (): string[] => executeTool.mock.calls.map((call) => call[0] as string)
-    const end = async (name: string): Promise<void> => {
-      calls.get(name)!.answer(`${name} done`)
-      calls.get(name)!.finish()
-      await vi.advanceTimersByTimeAsync(0)
-    }
-    const session = await open(engine, sessions)
-    session.message({
-      toolCall: {
-        functionCalls: [
-          { id: 'a', name: 'show_weather', args: {} },
-          { id: 'b', name: 'show_calendar', args: {} },
-          { id: 'c', name: 'run_agent_task', args: {} }
-        ]
-      }
-    })
-    await vi.advanceTimersByTimeAsync(0)
-    expect(started()).toEqual(['show_weather', 'show_calendar'])
-    // A NON_BLOCKING call can arrive while an earlier write is still waiting for approval.
-    session.message({
-      toolCall: {
-        functionCalls: [
-          { id: 'd', name: 'change_mail', args: {} },
-          { id: 'e', name: 'show_news', args: {} }
-        ]
-      }
-    })
-    await end('show_weather')
-    expect(started()).toEqual(['show_weather', 'show_calendar'])
-    await end('show_calendar')
-    expect(started()).toEqual(['show_weather', 'show_calendar', 'run_agent_task'])
-    await end('run_agent_task')
-    expect(started()).toEqual(['show_weather', 'show_calendar', 'run_agent_task', 'change_mail'])
-    await end('change_mail')
-    expect(started()).toEqual(['show_weather', 'show_calendar', 'run_agent_task', 'change_mail', 'show_news'])
-    await end('show_news')
-    expect(responseIds(session)).toEqual(['a', 'b', 'c', 'd', 'e'])
-    await engine.stop()
-  })
-
-  it('answers a timed-out write at once but starts the next write only once its work has stopped', async () => {
+  it('answers a timed-out write at once, and holds a write from a later message until the earlier one has stopped working', async () => {
     const first = held()
-    const { engine, sessions, executeTool } = await setup((name) => (name === 'run_agent_task' ? first.task : held().task))
+    const { engine, sessions, executeTool } = await setup((name) => (name === 'run_agent_task' ? first.task : finished('archived')))
     const session = await open(engine, sessions)
-    session.message({
-      toolCall: {
-        functionCalls: [
-          { id: 'a', name: 'run_agent_task', args: {} },
-          { id: 'b', name: 'change_mail', args: {} }
-        ]
-      }
-    })
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
     await vi.advanceTimersByTimeAsync(0)
     first.answer('run_agent_task timed out')
+    // A NON_BLOCKING call can arrive while an earlier write is still working.
+    session.message({ toolCall: { functionCalls: [{ id: 'b', name: 'change_mail', args: {} }] } })
     await vi.advanceTimersByTimeAsync(0)
     expect(responseIds(session)).toEqual(['a'])
     expect(executeTool).toHaveBeenCalledTimes(1)
     first.finish()
     await vi.advanceTimersByTimeAsync(0)
     expect(executeTool).toHaveBeenLastCalledWith('change_mail', {}, expect.anything())
+    expect(responseIds(session)).toEqual(['a', 'b'])
     await engine.stop()
   })
 
