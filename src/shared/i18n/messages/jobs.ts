@@ -1229,17 +1229,17 @@ export const jobs = defineMessages({
       'es-ES': 'No se ha podido limpiar el worktree: {detail}'
     },
     submodulesLeftOut: {
-      'ja-JP': 'サブモジュールの変更は取り込みません: {paths}',
-      'en-US': 'Changes to submodules are not merged: {paths}',
-      'fr-FR': 'Les modifications des sous-modules ne sont pas fusionnées : {paths}',
-      'de-DE': 'Änderungen an Submodulen werden nicht übernommen: {paths}',
-      'hi-IN': 'सबमॉड्यूल के बदलाव मर्ज नहीं किए जाते: {paths}',
-      'id-ID': 'Perubahan pada submodul tidak digabungkan: {paths}',
-      'it-IT': 'Le modifiche ai sottomoduli non vengono integrate: {paths}',
-      'ko-KR': '서브모듈의 변경은 병합하지 않습니다: {paths}',
-      'pt-BR': 'As alterações em submódulos não são mescladas: {paths}',
-      'es-419': 'Los cambios en submódulos no se fusionan: {paths}',
-      'es-ES': 'Los cambios en submódulos no se fusionan: {paths}'
+      'ja-JP': 'サブモジュールの変更は取り込みません。取り込むか捨てると、worktree と一緒に消えます: {paths}',
+      'en-US': 'Changes to submodules are not merged. They are deleted with the worktree when you merge or discard it: {paths}',
+      'fr-FR': "Les modifications des sous-modules ne sont pas fusionnées. Elles sont supprimées avec le worktree quand vous le fusionnez ou l'abandonnez : {paths}",
+      'de-DE': 'Änderungen an Submodulen werden nicht übernommen. Sie werden mit dem worktree gelöscht, wenn Sie ihn übernehmen oder verwerfen: {paths}',
+      'hi-IN': 'सबमॉड्यूल के बदलाव मर्ज नहीं किए जाते। मर्ज करने या छोड़ देने पर वे worktree के साथ मिट जाते हैं: {paths}',
+      'id-ID': 'Perubahan pada submodul tidak digabungkan. Perubahan itu terhapus bersama worktree saat Anda menggabungkan atau membuangnya: {paths}',
+      'it-IT': 'Le modifiche ai sottomoduli non vengono integrate. Vengono eliminate insieme al worktree quando lo integri o lo scarti: {paths}',
+      'ko-KR': '서브모듈의 변경은 병합하지 않습니다. 병합하거나 버리면 worktree와 함께 지워집니다: {paths}',
+      'pt-BR': 'As alterações em submódulos não são mescladas. Elas são apagadas junto com o worktree quando você mescla ou descarta: {paths}',
+      'es-419': 'Los cambios en submódulos no se fusionan. Se borran junto con el worktree cuando lo fusionas o lo descartas: {paths}',
+      'es-ES': 'Los cambios en submódulos no se fusionan. Se eliminan junto con el worktree cuando lo fusionas o lo descartas: {paths}'
     }
   },
   discard: {

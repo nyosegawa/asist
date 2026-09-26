@@ -82,6 +82,7 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
       t('jobs.confirm.job', { title }),
       t('jobs.confirm.place', { place: target.dir }),
       t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
+      ...(target.submodules.length > 0 ? [t('jobs.worktree.submodulesLeftOut', { paths: target.submodules.join(', ') })] : []),
       ...(target.stat ? ['', target.stat] : []),
       '',
       t('jobs.confirm.discardWarning')

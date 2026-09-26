@@ -116,7 +116,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       )}
       <Actions>
         {!conflict && (
-          <Action tone="primary" disabled={busy || !diff} onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit))}>
+          <Action tone="primary" disabled={busy || !diff?.stat} onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit))}>
             {t('jobs.card.merge.merge')}
           </Action>
         )}

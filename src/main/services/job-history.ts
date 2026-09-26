@@ -31,7 +31,8 @@ const jobSchema: z.ZodType<AgentJob> = z.object({
   sessionId: z.string().optional(),
   parentId: z.string().optional(),
   worktree: z.object({
-    repo: z.string().min(1), dir: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional()
+    repo: z.string().min(1), dir: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional(),
+    submodules: z.array(z.string().min(1)).optional()
   }).passthrough().optional(),
   mergeState: z.enum(['pending', 'merged', 'discarded', 'unchanged', 'conflict', 'error']).optional(),
   memoryCuration: z.object({ through: z.iso.date().nullable(), applied: z.boolean() }).optional()
@@ -48,7 +49,7 @@ const historySchema = z.array(jobSchema).superRefine((jobs, context) => {
 
 export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
   name: JOBS_FILE,
-  version: 3,
+  version: 4,
   upgrades: {
     // Version 1 was the bare list of jobs; version 2 is an object, which is what can carry the version.
     1: (content) => ({ jobs: content }),
@@ -62,7 +63,10 @@ export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
         jobs: jobs.map((job: { cwd?: unknown; worktree?: object }) =>
           job?.worktree ? { ...job, worktree: { ...job.worktree, dir: job.cwd } } : job)
       }
-    }
+    },
+    // Version 4 records the submodules a worktree was settled without. A job of version 3 was settled
+    // before any were left out, so it has none to record.
+    3: (content) => content
   },
   parse: (content) => historySchema.parse((content as { jobs?: unknown } | null)?.jobs),
   serialize: (jobs) => ({ jobs })

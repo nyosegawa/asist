@@ -502,9 +502,11 @@ export interface AgentJob {
   parentId?: string
   /**
    * Where a job writing into a git repository is isolated, so the user's repository is untouched until the merge.
-   * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it.
+   * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it. `base` is
+   * the commit the job started from. `submodules` are the submodules, with .gitmodules, whose changes the job
+   * settled without, as found when it settled; they stay in the worktree and no merge takes them in.
    */
-  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string }
+  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string; submodules?: string[] }
   /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and left nothing a merge would take in. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
@@ -517,7 +519,7 @@ export interface JobDiff {
   commit: string
   stat: string
   patch: string
-  /** The submodules whose changes the worktree holds but no merge takes in, with .gitmodules when it changed. */
+  /** The submodules whose changes the worktree holds but no merge takes in (`AgentJob.worktree.submodules`). */
   submodules: string[]
 }
 

@@ -34,7 +34,6 @@ describe('git service with an isolated worktree', () => {
   })
 
   it('commits changes in the worktree, shows the diff, and on merge lands them on the user branch and drops the worktree', () => {
-    const base = git.headCommit(repo)
     const wt = path.join(root, 'asist-jobs', '20260908-job')
     fs.mkdirSync(path.dirname(wt), { recursive: true })
     git.worktreeAdd(repo, wt, 'asist/20260908-job')
@@ -42,12 +41,12 @@ describe('git service with an isolated worktree', () => {
     fs.writeFileSync(path.join(wt, 'b.txt'), 'new\n')
     // The user's own working tree is untouched by the work in the worktree.
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('hello\n')
-    expect(git.commitAll(wt, 'asist: job')).toBe(true)
-    expect(git.commitAll(wt, 'asist: job')).toBe(false)
-    const stat = git.diffStat(repo, base, 'asist/20260908-job')
+    expect(git.commitAll(wt, 'asist: job').committed).toBe(true)
+    expect(git.commitAll(wt, 'asist: job').committed).toBe(false)
+    const stat = git.diffStat(repo, 'asist/20260908-job')
     expect(stat).toContain('a.txt')
     expect(stat).toContain('b.txt')
-    expect(git.diffPatch(repo, base, 'asist/20260908-job')).toContain('+world')
+    expect(git.diffPatch(repo, 'asist/20260908-job')).toContain('+world')
     expect(git.isClean(repo)).toBe(true)
     expect(git.mergeNoFf(repo, 'asist/20260908-job', 'asist: job')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('new\n')
@@ -97,7 +96,7 @@ describe('git service with an isolated worktree', () => {
       fs.writeFileSync(path.join(repo, '.git', 'hooks', hook), `#!/bin/sh\necho ${hook} >> '${ran}'\nexit 1\n`, { mode: 0o755 })
     }
     fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
-    expect(git.commitAll(wt, 'asist: job')).toBe(true)
+    expect(git.commitAll(wt, 'asist: job').committed).toBe(true)
     expect(fs.existsSync(ran)).toBe(false)
     expect(run(wt, ['log', '-1', '--format=%s'])).toBe('asist: job')
     expect(git.isClean(wt)).toBe(true)
@@ -116,18 +115,17 @@ describe('git service with an isolated worktree', () => {
     expect(() => git.commitAll(wt, 'asist: job')).toThrow()
     expect(run(wt, ['status', '--porcelain'])).toBe(before)
     fs.rmSync(lock)
-    expect(git.commitAll(wt, 'asist: job')).toBe(true)
+    expect(git.commitAll(wt, 'asist: job').committed).toBe(true)
     expect(git.isClean(wt)).toBe(true)
   })
 
   it('cuts a diff larger than the output buffer of git at the limit instead of failing', () => {
-    const base = git.headCommit(repo)
     const wt = path.join(root, 'wt')
     git.worktreeAdd(repo, wt, 'asist/lockfile')
     // A regenerated lockfile of 5 MB, more than the 4 MB that git's output is otherwise read into.
     fs.writeFileSync(path.join(wt, 'package-lock.json'), `${'x'.repeat(99)}\n`.repeat(50_000))
     git.commitAll(wt, 'job')
-    const patch = git.diffPatch(repo, base, 'asist/lockfile')
+    const patch = git.diffPatch(repo, 'asist/lockfile')
     expect(patch.startsWith('diff --git a/package-lock.json')).toBe(true)
     expect(patch.length).toBeLessThan(61_000)
   })
@@ -157,21 +155,57 @@ describe('git service with an isolated worktree', () => {
     expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
   })
 
+  it('builds its commit without holding the index lock of the repository, which a crash would leave behind', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/unlocked')
+    const lock = `${path.resolve(wt, run(wt, ['rev-parse', '--git-path', 'index']))}.lock`
+    const log = path.join(root, 'filter-log')
+    // A clean filter runs while git hashes a file it adds, and notes whether the index was locked then and
+    // which index the add was for. The lock is git's own only while it writes that very index.
+    run(repo, ['config', 'filter.probe.clean', `sh -c 'printf "%s %s\\n" "\${GIT_INDEX_FILE:-index}" "$(test -e ${lock} && echo locked || echo free)" >> ${log}; cat'`])
+    fs.mkdirSync(path.join(repo, '.git', 'info'), { recursive: true })
+    fs.writeFileSync(path.join(repo, '.git', 'info', 'attributes'), '*.txt filter=probe\n')
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+    expect(git.commitAll(wt, 'asist: job').committed).toBe(true)
+    const lines = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => line.split(' '))
+    const scratch = lines.filter(([index]) => index !== 'index')
+    expect(scratch.length).toBeGreaterThan(0)
+    expect(scratch.map(([, state]) => state)).toEqual(scratch.map(() => 'free'))
+    expect(fs.existsSync(lock)).toBe(false)
+  })
+
+  it('puts the branch back and leaves the index as it was when git cannot bring the index up to the new commit', () => {
+    fs.writeFileSync(path.join(repo, 'c.txt'), 'new\n')
+    const head = git.headCommit(repo)
+    // A lock another git process holds on the index lets the commit be built but not the index be written.
+    fs.writeFileSync(path.join(repo, '.git', 'index.lock'), '')
+    expect(() => git.commitAll(repo, 'asist: job')).toThrow()
+    expect(git.headCommit(repo)).toBe(head)
+    fs.rmSync(path.join(repo, '.git', 'index.lock'))
+    expect(run(repo, ['status', '--porcelain'])).toBe('?? c.txt')
+  })
+
   describe('with a submodule, whose own commits live only in the copy the worktree deletes', () => {
     const ID = ['-c', 'user.name=t', '-c', 'user.email=t@t']
     const FILE = ['-c', 'protocol.file.allow=always']
-    const withSubmodule = (): { wt: string; base: string } => {
+    const makeSub = (): string => {
       const sub = path.join(root, 'sub')
       fs.mkdirSync(sub)
       run(sub, ['init', '-q', '-b', 'main'])
       fs.writeFileSync(path.join(sub, 'lib.txt'), 'lib\n')
       run(sub, ['add', '.'])
       run(sub, [...ID, 'commit', '-q', '-m', 's'])
-      run(repo, [...FILE, 'submodule', 'add', '-q', sub, 'vendor/sub'])
-      run(repo, [...ID, 'commit', '-q', '-m', 'sub'])
+      return sub
+    }
+    const cut = (branch: string): { wt: string; base: string } => {
       const wt = path.join(root, 'wt')
-      git.worktreeAdd(repo, wt, 'asist/sub')
+      git.worktreeAdd(repo, wt, branch)
       return { wt, base: git.headCommit(repo) }
+    }
+    const withSubmodule = (): { wt: string; base: string } => {
+      run(repo, [...FILE, 'submodule', 'add', '-q', makeSub(), 'vendor/sub'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'sub'])
+      return cut('asist/sub')
     }
     const changedPaths = (wt: string, base: string): string[] =>
       run(wt, ['diff', '--name-only', base, 'HEAD']).split('\n').filter(Boolean)
@@ -180,9 +214,9 @@ describe('git service with an isolated worktree', () => {
       const { wt, base } = withSubmodule()
       fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
       fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
-      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      expect(git.commitAll(wt, 'asist: job', base)).toEqual({ committed: true, leftOut: [] })
       expect(changedPaths(wt, base)).toEqual(['b.txt'])
-      expect(git.submoduleChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.submodulesWithChanges(wt)).toEqual(['vendor/sub'])
       expect(git.isSettled(wt)).toBe(true)
     })
 
@@ -190,12 +224,12 @@ describe('git service with an isolated worktree', () => {
       const { wt, base } = withSubmodule()
       run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
       fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'lib.txt'), 'changed by the agent\n')
-      expect(git.commitAll(wt, 'asist: job', base)).toBe(false)
+      expect(git.commitAll(wt, 'asist: job', base).committed).toBe(false)
       expect(git.headCommit(wt)).toBe(base)
-      expect(git.submoduleChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.submodulesWithChanges(wt)).toEqual(['vendor/sub'])
     })
 
-    it('puts back a submodule entry and .gitmodules the agent committed itself, and still finds them afterwards', () => {
+    it('puts back a submodule entry and .gitmodules the agent committed itself, and names them', () => {
       const { wt, base } = withSubmodule()
       run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
       const inside = path.join(wt, 'vendor', 'sub')
@@ -205,10 +239,11 @@ describe('git service with an isolated worktree', () => {
       fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
       run(wt, ['add', '-A'])
       run(wt, [...ID, 'commit', '-q', '-m', 'the agent commits everything'])
-      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      const { committed, leftOut } = git.commitAll(wt, 'asist: job', base)
+      expect(committed).toBe(true)
+      expect(leftOut).toEqual(['.gitmodules', 'vendor/sub'])
       expect(changedPaths(wt, base)).toEqual(['b.txt'])
-      expect(git.submoduleChanges(wt)).toEqual(['.gitmodules', 'vendor/sub'])
-      expect(git.isSettled(wt)).toBe(true)
+      expect(git.isSettled(wt, leftOut)).toBe(true)
     })
 
     it('keeps a submodule the agent removed, and leaves out one it added', () => {
@@ -216,9 +251,53 @@ describe('git service with an isolated worktree', () => {
       run(wt, ['rm', '-q', 'vendor/sub'])
       run(wt, [...FILE, 'submodule', 'add', '-q', path.join(root, 'sub'), 'vendor/other'])
       fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
-      expect(git.commitAll(wt, 'asist: job', base)).toBe(true)
+      const { leftOut } = git.commitAll(wt, 'asist: job', base)
+      expect(leftOut).toEqual(['.gitmodules', 'vendor/other', 'vendor/sub'])
       expect(changedPaths(wt, base)).toEqual(['b.txt'])
-      expect(git.submoduleChanges(wt)).toEqual(['.gitmodules', 'vendor/other', 'vendor/sub'])
+      expect(git.isSettled(wt, leftOut)).toBe(true)
+    })
+
+    it('leaves out the files the agent put in place of a submodule, and can still tell a later change apart', () => {
+      const { wt, base } = withSubmodule()
+      run(wt, ['rm', '-q', '--cached', 'vendor/sub'])
+      fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'lib.txt'), 'vendored\n')
+      fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+      const { leftOut } = git.commitAll(wt, 'asist: job', base)
+      expect(leftOut).toEqual(['vendor/sub'])
+      expect(changedPaths(wt, base)).toEqual(['b.txt'])
+      expect(git.isSettled(wt, leftOut)).toBe(true)
+      fs.writeFileSync(path.join(wt, 'late.txt'), 'after the review\n')
+      expect(git.isSettled(wt, leftOut)).toBe(false)
+    })
+
+    it('keeps a folder the agent replaced with a submodule as it was', () => {
+      fs.mkdirSync(path.join(repo, 'lib'))
+      fs.writeFileSync(path.join(repo, 'lib', 'x.txt'), 'x\n')
+      run(repo, ['add', '-A'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'lib'])
+      const sub = makeSub()
+      const { wt, base } = cut('asist/folder')
+      run(wt, ['rm', '-q', '-r', 'lib'])
+      run(wt, [...FILE, 'submodule', 'add', '-q', sub, 'lib'])
+      fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+      const { leftOut } = git.commitAll(wt, 'asist: job', base)
+      expect(leftOut).toEqual(['.gitmodules', 'lib'])
+      expect(changedPaths(wt, base)).toEqual(['b.txt'])
+      expect(run(wt, ['show', 'HEAD:lib/x.txt'])).toBe('x')
+      expect(git.isSettled(wt, leftOut)).toBe(true)
+    })
+
+    it('does not take a folder .gitmodules still names for a submodule once it holds ordinary files', () => {
+      run(repo, [...FILE, 'submodule', 'add', '-q', makeSub(), 'lib'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'sub'])
+      run(repo, ['rm', '-q', '--cached', 'lib'])
+      fs.rmSync(path.join(repo, 'lib'), { recursive: true, force: true })
+      fs.mkdirSync(path.join(repo, 'lib'))
+      fs.writeFileSync(path.join(repo, 'lib', 'x.txt'), 'x\n')
+      run(repo, ['add', 'lib'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'vendored, with .gitmodules left behind'])
+      const { wt } = cut('asist/vendored')
+      expect(git.submodulesWithChanges(wt)).toEqual([])
     })
   })
 
@@ -236,7 +315,7 @@ describe('git service with an isolated worktree', () => {
     process.env.GIT_CONFIG_GLOBAL = path.join(home, '.gitconfig')
     try {
       fs.writeFileSync(path.join(repo, 'c.txt'), 'signed?\n')
-      expect(git.commitAll(repo, 'unsigned')).toBe(true)
+      expect(git.commitAll(repo, 'unsigned').committed).toBe(true)
       expect(git.isClean(repo)).toBe(true)
     } finally {
       for (const [name, value] of Object.entries(saved)) {

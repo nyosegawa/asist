@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { conversationLocale } from './conversation-locale'
@@ -119,59 +120,58 @@ export function worktreeRemove(repo: string, path: string, branch: string): void
 const GITMODULES = '.gitmodules'
 const SUBMODULE_MODE = '160000'
 
+/** A pathspec that names exactly this path and whatever lies under it. */
+const literal = (file: string): string => `:(literal)${file}`
+
+export interface CommitOutcome {
+  committed: boolean
+  /** The submodule entries, and .gitmodules, that differed from `base` and that the commit kept as base has them. */
+  leftOut: string[]
+}
+
 /**
  * Commits every uncommitted change in dir, except that the commit keeps the submodule entries and
- * .gitmodules of `base`, and returns false when that leaves nothing to commit. A commit made inside a
- * submodule of a worktree lives only in the worktree's own copy of that submodule, which is deleted with the
- * worktree, so an entry pointing to it would reach the user's repository pointing to nothing. Those changes
- * stay in the index and the working tree, where submoduleChanges finds them.
+ * .gitmodules of `base`, together with anything under the path of such an entry, and says which it left out.
+ * A commit made inside a submodule of a worktree lives only in the worktree's own copy of that submodule, so
+ * an entry pointing to it would reach the user's repository pointing to nothing. What is left out stays in
+ * the working tree and the index.
  *
- * The commit is built by write-tree and commit-tree from a copy of the index taken under git's own
- * index.lock, and the copy replaces the index only once the branch has moved. git commit runs the
- * repository's prepare-commit-msg hook even with --no-verify, and a commit that fails after git add leaves
- * the change staged.
+ * The commit is built by write-tree and commit-tree from a copy of the index in a folder of its own, so no
+ * hook of the repository runs and ASIST holds no lock of the repository between git's commands: git commit
+ * runs prepare-commit-msg even with --no-verify, and a lock left by a crash would stop every later commit.
+ * The index is brought up to the commit by git itself once the branch has moved, and when that fails the
+ * branch goes back, so that a commit that fails leaves the index and the branch as they were.
  */
-export function commitAll(dir: string, message: string, base = 'HEAD'): boolean {
+export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOutcome {
   const head = hasHead(dir) ? headCommit(dir) : null
   // The status does not show a submodule entry that was committed in dir since base, which has to be put back too.
   const pending = git(dir, ['status', '--porcelain']).trim() !== '' ||
     (head !== null && submoduleEntries(git(dir, ['diff-tree', '-r', '-z', '--no-renames', base, head])).length > 0)
-  if (!pending) return false
+  if (!pending) return { committed: false, leftOut: [] }
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
-  const lock = `${index}.lock`
-  const staging = `${index}.asist`
-  fs.closeSync(fs.openSync(lock, 'wx'))
+  const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
   try {
+    const staging = path.join(scratch, 'index')
     if (fs.existsSync(index)) fs.copyFileSync(index, staging)
-    else fs.rmSync(staging, { force: true })
-    git(dir, ['add', '-A'], { env: { GIT_INDEX_FILE: staging } })
-    const tree = treeKeepingSubmodules(dir, staging, head ? base : null)
-    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) return false
+    const env = { GIT_INDEX_FILE: staging }
+    git(dir, ['add', '-A'], { env })
+    const leftOut = head ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env })) : []
+    if (leftOut.length > 0) git(dir, ['restore', '--staged', `--source=${base}`, '--', ...leftOut.map(literal)], { env })
+    const tree = git(dir, ['write-tree'], { env }).trim()
+    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) return { committed: false, leftOut }
     const commit = git(dir, [
       '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
     ]).trim()
     git(dir, ['update-ref', '-m', message, 'HEAD', commit, head ?? ''])
-    fs.renameSync(staging, index)
-    return true
+    try {
+      git(dir, ['add', '-A'])
+    } catch (error) {
+      git(dir, head ? ['update-ref', 'HEAD', head, commit] : ['update-ref', '-d', 'HEAD', commit])
+      throw error
+    }
+    return { committed: true, leftOut }
   } finally {
-    fs.rmSync(staging, { force: true })
-    fs.rmSync(lock, { force: true })
-  }
-}
-
-/** The tree of the index file `staged`, with its submodule entries and .gitmodules put back as base has them. */
-function treeKeepingSubmodules(dir: string, staged: string, base: string | null): string {
-  const env = { GIT_INDEX_FILE: staged }
-  const submodules = base ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env })) : []
-  if (submodules.length === 0) return git(dir, ['write-tree'], { env }).trim()
-  const kept = `${staged}.kept`
-  fs.copyFileSync(staged, kept)
-  try {
-    const keptEnv = { GIT_INDEX_FILE: kept }
-    git(dir, ['restore', '--staged', `--source=${base}`, '--', ...submodules], { env: keptEnv })
-    return git(dir, ['write-tree'], { env: keptEnv }).trim()
-  } finally {
-    fs.rmSync(kept, { force: true })
+    fs.rmSync(scratch, { recursive: true, force: true })
   }
 }
 
@@ -199,41 +199,47 @@ const submoduleEntries = (raw: string): string[] =>
     .map((entry) => entry.path)
 
 /**
- * The submodules whose state in dir differs from HEAD, with .gitmodules when it changed: a submodule moved
- * to another commit, holding changed or new files, added or removed, or, while it is not initialized, a
- * folder that files were written into, which git status does not show at all. commitAll leaves all of them
- * out.
+ * The submodules of HEAD whose folder holds a change no commit carries: files changed or added inside one
+ * that is initialized, a commit it moved to, or, in one that is not initialized, files written into its
+ * folder, which git status does not show at all.
  */
-export function submoduleChanges(dir: string): string[] {
+export function submodulesWithChanges(dir: string): string[] {
+  const submodules = submodulesAtHead(dir)
+  if (submodules.length === 0) return []
   const changed = new Set<string>()
   // With -z an entry of the second porcelain format is one field, and its path is all that follows the
   // fixed fields, spaces included. Without renames no entry carries a second path. Untracked files are
   // listed, since otherwise git does not look for new files inside a submodule either.
   const fixedFields: Record<string, number> = { '1': 8, u: 10 }
-  for (const entry of git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal']).split('\0')) {
+  const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal', '--', ...submodules.map(literal)])
+  for (const entry of status.split('\0')) {
     const count = fixedFields[entry[0]]
     if (count === undefined) continue
     const fields = entry.split(' ')
-    const file = fields.slice(count).join(' ')
-    if (fields[2].startsWith('S') || file === GITMODULES) changed.add(file)
+    if (fields[2].startsWith('S')) changed.add(fields.slice(count).join(' '))
   }
-  for (const file of declaredSubmodules(dir)) {
+  for (const file of submodules) {
     if (!changed.has(file) && writtenWhileUninitialized(path.join(dir, file))) changed.add(file)
   }
   return [...changed].sort()
 }
 
 /**
- * The paths .gitmodules at HEAD gives its submodules. Listing the tree for its submodule entries would read
- * every file of the repository.
+ * The submodule entries of HEAD, found from the paths .gitmodules names, since listing the whole tree would
+ * read every file of the repository. A path .gitmodules still names can hold ordinary files by now.
  */
-function declaredSubmodules(dir: string): string[] {
+function submodulesAtHead(dir: string): string[] {
   if (!hasHead(dir) || !git(dir, ['ls-tree', 'HEAD', '--', GITMODULES]).trim()) return []
-  return git(dir, ['config', '--blob', `HEAD:${GITMODULES}`, '-z', '--list'])
+  const declared = git(dir, ['config', '--blob', `HEAD:${GITMODULES}`, '-z', '--list'])
     .split('\0')
     .map((entry) => entry.split('\n'))
     .filter(([key]) => /^submodule\..+\.path$/.test(key))
     .map(([, value]) => value)
+  if (declared.length === 0) return []
+  return git(dir, ['ls-tree', '-z', 'HEAD', '--', ...declared])
+    .split('\0')
+    .filter((entry) => entry.startsWith(`${SUBMODULE_MODE} `))
+    .map((entry) => entry.slice(entry.indexOf('\t') + 1))
 }
 
 /** A folder of a submodule that is not initialized is empty in a new worktree, and git does not look inside it. */
@@ -250,14 +256,27 @@ function writtenWhileUninitialized(folder: string): boolean {
   return names.length > 0 && !names.includes('.git')
 }
 
-/** Whether dir holds no change that commitAll would commit, leaving out the changes to its submodules. */
-export function isSettled(dir: string): boolean {
-  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', `:(exclude)${GITMODULES}`]).trim() === ''
+/**
+ * Whether dir holds no change that commitAll would commit, leaving out the paths it left out and every
+ * submodule. It does not look inside submodules, which no merge takes in anyway.
+ */
+export function isSettled(dir: string, leftOut: readonly string[] = []): boolean {
+  const excluded = leftOut.map((file) => `:(exclude,literal)${file}`)
+  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', ...excluded]).trim() === ''
 }
 
-/** A summary of the changes from base to the branch. An empty string means nothing changed. */
-export function diffStat(repo: string, base: string, branch: string): string {
-  return git(repo, ['diff', '--stat', `${base}..${branch}`]).trim()
+/** The commit a merge of `commit` into the repository's HEAD starts from. */
+export function mergeBase(repo: string, commit: string): string {
+  return git(repo, ['merge-base', 'HEAD', commit]).trim()
+}
+
+/**
+ * A summary of what a merge of `commit` would bring into the repository's HEAD: the changes since their merge
+ * base, not since the commit a job started from, whose branch may have taken in the user's own commits since.
+ * An empty string means nothing.
+ */
+export function diffStat(repo: string, commit: string): string {
+  return git(repo, ['diff', '--stat', `HEAD...${commit}`]).trim()
 }
 
 export interface DiffEntry {
@@ -266,23 +285,23 @@ export interface DiffEntry {
   mode: string
 }
 
-/** Every path the changes from base to the branch touch, with its mode afterwards. Renames count as a deletion and an addition. */
-export function diffEntries(repo: string, base: string, branch: string): DiffEntry[] {
-  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', `${base}..${branch}`]))
+/** Every path a merge of `commit` would change (see diffStat), with its mode afterwards. Renames count as a deletion and an addition. */
+export function diffEntries(repo: string, commit: string): DiffEntry[] {
+  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', `HEAD...${commit}`]))
     .map((entry) => ({ path: entry.path, mode: entry.newMode }))
 }
 
 /**
- * The diff from base to the branch, cut at the limit. git is stopped once its output passes four bytes
- * for each character kept, so a diff of any size is read only that far; a character takes at most three
- * bytes of UTF-8, so what was read always reaches past the limit. The note on the cut is part of the
- * patch, which the merge view shows and the LLM reads in get_agent_job, so it is written in the language
- * of the conversation.
+ * The patch of what a merge of `commit` would bring in (see diffStat), cut at the limit. git is stopped once
+ * its output passes four bytes for each character kept, so a diff of any size is read only that far; a
+ * character takes at most three bytes of UTF-8, so what was read always reaches past the limit. The note on
+ * the cut is part of the patch, which the merge view shows and the LLM reads in get_agent_job, so it is
+ * written in the language of the conversation.
  */
-export function diffPatch(repo: string, base: string, branch: string, maxChars = 60_000): string {
+export function diffPatch(repo: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = git(repo, ['diff', `${base}..${branch}`], { maxBuffer: maxChars * 4 })
+    patch = git(repo, ['diff', `HEAD...${commit}`], { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }

@@ -152,7 +152,7 @@ function assertInsideMemory(job: AgentJob): string {
     throw new Error(errorText('memory.errors.outsideMemory', { files: worktree.repo }))
   }
   const outside = git
-    .diffEntries(worktree.repo, worktree.base, worktree.commit)
+    .diffEntries(worktree.repo, worktree.commit)
     .filter((entry) => !MEMORY_FILE_MODES.has(entry.mode))
     .map((entry) => entry.path)
   if (outside.length > 0) {

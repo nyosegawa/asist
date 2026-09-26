@@ -22,7 +22,7 @@ const JOB_REPORT_PLAYBACK_TIMEOUT_MS = 3 * 60_000
 const MAX_JOB_REPORT_ATTEMPTS = 5
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
-const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'noSummary' | 'noReason', PromptText>> = {
+const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'submodules' | 'noSummary' | 'noReason', PromptText>> = {
   done: {
     ja: `{notice} ジョブ「{title}」(jobId: {jobId})が完了した。結果の要約: {summary}{artifactNote}{mergeNote}`,
     en: `{notice} The job "{title}" (jobId: {jobId}) is done. A summary of the result: {summary}{artifactNote}{mergeNote}`
@@ -37,6 +37,10 @@ const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
   },
   mergeUnchanged: { ja: ` 取り込む変更は無かったのでworktreeは片付けた。`, en: ` There was nothing to take in, so the worktree has been cleared away.` },
+  submodules: {
+    ja: ` サブモジュールの変更は取り込まれない({paths})。worktreeにだけあり、取り込むか捨てると一緒に消える。ほかに変更が無ければ取り込めるものは無い。`,
+    en: ` The changes to the submodules {paths} are not taken in. Only the worktree holds them, and they are deleted with it when the job is taken in or thrown away. With no other change there is nothing to take in.`
+  },
   noSummary: { ja: `要約なし`, en: `no summary` },
   noReason: { ja: `不明`, en: `unknown` }
 }
@@ -119,12 +123,14 @@ export function initJobReporting(): void {
     const locale = conversationLocale()
     const artifacts = (job.artifacts ?? []).slice(-5)
     const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
+    const submodules = job.worktree?.submodules
     const mergeNote =
-      job.mergeState === 'pending'
+      (job.mergeState === 'pending'
         ? promptText(locale, REPORT.mergePending)
         : job.worktree && job.mergeState === 'unchanged'
           ? promptText(locale, REPORT.mergeUnchanged)
-          : ''
+          : '') +
+      (submodules ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', ') }) : '')
     const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
     const notice: TurnInput =
       job.status === 'done'

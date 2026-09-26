@@ -10,7 +10,7 @@ import { artifactPaths, type AgentStreamEvent } from '@shared/agent-stream'
 import { buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
 import { formatJobContextBlock, resolveJobAccess, workspaceDirName, worktreeBranchName } from '@shared/job-workspace'
 import { errorText } from '@shared/i18n/error-text'
-import { fillPrompt, promptLanguage, type PromptLanguage, type PromptText } from '@shared/conversation-locale'
+import { promptLanguage, type PromptLanguage, type PromptText } from '@shared/conversation-locale'
 import { getSettings } from './settings'
 import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
@@ -50,7 +50,7 @@ interface JobEntry {
  * the job carries nothing else that says what happened to it, so they are written in the language of
  * the conversation.
  */
-const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'submodulesLeftOut' | 'continued', PromptText> = {
+const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'continued', PromptText> = {
   stoppedOldAgent: {
     ja: 'アプリ再起動前のAgentを停止し、残った成果物を確認しました',
     en: 'Stopped the Agent left over from before the app restarted and looked over what it produced'
@@ -58,10 +58,6 @@ const MODEL_TEXTS: Record<'stoppedOldAgent' | 'mergeConflict' | 'submodulesLeftO
   mergeConflict: {
     ja: '(取り込みで衝突。解消は続きのジョブで)',
     en: ' (the merge conflicted; resolve it in a follow-up job)'
-  },
-  submodulesLeftOut: {
-    ja: '(サブモジュールの変更は取り込まない: {paths})',
-    en: ' (the changes to submodules are not taken in: {paths})'
   },
   continued: { ja: '(続き)', en: ' (continued)' }
 }
@@ -314,19 +310,16 @@ export function isGitRepo(cwd: string): boolean {
 function settleWorktree(job: AgentJob): Partial<AgentJob> {
   assertWriterStopped(job)
   try {
-    const { settled, submodules } = captureWorktree(job)
+    const settled = captureWorktree(job)
     pushLog(job.id, 'system', t(settled.mergeState === 'unchanged'
       ? 'jobs.worktree.unchanged'
       : 'jobs.worktree.committed'))
-    if (submodules.length === 0) return settled
-    const paths = submodules.join(', ')
-    pushLog(job.id, 'system', t('jobs.worktree.submodulesLeftOut', { paths }))
-    // The report of the finished job and its card read the summary, and a worktree with nothing else to
-    // merge is already gone, so the summary is where the user learns what was not taken in.
-    return { ...settled, summary: `${job.summary ?? ''}${fillPrompt(say(MODEL_TEXTS.submodulesLeftOut), { paths })}` }
+    const submodules = settled.worktree?.submodules
+    if (submodules) pushLog(job.id, 'system', t('jobs.worktree.submodulesLeftOut', { paths: submodules.join(', ') }))
+    return settled
   } catch (err) {
     pushLog(job.id, 'stderr', t('jobs.worktree.settleFailed', { detail: errorMessage(err) }))
-    return { worktree: { ...job.worktree!, commit: undefined }, mergeState: 'error' }
+    return { worktree: { ...job.worktree!, commit: undefined, submodules: undefined }, mergeState: 'error' }
   }
 }
 
@@ -504,6 +497,8 @@ export function merge(id: string, commit: string): AgentJob {
   assertWriterStopped(entry.job)
   assertWorktreeReview(entry.job, commit)
   const wt = entry.job.worktree
+  // A job whose only changes were to submodules waits with nothing a merge would take in.
+  if (!git.diffStat(wt.repo, commit)) throw new Error(errorText('jobs.merging.noChanges', { id }))
   if (!git.isClean(wt.repo)) throw new Error(errorText('jobs.merging.dirtyRepo'))
   const outcome = git.mergeNoFf(wt.repo, commit, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
@@ -550,14 +545,22 @@ export interface DiscardPreview {
   repo: string
   dir: string
   branch: string
-  /** The changes the branch holds against the commit the job started from, as git's stat. */
+  /** What a merge of the branch would have brought in, as git's stat. */
   stat: string
+  /** The submodules whose changes only the worktree holds, which the discard deletes with it. */
+  submodules: string[]
 }
 
 /** It refuses as discard does, so that the user is never asked about a discard that cannot happen. */
 export function discardPreview(id: string): DiscardPreview {
   const worktree = discardableWorktree(id)
-  return { repo: worktree.repo, dir: worktree.dir, branch: worktree.branch, stat: git.diffStat(worktree.repo, worktree.base, worktree.branch) }
+  return {
+    repo: worktree.repo,
+    dir: worktree.dir,
+    branch: worktree.branch,
+    stat: git.diffStat(worktree.repo, worktree.branch),
+    submodules: worktree.submodules ?? []
+  }
 }
 
 /** Throws the worktree's changes away by deleting both the worktree and its branch. */
@@ -622,7 +625,7 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
     sessionId: parent.sessionId,
     parentId,
     ...(parent.memoryCuration ? { memoryCuration: { through: parent.memoryCuration.through, applied: false } } : {}),
-    ...(transferWorktree ? { worktree: { ...parent.worktree!, commit: undefined } } : {})
+    ...(transferWorktree ? { worktree: { ...parent.worktree!, commit: undefined, submodules: undefined } } : {})
   }
   // A worktree job whose changes are already merged or cleaned up continues in a fresh worktree cut
   // from the repository, in the same folder inside it.
