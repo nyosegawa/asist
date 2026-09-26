@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, ToolCallPart } from '@shared/conversation'
+import { isTransientApiError } from '@shared/api-errors'
 
 /** The Cerebras adapter. These tests run fake chat completion chunks and check the conversion to the ASIST types. */
 
@@ -16,10 +17,14 @@ vi.mock('openai', () => ({
     }
     chat = {
       completions: {
-        create: async (params: Record<string, unknown>) => {
+        create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
           mocks.params.push(params)
           return (async function* () {
-            for (const chunk of mocks.chunks) yield chunk
+            for (const chunk of mocks.chunks) {
+              // The openai package ends a stream quietly once its request is aborted.
+              if (options.signal.aborted) return
+              yield chunk
+            }
           })()
         }
       }
@@ -122,5 +127,19 @@ describe('the Cerebras stream', () => {
     expect((await (await open()).stream.final()).stop).toBe('max_tokens')
     await expect((await open({ webSearch: true })).stream.final()).rejects.toThrow('no built-in web search')
     expect(mocks.params).toHaveLength(1)
+  })
+
+  it('fails as a transient error when the timeout of the round cuts the response off, instead of finishing it with what arrived', async () => {
+    mocks.chunks = [delta({ content: '要約は' }), delta({ content: 'ここまで。' }, 'stop'), { choices: [], usage: { prompt_tokens: 100, completion_tokens: 5 } }]
+    const controller = new AbortController()
+    const { stream } = await open({ signal: controller.signal })
+    stream.on('text', () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')))
+    const error = await stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
+  it('fails on a stream the server ended without a finish reason, rather than finishing the answer with what arrived', async () => {
+    mocks.chunks = [delta({ content: '要約は' })]
+    await expect((await open()).stream.final()).rejects.toThrow()
   })
 })

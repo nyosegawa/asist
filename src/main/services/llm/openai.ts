@@ -11,7 +11,7 @@ import type { ConversationMessage, ConversationRequest, ConversationResult, Sear
 import type { RoundUsage } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { effortFor } from '@shared/llm-catalog'
-import { AdapterStream, parseToolArguments, statusError, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
+import { AdapterStream, parseToolArguments, raisingAbort, statusError, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
 
 /**
  * OpenAI, through the Responses API, because chat completions does not accept function tools and a
@@ -148,7 +148,7 @@ class OpenAIStream extends AdapterStream {
     const listed: SearchSource[] = []
     let refused = false
     let response: Response | null = null
-    for await (const event of stream) {
+    for await (const event of raisingAbort(stream, request.signal)) {
       switch (event.type) {
         case 'response.output_text.delta':
           this.emitText(citations ? citations.push(event.delta) : event.delta)

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
+import { isTransientApiError } from '@shared/api-errors'
 
 /** The OpenAI adapter. These tests run fake Responses API events and check the conversion to the ASIST types. */
 
@@ -12,10 +13,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock('openai', () => ({
   default: class FakeOpenAI {
     responses = {
-      create: async (params: Record<string, unknown>) => {
+      create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
         mocks.params.push(params)
         return (async function* () {
-          for (const event of mocks.events) yield event
+          for (const event of mocks.events) {
+            // The openai package ends a stream quietly once its request is aborted.
+            if (options.signal.aborted) return
+            yield event
+          }
           if (mocks.failAfter) throw mocks.failAfter
         })()
       }
@@ -209,6 +214,16 @@ describe('the OpenAI stream', () => {
 
     mocks.events = []
     await expect((await open()).stream.final()).rejects.toThrow('without a completion event')
+  })
+
+  it('fails as a transient error when the timeout of the round cuts the response off', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '大阪は' }, { type: 'response.output_text.delta', delta: '晴れです。' }, completed()]
+    const controller = new AbortController()
+    const { stream } = await open({ signal: controller.signal })
+    stream.on('text', () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')))
+    const error = await stream.final().then(() => null, (reason: unknown) => reason)
+    // A transient failure is retried, or resumed from what was already spoken.
+    expect(isTransientApiError(error)).toBe(true)
   })
 
   it('fails instead of running a tool call whose arguments are broken', async () => {

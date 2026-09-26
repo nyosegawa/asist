@@ -4,7 +4,7 @@ import type { ConversationMessage, ConversationRequest, ConversationResult, Stop
 import type { RoundUsage } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { effortFor } from '@shared/llm-catalog'
-import { AdapterStream, parseToolArguments, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
+import { AdapterStream, parseToolArguments, raisingAbort, toolResultText, withoutSchemaKeys, type JsonRequest, type ProviderAdapter } from './adapter'
 
 /**
  * Cerebras, called through the openai package: its API is OpenAI-compatible chat completions, and its
@@ -101,7 +101,7 @@ class CerebrasStream extends AdapterStream {
       if (!draft) return
       this.emitToolCall({ type: 'tool_call', id: draft.id || `call_${index}`, name: draft.name, input: parseToolArguments(draft.name, draft.args) })
     }
-    for await (const chunk of stream) {
+    for await (const chunk of raisingAbort(stream, request.signal)) {
       if (chunk.usage) usage = chunk.usage
       const choice = chunk.choices?.[0]
       if (!choice) continue
@@ -122,6 +122,8 @@ class CerebrasStream extends AdapterStream {
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
+    // Only the finish reason tells a whole response from one the server cut off.
+    if (finish === null) throw new Error('Cerebras: the stream ended without a finish reason')
     if (open !== null) confirm(open)
     this.closeText()
 
