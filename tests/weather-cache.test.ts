@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
+import { readErrorText } from '@shared/i18n/error-text'
 import { WeatherCache } from '../src/main/services/weather/cache'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
@@ -21,6 +23,13 @@ describe('weather cache', () => {
     now = 100
     await cache.read('a', 100, signal(), decode)
     expect(request).toHaveBeenCalledTimes(2)
+  })
+  it('words a request that got no answer for the screen', async () => {
+    const cause = Object.assign(new Error('connect ECONNREFUSED 203.0.113.1:443'), { code: 'ECONNREFUSED' })
+    const request = vi.fn().mockRejectedValue(new TypeError('fetch failed', { cause }))
+    const cache = new WeatherCache(request)
+    const error = (await cache.read('https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json', 100, signal(), decode).catch((err: unknown) => err)) as Error
+    expect(readErrorText(error.message, 'en-US')).toBe(createTranslator('en-US')('panels.errors.unreachable', { host: 'www.jma.go.jp' }))
   })
   it('keeps the fetch running for the other waiters when one of them aborts', async () => {
     let finish!: (response: Response) => void

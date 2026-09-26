@@ -13,6 +13,7 @@ import { fileUrl } from '../file-protocol'
 import type { FileItem } from '@shared/files'
 import { allowedFileRoots } from './agent'
 import { userAgent } from './user-agent'
+import { fetchFailure } from './fetch-failure'
 import { t } from './i18n'
 
 /**
@@ -27,7 +28,9 @@ type Fetched = { props: Props; source?: string; data?: unknown }
 type Fetcher = (props: Props, signal: AbortSignal) => Promise<Fetched>
 
 const request = async (url: string, signal: AbortSignal): Promise<Response> => {
-  const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } })
+  const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } }).catch((error: unknown) => {
+    throw fetchFailure(url, error)
+  })
   if (!res.ok) throw new Error(errorText('panels.errors.fetchFailed', { host: new URL(url).hostname, status: res.status }))
   return res
 }
