@@ -7,7 +7,7 @@ import { isBackgroundJob } from './job-status'
  * starts, when it enters a phase that needs the user's decision, and when it ends.
  * - Started: the job is running. The screen shows only the events of the turn it follows, and a turn
  *   that waited for the user to approve the job is no longer that turn when the user spoke meanwhile, so
- *   the card of the job the user approved does not come from the tool that started it.
+ *   the card that the tool starting the job puts up through its turn does not reach the screen then.
  * - Waiting for a decision: merge, conflict or failed commit (`mergeState`).
  * - Finished: done and error. A job the user stopped is left out.
  * A background job, memory curation, never pushes a card.

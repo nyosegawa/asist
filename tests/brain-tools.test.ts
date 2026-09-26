@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
     diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '', submodules: [] })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
-    discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-' }))
+    discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-', submodules: [] }))
   },
   requestConfirm: vi.fn(async () => true),
   fetchPanel: vi.fn(),
@@ -377,7 +377,7 @@ describe('brain tools registry', () => {
 
   it('continues a job in the session of the original one after the user approves it, and returns a failed result when it cannot', async () => {
     const { executeClientTool } = await load()
-    const { ctx } = makeCtx()
+    const { ctx, events } = makeCtx()
     mocks.agent.userJob.mockReturnValueOnce({ id: 'j1', title: '調査', status: 'running', engine: 'claude', readonly: true, cwd: '/w/j1' } as never)
     mocks.agent.continueJob.mockReturnValueOnce({ id: 'j2', title: '調査(続き)' } as never)
     const ok = await executeClientTool('continue_agent_job', { jobId: 'j1', prompt: '観点を足して' }, ctx)
@@ -388,6 +388,7 @@ describe('brain tools registry', () => {
     for (const line of ['観点を足して', ja('jobs.confirm.place', { place: '/w/j1' }), ja('jobs.confirm.readOnly'), ja('jobs.confirm.stopsRunning')]) {
       expect(request.detail).toContain(line)
     }
+    expect(events[0]).toMatchObject({ type: 'panel', event: { key: 'job:j2' } })
     mocks.agent.userJob.mockReturnValueOnce({ id: 'j1', title: '調査', status: 'done', engine: 'claude', readonly: true, cwd: '/w/j1' } as never)
     mocks.agent.continueJob.mockImplementationOnce(() => {
       throw new Error('再開できるセッションが残っていません')
@@ -458,7 +459,7 @@ describe('brain tools registry', () => {
     let answer!: (approved: boolean) => void
     mocks.requestConfirm.mockImplementationOnce(() => new Promise<boolean>((resolve) => { answer = resolve }))
     const { executeClientTool } = await load()
-    const { ctx } = makeCtx()
+    const { ctx, events } = makeCtx()
     const pending = executeClientTool('run_agent_task', { prompt: '調べて', title: 'job' }, ctx)
     await vi.waitFor(() => expect(mocks.requestConfirm).toHaveBeenCalledOnce())
     expect(mocks.agent.start).not.toHaveBeenCalled()
@@ -471,6 +472,8 @@ describe('brain tools registry', () => {
     expect(result.isError).toBe(false)
     expect(JSON.parse(result.content)).toMatchObject({ started: true, jobId: 'j1' })
     expect(mocks.agent.start).toHaveBeenCalledWith('調べて', expect.objectContaining({ readonly: false }))
+    // The turn's followers, such as GPT-Live telling its voice model what is on screen, learn of the card from the turn.
+    expect(events[0]).toMatchObject({ type: 'panel', event: { op: 'create', key: 'job:j1', type: 'agent-job' } })
   })
 
   it.each([

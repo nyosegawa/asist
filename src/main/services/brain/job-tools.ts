@@ -38,6 +38,19 @@ const JOB_DETAIL_MAX = 4000
 /** The time the user has to answer the confirmation window, the same as mail and the calendar give theirs. */
 const CONFIRM_TIMEOUT_MS = 300_000
 
+/**
+ * Puts the card of a job the tool started up through the tool's turn, which is how the turn's followers,
+ * such as GPT-Live telling its voice model what is on screen, learn of it. main also pushes the card when
+ * the job starts, for a screen that has moved on to a newer turn while the user approved the job.
+ */
+function showJobCard(ctx: ToolContext, jobId: string): void {
+  ctx.emit({
+    type: 'panel',
+    turnId: ctx.turnId,
+    event: { op: 'create', key: `job:${jobId}`, type: 'agent-job', slot: 'right', props: { jobId }, state: 'ready' }
+  })
+}
+
 export function agentTool(locale: ConversationLocale): Def {
   const language = promptLanguage(locale)
   const spoken = CONVERSATION_LANGUAGE_NAMES[locale]
@@ -94,7 +107,7 @@ export function agentTool(locale: ConversationLocale): Def {
     parallel: false,
     timeoutMs: CONFIRM_TIMEOUT_MS,
     maxResultChars: SMALL_RESULT_MAX,
-    run: async (input, _ctx, signal) => {
+    run: async (input, ctx, signal) => {
       const prompt = String(input.prompt ?? '').trim()
       if (!prompt) throw new ToolError(TEXTS.emptyPrompt)
       const options = {
@@ -145,6 +158,7 @@ export function agentTool(locale: ConversationLocale): Def {
       } catch (err) {
         throw new ToolError(TEXTS.startFailed(detail(err, language)))
       }
+      showJobCard(ctx, job.id)
       if (access.isolate) {
         return {
           started: true,
@@ -351,7 +365,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
       parallel: false,
       timeoutMs: CONFIRM_TIMEOUT_MS,
       maxResultChars: SMALL_RESULT_MAX,
-      run: async (input, _ctx, signal) => {
+      run: async (input, ctx, signal) => {
         const prompt = String(input.prompt ?? '').trim()
         if (!prompt) throw new ToolError(TEXTS.emptyFollowUp)
         const parent = requireJob(input)
@@ -374,6 +388,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         } catch (err) {
           throw new ToolError(TEXTS.continueFailed(detail(err, language)))
         }
+        showJobCard(ctx, job.id)
         return { started: true, jobId: job.id, title: job.title, parentId: parent.id }
       }
     },
