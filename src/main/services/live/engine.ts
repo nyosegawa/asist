@@ -108,6 +108,10 @@ export abstract class LiveEngineBase {
     this.enabled = false
     if (this.ticker) clearInterval(this.ticker)
     this.ticker = null
+    this.speaking = false
+    // A delegation ends with the engine and hands nothing to brain, so an utterance it claimed is
+    // recorded as it was heard, like any other still in progress.
+    this.userClaimed = false
     this.transcripts.flush('user')
     this.transcripts.flush('assistant')
     await this.close('stop')
@@ -146,7 +150,9 @@ export abstract class LiveEngineBase {
   protected abstract transmitAudio(base64: string, seconds: number): void
 
   protected async ensureOpen(): Promise<void> {
-    if (this.policy.isOpen) return
+    // A brain turn that took over an utterance can still send sentences after a stop, and a session
+    // opened for them would stay open and billed, with no idle close left to end it.
+    if (!this.enabled || this.policy.isOpen) return
     if (this.opening) return this.opening
     this.openStartedAt = this.now()
     this.setConnection('connecting')

@@ -255,6 +255,8 @@ export class GptLiveEngine extends LiveEngineBase {
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
     }
+    // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
+    if (!this.enabled) return
     const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
     this.transcripts.flush('assistant')
     const handle = this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))

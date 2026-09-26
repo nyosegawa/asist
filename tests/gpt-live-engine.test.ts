@@ -313,4 +313,44 @@ describe('GptLiveEngine', () => {
     expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([{ kind: 'assistant', turnId: 100, text: 'うん、' }])
     await engine.stop()
   })
+
+  it('ends a delegation still waiting for its transcript when the engine stops, and carries nothing of it into the next start', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].started()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].emit({ type: 'session.input_transcript.delta', delta: '明日の天気は', event_id: 'a', start_ms: 0, end_ms: 1 })
+    sockets[0].emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await engine.stop()
+    await vi.advanceTimersByTimeAsync(3000)
+    // What was heard is kept, and no turn starts for an engine that is off.
+    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([{ kind: 'user', turnId: 100, text: '明日の天気は' }])
+    expect(beginTurn).not.toHaveBeenCalled()
+    // A sentence from a brain turn still running opens no session, which nothing would close.
+    await engine.sayOutsideDelegation('晴れです。')
+    expect(sockets).toHaveLength(1)
+
+    await engine.start()
+    const saying = engine.sayOutsideDelegation('お待たせしました。')
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[1]
+    socket.started()
+    await saying
+    // The input transcript arrives after the reply's, and is still recorded first.
+    socket.emit({ type: 'session.output_transcript.delta', delta: 'うん。', event_id: 'b', start_ms: 1, end_ms: 2 })
+    await vi.advanceTimersByTimeAsync(100)
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'はい', event_id: 'c', start_ms: 2, end_ms: 3 })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(mocks.record.mock.calls.slice(1).map((c) => [c[0].kind, c[0].text])).toEqual([
+      ['user', 'はい'],
+      ['assistant', 'うん。']
+    ])
+    // Nobody has spoken since the start, so a session the provider ends stays closed.
+    socket.fire('close', 1000, '')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sockets).toHaveLength(2)
+    expect(engine.state).toBe('idle')
+    await engine.stop()
+  })
 })
