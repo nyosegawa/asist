@@ -321,6 +321,58 @@ export const jobs = defineMessages({
       'pt-BR': { one: '{text}… ({count} caractere no total)', other: '{text}… ({count} caracteres no total)' },
       'es-419': { one: '{text}… ({count} carácter en total)', other: '{text}… ({count} caracteres en total)' },
       'es-ES': { one: '{text}… ({count} carácter en total)', other: '{text}… ({count} caracteres en total)' }
+    },
+    session: {
+      'ja-JP': 'セッション開始 · モデル {model}',
+      'en-US': 'session ready · model {model}',
+      'fr-FR': 'session prête · modèle {model}',
+      'de-DE': 'Sitzung bereit · Modell {model}',
+      'hi-IN': 'सेशन तैयार · मॉडल {model}',
+      'id-ID': 'sesi siap · model {model}',
+      'it-IT': 'sessione pronta · modello {model}',
+      'ko-KR': '세션 준비됨 · 모델 {model}',
+      'pt-BR': 'sessão pronta · modelo {model}',
+      'es-419': 'sesión lista · modelo {model}',
+      'es-ES': 'sesión lista · modelo {model}'
+    },
+    sessionWithId: {
+      'ja-JP': 'セッション開始 · モデル {model} · セッション {session}',
+      'en-US': 'session ready · model {model} · session {session}',
+      'fr-FR': 'session prête · modèle {model} · session {session}',
+      'de-DE': 'Sitzung bereit · Modell {model} · Sitzung {session}',
+      'hi-IN': 'सेशन तैयार · मॉडल {model} · सेशन {session}',
+      'id-ID': 'sesi siap · model {model} · sesi {session}',
+      'it-IT': 'sessione pronta · modello {model} · sessione {session}',
+      'ko-KR': '세션 준비됨 · 모델 {model} · 세션 {session}',
+      'pt-BR': 'sessão pronta · modelo {model} · sessão {session}',
+      'es-419': 'sesión lista · modelo {model} · sesión {session}',
+      'es-ES': 'sesión lista · modelo {model} · sesión {session}'
+    },
+    exitCode: {
+      'ja-JP': '終了コード {code} で終了しました',
+      'en-US': 'Exited with code {code}',
+      'fr-FR': 'Terminé avec le code {code}',
+      'de-DE': 'Mit Code {code} beendet',
+      'hi-IN': 'कोड {code} के साथ बंद हुआ',
+      'id-ID': 'Berhenti dengan kode {code}',
+      'it-IT': 'Terminato con il codice {code}',
+      'ko-KR': '종료 코드 {code}로 끝났습니다',
+      'pt-BR': 'Encerrado com o código {code}',
+      'es-419': 'Terminó con el código {code}',
+      'es-ES': 'Ha terminado con el código {code}'
+    },
+    saveFailed: {
+      'ja-JP': 'ジョブの状態を保存できませんでした: {detail}',
+      'en-US': "Couldn't save the job's state: {detail}",
+      'fr-FR': "Impossible d'enregistrer l'état du job : {detail}",
+      'de-DE': 'Der Zustand des Jobs ließ sich nicht speichern: {detail}',
+      'hi-IN': 'जॉब की स्थिति सेव नहीं हो सकी: {detail}',
+      'id-ID': 'Tidak bisa menyimpan status pekerjaan: {detail}',
+      'it-IT': "Impossibile salvare lo stato dell'incarico: {detail}",
+      'ko-KR': '작업 상태를 저장하지 못했습니다: {detail}',
+      'pt-BR': 'Não foi possível salvar o estado do job: {detail}',
+      'es-419': 'No se pudo guardar el estado del trabajo: {detail}',
+      'es-ES': 'No se ha podido guardar el estado del trabajo: {detail}'
     }
   },
   elapsed: {
@@ -1056,6 +1108,19 @@ export const jobs = defineMessages({
       'pt-BR': 'O repositório não foi encontrado: {path}',
       'es-419': 'No se encontró el repositorio: {path}',
       'es-ES': 'No se encuentra el repositorio: {path}'
+    },
+    folderNotCommitted: {
+      'ja-JP': 'コミットされていないフォルダでは worktree のジョブを始められません: {path}',
+      'en-US': "A worktree job can't start in a folder that isn't committed: {path}",
+      'fr-FR': "Un job en worktree ne peut pas démarrer dans un dossier qui n'est pas commité : {path}",
+      'de-DE': 'Ein Job im worktree kann nicht in einem Ordner starten, der nicht committet ist: {path}',
+      'hi-IN': 'जो फ़ोल्डर कमिट नहीं हुआ है, उसमें worktree वाली जॉब शुरू नहीं हो सकती: {path}',
+      'id-ID': 'Pekerjaan di worktree tidak bisa dimulai di folder yang belum di-commit: {path}',
+      'it-IT': 'Un incarico nel worktree non può partire in una cartella non ancora committata: {path}',
+      'ko-KR': '커밋되지 않은 폴더에서는 worktree 작업을 시작할 수 없습니다: {path}',
+      'pt-BR': 'Um job em worktree não pode começar numa pasta que não foi commitada: {path}',
+      'es-419': 'Un trabajo en worktree no puede empezar en una carpeta que no está en ningún commit: {path}',
+      'es-ES': 'Un trabajo en worktree no puede empezar en una carpeta que no está en ningún commit: {path}'
     }
   },
   worktree: {
@@ -1486,19 +1551,6 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível mesclar: {detail}',
       'es-419': 'No se pudo fusionar: {detail}',
       'es-ES': 'No se ha podido fusionar: {detail}'
-    },
-    abortFailed: {
-      'ja-JP': '取り込みで衝突し、中止もできませんでした: {detail}',
-      'en-US': 'The merge conflicted and could not be aborted: {detail}',
-      'fr-FR': "La fusion a rencontré un conflit et n'a pas pu être interrompue : {detail}",
-      'de-DE': 'Beim Übernehmen gab es einen Konflikt, und der Abbruch gelang auch nicht: {detail}',
-      'hi-IN': 'मर्ज में कॉन्फ़्लिक्ट हुआ और उसे रोका भी नहीं जा सका: {detail}',
-      'id-ID': 'Penggabungannya konflik dan tidak bisa dihentikan: {detail}',
-      'it-IT': "L'integrazione ha dato un conflitto e non è stato possibile annullarla: {detail}",
-      'ko-KR': '병합에서 충돌했고, 중지하지도 못했습니다: {detail}',
-      'pt-BR': 'A mesclagem deu conflito e não foi possível abortá-la: {detail}',
-      'es-419': 'La fusión tuvo conflictos y tampoco se pudo detener: {detail}',
-      'es-ES': 'La fusión ha dado un conflicto y tampoco se ha podido abortar: {detail}'
     },
     removeFailed: {
       'ja-JP': '取り込みは終わりましたが、worktree を削除できませんでした: {detail}',

@@ -15,11 +15,11 @@ import { FIXED } from '@shared/memory-page'
  * Builds the system prompt. The blocks are ordered in three layers by how fast they change, with a
  * cache breakpoint after each layer: the fixed layer (the base prompt, the persona and the tool guide,
  * which change only on a settings change), then the daily layer (instruction.md, written by the daily
- * curation and by the user, and frozen for five minutes), then
- * the summary, which changes only on a compaction. Anything that changes every turn, such as the job
- * status and the recent projects, goes into the trailing block outside the last breakpoint, and the
- * time stamp, the aizuchi note and the injected memories go on the user message instead. The tool
- * guide is not written by hand: it arrives generated from the tool registry.
+ * curation and by the user, and frozen for five minutes), then the summary, which changes only on a
+ * compaction. Nothing that changes from turn to turn goes into the system prompt: every provider
+ * caches the messages only behind it, so a change there would send the whole history again. The time
+ * stamp, the aizuchi note, the injected memories and the job status go on the user message instead.
+ * The tool guide is not written by hand: it arrives generated from the tool registry.
  *
  * Every text here exists in Japanese, the language the conversation was tuned in, and in English,
  * which carries the other ten languages and names the one it has to speak. The English one is not a
@@ -106,10 +106,12 @@ const INPUT_SECTION: Section = [
   {
     ja: `- user メッセージは音声認識の転写で、句読点が欠け、固有名詞が崩れることがある(「アシスト」が asist、人名の漢字違いなど)。意味が通る読み替えは黙って行い、名前や数字が怪しければ「理解の交渉」の流儀で二択で確かめる。
 - 「{typedInputNote}」が付いた発話は文字で打たれたもので、転写の前提(誤認識や句読点の欠け)は外して読む。
-- 「{openApp}」は、その発話のときにユーザーが画面に開いていたミニアプリと、そこで表示していたものの id。「これ」「このメール」などはそれを指していることが多い。中身は、その id でミニアプリのツールを使って読む。`,
+- 「{openApp}」は、その発話のときにユーザーが画面に開いていたミニアプリと、そこで表示していたものの id。「これ」「このメール」などはそれを指していることが多い。中身は、その id でミニアプリのツールを使って読む。
+- 「{jobStatus}」で始まる注記は、アプリが付けたエージェントジョブと最近のプロジェクトの状況で、ユーザーが言ったものではない。状況が変わったときにだけ付くので、いちばん新しい注記が今の状況。`,
     en: `- A user message is a speech-to-text transcript: punctuation goes missing and proper nouns come out wrong ("ASIST" as "assist", a name spelled as it sounds). Read past the obvious misrecognitions without saying anything, and when a name or a number looks wrong, check it the way "Making sure you understood" says.
 - An utterance carrying "{typedInputNote}" was typed on a keyboard. Read it literally: no misrecognition, no missing punctuation.
-- "{openApp}" says which mini app the user had open on screen at that utterance and the ids of what it showed. "This" or "this mail" usually means that. Read the content with that mini app's tools, using those ids.`
+- "{openApp}" says which mini app the user had open on screen at that utterance and the ids of what it showed. "This" or "this mail" usually means that. Read the content with that mini app's tools, using those ids.
+- A note beginning with "{jobStatus}" is the app's account of the agent jobs and the recently used projects; the user did not write it. It is attached only when something changed, so the newest one is how things stand now.`
   }
 ]
 
@@ -267,6 +269,7 @@ function promptValues(locale: ConversationLocale): Record<string, string> {
     typedInputNote: marker(locale, 'typedInputNote'),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     openApp: marker(locale, 'openApp'),
+    jobStatus: marker(locale, 'jobStatus'),
     stamp: stampUserMessage(locale, '', STAMP_EXAMPLE_AT).trim(),
     journal: journalHeading(locale, JOURNAL_EXAMPLE_DATE),
     impression: promptText(locale, FIXED.impression)
@@ -336,17 +339,15 @@ export interface SystemPromptInput {
   memoryBlock: string | null
   /** The summary of the older conversation; an empty string leaves the layer out. */
   historySummary: string
-  /** The status of the agent jobs. Without it the model starts a job twice and cannot answer questions about progress. */
-  jobContext?: string | null
   /** Who reads the prompt. Leaving it out means self, where the brain's own sentences are spoken. */
   voiceLayer?: VoiceLayer
 }
 
 /**
  * Returns the system prompt split into layers. base (the base prompt, the persona and the tool guide),
- * memory and summary come in order of how rarely they change. Providers
- * that support prompt cache breakpoints put one after each layer, so a change in a later layer still
- * reads the earlier ones from the cache. The other layer, the job status, changes every turn.
+ * memory and summary come in order of how rarely they change. Providers that support prompt cache
+ * breakpoints put one after each layer, so a change in a later layer still reads the earlier ones from
+ * the cache.
  */
 export function buildSystemLayers(input: SystemPromptInput): SystemLayer[] {
   const { locale } = input
@@ -357,7 +358,6 @@ export function buildSystemLayers(input: SystemPromptInput): SystemLayer[] {
   const layers: SystemLayer[] = [{ name: 'base', text }]
   if (input.memoryBlock) layers.push({ name: 'memory', text: input.memoryBlock })
   if (input.historySummary) layers.push({ name: 'summary', text: `# ${promptText(locale, SUMMARY_HEADING)}\n${input.historySummary}` })
-  if (input.jobContext) layers.push({ name: 'other', text: input.jobContext, volatile: true })
   return layers
 }
 
@@ -391,11 +391,12 @@ const LIVE_SECTION: PromptText = {
  * The system instruction as one piece of text, for an engine such as Gemini Live where one model
  * listens, speaks and decides. The layers come in the same order but without cache breakpoints. The
  * conversation is spoken, so user messages carry no time stamp and the start time is written here
- * instead.
+ * instead, and so is the status of the agent jobs as it was when the session opened.
  */
-export function buildLiveSystemInstruction(input: SystemPromptInput & { startedAt: Date }): string {
+export function buildLiveSystemInstruction(input: SystemPromptInput & { startedAt: Date; jobContext: string | null }): string {
   const { locale } = input
   const blocks = buildSystemLayers({ ...input, voiceLayer: 'live' }).map((layer) => layer.text)
+  if (input.jobContext) blocks.push(input.jobContext)
   blocks.push(
     fillPrompt(promptText(locale, LIVE_SECTION), {
       ...promptValues(locale),

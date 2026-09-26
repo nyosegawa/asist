@@ -43,6 +43,11 @@ describe('SegmentAssembler in Japanese', () => {
     const a = new SegmentAssembler('ja-JP')
     expect(a.push('見出し**強調**です。')).toEqual(['見出し 強調 です。'])
   })
+
+  it('hands no piece made only of punctuation to the speech engine, such as the mark after "!" or the closing bracket after "。"', () => {
+    const a = new SegmentAssembler('ja-JP')
+    expect([...a.push('えっ!?本当ですか！？「そうです。」'), ...a.flush()]).toEqual(['えっ!', '本当ですか！', '「そうです。'])
+  })
 })
 
 describe('SegmentAssembler in the languages that end a sentence in a full stop', () => {

@@ -13,18 +13,15 @@ describe('buildSystemLayers', () => {
     expect(blocks[0].text).toBe(BASE_SYSTEM)
   })
 
-  it('names the layers base, memory, summary and other, and puts the job status, which changes every turn, in the last one', () => {
+  it('names the layers base, memory and summary, in the order of how rarely they change', () => {
     const layers = buildSystemLayers({
       locale: 'ja-JP',
       persona: '執事風',
       memoryBlock: '# 記憶\n- x',
-      historySummary: '要約',
-      jobContext: '# エージェントジョブの現況\n- [j1] 実行中'
+      historySummary: '要約'
     })
     // The prompt cache up to a layer is readable only while the layers before it stay identical, so the more volatile a layer is, the later it goes.
-    expect(layers.map((layer) => layer.name)).toEqual(['base', 'memory', 'summary', 'other'])
-    // A cache boundary at the job status would exceed Anthropic's limit of four breakpoints.
-    expect(layers.map((layer) => layer.volatile === true)).toEqual([false, false, false, true])
+    expect(layers.map((layer) => layer.name)).toEqual(['base', 'memory', 'summary'])
   })
 
   it('appends the persona to the same cached block as the base prompt', () => {
@@ -33,29 +30,16 @@ describe('buildSystemLayers', () => {
     expect(blocks[0].text).toContain('# キャラクター設定\n執事風')
   })
 
-  it('orders the blocks that follow as memory, summary and job status', () => {
+  it('orders the blocks that follow as memory and summary', () => {
     const blocks = buildSystemLayers({
       locale: 'ja-JP',
       persona: '',
       memoryBlock: 'MEMORY',
-      historySummary: 'SUMMARY',
-      jobContext: 'JOBS'
+      historySummary: 'SUMMARY'
     })
-    expect(blocks).toHaveLength(4)
+    expect(blocks).toHaveLength(3)
     expect(blocks[1].text).toBe('MEMORY')
     expect(blocks[2].text).toContain('SUMMARY')
-    expect(blocks[3].text).toBe('JOBS')
-  })
-
-  it('injects the job context as the last block', () => {
-    const blocks = buildSystemLayers({
-      locale: 'ja-JP',
-      persona: '',
-      memoryBlock: null,
-      historySummary: '',
-      jobContext: '# エージェントジョブの現況\n- [j1] 実行中 2分経過 (codex): 調査'
-    })
-    expect(blocks.at(-1)!.text).toContain('[j1] 実行中')
   })
 
   it('carries no current-time block in the system prompt, because the stamp on the user message holds the time', () => {
@@ -106,6 +90,7 @@ describe('the base prompt with and without a separate voice', () => {
       persona: 'PERSONA-TEXT',
       memoryBlock: 'MEMORY-BLOCK',
       historySummary: 'S',
+      jobContext: 'JOB-STATUS',
       startedAt: new Date(2026, 8, 16, 9, 5)
     })
     expect(text).toContain('# 音声での会話(Live)')
@@ -118,6 +103,8 @@ describe('the base prompt with and without a separate voice', () => {
     expect(text).not.toContain('# 話し方の例')
     expect(text).not.toContain('# つなぎ文')
     expect(text.indexOf('MEMORY-BLOCK')).toBeGreaterThan(text.indexOf('PERSONA-TEXT'))
+    // A Live session reads its instruction once when it opens, so the job status as of then goes there.
+    expect(text.indexOf('JOB-STATUS')).toBeGreaterThan(text.indexOf('MEMORY-BLOCK'))
   })
 })
 
@@ -144,6 +131,7 @@ describe('the prompt of a conversation that is not held in Japanese', () => {
         persona: '',
         memoryBlock: null,
         historySummary: '',
+        jobContext: null,
         startedAt: new Date(2026, 8, 16, 9, 5)
       })
       expect(live).toContain(`The user speaks ${language}. Listen and answer in ${language}`)
@@ -167,6 +155,8 @@ describe('the prompt of a conversation that is not held in Japanese', () => {
     expect(prompt).toContain(`"${marker('en-US', 'typedInputNote')}"`)
     expect(prompt).toContain(`"${marker('en-US', 'systemNotice')}"`)
     expect(prompt).toContain(`"${marker('en-US', 'memory')}"`)
+    expect(prompt).toContain(`"${marker('en-US', 'jobStatus')}"`)
+    expect(baseSystem('ja-JP', 'self')).toContain(`「${marker('ja-JP', 'jobStatus')}」`)
     expect(prompt).toContain(`"${journalHeading('en-US', '2026-09-07')}"`)
     // The heading is named for the model out of the same table the curation writes it from.
     expect(prompt).toContain(`"## ${FIXED.impression.en}"`)

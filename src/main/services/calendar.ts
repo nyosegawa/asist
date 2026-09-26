@@ -1,12 +1,45 @@
 import { app } from 'electron'
 import { execFile } from 'node:child_process'
 import path from 'node:path'
+import { z } from 'zod'
+import type { MessageKey } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { getSettings } from './settings'
 import { CalendarService } from './calendar-service'
 import { requestConfirm } from './confirm'
 import { t } from './i18n'
 import { childEnv } from './child-env'
+
+/** The codes the calendar helper (resources/native/asist-calendar.swift) fails with, and the message of each. */
+const HELPER_ERRORS = {
+  needsFullAccess: 'calendar.errors.needsFullAccess',
+  noReadCalendars: 'calendar.errors.noReadCalendars',
+  calendarNotFound: 'calendar.errors.calendarNotFound',
+  eventNotFound: 'calendar.errors.eventNotFound',
+  destinationUnwritable: 'calendar.errors.destinationUnwritable',
+  locked: 'calendar.errors.locked',
+  changedSinceConfirm: 'calendar.errors.changedSinceConfirm',
+  badRequest: 'calendar.errors.helperBadRequest',
+  eventKitFailed: 'calendar.errors.eventKitFailed'
+} as const satisfies Record<string, MessageKey>
+type HelperError = keyof typeof HELPER_ERRORS
+
+const helperAnswerSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), data: z.unknown() }),
+  z.object({ ok: z.literal(false), error: z.enum(Object.keys(HELPER_ERRORS) as [HelperError, ...HelperError[]]) })
+])
+
+/** The data of the helper's answer, or the failure it reports, thrown as an error for the user. */
+function helperResult(stdout: string): unknown {
+  let answer: z.infer<typeof helperAnswerSchema>
+  try {
+    answer = helperAnswerSchema.parse(JSON.parse(stdout))
+  } catch (cause) {
+    throw new Error(errorText('calendar.errors.helperBadResponse'), { cause })
+  }
+  if (answer.ok) return answer.data
+  throw new Error(errorText(HELPER_ERRORS[answer.error]))
+}
 
 export function runCalendarNative(
   input: Record<string, unknown>,
@@ -33,14 +66,7 @@ export function runCalendarNative(
           return
         }
         try {
-          const result = JSON.parse(stdout)
-          if (result.ok !== true)
-            throw new Error(
-              typeof result.error === 'string'
-                ? result.error
-                : errorText('calendar.errors.helperBadResponse')
-            )
-          resolve(result.data)
+          resolve(helperResult(stdout))
         } catch (error) {
           reject(error)
         }

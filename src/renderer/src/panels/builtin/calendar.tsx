@@ -68,7 +68,7 @@ function CalendarBody({ spec, size }: CardContext): React.JSX.Element {
   const setFocused = usePanelStore((s) => s.setFocused)
   const now = useNow()
   const { fromMs, untilMs } = props
-  const single = range === 'today' || (fromMs !== undefined && untilMs !== undefined && untilMs - fromMs <= 86400000)
+  const single = range === 'today' || (fromMs !== undefined && untilMs !== undefined && dayKey(fromMs) === dayKey(untilMs - 1))
   // When the props carry no range, today and this week are taken to contain now and next week is not.
   const containsNow = fromMs === undefined || untilMs === undefined ? range !== 'next-week' : fromMs <= now && now < untilMs
   const ahead = !containsNow && (fromMs === undefined || fromMs > now)

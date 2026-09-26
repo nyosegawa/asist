@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: 'ja-JP' }) }))
 
 import * as git from '../src/main/services/git'
 
@@ -55,7 +56,7 @@ describe('git service with an isolated worktree', () => {
     expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
   })
 
-  it('aborts the merge on a conflict and restores the working tree', () => {
+  it('reports a conflict and leaves the working tree as it was', () => {
     const wt = path.join(root, 'wt')
     git.worktreeAdd(repo, wt, 'asist/conflict')
     fs.writeFileSync(path.join(wt, 'a.txt'), 'from job\n')
@@ -67,6 +68,61 @@ describe('git service with an isolated worktree', () => {
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('from user\n')
     expect(git.isClean(repo)).toBe(true)
     git.worktreeRemove(repo, wt, 'asist/conflict')
+  })
+
+  it('makes the merge commit without running the hooks of the user that can stop a merge half done', () => {
+    const before = git.headCommit(repo)
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/hooked')
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+    git.commitAll(wt, 'job')
+    // A commitlint hook rejects the "asist: ..." message, and a hook that calls npx fails on the PATH of an
+    // app opened from Finder. git merge would stop with MERGE_HEAD set and the job's changes staged.
+    for (const hook of ['pre-merge-commit', 'prepare-commit-msg', 'commit-msg']) {
+      fs.writeFileSync(path.join(repo, '.git', 'hooks', hook), '#!/bin/sh\necho rejected >&2\nexit 1\n', { mode: 0o755 })
+    }
+    expect(git.mergeNoFf(repo, 'asist/hooked', 'asist: job (1)')).toEqual({ ok: true })
+    expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('from job\n')
+    expect(git.isClean(repo)).toBe(true)
+    expect(fs.existsSync(path.join(repo, '.git', 'MERGE_HEAD'))).toBe(false)
+    expect(run(repo, ['log', '-1', '--format=%P%n%s']).split('\n')).toEqual([`${before} ${git.headCommit(wt)}`, 'asist: job (1)'])
+  })
+
+  it('cuts a diff larger than the output buffer of git at the limit instead of failing', () => {
+    const base = git.headCommit(repo)
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/lockfile')
+    // A regenerated lockfile of 5 MB, more than the 4 MB that git's output is otherwise read into.
+    fs.writeFileSync(path.join(wt, 'package-lock.json'), `${'x'.repeat(99)}\n`.repeat(50_000))
+    git.commitAll(wt, 'job')
+    const patch = git.diffPatch(repo, base, 'asist/lockfile')
+    expect(patch.startsWith('diff --git a/package-lock.json')).toBe(true)
+    expect(patch.length).toBeLessThan(61_000)
+  })
+
+  it('removes the worktree and the branch again when git fails after creating them in a post-checkout hook', () => {
+    // The hook Git LFS installs exits 2 when an app opened from Finder has no git-lfs on its PATH.
+    fs.writeFileSync(path.join(repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 2\n', { mode: 0o755 })
+    const wt = path.join(root, 'wt')
+    expect(() => git.worktreeAdd(repo, wt, 'asist/lfs')).toThrow()
+    expect(fs.existsSync(wt)).toBe(false)
+    expect(run(repo, ['worktree', 'list', '--porcelain'])).not.toContain('asist/lfs')
+    expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
+  })
+
+  it('removes a worktree in which a submodule was initialized', () => {
+    const sub = path.join(root, 'sub')
+    fs.mkdirSync(sub)
+    run(sub, ['init', '-q', '-b', 'main'])
+    run(sub, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 's'])
+    run(repo, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'vendor/sub'])
+    run(repo, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'sub'])
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/sub')
+    run(wt, ['-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init'])
+    git.worktreeRemove(repo, wt, 'asist/sub')
+    expect(fs.existsSync(wt)).toBe(false)
+    expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
   })
 
   it('reports a dirty working tree before a merge', () => {

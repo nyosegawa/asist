@@ -836,6 +836,13 @@
   flex-wrap: wrap;
   gap: 6px;
 }
+/* A date and its time stay on one line. The start and the end of an event over several days do not
+   fit side by side in the editor, so the end goes under the start with its date above the start's
+   date. */
+.cal-when {
+  display: flex;
+  gap: 6px;
+}
 .cal-field {
   padding: 4px 8px;
   border-radius: 6px;

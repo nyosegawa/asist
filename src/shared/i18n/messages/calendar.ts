@@ -1496,6 +1496,71 @@ export const calendar = defineMessages({
       'pt-BR': 'Não se sabe se foi salvo. Confira o resultado no Calendário do seu Mac.',
       'es-419': 'No se sabe si se guardó. Revisa el resultado en Calendario, en tu Mac.',
       'es-ES': 'No se sabe si se ha guardado. Comprueba el resultado en Calendario, en tu Mac.'
+    },
+    calendarNotFound: {
+      'ja-JP': '表示するカレンダーに選んだカレンダーが Mac にありません。設定で選び直してください。',
+      'en-US': 'A calendar chosen to be shown is no longer on this Mac. Choose the calendars again in the settings.',
+      'fr-FR': "Un calendrier choisi pour l'affichage n'est plus sur ce Mac. Choisissez à nouveau les calendriers dans les réglages.",
+      'de-DE': 'Ein zur Anzeige gewählter Kalender ist nicht mehr auf diesem Mac. Wählen Sie die Kalender in den Einstellungen neu.',
+      'hi-IN': 'दिखाने के लिए चुना गया एक कैलेंडर अब इस Mac पर नहीं है। सेटिंग्ज़ में कैलेंडर फिर से चुनें।',
+      'id-ID': 'Salah satu kalender yang dipilih untuk ditampilkan tidak ada lagi di Mac ini. Pilih ulang kalendernya di pengaturan.',
+      'it-IT': 'Un calendario scelto da mostrare non è più su questo Mac. Scegli di nuovo i calendari nelle impostazioni.',
+      'ko-KR': '표시하도록 선택한 캘린더가 이 Mac에 없습니다. 설정에서 캘린더를 다시 선택하십시오.',
+      'pt-BR': 'Um calendário escolhido para ser exibido não está mais neste Mac. Escolha os calendários de novo nos ajustes.',
+      'es-419': 'Un calendario elegido para mostrarse ya no está en esta Mac. Vuelve a elegir los calendarios en la configuración.',
+      'es-ES': 'Un calendario elegido para mostrarse ya no está en este Mac. Vuelve a elegir los calendarios en los ajustes.'
+    },
+    eventNotFound: {
+      'ja-JP': 'その予定は Mac のカレンダーに見つかりません。予定を表示し直してください。',
+      'en-US': "That event isn't in the calendar on this Mac. Show the events again.",
+      'fr-FR': "Cet événement n'est pas dans le calendrier de ce Mac. Affichez de nouveau les événements.",
+      'de-DE': 'Dieser Termin ist nicht im Kalender dieses Mac. Zeigen Sie die Termine erneut an.',
+      'hi-IN': 'यह इवेंट इस Mac के कैलेंडर में नहीं है। इवेंट फिर से दिखाएँ।',
+      'id-ID': 'Acara itu tidak ada di kalender Mac ini. Tampilkan lagi acaranya.',
+      'it-IT': 'Questo evento non è nel calendario di questo Mac. Mostra di nuovo gli eventi.',
+      'ko-KR': '그 일정은 이 Mac의 캘린더에 없습니다. 일정을 다시 표시하십시오.',
+      'pt-BR': 'Esse evento não está no calendário deste Mac. Mostre os eventos de novo.',
+      'es-419': 'Ese evento no está en el calendario de esta Mac. Vuelve a mostrar los eventos.',
+      'es-ES': 'Ese evento no está en el calendario de este Mac. Vuelve a mostrar los eventos.'
+    },
+    changedSinceConfirm: {
+      'ja-JP': '確認のあとで予定が変わりました。予定を表示し直してから、もう一度変更してください。',
+      'en-US': 'The event changed after it was confirmed. Show the events again, then make the change again.',
+      'fr-FR': "L'événement a changé après la confirmation. Affichez de nouveau les événements, puis refaites la modification.",
+      'de-DE': 'Der Termin hat sich nach der Bestätigung geändert. Zeigen Sie die Termine erneut an und nehmen Sie die Änderung noch einmal vor.',
+      'hi-IN': 'पुष्टि के बाद इवेंट बदल गया। इवेंट फिर से दिखाएँ, फिर बदलाव दोबारा करें।',
+      'id-ID': 'Acara berubah setelah dikonfirmasi. Tampilkan lagi acaranya, lalu ubah sekali lagi.',
+      'it-IT': "L'evento è cambiato dopo la conferma. Mostra di nuovo gli eventi, poi rifai la modifica.",
+      'ko-KR': '확인한 뒤에 일정이 바뀌었습니다. 일정을 다시 표시한 다음 다시 변경하십시오.',
+      'pt-BR': 'O evento mudou depois da confirmação. Mostre os eventos de novo e faça a alteração outra vez.',
+      'es-419': 'El evento cambió después de la confirmación. Vuelve a mostrar los eventos y haz el cambio otra vez.',
+      'es-ES': 'El evento ha cambiado después de la confirmación. Vuelve a mostrar los eventos y haz el cambio otra vez.'
+    },
+    helperBadRequest: {
+      'ja-JP': 'カレンダーを読み取るプログラムが、ASIST からの依頼を読めませんでした。',
+      'en-US': "The program that reads the calendar couldn't read the request from ASIST.",
+      'fr-FR': "Le programme qui lit le calendrier n'a pas pu lire la demande d'ASIST.",
+      'de-DE': 'Das Programm, das den Kalender liest, konnte die Anfrage von ASIST nicht lesen.',
+      'hi-IN': 'कैलेंडर पढ़ने वाला प्रोग्राम ASIST का अनुरोध नहीं पढ़ सका।',
+      'id-ID': 'Program yang membaca kalender tidak bisa membaca permintaan dari ASIST.',
+      'it-IT': 'Il programma che legge il calendario non è riuscito a leggere la richiesta di ASIST.',
+      'ko-KR': '캘린더를 읽는 프로그램이 ASIST의 요청을 읽지 못했습니다.',
+      'pt-BR': 'O programa que lê o calendário não conseguiu ler o pedido do ASIST.',
+      'es-419': 'El programa que lee el calendario no pudo leer la solicitud de ASIST.',
+      'es-ES': 'El programa que lee el calendario no ha podido leer la solicitud de ASIST.'
+    },
+    eventKitFailed: {
+      'ja-JP': 'Mac のカレンダーを読み書きできませんでした。カレンダーのアクセス許可と同期の状態を確かめてください。',
+      'en-US': "Couldn't read or write the calendar on this Mac. Check the calendar permission and the sync status.",
+      'fr-FR': "Impossible de lire ou d'écrire le calendrier de ce Mac. Vérifiez l'autorisation du calendrier et l'état de la synchronisation.",
+      'de-DE': 'Der Kalender dieses Mac ließ sich nicht lesen oder schreiben. Prüfen Sie die Kalender-Erlaubnis und den Stand der Synchronisierung.',
+      'hi-IN': 'इस Mac का कैलेंडर पढ़ा या लिखा नहीं जा सका। कैलेंडर की इजाज़त और सिंक की स्थिति देखें।',
+      'id-ID': 'Tidak bisa membaca atau menulis kalender di Mac ini. Periksa izin kalender dan status sinkronisasinya.',
+      'it-IT': 'Impossibile leggere o scrivere il calendario di questo Mac. Controlla il permesso del calendario e lo stato della sincronizzazione.',
+      'ko-KR': '이 Mac의 캘린더를 읽거나 쓰지 못했습니다. 캘린더 접근 권한과 동기화 상태를 확인하십시오.',
+      'pt-BR': 'Não foi possível ler nem gravar o calendário deste Mac. Confira a permissão do calendário e o estado da sincronização.',
+      'es-419': 'No se pudo leer ni escribir el calendario de esta Mac. Revisa el permiso del calendario y el estado de la sincronización.',
+      'es-ES': 'No se ha podido leer ni escribir el calendario de este Mac. Comprueba el permiso del calendario y el estado de la sincronización.'
     }
   }
 })

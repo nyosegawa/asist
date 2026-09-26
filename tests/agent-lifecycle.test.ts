@@ -74,6 +74,17 @@ describe('starting an agent', () => {
     expect(agent.get(job.id)?.status).toBe('error')
   })
 
+  it('words the exit code of a job that failed without a summary from the dictionary, and leaves out a code the process did not give', async () => {
+    const agent = await import('../src/main/services/agent')
+    const coded = agent.start('調査する', options)
+    mocks.launch.mock.calls[0][2].onExit(2)
+    expect(agent.get(coded.id)).toMatchObject({ status: 'error', summary: ja('jobs.log.exitCode', { code: 2 }) })
+    const signalled = agent.start('もう一度調査する', options)
+    mocks.launch.mock.calls[1][2].onExit(null)
+    expect(agent.get(signalled.id)?.status).toBe('error')
+    expect(agent.get(signalled.id)?.summary).toBeUndefined()
+  })
+
   it('waits for the previous process to close before continuing, and launches nothing when the wait is aborted', async () => {
     let close!: () => void
     mocks.launch.mockImplementation((_job, _args, handlers) => ({

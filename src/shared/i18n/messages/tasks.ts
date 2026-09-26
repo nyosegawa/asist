@@ -1094,6 +1094,19 @@ export const tasks = defineMessages({
       'pt-BR': 'Não foi possível salvar: {message}',
       'es-419': 'No se pudo guardar: {message}',
       'es-ES': 'No se ha podido guardar: {message}'
+    },
+    loadFailed: {
+      'ja-JP': 'タスクを読み込めませんでした',
+      'en-US': "Couldn't load the tasks",
+      'fr-FR': 'Impossible de charger les tâches',
+      'de-DE': 'Die Aufgaben konnten nicht geladen werden',
+      'hi-IN': 'टास्क लोड नहीं हो सके',
+      'id-ID': 'Tidak bisa memuat tugas',
+      'it-IT': 'Impossibile caricare le attività',
+      'ko-KR': '할 일을 불러오지 못했습니다',
+      'pt-BR': 'Não foi possível carregar as tarefas',
+      'es-419': 'No se pudieron cargar las tareas',
+      'es-ES': 'No se han podido cargar las tareas'
     }
   },
   errors: {

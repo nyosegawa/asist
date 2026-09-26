@@ -65,6 +65,7 @@ export function buildDemoCalendarEvents(): CalendarEvent[] {
     demoEvent('demo-work', 'ランチMTG', at(day(9), 13), at(day(9), 14)),
     demoEvent('demo-work', 'A社 打合せ', at(day(9), 15), at(day(9), 16), { location: '六本木' }),
     demoEvent('demo-work', '歓迎会', at(day(9), 18), at(day(9), 20), { location: '恵比寿' }),
+    demoEvent('demo-work', 'リリース作業', at(day(10), 22), at(day(11), 2)),
     demoEvent('demo-home', '帰省', day(11), day(15), { allDay: true, location: '仙台' })
   )
   return list

@@ -49,12 +49,14 @@ export interface ConversationMessage {
   native?: NativeOutput
 }
 
-/** One layer of the system prompt. Providers with prompt cache breakpoints place one after each layer. */
+/**
+ * One layer of the system prompt. Providers with prompt cache breakpoints place one after each layer.
+ * No layer changes from turn to turn: the messages are cached behind the system prompt, so such a
+ * layer would send the whole history again on every turn.
+ */
 export interface SystemLayer {
-  name: 'base' | 'memory' | 'summary' | 'other'
+  name: 'base' | 'memory' | 'summary'
   text: string
-  /** The layer changes every turn, so a cache breakpoint after it would never be read. */
-  volatile?: true
 }
 
 export type JsonSchema = Record<string, unknown>

@@ -9,6 +9,16 @@ const SENTENCE_END = /[。!?！？\n]/
 /** Runs of markdown marks would be read out, so they become a space. */
 const MARKDOWN_RUN = /[*#`_>|-]{2,}/g
 
+/**
+ * A piece as it is read aloud, or null when it has nothing to read. Punctuation on its own, such as
+ * the "？" a split leaves after "!", the "」" after "。" or the comma a cut leaves behind, carries no
+ * letter or digit.
+ */
+function readable(piece: string): string | null {
+  const text = piece.replace(MARKDOWN_RUN, ' ').trim()
+  return /[\p{L}\p{N}]/u.test(text) ? text : null
+}
+
 interface Splitter {
   push(delta: string): string[]
   flush(): string[]
@@ -52,8 +62,8 @@ class JapaneseSplitter implements Splitter {
   }
 
   private emit(out: string[]): void {
-    const text = this.sentence.replace(MARKDOWN_RUN, ' ').trim()
-    if (text && text !== '、') out.push(text)
+    const text = readable(this.sentence)
+    if (text) out.push(text)
     this.sentence = ''
   }
 }
@@ -118,9 +128,8 @@ class IntlSplitter implements Splitter {
     return count
   }
 
-  private emit(text: string, out: string[]): void {
-    const cleaned = text.replace(MARKDOWN_RUN, ' ').trim()
-    // Punctuation on its own, such as the comma a cut leaves behind, has nothing to read.
-    if (/[\p{L}\p{N}]/u.test(cleaned)) out.push(cleaned)
+  private emit(piece: string, out: string[]): void {
+    const text = readable(piece)
+    if (text) out.push(text)
   }
 }

@@ -1,19 +1,21 @@
 import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
 import type { TurnPlaybackAckStatus } from '@shared/ipc'
 import { errMessage } from '@shared/api-errors'
-import { PlaybackDeliveryTracker } from '@shared/playback-delivery'
+import { PlaybackDeliveryTracker, type PlaybackDeliveryOutcome } from '@shared/playback-delivery'
 import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
 import { marker } from '@shared/conversation-markers'
+import type { TurnHandle } from '@shared/turn-scheduler'
 import { conversationLocale } from '../conversation-locale'
 import * as agentRunner from '../agent'
 import { beginTurn, type TurnInput } from './index'
-import { conversationOwner, record, turnScheduler } from './session'
+import { conversationOwner, currentSpeechRoute, record, turnScheduler } from './session'
+import type { SpeechRoute } from './speech-route'
 
 /**
  * Automatic reporting of finished jobs. The end of an agent job is handed to a turn as a system
  * notice, and the LLM reports it in the flow of the conversation. A report never takes a turn away
- * from the user: it starts only while idle. It counts as delivered only once the renderer
- * acknowledges that the speech actually started, and is queued again when it was not played.
+ * from the user: it starts only while idle. It counts as delivered once it reached the user, and is
+ * queued again when it did not.
  */
 
 const JOB_REPORT_PLAYBACK_TIMEOUT_MS = 3 * 60_000
@@ -57,6 +59,42 @@ async function waitForIdle(): Promise<void> {
     if (turnScheduler.activeTurnId === null) return
     await sleep(500)
   }
+}
+
+/**
+ * Whether the report of a turn reached the user. Only the TTS route plays segments in the renderer,
+ * so only there does delivery wait for the renderer to say that the body started playing. The other
+ * routes produce no segment to wait for: without speech the report reaches the user as text on screen,
+ * and with a voice model in front the model has been handed the report, so a turn that ran to its end
+ * without an abort has delivered it.
+ */
+async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<PlaybackDeliveryOutcome> {
+  if (route.kind !== 'tts') {
+    try {
+      await handle.completion
+    } catch (error) {
+      console.error('job report turn failed:', errMessage(error))
+      return 'interrupted'
+    }
+    return handle.signal.aborted ? 'interrupted' : 'started'
+  }
+  // The run of beginTurn starts on a microtask, so the tracking is always registered before started or
+  // segment reaches the renderer. An abort on the main side counts as not played and is queued again.
+  const delivery = playbackDeliveries.expect(handle.turnId, JOB_REPORT_PLAYBACK_TIMEOUT_MS)
+  const interrupted = (): void => {
+    playbackDeliveries.acknowledge(handle.turnId, 'interrupted')
+  }
+  handle.signal.addEventListener('abort', interrupted, { once: true })
+  if (handle.signal.aborted) interrupted()
+  try {
+    await handle.completion
+  } catch (error) {
+    interrupted()
+    console.error('job report turn failed:', errMessage(error))
+  } finally {
+    handle.signal.removeEventListener('abort', interrupted)
+  }
+  return delivery
 }
 
 export function initJobReporting(): void {
@@ -122,34 +160,13 @@ export function initJobReporting(): void {
         // loop keeps waiting until an idle-only start succeeds.
         for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
           await waitForIdle()
-          const handle = beginTurn(notice, {}, 'interject', true)
+          const route = currentSpeechRoute()
+          const handle = beginTurn(notice, {}, 'interject', true, { route })
           if (!handle) {
             attempt--
             continue
           }
-
-          // The run of beginTurn starts on a microtask, so the tracking is always registered before
-          // started or segment reaches the renderer. An abort on the main side counts as not played
-          // and is queued again.
-          const delivery = playbackDeliveries.expect(
-            handle.turnId,
-            JOB_REPORT_PLAYBACK_TIMEOUT_MS
-          )
-          const interrupted = (): void => {
-            playbackDeliveries.acknowledge(handle.turnId, 'interrupted')
-          }
-          handle.signal.addEventListener('abort', interrupted, { once: true })
-          if (handle.signal.aborted) interrupted()
-          try {
-            await handle.completion
-          } catch (error) {
-            interrupted()
-            console.error('job report turn failed:', errMessage(error))
-          } finally {
-            handle.signal.removeEventListener('abort', interrupted)
-          }
-
-          const outcome = await delivery
+          const outcome = await reportDelivery(handle, route)
           if (outcome === 'started') {
             reportedJobs.add(job.id)
             return

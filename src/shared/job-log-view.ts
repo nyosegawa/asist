@@ -12,6 +12,8 @@ import type { JobLogEvent, JobLogLine } from './ipc'
 
 export type JobLogRow =
   | { kind: 'system'; t: number; text: string }
+  /** The CLI's session started. Like a result, it is worded by whoever reads the row. */
+  | { kind: 'session'; t: number; model: string; sessionId?: string }
   | { kind: 'stderr'; t: number; text: string }
   | { kind: 'assistant'; t: number; text: string }
   /** A tool call. A `count` above 1 means a run of calls to the same tool, and `detail` is the last call's. */
@@ -55,7 +57,7 @@ function toRow(t: number, event: JobLogEvent): JobLogRow | null {
     case 'raw':
       return { kind: 'system', t, text: event.text }
     case 'init':
-      return { kind: 'system', t, text: `session ready · model: ${event.model}${event.sessionId ? ` · session: ${event.sessionId}` : ''}` }
+      return { kind: 'session', t, model: event.model, ...(event.sessionId ? { sessionId: event.sessionId } : {}) }
     case 'assistant-text':
       return { kind: 'assistant', t, text: event.text }
     case 'tool-use':
@@ -134,12 +136,17 @@ export function currentStep(rows: readonly JobLogRow[]): JobLogRow | null {
 }
 
 /**
- * One row as plain text, for copying and for the log tail the LLM reads in get_agent_job. A run that
- * reported no summary has its outcome worded from the dictionary, so the copy button writes it in the
- * language of the screen and the tool result in the language of the conversation.
+ * One row as plain text, for copying, for the rows drawn as text and for the log tail the LLM reads in
+ * get_agent_job. The words ASIST adds, such as the outcome of a run that reported no summary, come from
+ * the dictionary, so the copy button writes them in the language of the screen and the tool result in
+ * the language of the conversation.
  */
 export function rowText(row: JobLogRow, t: Translate): string {
   switch (row.kind) {
+    case 'session':
+      return row.sessionId
+        ? t('jobs.log.sessionWithId', { model: row.model, session: row.sessionId })
+        : t('jobs.log.session', { model: row.model })
     case 'result':
       return row.text || t(row.ok ? 'jobs.log.done' : 'jobs.log.failed')
     case 'tool':

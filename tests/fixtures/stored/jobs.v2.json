@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "jobs": [
+    { "id": "20260923-0001", "startedAt": 1790000000000, "endedAt": 1790000060000, "title": "調べもの", "prompt": "README を要約して", "cwd": "/Users/someone/src/project", "readonly": true, "engine": "codex", "status": "done" },
+    {
+      "id": "9f3c2a1b", "startedAt": 1790000100000, "endedAt": 1790000400000, "title": "README 末尾に追記", "prompt": "README の末尾に注意書きを足す",
+      "cwd": "/Users/someone/asist-jobs/20260923-readme-3f2a9c1d", "readonly": false, "engine": "claude", "status": "done", "sessionId": "6221a88e-f1d4-431e-92cc-7e76b1e50ce8",
+      "summary": "README.md の末尾に注意を足しました。", "numTurns": 6, "costUsd": 0.21, "artifacts": ["/Users/someone/asist-jobs/20260923-readme-3f2a9c1d/README.md"],
+      "worktree": { "repo": "/Users/someone/src/project", "branch": "asist/20260923-readme-3f2a9c1d", "base": "2eecee0e0632d291a0f1caa6de21705670a2a7bf", "commit": "3a034242370b0e455efeb8b6b4642d84bc6e89b5" },
+      "mergeState": "pending"
+    },
+    {
+      "id": "c0ffee01", "startedAt": 1790000500000, "title": "記憶の整理 9月22日", "prompt": "記憶を整理する", "cwd": "/Users/someone/Library/Application Support/asist/memory-worktrees/20260923-memory-0a1b2c3d",
+      "readonly": false, "engine": "codex", "status": "running", "processIdentity": { "pid": 4242, "startedAt": "Wed Sep 23 10:00:00 2026", "token": "0f8fad5b-d9cb-469f-a165-70867728950e" },
+      "worktree": { "repo": "/Users/someone/Library/Application Support/asist/memory", "branch": "asist/20260923-memory-0a1b2c3d", "base": "2eecee0e0632d291a0f1caa6de21705670a2a7bf" },
+      "memoryCuration": { "through": "2026-09-22", "applied": false }
+    }
+  ]
+}

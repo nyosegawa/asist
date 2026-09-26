@@ -245,6 +245,21 @@ describe('brain tools registry', () => {
     expect(none.note).toContain('register_project')
   })
 
+  it('takes from a memory only a path that starts a word, not the slash of a date or of a URL', async () => {
+    const { executeClientTool } = await load()
+    const { ctx } = makeCtx()
+    const memoryWith = (text: string): void => {
+      mocks.memory.search.mockReturnValueOnce([
+        { via: 'lexical', exact: false, record: { id: 'e1', file: 'pages/LP.md', line: 2, kind: 'section', page: 'LP', heading: '要約', aliases: [], text, date: '2026-09-01', order: 0 } }
+      ] as never)
+    }
+    memoryWith('例のLPの締切は 9/20、資料は https://example.com/lp にある')
+    expect(JSON.parse((await executeClientTool('resolve_project', { name: '例のLP' }, ctx)).content).candidates).toEqual([])
+    memoryWith('9/20 に作った例のLPは/Users/me/work/lp にある')
+    expect(JSON.parse((await executeClientTool('resolve_project', { name: '例のLP' }, ctx)).content).candidates.map((c: { path: string }) => c.path))
+      .toEqual(['/Users/me/work/lp'])
+  })
+
   it('continues a job in the session of the original one after the user approves it, and returns a failed result when it cannot', async () => {
     const { executeClientTool } = await load()
     const { ctx, events } = makeCtx()

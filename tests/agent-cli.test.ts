@@ -8,15 +8,15 @@ const claude = { engine: 'claude' as const, prompt: '調べて', cwd: '/repo', r
 describe('buildStartArgs', () => {
   it('passes the cwd and the sandbox to codex exec --json, read-only for a read-only job', () => {
     expect(buildStartArgs(codex)).toEqual([
-      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '-s', 'read-only', '調べて'
+      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '-s', 'read-only', '-'
     ])
     expect(buildStartArgs({ ...codex, readonly: false })).toEqual([
-      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '--approve-for-me', '調べて'
+      'exec', '--json', '--ignore-user-config', '--skip-git-repo-check', '-C', '/repo', '--approve-for-me', '-'
     ])
   })
 
   it('runs claude with stream-json, auto permissions when it may write, and plan mode with read-only tools otherwise', () => {
-    expect(buildStartArgs(claude)).toEqual(['-p', '調べて', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'auto'])
+    expect(buildStartArgs(claude)).toEqual(['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'auto'])
     const readonly = buildStartArgs({ ...claude, readonly: true })
     expect(readonly).toContain('plan')
     expect(readonly).toContain(CLAUDE_READONLY_TOOLS)
@@ -25,27 +25,27 @@ describe('buildStartArgs', () => {
 })
 
 describe('buildResumeArgs', () => {
-  it('resumes codex with exec resume <thread_id> <prompt> and passes the sandbox through -c', () => {
-    expect(buildResumeArgs(codex, '観点を足して')).toEqual([
-      'exec', 'resume', '--json', '--ignore-user-config', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'thread-1', '観点を足して'
+  it('resumes codex with exec resume <thread_id> -, reading the prompt from stdin, and passes the sandbox through -c', () => {
+    expect(buildResumeArgs(codex)).toEqual([
+      'exec', 'resume', '--json', '--ignore-user-config', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', 'thread-1', '-'
     ])
   })
 
   it('resumes a writing codex job with the settings behind --approve-for-me, which resume does not take', () => {
-    const args = buildResumeArgs({ ...codex, readonly: false }, '続き')
+    const args = buildResumeArgs({ ...codex, readonly: false })
     expect(args).not.toContain('--approve-for-me')
     expect(args.filter((arg) => arg.includes('='))).toEqual(['sandbox_mode="workspace-write"', 'approval_policy="on-request"', 'approvals_reviewer="auto_review"'])
-    expect(args.slice(-2)).toEqual(['thread-1', '続き'])
+    expect(args.slice(-2)).toEqual(['thread-1', '-'])
   })
 
   it('resumes claude with --resume <session_id> and keeps the same permissions', () => {
-    const args = buildResumeArgs({ ...claude, readonly: true }, '観点を足して')
-    expect(args.slice(0, 4)).toEqual(['-p', '観点を足して', '--resume', 'sess-1'])
+    const args = buildResumeArgs({ ...claude, readonly: true })
+    expect(args.slice(0, 3)).toEqual(['-p', '--resume', 'sess-1'])
     expect(args).toContain('plan')
   })
 
   it('throws when the job has no session ID', () => {
-    expect(() => buildResumeArgs({ ...codex, sessionId: undefined }, 'x')).toThrow(errorText('jobs.continue.noSession'))
+    expect(() => buildResumeArgs({ ...codex, sessionId: undefined })).toThrow(errorText('jobs.continue.noSession'))
   })
 })
 
@@ -53,7 +53,7 @@ describe('a memory curation job, which starts with nobody to confirm it', () => 
   const curation = { memoryCuration: { through: '2026-09-22', applied: false }, readonly: false, cwd: '/memory/wt' }
 
   it('never runs claude in auto mode: restricted, refusing what is not allowed, with the validator as the only command', () => {
-    for (const args of [buildStartArgs({ ...claude, ...curation }), buildResumeArgs({ ...claude, ...curation }, '続き')]) {
+    for (const args of [buildStartArgs({ ...claude, ...curation }), buildResumeArgs({ ...claude, ...curation })]) {
       expect(args).not.toContain('auto')
       expect(args).toContain('--restricted')
       expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk')
@@ -68,7 +68,7 @@ describe('a memory curation job, which starts with nobody to confirm it', () => 
   })
 
   it('runs codex in the workspace-write sandbox with no approvals, never through the automatic review', () => {
-    for (const args of [buildStartArgs({ ...codex, ...curation }), buildResumeArgs({ ...codex, ...curation }, '続き')]) {
+    for (const args of [buildStartArgs({ ...codex, ...curation }), buildResumeArgs({ ...codex, ...curation })]) {
       expect(args).not.toContain('--approve-for-me')
       expect(args.filter((arg) => arg.includes('='))).toEqual(['sandbox_mode="workspace-write"', 'approval_policy="never"'])
     }

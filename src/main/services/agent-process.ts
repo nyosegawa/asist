@@ -103,6 +103,8 @@ export function launchAgentProcess(job: AgentJob, args: string[], handlers: Proc
   const token = randomUUID()
   // The CLI must not start writing before the job is persisted, so it waits in a shell of its own process
   // group for permission to start. If the parent exits first, the EOF on stdin ends it before the exec.
+  // The prompt follows the permission on the same stdin: the shell's read takes only the first line from a
+  // pipe, and the CLI reads the rest (see agent-cli).
   const child = spawn('/bin/sh', ['-c', 'IFS= read -r ready && [ "$ready" = start ] && exec "$@"', 'asist-agent-launcher', cli, ...args], {
     cwd: job.cwd,
     env: childEnv({ ...spec.env, [AGENT_PROCESS_TOKEN]: token }),
@@ -162,7 +164,7 @@ export function launchAgentProcess(job: AgentJob, args: string[], handlers: Proc
   if (child.pid !== undefined) {
     try {
       handlers.onSpawn(captureProcessIdentity(child.pid, token))
-      child.stdin!.end('start\n')
+      child.stdin!.end(`start\n${job.prompt}`)
     } catch (error) {
       child.stdin!.end()
       handlers.onError(error instanceof Error ? error : new Error(String(error)))

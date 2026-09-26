@@ -31,7 +31,7 @@ const jobSchema: z.ZodType<AgentJob> = z.object({
   sessionId: z.string().optional(),
   parentId: z.string().optional(),
   worktree: z.object({
-    repo: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional()
+    repo: z.string().min(1), dir: z.string().min(1), branch: z.string().min(1), base: z.string().min(1), commit: z.string().optional()
   }).passthrough().optional(),
   mergeState: z.enum(['pending', 'merged', 'discarded', 'unchanged', 'conflict', 'error']).optional(),
   memoryCuration: z.object({ through: z.iso.date().nullable(), applied: z.boolean() }).optional()
@@ -46,11 +46,24 @@ const historySchema = z.array(jobSchema).superRefine((jobs, context) => {
   })
 })
 
-/** Version 1 was the bare list of jobs; version 2 is an object, which is what can carry the version. */
 export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
   name: JOBS_FILE,
-  version: 2,
-  upgrades: { 1: (content) => ({ jobs: content }) },
+  version: 3,
+  upgrades: {
+    // Version 1 was the bare list of jobs; version 2 is an object, which is what can carry the version.
+    1: (content) => ({ jobs: content }),
+    // Version 3 keeps the worktree's path apart from the job's cwd, which can be a folder inside it.
+    // Until then every worktree job ran at the top of its worktree.
+    2: (content) => {
+      const { jobs, ...rest } = content as { jobs?: unknown }
+      if (!Array.isArray(jobs)) return content
+      return {
+        ...rest,
+        jobs: jobs.map((job: { cwd?: unknown; worktree?: object }) =>
+          job?.worktree ? { ...job, worktree: { ...job.worktree, dir: job.cwd } } : job)
+      }
+    }
+  },
   parse: (content) => historySchema.parse((content as { jobs?: unknown } | null)?.jobs),
   serialize: (jobs) => ({ jobs })
 }
@@ -80,7 +93,7 @@ function canPrune(job: AgentJob): boolean {
   if (job.mergeState !== 'merged' && job.mergeState !== 'discarded' && job.mergeState !== 'unchanged') return false
   // Even after a merge, the record that owns a worktree whose removal failed is kept.
   try {
-    fs.statSync(job.cwd)
+    fs.statSync(job.worktree.dir)
     return false
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true

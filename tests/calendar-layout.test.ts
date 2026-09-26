@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CalendarEvent } from '../src/shared/calendar'
 import {
   cellPlan,
   eventsOn,
   lanesForHeight,
   layoutBlocks,
+  mondayOf,
   monthWeeks,
   visibleRange,
   weekLayout
@@ -120,5 +121,37 @@ describe('events of a day', () => {
     const late = event({ start: day(15, 13), end: day(15, 14) })
     const yesterday = event({ start: day(14, 22), end: day(15, 0) })
     expect(eventsOn([late, yesterday, early, allDay], day(15))).toEqual([allDay, early, late])
+  })
+})
+
+describe('the days daylight saving time starts and ends', () => {
+  // In New York, 2026-03-08 has 23 hours and 2026-11-01 has 25.
+  let zone: string | undefined
+  beforeEach(() => {
+    zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+  })
+  afterEach(() => {
+    if (zone === undefined) delete process.env.TZ
+    else process.env.TZ = zone
+  })
+
+  it('keeps an event in the last hour of the day of 25 hours on that day', () => {
+    const late = event({ start: new Date(2026, 10, 1, 23, 30), end: new Date(2026, 10, 1, 23, 50) })
+    expect(eventsOn([late], new Date(2026, 10, 1))).toEqual([late])
+    expect(weekLayout(mondayOf(new Date(2026, 10, 1)), [late]).days[6].timed).toEqual([late])
+  })
+
+  it('does not put an event of the day after the day of 23 hours on that day', () => {
+    const early = event({ start: new Date(2026, 2, 9, 0, 30), end: new Date(2026, 2, 9, 0, 50) })
+    expect(eventsOn([early], new Date(2026, 2, 8))).toEqual([])
+    expect(weekLayout(mondayOf(new Date(2026, 2, 8)), [early]).days[6].timed).toEqual([])
+  })
+
+  it('draws an event at the time on the clock in the week view', () => {
+    const ten = event({ start: new Date(2026, 10, 1, 10), end: new Date(2026, 10, 1, 11) })
+    expect(layoutBlocks([ten], new Date(2026, 10, 1))[0]).toMatchObject({ startMin: 600, endMin: 660 })
+    const late = event({ start: new Date(2026, 2, 8, 22), end: new Date(2026, 2, 9, 1) })
+    expect(layoutBlocks([late], new Date(2026, 2, 8))[0]).toMatchObject({ startMin: 1320, endMin: 1440 })
   })
 })

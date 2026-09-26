@@ -295,9 +295,9 @@ export const PANEL_CATALOG: PanelCatalogEntry[] = [
             en: 'today / week / next-week. Leave it out when using from/to. With neither, it is today.'
           })
         ),
-      from: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
+      // A pattern of digits lets 2026-09-31 through, and Date rolls it into October.
+      from: z.iso
+        .date()
         .optional()
         .describe(
           bilingual({
@@ -305,9 +305,8 @@ export const PANEL_CATALOG: PanelCatalogEntry[] = [
             en: 'The first day, as a local calendar day YYYY-MM-DD. Give it together with to.'
           })
         ),
-      to: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
+      to: z.iso
+        .date()
         .optional()
         .describe(
           bilingual({ ja: '終了日(含む)。from と一緒に指定', en: 'The last day, included. Give it together with from.' })
