@@ -24,6 +24,8 @@ export interface PinnedModel {
   id: string
   revision: string
   label: string
+  /** Every file of the revision, as paths inside the snapshot. A new revision needs its own list. */
+  files: readonly string[]
 }
 
 const PROTOCOL_PREFIX = 'ASIST_JSON:'
@@ -53,12 +55,14 @@ export function snapshotPath(model: PinnedModel): string {
   return path.join(repositoryCache(model), 'snapshots', model.revision)
 }
 
+/**
+ * huggingface_hub links a file into the snapshot only once its download has finished, so a download
+ * that failed or was cancelled leaves some of the files missing, and the worker cannot load the model
+ * from such a snapshot. Only a snapshot with every file of the revision counts as installed.
+ */
 export function modelInstalled(model: PinnedModel): boolean {
   const snapshot = snapshotPath(model)
-  return (
-    fs.existsSync(path.join(snapshot, 'config.json')) &&
-    fs.existsSync(path.join(snapshot, 'model.safetensors'))
-  )
+  return model.files.every((file) => fs.existsSync(path.join(snapshot, file)))
 }
 
 export function runtimeInstalled(): boolean {
@@ -223,17 +227,19 @@ function downloadModel(model: PinnedModel, signal: AbortSignal, onBytes: (done: 
       child.kill('SIGTERM')
     }
     signal.addEventListener('abort', abort, { once: true })
-    child.once('error', (error) => {
-      clearInterval(timer)
-      reject(error)
-    })
-    child.once('exit', (code) => {
+    // A process that fails to spawn emits only 'error', never 'exit', so both end the download here.
+    const finish = (error: Error | null): void => {
       clearInterval(timer)
       signal.removeEventListener('abort', abort)
       downloads.delete(child)
-      if (signal.aborted) reject(stopped())
-      else if (code === 0 && modelInstalled(model)) resolve()
-      else reject(new Error(errorText('settingsModels.preparation.modelDownloadFailed', { model: model.label, detail: fatal || `exit ${code}` })))
+      if (error) reject(error)
+      else resolve()
+    }
+    child.once('error', finish)
+    child.once('exit', (code) => {
+      if (signal.aborted) finish(stopped())
+      else if (code === 0 && modelInstalled(model)) finish(null)
+      else finish(new Error(errorText('settingsModels.preparation.modelDownloadFailed', { model: model.label, detail: fatal || `exit ${code}` })))
     })
   })
 }
