@@ -71,8 +71,10 @@ if (running()) {
 // start the app afterwards.
 execFileSync(installer, ['/S'], { stdio: 'inherit', windowsHide: true })
 if (!fs.existsSync(installed)) fail(`インストールのあとに ${installed} がありません`)
-const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repo, encoding: 'utf8', windowsHide: true }).trim()
-console.log(`installed ${installed} from ${commit} at ${new Date().toLocaleString('sv-SE').slice(0, 16)}`)
+const localTime = (date) => date.toLocaleString('sv-SE').slice(0, 16)
+// Without --build the installer may come from an earlier commit than the one checked out, so its time is
+// what tells which build went in.
+console.log(`installed ${installed} from the installer built at ${localTime(fs.statSync(installer).mtime)}`)
 
 if (args.has('--launch')) {
   const stamp = new Date().toLocaleString('sv-SE').replace(/[-:]/g, '').replace(' ', '-')
