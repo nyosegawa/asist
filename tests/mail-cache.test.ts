@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { messageIdOf, type MailMessage } from '@shared/mail'
+import { messageIdOf, type MailListQuery, type MailMessage } from '@shared/mail'
 import { MailCache, type MailBodyParts } from '../src/main/services/mail-cache'
 
 const HOUR = 3_600_000
@@ -51,8 +51,39 @@ describe('MailCache', () => {
     expect(ids('sent')).toEqual([3])
     expect(ids('archive')).toEqual([5])
     expect(ids('starred')).toEqual([1])
-    expect(cache.list({ view: 'inbox', limit: 2 })).toMatchObject({ total: 3 })
-    expect(cache.list({ view: 'inbox', limit: 2, before: NOW - 1.5 * HOUR }).messages.map((m) => m.uid)).toEqual([2, 6])
+    const page = cache.list({ view: 'inbox', limit: 2 })
+    expect(page).toMatchObject({ total: 3 })
+    const { date, uid, id } = page.messages[0]
+    expect(cache.list({ view: 'inbox', limit: 2, before: { date, uid, id } }).messages.map((m) => m.uid)).toEqual([2, 6])
+  })
+
+  it('reaches every message exactly once page by page, when messages share a date and, across accounts and folders, a uid', () => {
+    const cache = new MailCache(':memory:')
+    // A Date header counts whole seconds, so a batch sent at once carries one date.
+    const sent = NOW - HOUR
+    cache.upsert([
+      message('inbox', { uid: 1, date: NOW }),
+      message('inbox', { uid: 2, date: sent }),
+      message('inbox', { uid: 3, date: sent, starred: true }),
+      message('inbox', { uid: 3, date: sent, starred: true }, 'a2'),
+      message('inbox', { uid: 2, date: sent }, 'a2'),
+      message('sent', { uid: 3, date: sent, starred: true }),
+      message('inbox', { uid: 4, date: NOW - 2 * HOUR })
+    ])
+    for (const view of ['inbox', 'starred'] as const) {
+      const whole = cache.list({ view, limit: 50 }).messages.map((m) => m.id)
+      const paged: string[] = []
+      let before: MailListQuery['before'] = null
+      for (;;) {
+        const page = cache.list({ view, limit: 2, before })
+        if (page.messages.length === 0) break
+        paged.push(...page.messages.map((m) => m.id))
+        const { date, uid, id } = page.messages.at(-1)!
+        before = { date, uid, id }
+      }
+      expect(paged).toEqual(whole)
+    }
+    expect(cache.list({ view: 'inbox', limit: 50 }).total).toBe(6)
   })
 
   it('searches subject, sender, snippet and body by substring, treating % and _ as ordinary characters', () => {

@@ -333,12 +333,15 @@ export class MailCache {
     const counts = this.db.prepare(`SELECT COUNT(*) AS n, SUM(unread) AS unread FROM messages WHERE ${where.join(' AND ')}`).get(...params) as Row
     const total = Number(counts.n)
     const unread = Number(counts.unread ?? 0)
+    // Several messages can share a date, since a Date header counts whole seconds, and the same date and
+    // uid can recur across accounts and folders. The id completes the order, so a page that ends inside
+    // such a run continues exactly where it stopped.
     if (query.before !== null) {
-      where.push('date < ?')
-      params.push(query.before)
+      where.push('(date, uid, id) < (?, ?, ?)')
+      params.push(query.before.date, query.before.uid, query.before.id)
     }
     const rows = this.db
-      .prepare(`SELECT ${COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY date DESC, uid DESC LIMIT ?`)
+      .prepare(`SELECT ${COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY date DESC, uid DESC, id DESC LIMIT ?`)
       .all(...params, query.limit) as Row[]
     return { messages: rows.map(rowToMessage), total, unread }
   }

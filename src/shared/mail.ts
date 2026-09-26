@@ -236,8 +236,11 @@ export const mailListQuerySchema = z.strictObject({
   query: z.string().trim().max(200).default(''),
   unreadOnly: z.boolean().default(false),
   limit: z.number().int().min(1).max(MAX_BULK_CHANGE).default(50),
-  /** Only messages older than this time in milliseconds, used to load the next page. */
-  before: z.number().int().positive().nullable().default(null)
+  /**
+   * The last message of the page before, for reading the next page. The list is ordered by date, then
+   * uid, then id, newest first, and only the id is unique, so all three are given.
+   */
+  before: z.strictObject({ date: z.number().int(), uid: z.number().int().positive(), id: z.string().min(1) }).nullable().default(null)
 })
 export type MailListQuery = z.input<typeof mailListQuerySchema>
 export interface MailListResult {
