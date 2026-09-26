@@ -296,6 +296,24 @@ describe('brain tools registry', () => {
     expect(mocks.fetchPanel).not.toHaveBeenCalled()
   })
 
+  it('asks the model to settle a place the geocoding does not know with the user, as it does for one the table of Japan does not know', async () => {
+    mocks.settings.region = 'DE'
+    try {
+      // What the geocoding throws for a name it does not know (weather-open-meteo.test.ts).
+      const { WeatherIssueError } = await import('../src/main/services/weather/issue')
+      const hint = { ja: 'どこの天気かユーザーに確かめる', en: 'Ask the user where' }
+      mocks.fetchPanel.mockRejectedValueOnce(new WeatherIssueError({ status: 'location_not_found', requestedLocation: 'Atlantis', hint }))
+      const { executeClientTool } = await load()
+      const { ctx, events } = makeCtx()
+      const result = await executeClientTool('show_weather', { location: 'Atlantis' }, ctx)
+      expect(result.isError).toBe(false)
+      expect(JSON.parse(result.content)).toEqual({ status: 'location_not_found', requestedLocation: 'Atlantis', hint: hint.ja })
+      expect(events).toEqual([])
+    } finally {
+      mocks.settings.region = 'JP'
+    }
+  })
+
   it('returns the fetched weather as it is and creates the card under the resolved area and date', async () => {
     const weather = { targetDate: '2026-09-16', day: { min: null, max: 24 } }
     mocks.fetchPanel.mockResolvedValueOnce({ props: { location: '東京都', date: 'tomorrow', weather } })

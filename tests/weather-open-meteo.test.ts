@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WeatherData } from '@shared/weather'
+import { readErrorText } from '@shared/i18n/error-text'
 import geocoding from './fixtures/weather/munich-geocoding.json'
 import forecast from './fixtures/weather/munich-forecast.json'
 import fahrenheit from './fixtures/weather/munich-forecast-fahrenheit.json'
@@ -182,12 +183,16 @@ describe('the worldwide weather source', () => {
     expect(forecastUrl(fetch)).not.toContain('wind_speed_unit')
   })
 
-  it('says which place it could not find', async () => {
+  it('says which place it could not find, as the table of Japan does for a name it does not know', async () => {
     serve({ places: { results: [] } })
     const { fetchGlobalWeather } = await import('../src/main/services/weather/open-meteo')
-    await expect(
-      fetchGlobalWeather({ place: 'Nowhere', date: 'today', language: 'de', region: 'DE' }, signal())
-    ).rejects.toThrow('[asist:cardsWeather.errors.placeNotFound {"place":"Nowhere"}]')
+    const { WeatherIssueError } = await import('../src/main/services/weather/issue')
+    const error = (await fetchGlobalWeather({ place: 'Nowhere', date: 'today', language: 'de', region: 'DE' }, signal()).catch(
+      (err: unknown) => err
+    )) as InstanceType<typeof WeatherIssueError>
+    expect(error).toBeInstanceOf(WeatherIssueError)
+    expect(error.issue).toMatchObject({ status: 'location_not_found', requestedLocation: 'Nowhere', hint: { ja: expect.any(String), en: expect.any(String) } })
+    expect(readErrorText(error.message, 'en-US')).toContain('Nowhere')
   })
 
   it('fails when the service cannot be reached', async () => {

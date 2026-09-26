@@ -1,5 +1,5 @@
-import { resolveWeatherCard } from '../weather'
-import { weatherCardKeyOf, type WeatherData } from '@shared/weather'
+import { resolveWeatherCard, WeatherIssueError } from '../weather'
+import { weatherCardKeyOf, type WeatherData, type WeatherIssue } from '@shared/weather'
 import { PANEL_CATALOG, type PanelCatalogEntry } from '@shared/panel-catalog'
 import type { AgentJob, PanelEvent, TurnEvent } from '@shared/ipc'
 import type { SearchSource, ToolSpec } from '@shared/conversation'
@@ -99,6 +99,9 @@ function panelTool(entry: PanelCatalogEntry, language: PromptLanguage): Def {
   }
 }
 
+/** A place that names no weather card, which the model is to settle with the user rather than report as a failure. */
+const issueResult = (issue: WeatherIssue, language: PromptLanguage): Record<string, unknown> => ({ ...issue, hint: issue.hint[language] })
+
 async function runPanelTool(
   entry: PanelCatalogEntry,
   input: Record<string, unknown>,
@@ -123,10 +126,14 @@ async function runPanelTool(
   if (type === 'weather') {
     signal.throwIfAborted()
     const place = resolveWeatherCard(String(given.location))
-    if ('status' in place) return { ...place, hint: place.hint[language] }
-    const result = await fetchPanel(type, given, signal).catch((err: unknown) => {
+    if ('status' in place) return issueResult(place, language)
+    let result: Awaited<ReturnType<typeof fetchPanel>>
+    try {
+      result = await fetchPanel(type, given, signal)
+    } catch (err) {
+      if (err instanceof WeatherIssueError) return issueResult(err.issue, language)
       throw failure(err)
-    })
+    }
     signal.throwIfAborted()
     const weather = result.props.weather as WeatherData
     const key = weatherCardKeyOf(place.cardId, weather.targetDate)
