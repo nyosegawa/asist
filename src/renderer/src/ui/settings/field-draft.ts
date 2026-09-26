@@ -38,13 +38,17 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
   const shown = format(saved)
   // What was typed, and the saved text it was left over. Text being typed stays until the field is left,
   // whatever answer arrives for an earlier save. Text that was left stays while its save is under way, and
-  // gives way once the saved value changes, by that save or from anywhere else. A save that failed makes
-  // the text one being typed again, marked as failed, so that it stays and leaving the field saves it again.
+  // after a save that failed, and gives way for good once the saved value changes, by that save or from
+  // anywhere else, such as a button beside the field; so a failed text, which leaving the field saves
+  // again, never writes over a value saved after it was typed.
   const [draft, setDraft] = useState<{ text: string; leftOver: string | null; failed?: true } | null>(null)
   const typed = draft !== null && (draft.leftOver === null || draft.leftOver === shown) ? draft.text : null
   const parsed = typed === null ? null : parse(typed)
+  useEffect(() => {
+    setDraft((current) => (current !== null && current.leftOver !== null && current.leftOver !== shown ? null : current))
+  }, [shown])
   const leave = (): void => {
-    if (draft === null || typed === null || draft.leftOver !== null) return
+    if (draft === null || typed === null || (draft.leftOver !== null && !draft.failed)) return
     if (parsed === null || format(parsed) === shown) {
       setDraft(null)
       return
@@ -52,7 +56,7 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
     const left = { text: typed, leftOver: shown }
     setDraft(left)
     void save(parsed).then((saved) => {
-      if (!saved) setDraft((current) => (current === left ? { text: left.text, leftOver: null, failed: true } : current))
+      if (!saved) setDraft((current) => (current === left ? { ...left, failed: true } : current))
     })
   }
   // The field also goes away while it has focus, as when Escape closes the settings, and Chromium sends no
@@ -62,6 +66,7 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
     leaveOnUnmount.current = leave
   })
   useEffect(() => () => leaveOnUnmount.current(), [])
+  const failed = typed !== null && draft?.failed === true
   return {
     props: {
       value: typed ?? shown,
@@ -71,9 +76,9 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
         // The Enter that confirms a conversion in the Japanese IME must not leave the field.
         if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.currentTarget instanceof HTMLInputElement) event.currentTarget.blur()
       },
-      'aria-invalid': draft?.failed === true
+      'aria-invalid': failed
     },
     value: parsed ?? saved,
-    failed: draft?.failed === true
+    failed
   }
 }

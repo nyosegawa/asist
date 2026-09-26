@@ -464,6 +464,30 @@ describe('settings fields that are saved once the user leaves them', () => {
     expect(hint()).toBe(t('settingsConversation.log.retentionHint'))
   })
 
+  it('lets a text whose save failed give way to folders saved after it, and never writes it back over them', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+    roots.focus()
+    await act(async () => type(roots, '/Users/demo/Desktop\n/Users/demo/Documents'))
+    await act(async () => leave(roots))
+    expect(roots.getAttribute('aria-invalid')).toBe('true')
+
+    // "Add folder" saves the list with the folder chosen, which main accepts this time.
+    api.folderChoose.mockResolvedValueOnce('/Users/demo/Pictures')
+    const add = [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t('settingsAgent.roots.add'))!
+    await act(async () => add.click())
+    const saved = ['/Users/demo/Desktop', '/Users/demo/Documents', '/Users/demo/Pictures']
+    expect(roots.value).toBe(saved.join('\n'))
+    expect(roots.getAttribute('aria-invalid')).toBe('false')
+
+    // Closing the settings, and leaving the field before that, save nothing more.
+    await act(async () => leave(roots))
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls.at(-1)).toEqual([{ fileRoots: saved }])
+  })
+
   it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
     const view = await render()
     await act(async () => nav(view, 'conversation').click())
