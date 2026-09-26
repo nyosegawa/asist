@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { conversationLocale } from './conversation-locale'
@@ -30,8 +31,14 @@ export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
 }
 
-function git(cwd: string, args: string[], maxBuffer = 4 * 1024 * 1024): string {
-  return execFileSync(gitPath(), args, { cwd, encoding: 'utf8', maxBuffer, stdio: ['ignore', 'pipe', 'pipe'], env: gitEnv() })
+function git(cwd: string, args: string[], options: { maxBuffer?: number; env?: NodeJS.ProcessEnv } = {}): string {
+  return execFileSync(gitPath(), args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: options.maxBuffer ?? 4 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...gitEnv(), ...options.env }
+  })
 }
 
 /** The top level of the repository dir sits in, or null when it is not inside one. */
@@ -109,23 +116,37 @@ export function worktreeRemove(repo: string, path: string, branch: string): void
   git(repo, ['branch', '-D', branch])
 }
 
-/** Commits every uncommitted change inside the worktree, and returns false when there is nothing to commit. */
-export function commitAll(worktree: string, message: string): boolean {
-  const status = git(worktree, ['status', '--porcelain']).trim()
-  if (!status) return false
-  git(worktree, ['add', '-A'])
-  git(worktree, [
-    '-c',
-    'user.name=ASIST',
-    '-c',
-    'user.email=asist@localhost',
-    'commit',
-    '-q',
-    '-m',
-    message,
-    '--no-verify'
-  ])
-  return true
+/**
+ * Commits every uncommitted change in dir, and returns false when there is nothing to commit. The commit is
+ * built by write-tree and commit-tree from a copy of the index taken under git's own index.lock, and the
+ * copy replaces the index only once the branch has moved. git commit runs the repository's
+ * prepare-commit-msg hook even with --no-verify, and a commit that fails after git add leaves the change
+ * staged.
+ */
+export function commitAll(dir: string, message: string): boolean {
+  if (!git(dir, ['status', '--porcelain']).trim()) return false
+  const head = hasHead(dir) ? headCommit(dir) : null
+  const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
+  const lock = `${index}.lock`
+  const staging = `${index}.asist`
+  fs.closeSync(fs.openSync(lock, 'wx'))
+  try {
+    if (fs.existsSync(index)) fs.copyFileSync(index, staging)
+    else fs.rmSync(staging, { force: true })
+    const env = { GIT_INDEX_FILE: staging }
+    git(dir, ['add', '-A'], { env })
+    const tree = git(dir, ['write-tree'], { env }).trim()
+    if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) return false
+    const commit = git(dir, [
+      '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
+    ]).trim()
+    git(dir, ['update-ref', '-m', message, 'HEAD', commit, head ?? ''])
+    fs.renameSync(staging, index)
+    return true
+  } finally {
+    fs.rmSync(staging, { force: true })
+    fs.rmSync(lock, { force: true })
+  }
 }
 
 /** A summary of the changes from base to the branch. An empty string means nothing changed. */
@@ -160,7 +181,7 @@ export function diffEntries(repo: string, base: string, branch: string): DiffEnt
 export function diffPatch(repo: string, base: string, branch: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = git(repo, ['diff', `${base}..${branch}`], maxChars * 4)
+    patch = git(repo, ['diff', `${base}..${branch}`], { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }

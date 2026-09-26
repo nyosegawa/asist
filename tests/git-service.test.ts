@@ -88,6 +88,38 @@ describe('git service with an isolated worktree', () => {
     expect(run(repo, ['log', '-1', '--format=%P%n%s']).split('\n')).toEqual([`${before} ${git.headCommit(wt)}`, 'asist: job (1)'])
   })
 
+  it('commits in the worktree without running the commit hooks it shares with the repository', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/hooked-job')
+    const ran = path.join(root, 'hooks-that-ran')
+    // A hook that calls npx fails on the PATH of an app opened from Finder, and --no-verify does not stop prepare-commit-msg.
+    for (const hook of ['pre-commit', 'prepare-commit-msg', 'commit-msg', 'post-commit']) {
+      fs.writeFileSync(path.join(repo, '.git', 'hooks', hook), `#!/bin/sh\necho ${hook} >> '${ran}'\nexit 1\n`, { mode: 0o755 })
+    }
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
+    expect(git.commitAll(wt, 'asist: job')).toBe(true)
+    expect(fs.existsSync(ran)).toBe(false)
+    expect(run(wt, ['log', '-1', '--format=%s'])).toBe('asist: job')
+    expect(git.isClean(wt)).toBe(true)
+  })
+
+  it('leaves the index as it was when the commit cannot be made after the changes were staged', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/locked')
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'staged by the agent\n')
+    run(wt, ['add', 'a.txt'])
+    fs.writeFileSync(path.join(wt, 'b.txt'), 'left unstaged\n')
+    const before = run(wt, ['status', '--porcelain'])
+    // A lock on the branch that a git process left behind when it died stops the commit only once everything is staged.
+    const lock = path.join(repo, '.git', 'refs', 'heads', 'asist', 'locked.lock')
+    fs.writeFileSync(lock, '')
+    expect(() => git.commitAll(wt, 'asist: job')).toThrow()
+    expect(run(wt, ['status', '--porcelain'])).toBe(before)
+    fs.rmSync(lock)
+    expect(git.commitAll(wt, 'asist: job')).toBe(true)
+    expect(git.isClean(wt)).toBe(true)
+  })
+
   it('cuts a diff larger than the output buffer of git at the limit instead of failing', () => {
     const base = git.headCommit(repo)
     const wt = path.join(root, 'wt')

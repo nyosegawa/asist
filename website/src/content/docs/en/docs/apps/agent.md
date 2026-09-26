@@ -17,7 +17,7 @@ Every job you ask for in the conversation, even one that only reads, shows a con
 
 Edits to a Git repository are made in a separate worktree. When the job finishes, review the diff and choose "Merge" or "Discard". When you ask for a merge in the conversation, a confirmation screen lists the changes, and ASIST merges them only after you approve. When you ask in the conversation for the changes to be discarded, ASIST discards them only after you approve on a confirmation screen. Discarded changes cannot be restored.
 
-When the working directory is a folder inside a repository, the job runs in the same folder of the worktree. That folder has to be committed to the repository: a job whose working directory is a folder that isn't committed does not start. Merging does not run the repository's commit hooks (commit-msg, prepare-commit-msg and pre-merge-commit).
+When the working directory is a folder inside a repository, the job runs in the same folder of the worktree. That folder has to be committed to the repository: a job whose working directory is a folder that isn't committed does not start. Neither the commit that gathers a job's changes in the worktree nor the merge runs the repository's commit hooks (pre-commit, prepare-commit-msg, commit-msg, pre-merge-commit and post-commit).
 
 Edits to an existing folder that is not under Git are written straight into that folder. A job without a working directory creates a working folder of its own and runs there. Memory curation merges its changes on its own only when every change is to a file inside the memory folder.
 
