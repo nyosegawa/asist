@@ -111,7 +111,7 @@ export function agentTool(locale: ConversationLocale): Def {
           jobId: dup.id,
           title: dup.title,
           status: dup.status,
-          note: bilingual(TEXTS.alreadyRunning)
+          note: TEXTS.alreadyRunning[language]
         }
       }
       const settings = getSettings()
@@ -136,7 +136,7 @@ export function agentTool(locale: ConversationLocale): Def {
         },
         signal
       )
-      if (!approved) return { started: false, declined: true, note: bilingual(TEXTS.declined) }
+      if (!approved) return { started: false, declined: true, note: TEXTS.declined[language] }
       let job
       try {
         job = access.isolate
@@ -164,7 +164,7 @@ export function agentTool(locale: ConversationLocale): Def {
           jobId: job.id,
           title: job.title,
           repo: job.worktree?.repo,
-          note: bilingual(TEXTS.isolatedNote)
+          note: TEXTS.isolatedNote[language]
         }
       }
       return { started: true, jobId: job.id, title: job.title, cwd: job.cwd, readonly: access.readonly }
@@ -379,7 +379,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           },
           signal
         )
-        if (!approved) return { started: false, declined: true, note: bilingual(TEXTS.declined) }
+        if (!approved) return { started: false, declined: true, note: TEXTS.declined[language] }
         let job
         try {
           job = await agentRunner.continueJob(parent.id, prompt, signal)
@@ -432,7 +432,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
         }
         if (!(await confirmMerge({ title: job.title, repo: job.worktree!.repo }, review, signal))) {
-          return { merged: false, declined: true, jobId: job.id, note: bilingual(TEXTS.mergeDeclined) }
+          return { merged: false, declined: true, jobId: job.id, note: TEXTS.mergeDeclined[language] }
         }
         let merged
         try {

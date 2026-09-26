@@ -20,6 +20,14 @@ describe('the text of a tool error for the model', () => {
     mocks.conversationLocale = 'fr-FR'
     expect(errMessage(new Error(errorText('settingsModels.preparation.startFailed', { model: 'Qwen3-TTS' })))).toBe('Impossible de démarrer Qwen3-TTS.')
   })
+
+  it('unpacks the two languages of a ToolError but keeps any other message as it is, however it starts', async () => {
+    const { detail } = await import('../src/main/services/brain/tool-error-text')
+    const { ToolError } = await import('@shared/tool-registry')
+    expect(detail(new ToolError({ ja: '見つからない', en: 'Not found' }), 'en')).toBe('Not found')
+    const outside = 'bilingual: 請求書'
+    expect(detail(new Error(outside), 'en')).toBe(outside)
+  })
 })
 
 /**

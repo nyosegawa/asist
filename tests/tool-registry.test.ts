@@ -122,6 +122,20 @@ describe('executeTool', () => {
     expect(result).toMatchObject({ content: '{"got":1}', isError: false, truncated: false, resultLength: 9 })
   })
 
+  it('passes text from outside through as it is, even text that looks like a packed pair', async () => {
+    const subjects = ['bilingual: 請求書', bilingual({ ja: '件名', en: 'Subject' }), 'ふつうの件名']
+    const registry = createToolRegistry([
+      def({ name: 'list_mail', run: () => ({ messages: subjects.map((subject) => ({ subject })) }) }),
+      def({ name: 'read_mail', run: () => { throw new Error(subjects[0]) } })
+    ])
+    const listed = await executeTool(registry, 'list_mail', {}, ctx, signal, 'ja')
+    expect(listed.isError).toBe(false)
+    expect(JSON.parse(listed.content)).toEqual({ messages: subjects.map((subject) => ({ subject })) })
+    const failed = await executeTool(registry, 'read_mail', {}, ctx, signal, 'ja')
+    expect(failed.isError).toBe(true)
+    expect(failed.content).toContain(subjects[0])
+  })
+
   it('returns a failed result for an unregistered tool instead of throwing', async () => {
     const registry = createToolRegistry([])
     const result = await executeTool(registry, 'nope', {}, ctx, signal, 'ja')

@@ -110,12 +110,17 @@ async function runPanelTool(
   const parsed = entry.schema.safeParse(input)
   if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
   // A default the schema filled in may be a packed pair, so the fetcher and the card see one language.
-  const parsedProps = resolvePromptTexts(parsed.data, language)
+  // Only a field the model left out can hold one; what it wrote may quote text from outside.
+  let props = Object.fromEntries(
+    Object.entries(parsed.data as Record<string, unknown>).map(([field, value]) => [
+      field,
+      field in input ? value : resolvePromptTexts(value, language)
+    ])
+  )
   if (type === 'weather') {
     signal.throwIfAborted()
-    const props = parsedProps as Record<string, unknown>
     const place = resolveWeatherCard(String(props.location))
-    if ('status' in place) return place
+    if ('status' in place) return { ...place, hint: resolvePromptTexts(place.hint, language) }
     const result = await fetchPanel(type, props, signal)
     signal.throwIfAborted()
     const weather = result.props.weather as WeatherData
@@ -131,7 +136,6 @@ async function runPanelTool(
     } })
     return { shown: true, panel: type, data: weather }
   }
-  let props = parsedProps as Record<string, unknown>
   const key = entry.key(props)
   const panelEvent = (event: PanelEvent): void =>
     ctx.emit({ type: 'panel', turnId: ctx.turnId, event })

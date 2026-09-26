@@ -134,6 +134,15 @@ describe('brain tools registry', () => {
     expect(required).toEqual([])
   })
 
+  it('hands the fetcher what the model wrote as it is, even text from outside that looks like a packed pair', async () => {
+    mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'Google News' })
+    const { executeClientTool } = await load()
+    const topic = 'bilingual: 請求書'
+    const result = await executeClientTool('show_news', { topic }, makeCtx().ctx)
+    expect(result.isError).toBe(false)
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('news', { topic }, expect.any(AbortSignal))
+  })
+
   it('leaves the quoted currency to the region when show_fx names only the base currency', async () => {
     mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
     const { executeClientTool } = await load()
@@ -638,6 +647,9 @@ describe('the tool list in the language of the conversation', () => {
       const hint = (JSON.parse(result.content) as { hint: string }).hint
       if (JAPANESE.test(hint)) japanese.push(`show_weather ${location}: ${hint}`)
     }
+    mocks.requestConfirm.mockResolvedValueOnce(false)
+    const declined = await executeClientTool('run_agent_task', { prompt: 'Tidy the README' }, makeCtx().ctx)
+    if (JAPANESE.test(declined.content)) japanese.push(`run_agent_task declined: ${declined.content}`)
     expect(japanese).toEqual([])
   })
 

@@ -24,13 +24,19 @@ export const LOCAL_TIMEOUT_MS = 2_000
 
 /**
  * Packs both prompt languages into a single string, for the places that hold one string and cannot
- * hold a pair: a zod `.describe()`, a note inside a tool's result, a ToolError message. The character
- * in front is from the Unicode private use area, so no text of either language can be mistaken for it.
+ * hold a pair: a zod `.describe()`, `.default()` or issue message, and a ToolError message. The
+ * character in front is from the Unicode private use area, so no text of either language can be
+ * mistaken for it. Text from outside can hold any character, so a tool's result is never unpacked:
+ * a tool writes the text it adds for the model in the language it was built for.
  */
 const BILINGUAL_PREFIX = '\uE000bilingual:'
 export const bilingual = (text: PromptText): string => `${BILINGUAL_PREFIX}${JSON.stringify(text)}`
 
-/** Replaces every packed pair inside a value, however deeply nested, with the text of one language. */
+/**
+ * Replaces every packed pair inside a value, however deeply nested, with the text of one language. The
+ * value must be one this code wrote, such as a schema; a mail subject that starts with the prefix
+ * would otherwise be parsed as a pair and fail.
+ */
 export function resolvePromptTexts<T>(value: T, language: PromptLanguage): T {
   if (typeof value === 'string') {
     if (!value.startsWith(BILINGUAL_PREFIX)) return value
@@ -81,7 +87,9 @@ export interface ToolDefinition<Ctx = unknown> {
   maxResultChars: number
   /**
    * Returns a string or anything that can be turned into JSON, and throws on failure; a ToolError's
-   * message reaches the model unchanged. The signal combines the caller's abort and the time limit.
+   * message reaches the model unchanged. The result reaches the model as it is, so the text a tool adds
+   * to it is already in the language of the turn. The signal combines the caller's abort and the time
+   * limit.
    */
   run: (input: Record<string, unknown>, ctx: Ctx, signal: AbortSignal) => Promise<unknown> | unknown
 }
@@ -351,14 +359,14 @@ export function executeTool<Ctx>(
   const completion = operation.then(() => undefined, () => undefined)
   const response = Promise.race([operation, aborted])
     .then((value): ToolExecution => ({
-      ...formatToolResult(resolvePromptTexts(value, language), def.maxResultChars, language),
+      ...formatToolResult(value, def.maxResultChars, language),
       isError: false,
       durationMs: now() - startedAt
     }))
     .catch((err): ToolExecution => {
       if (signal.aborted) return failure(TEXTS.interrupted(def.name)[language])
       if (err instanceof ToolError) return failure(resolvePromptTexts(err.message, language))
-      return failure(TEXTS.failed(def.name, resolvePromptTexts(errMessage(err), language))[language])
+      return failure(TEXTS.failed(def.name, errMessage(err))[language])
     })
     .finally(() => {
       clearTimeout(timer)
