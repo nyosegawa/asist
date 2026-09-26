@@ -1,13 +1,12 @@
 import { create } from 'zustand'
 import type { ConfirmRequest } from '@shared/confirm'
-import { errorText } from '@shared/i18n/error-text'
 
 /**
  * The confirmations waiting for the user, whoever asked for them. Main asks before a mail or calendar
  * operation or an agent job and waits for the answer over IPC, and it can wait for several at once; a
  * screen asks before a delete or a discard the user pressed and waits for the answer itself. Both are
  * drawn by the same ConfirmSheet, one at a time: the first in the queue is on screen, and a request
- * from main that arrives meanwhile joins the end.
+ * that arrives meanwhile waits for its turn.
  */
 
 /** A confirmation a screen asks for. It has no title, because the user has just pressed the button it is about. */
@@ -19,13 +18,10 @@ export type ShownConfirm =
   | (LocalConfirmRequest & { id: string; title?: undefined; resolve: (approved: boolean) => void })
 
 interface ConfirmState {
-  /** Oldest first; the first is on screen. A request from a screen is only ever alone in it. */
+  /** Main's requests, then the screens' questions, each oldest first; the first is on screen. */
   queue: ShownConfirm[]
   open: (request: ConfirmRequest) => void
-  /**
-   * Resolves true when the user confirms, and false on cancel or when main's request takes the screen.
-   * It rejects while another confirmation is on screen.
-   */
+  /** Resolves true when the user confirms, and false on cancel or when main's request takes the screen from it. */
   ask: (request: LocalConfirmRequest) => Promise<boolean>
   /** Takes a request out of the queue, whether it is on screen or waiting. */
   close: (id: string) => void
@@ -36,21 +32,17 @@ let nextLocalConfirm = 1
 export const useConfirmStore = create<ConfirmState>((set, get) => ({
   queue: [],
   open: (request) => {
-    const [shown] = get().queue
-    // Main's approval gate cannot wait behind a delete the user is still deciding on, so the delete
-    // counts as cancelled. A request from main on screen stays instead, because replacing it would
-    // change the sheet under the button the user may be pressing.
-    if (shown?.resolve) {
-      shown.resolve(false)
-      set({ queue: [request] })
-    } else {
-      set((s) => ({ queue: [...s.queue, request] }))
-    }
+    const [shown, ...waiting] = get().queue
+    // Main's approval gate gives up after a few minutes and cannot wait behind a delete the user is
+    // still deciding on, so the delete counts as cancelled and main's request goes ahead of the
+    // questions still waiting. A request from main on screen stays, because replacing it would change
+    // the sheet under the button the user may be pressing.
+    shown?.resolve?.(false)
+    const kept = shown?.resolve ? waiting : get().queue
+    set({ queue: [...kept.filter((item) => !item.resolve), request, ...kept.filter((item) => item.resolve)] })
   },
-  ask: (request) => {
-    if (get().queue.length > 0) return Promise.reject(new Error(errorText('confirm.alreadyOpen')))
-    return new Promise((resolve) => set({ queue: [{ ...request, id: `local-${nextLocalConfirm++}`, resolve }] }))
-  },
+  ask: (request) =>
+    new Promise((resolve) => set((s) => ({ queue: [...s.queue, { ...request, id: `local-${nextLocalConfirm++}`, resolve }] }))),
   close: (id) => set((s) => ({ queue: s.queue.filter((request) => request.id !== id) }))
 }))
 

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { CONFIRM_ARM_MS, ConfirmSheet } from '../src/renderer/src/ui/ConfirmSheet'
 import { askConfirm, useConfirmStore } from '../src/renderer/src/state/confirm'
-import { displayError } from '../src/renderer/src/display-error'
 
 vi.mock('motion/react', async () => {
   const { createElement, Fragment, forwardRef } = await import('react')
@@ -116,11 +115,32 @@ describe('ConfirmSheet', () => {
     await act(async () => useConfirmStore.getState().open(request))
     await expect(answer).resolves.toBe(false)
     expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(request.message)
-    const refused = await askConfirm({ message: 'x', confirmLabel: 'y', destructive: true }).then(
-      () => null,
-      (error: unknown) => error
-    )
-    expect(displayError(refused)).toBe(t('confirm.alreadyOpen'))
+  })
+
+  it('lets a question from a screen wait behind the confirmation on screen, with main\'s later request going ahead of it', async () => {
+    await render()
+    await act(async () => useConfirmStore.getState().open(request))
+    const question = t('tasks.confirmDelete', { title: '牛乳を買う' })
+    let answer: Promise<boolean> = Promise.resolve(false)
+    await act(async () => {
+      answer = askConfirm({ message: question, confirmLabel: t('tasks.deleteTask'), destructive: true })
+    })
+    await act(async () => useConfirmStore.getState().open(later))
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(request.message)
+    await armed()
+    await pressPrimary()
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(later.message)
+    await armed()
+    await pressEscape()
+    expect(container.querySelector('.confirm-sheet h2')?.textContent).toBe(question)
+    await armed()
+    await act(async () => container.querySelector<HTMLButtonElement>('.confirm-destructive')!.click())
+    await expect(answer).resolves.toBe(true)
+    expect(api.confirmResolve.mock.calls).toEqual([
+      ['c1', true],
+      ['c2', false]
+    ])
+    expect(container.querySelector('.confirm-sheet')).toBeNull()
   })
 
   it('keeps a second request from main waiting behind the one on screen, then shows it, and answers each once', async () => {
