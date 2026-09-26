@@ -15,12 +15,12 @@
 - **アプリのメニュー。** Windows では `Menu.setApplicationMenu(null)` にします。
   - Electron の既定のメニュー(File、Edit、View…)は、タイトルバーを隠すと見えません。それでも Alt キーで開いてしまいます。
   - 文字の欄でのコピーと貼り付けは、メニューが無くても Chromium が扱います。
-- **この処理を置く場所。** `window-chrome.ts` は、OS ごとの `BrowserWindow` の設定とメニューを返す関数だけを持ちます。`index.ts` はそれを受け取るだけにします。
+- **この処理を置く場所。** `window-chrome.ts` が、OS ごとに、`BrowserWindow` の設定、ウィンドウを開く前の準備(メニューと、下の通知の AppUserModelID)、ボタンの色の塗り方を持ちます。`index.ts` と `ipc.ts` はそれを使うだけにします。
 
 ## トレイ
 
-- いまのアイコンは、`os-integration.ts:24-26` に埋め込んだ 18×18 の黒一色のテンプレート画像です。macOS のメニューバーのための形なので、Windows の暗いタスクバーでは見えません。
-- Windows では、色のついた 16px と 32px の入った `.ico` を使います。元の絵(`resources/artwork/`)から、`scripts/gen-icon.py` で作ります。
+- macOS のアイコンは、18×18 の黒一色のテンプレート画像です。macOS のメニューバーのための形なので、Windows の暗いタスクバーでは見えません。
+- Windows では、色のついたロゴを、表示の倍率ごとの4つの大きさ(16、20、24、32px)の PNG にして使います。元の絵(`resources/artwork/`)から、`scripts/gen-icon.py` で作ります。暗いタスクバーで見えることを実機で確かめました(2026-09-27)。
 - 左クリックでウィンドウを出し、右クリックでメニューを出す動きは、いまのままで Windows でも同じです。
 
 ## グローバルショートカット

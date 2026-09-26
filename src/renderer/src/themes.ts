@@ -12,12 +12,21 @@ export function applyTheme(theme: ThemeName): void {
   void window.api.paintWindowControls({ symbol: tokenColor('--ui-text') })
 }
 
-/** A colour token of the theme on screen, resolved to rgb() whatever form the theme writes it in. */
+/**
+ * A colour token of the theme on screen as rgb(), which the main process can parse. The computed style
+ * keeps the form the theme wrote (an oklch() stays oklch()), so the colour is drawn on a pixel and read
+ * back.
+ */
 function tokenColor(token: string): string {
   const probe = document.createElement('span')
   probe.style.color = `var(${token})`
   document.body.append(probe)
   const color = getComputedStyle(probe).color
   probe.remove()
-  return color
+  const context = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('no 2d canvas to resolve a theme colour')
+  context.fillStyle = color
+  context.fillRect(0, 0, 1, 1)
+  const [r, g, b] = context.getImageData(0, 0, 1, 1).data
+  return `rgb(${r}, ${g}, ${b})`
 }

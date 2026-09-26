@@ -28,7 +28,6 @@
 | MinGit から Git Credential Manager などを消しても、ASIST の使う git の操作が全部動くか | M2-2、M3-1 | 同梱する大きさ |
 | windows-latest の runner に日本語のフォント(Yu Gothic)があるか | M2-9 | `demo:fit` を Windows の CI で動かせるか |
 | windows-latest の runner でシンボリックリンクを作れるか | M2-10 | シンボリックリンクのテストの扱い |
-| `titleBarOverlay` の色を、テーマの半透明の色で塗れるか | M3-2 | タイトルバーの見た目 |
 | 署名の無い Windows のアプリで、electron-updater の更新がどう振る舞うか | M6-7 | 自動更新 |
 | npm の Codex CLI の中にある本物の `codex.exe` の場所 | M4-2 | 案内の文(いまの案では使わない) |
 | 許可したフォルダの中に、別のサーバーの共有フォルダ(`\\server\share`)を指すシンボリックリンクやジャンクションがあるとき、`allowedPath` の `realpath` がそのサーバーに接続して、利用者の資格情報を送るか。いまは、書かれたパスのドライブか共有フォルダが、許可したフォルダのどれとも違うときにだけ、ディスクに問い合わせる前に拒んでいる | M3 | `realPath` を作り直して、リンクの行き先を1段ずつ確かめてから進むか |

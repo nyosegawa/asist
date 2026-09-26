@@ -18,7 +18,11 @@ export interface WindowChrome {
 /** The appId of electron-builder.yml, which the installer gives the Start menu shortcut. */
 const APP_USER_MODEL_ID = 'com.nyosegawa.asist'
 
-/** The buttons' background, left clear so that the theme's background picture shows behind them. */
+/**
+ * The buttons' background, left clear so that the theme's background picture shows behind them. The
+ * symbols start clear as well, until the page has sent the theme's colour, rather than in the system's
+ * dark colour over a dark picture.
+ */
 const CLEAR = '#00000000'
 
 const CHROMES: Record<OsFamily, WindowChrome> = {
@@ -29,7 +33,7 @@ const CHROMES: Record<OsFamily, WindowChrome> = {
     paintControls: () => {}
   },
   windows: {
-    frame: { titleBarStyle: 'hidden', titleBarOverlay: { color: CLEAR } },
+    frame: { titleBarStyle: 'hidden', titleBarOverlay: { color: CLEAR, symbolColor: CLEAR } },
     prepare: () => {
       // Electron's default menu (File, Edit, View, Window) is hidden with the title bar but still opens
       // with Alt. Copy and paste in a text field work without it.
@@ -42,4 +46,5 @@ const CHROMES: Record<OsFamily, WindowChrome> = {
   }
 }
 
+/** The frame of the main window on this OS. */
 export const windowChrome = (os: OsFamily): WindowChrome => CHROMES[os]
