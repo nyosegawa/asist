@@ -27,6 +27,13 @@ import { createEnvironment, environmentCurrent, installRequirements, recordEnvir
  */
 
 const WORKER_READY_TIMEOUT_MS = 120_000
+/**
+ * How often a resident worker that stopped on its own is started again within RESTART_WINDOW_MS. One that
+ * keeps crashing after it has loaded would otherwise load again on every watchdog tick, several seconds
+ * of CPU each time, until the app quits.
+ */
+const RESTART_LIMIT = 3
+const RESTART_WINDOW_MS = 10 * 60_000
 /** The generation of the Python environment. Raising it after a requirements change rebuilds the environment. */
 const RUNTIME_LOCK_VERSION = 2
 const VAP_RUNTIME_VERSION = '2'
@@ -149,6 +156,7 @@ let onState: ((state: VapState) => void) | null = null
  * cannot load would repeat on every watchdog tick.
  */
 let resident = false
+let restartTimestamps: number[] = []
 let quitHookRegistered = false
 
 function runtimeDir(): string {
@@ -179,11 +187,15 @@ export function runtimeInstalled(): boolean {
   return environmentCurrent(runtimeDir(), STAMP)
 }
 
+function workerRunning(): boolean {
+  return Boolean(child && workerReady && child.exitCode === null)
+}
+
 export function installationStatus(): VapStatus {
   return {
     runtimeInstalled: runtimeInstalled(),
     modelsInstalled: missingModels().length === 0,
-    running: Boolean(child && workerReady && child.exitCode === null)
+    running: workerRunning()
   }
 }
 
@@ -200,8 +212,21 @@ export function wanted(settings: AppSettings): boolean {
   return resident && settings.vapEnabled && conversationFeatures(settings.conversationLocale).maai
 }
 
-/** Starts a resident worker again after it stopped on its own, keeping the conversation's state handler. */
+/**
+ * Starts a resident worker again after it stopped on its own, keeping the conversation's state handler.
+ * Past the limit of restarts it waits for the conversation to start it.
+ */
 export async function restart(): Promise<boolean> {
+  if (workerRunning()) return true
+  if (startInFlight) return startInFlight
+  const now = Date.now()
+  restartTimestamps = restartTimestamps.filter((time) => now - time < RESTART_WINDOW_MS)
+  if (restartTimestamps.length >= RESTART_LIMIT) {
+    console.warn('vap: the worker keeps stopping; it is left off until the microphone is turned on again')
+    resident = false
+    return false
+  }
+  restartTimestamps.push(now)
   const ready = await start()
   if (!ready) resident = false
   return ready
@@ -268,7 +293,7 @@ function workerArgs(): string[] {
 }
 
 async function startWorker(): Promise<boolean> {
-  if (child && workerReady && child.exitCode === null) return true
+  if (workerRunning()) return true
   stopWorker()
   if (!runtimeInstalled()) return false
   if (missingModels().length > 0) return false
@@ -309,7 +334,7 @@ async function startWorker(): Promise<boolean> {
 
 /** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
 function start(): Promise<boolean> {
-  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
+  if (workerRunning()) return Promise.resolve(true)
   if (startInFlight) return startInFlight
   const operation = startWorker().finally(() => {
     if (startInFlight === operation) startInFlight = null
@@ -345,6 +370,7 @@ export function pushAudio(user: Float32Array, assistant: Float32Array): void {
 /** Stops the worker for good, until the conversation or a preparation starts it again. */
 export function stop(): void {
   resident = false
+  restartTimestamps = []
   stopWorker()
 }
 

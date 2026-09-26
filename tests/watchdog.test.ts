@@ -182,4 +182,26 @@ describe('the watchdog', () => {
     await vi.advanceTimersByTimeAsync(90_000)
     expect(vapChildren()).toHaveLength(2)
   })
+
+  it('stops starting again a VAP worker that keeps crashing after it has loaded', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const starting = vap.ensureStarted(() => {})
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    watchdog.start(() => {})
+    for (let crash = 0; crash < 6; crash++) {
+      const current = vapChildren().at(-1)!
+      current.exitCode = 1
+      current.emit('exit', 1)
+      await vi.advanceTimersByTimeAsync(30_000)
+      if (vapChildren().at(-1) === current) break
+      vapChildren().at(-1)!.stdout.write(VAP_READY)
+      await vi.advanceTimersByTimeAsync(100)
+    }
+    const spawned = vapChildren().length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(vapChildren()).toHaveLength(spawned)
+    expect(spawned).toBeLessThan(7)
+  })
 })
