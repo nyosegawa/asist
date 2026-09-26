@@ -1253,6 +1253,19 @@ export const jobs = defineMessages({
       'pt-BR': 'O worktree ({dir}) não existe mais; parece que foi apagado à mão. O branch {branch} continua lá: mescle você mesmo, ou descarte o job para remover o branch também.',
       'es-419': 'El worktree ({dir}) ya no está; parece que se borró a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para quitar también la rama.',
       'es-ES': 'El worktree ({dir}) ya no está; parece que se ha borrado a mano. Su rama {branch} sigue ahí: fusiónala tú o descarta el trabajo para eliminar también la rama.'
+    },
+    sparseMissing: {
+      'ja-JP': 'sparse checkout の範囲にあるファイルが worktree({dir})にありません: {paths}。削除したのか、取り出されていないだけなのかが分かりません。worktree で git sparse-checkout reapply を実行して取り出すか、それらに git update-index --no-skip-worktree を実行して削除として扱ってください。',
+      'en-US': 'Files inside the sparse checkout are missing from the worktree ({dir}): {paths}. There is no telling whether they were deleted or never checked out. In the worktree, run git sparse-checkout reapply to check them out, or run git update-index --no-skip-worktree on them to count them as deleted.',
+      'fr-FR': "Des fichiers compris dans le sparse checkout manquent dans le worktree ({dir}) : {paths}. Impossible de savoir s'ils ont été supprimés ou jamais extraits. Dans le worktree, lancez git sparse-checkout reapply pour les extraire, ou git update-index --no-skip-worktree sur ces fichiers pour les compter comme supprimés.",
+      'de-DE': 'Dateien innerhalb des sparse checkout fehlen im worktree ({dir}): {paths}. Es lässt sich nicht sagen, ob sie gelöscht oder nie ausgecheckt wurden. Führen Sie im worktree git sparse-checkout reapply aus, um sie auszuchecken, oder git update-index --no-skip-worktree für diese Dateien, damit sie als gelöscht gelten.',
+      'hi-IN': 'sparse checkout के दायरे की फ़ाइलें worktree ({dir}) में नहीं हैं: {paths}। पता नहीं चलता कि वे मिटाई गईं या कभी checkout ही नहीं हुईं। worktree में उन्हें checkout करने के लिए git sparse-checkout reapply चलाएँ, या उन्हें मिटाई गई मानने के लिए उन पर git update-index --no-skip-worktree चलाएँ।',
+      'id-ID': 'File di dalam cakupan sparse checkout tidak ada di worktree ({dir}): {paths}. Tidak bisa dipastikan apakah file itu dihapus atau memang tidak pernah di-checkout. Di worktree, jalankan git sparse-checkout reapply untuk men-checkout-nya, atau jalankan git update-index --no-skip-worktree pada file itu agar dihitung sebagai terhapus.',
+      'it-IT': 'Alcuni file compresi nello sparse checkout mancano dal worktree ({dir}): {paths}. Non si può sapere se sono stati eliminati o mai estratti. Nel worktree, esegui git sparse-checkout reapply per estrarli, oppure git update-index --no-skip-worktree su quei file per considerarli eliminati.',
+      'ko-KR': 'sparse checkout 범위에 있는 파일이 worktree({dir})에 없습니다: {paths}. 삭제한 것인지, 체크아웃되지 않았을 뿐인지 알 수 없습니다. worktree에서 git sparse-checkout reapply를 실행해 체크아웃하거나, 그 파일에 git update-index --no-skip-worktree를 실행해 삭제로 처리하십시오.',
+      'pt-BR': 'Arquivos dentro do sparse checkout estão faltando no worktree ({dir}): {paths}. Não dá para saber se foram apagados ou se nunca foram extraídos. No worktree, execute git sparse-checkout reapply para extraí-los, ou git update-index --no-skip-worktree nesses arquivos para contá-los como apagados.',
+      'es-419': 'Faltan en el worktree ({dir}) archivos que están dentro del sparse checkout: {paths}. No se puede saber si se borraron o si nunca se extrajeron. En el worktree, ejecuta git sparse-checkout reapply para extraerlos, o git update-index --no-skip-worktree sobre ellos para contarlos como borrados.',
+      'es-ES': 'Faltan en el worktree ({dir}) archivos que están dentro del sparse checkout: {paths}. No se puede saber si se han borrado o si nunca se han extraído. En el worktree, ejecuta git sparse-checkout reapply para extraerlos, o git update-index --no-skip-worktree sobre ellos para contarlos como borrados.'
     }
   },
   discard: {

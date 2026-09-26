@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
+import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from './conversation-locale'
 import { childEnv } from './child-env'
 import { resourcePath } from './resource-path'
@@ -32,12 +33,19 @@ export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
 }
 
-function git(cwd: string, args: string[], options: { maxBuffer?: number; env?: NodeJS.ProcessEnv } = {}): string {
+interface GitOptions {
+  maxBuffer?: number
+  env?: NodeJS.ProcessEnv
+  input?: string
+}
+
+function git(cwd: string, args: string[], options: GitOptions = {}): string {
   return execFileSync(gitPath(), args, {
     cwd,
     encoding: 'utf8',
     maxBuffer: options.maxBuffer ?? 4 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    input: options.input,
+    stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     env: { ...gitEnv(), ...options.env }
   })
 }
@@ -169,7 +177,104 @@ const EXACT_DIFF = ['--no-color', '--no-ext-diff', '--no-textconv', '--no-relati
 const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
 
 /**
- * Commits every uncommitted change in dir as it is, and returns false when there is nothing to commit.
+ * The configuration of every command that reads the index or the files of a working tree ASIST commits as it
+ * is on disk. With core.ignoreStat in the repository's configuration, git marks each file it checks out or
+ * adds as assume-unchanged and stops looking at it, so ASIST's own add would hide the files again, and a
+ * fsmonitor hook that misses an event hides a changed file from status. A job whose edit is hidden settles as
+ * unchanged, and its worktree is removed with the edit. Both settings only spare git a look at the files.
+ */
+const ON_DISK = ['-c', 'core.ignoreStat=false', '-c', 'core.fsmonitor=false']
+
+function onDisk(dir: string, args: string[], options: GitOptions = {}): string {
+  return git(dir, [...ON_DISK, ...args], options)
+}
+
+/**
+ * Stages everything as it is on disk. Without --sparse, add refuses a file outside a sparse checkout, a new
+ * one or one the agent brought back, and the commit fails; with it, a file that is outside and absent keeps
+ * its skip-worktree and is not staged as deleted.
+ */
+const ADD_ALL = ['add', '-A', '--sparse']
+
+const nulTerminated = (paths: Iterable<string>): string => [...paths].map((file) => `${file}\0`).join('')
+
+/**
+ * Whether anything is at a path of the index of dir, a link or an empty folder included, without following a
+ * link at its end. A folder is looked at once for all the paths under it, since a sparse worktree leaves out
+ * most of the files: for the 99,900 files left out of a checkout of 100 out of 100,000, an lstat of each took
+ * 108 ms and this takes 6 ms (Apple M5, 2026-09-27).
+ */
+function presenceIn(dir: string): (file: string) => boolean {
+  const folders = new Map<string, boolean>([['.', true]])
+  const present = (file: string): boolean => {
+    try {
+      return fs.lstatSync(path.join(dir, file), { throwIfNoEntry: false }) !== undefined
+    } catch (error) {
+      // A file in place of a parent folder leaves nothing at the path.
+      if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return false
+      throw error
+    }
+  }
+  const folder = (name: string): boolean => {
+    let known = folders.get(name)
+    if (known === undefined) {
+      known = folder(path.posix.dirname(name)) && present(name)
+      folders.set(name, known)
+    }
+    return known
+  }
+  return (file) => folder(path.posix.dirname(file)) && present(file)
+}
+
+/**
+ * Clears what keeps status and add from looking at a file of dir on disk, in the index of dir alone, and
+ * refuses an index in which an absent file cannot be told apart from a deleted one.
+ *
+ * Assume-unchanged is only a hint that spares git a look at the file, so it goes from every entry.
+ * Skip-worktree is also how a sparse checkout marks the files it leaves out: clearing it from those that are
+ * absent would stage the deletion of everything outside the checkout, and refusing it would stop every job in
+ * a sparse repository. In a sparse worktree it therefore goes only from the files that are present, as git
+ * itself does unless sparse.expectFilesOutsideOfPatterns is set. A sparse checkout never leaves out a file its
+ * patterns include, so an absent one there that has the flag was either deleted behind the flag or left out
+ * by patterns changed without being reapplied, and it is refused. In a worktree that is not sparse nothing
+ * but the agent sets the flag, and it goes from every entry.
+ *
+ * In a worktree of 100,000 files this added 14 ms to the 128 ms of a status, and 64 ms to the 12 ms of one
+ * in a sparse checkout of 100 of them. The first call after core.ignoreStat had marked all 100,000 took a
+ * median of 422 ms (bundled git 2.55, Apple M5, 2026-09-27).
+ */
+function clearHidingFlags(dir: string): void {
+  const assumed = new Set<string>()
+  const skipped = new Set<string>()
+  // With -v, ls-files tags an entry with skip-worktree S, and writes the tag in lower case when the entry is
+  // assume-unchanged. An unmerged entry is tagged M whatever its flags, and add replaces all its stages with
+  // the file on disk.
+  for (const entry of onDisk(dir, ['ls-files', '-v', '-z'], WHOLE).split('\0')) {
+    const tag = entry[0]
+    if (tag === 'h' || tag === 's') assumed.add(entry.slice(2))
+    if (tag === 'S' || tag === 's') skipped.add(entry.slice(2))
+  }
+  let cleared = [...skipped]
+  if (skipped.size > 0 && git(dir, ['config', '--type=bool', '--default=false', 'core.sparseCheckout']).trim() === 'true') {
+    const present = presenceIn(dir)
+    const absent: string[] = []
+    cleared = []
+    for (const file of skipped) (present(file) ? cleared : absent).push(file)
+    const included = absent.length === 0
+      ? []
+      : git(dir, ['sparse-checkout', 'check-rules', '-z'], { ...WHOLE, input: nulTerminated(absent) }).split('\0').filter(Boolean)
+    if (included.length > 0) {
+      const named = included.slice(0, 5).join(', ') + (included.length > 5 ? ', …' : '')
+      throw new Error(errorText('jobs.worktree.sparseMissing', { paths: named, dir }))
+    }
+  }
+  if (assumed.size > 0) onDisk(dir, ['update-index', '-z', '--no-assume-unchanged', '--stdin'], { input: nulTerminated(assumed) })
+  if (cleared.length > 0) onDisk(dir, ['update-index', '-z', '--no-skip-worktree', '--stdin'], { input: nulTerminated(cleared) })
+}
+
+/**
+ * Commits every uncommitted change in dir as it is on disk, and returns false when there is nothing to
+ * commit.
  *
  * The commit is built by write-tree and commit-tree from a copy of the index in a folder of its own, so no
  * hook of the repository runs and ASIST holds no lock of the repository between git's commands: git commit
@@ -178,7 +283,8 @@ const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
  * branch goes back, so that a commit that fails leaves the index and the branch as they were.
  */
 export function commitAll(dir: string, message: string): boolean {
-  if (git(dir, ['status', '--porcelain', ...EXACT_STATUS], WHOLE).trim() === '') return false
+  clearHidingFlags(dir)
+  if (onDisk(dir, ['status', '--porcelain', ...EXACT_STATUS], WHOLE).trim() === '') return false
   const head = hasHead(dir) ? headCommit(dir) : null
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
   const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
@@ -186,13 +292,13 @@ export function commitAll(dir: string, message: string): boolean {
     const staging = path.join(scratch, 'index')
     if (fs.existsSync(index)) fs.copyFileSync(index, staging)
     const env = { GIT_INDEX_FILE: staging }
-    git(dir, ['add', '-A'], { env })
-    const tree = git(dir, ['write-tree'], { env }).trim()
+    onDisk(dir, ADD_ALL, { env })
+    const tree = onDisk(dir, ['write-tree'], { env }).trim()
     if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) {
       // Nothing is left to commit, but the index can still disagree with HEAD: a change staged and then
       // undone on disk, or a commit whose index was never brought up to it before a crash. Left so, the
       // job would never count as settled.
-      git(dir, ['add', '-A'])
+      onDisk(dir, ADD_ALL)
       return false
     }
     const commit = git(dir, [
@@ -200,7 +306,7 @@ export function commitAll(dir: string, message: string): boolean {
     ]).trim()
     git(dir, ['update-ref', '-m', message, 'HEAD', commit, head ?? ''])
     try {
-      git(dir, ['add', '-A'])
+      onDisk(dir, ADD_ALL)
     } catch (error) {
       git(dir, head ? ['update-ref', 'HEAD', head, commit] : ['update-ref', '-d', 'HEAD', commit])
       throw error
@@ -255,7 +361,7 @@ export function submodulesWithWork(dir: string): string[] {
     // With -z an entry of the second porcelain format is one field, and its path is all that follows the
     // fixed fields, spaces included. Without renames no entry carries a second path.
     const fixedFields: Record<string, number> = { '1': 8, u: 10 }
-    const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)], WHOLE)
+    const status = onDisk(dir, ['status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)], WHOLE)
     for (const entry of status.split('\0')) {
       const count = fixedFields[entry[0]]
       if (count === undefined) continue
@@ -279,7 +385,7 @@ export function submodulesWithWork(dir: string): string[] {
  * of 8.3 MB, with the bundled git 2.55 on an Apple M5 (2026-09-26).
  */
 function gitlinks(dir: string): string[] {
-  return git(dir, ['ls-files', '--stage', '-z'], WHOLE)
+  return onDisk(dir, ['ls-files', '--stage', '-z'], WHOLE)
     .split('\0')
     .filter((entry) => entry.startsWith(`${SUBMODULE_MODE} `))
     .map((entry) => entry.slice(entry.indexOf('\t') + 1))
@@ -346,11 +452,12 @@ function submodulePaths(dir: string): Map<string, string> {
 
 /**
  * Whether dir holds no change that commitAll would commit, new files included whatever
- * status.showUntrackedFiles says. It does not look inside submodules, whose changes no commit of dir carries
- * and which submodulesWithWork finds instead.
+ * status.showUntrackedFiles says, and files the index was told not to look at as well. It does not look
+ * inside submodules, whose changes no commit of dir carries and which submodulesWithWork finds instead.
  */
 export function isSettled(dir: string): boolean {
-  return git(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], WHOLE).trim() === ''
+  clearHidingFlags(dir)
+  return onDisk(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], WHOLE).trim() === ''
 }
 
 /**
