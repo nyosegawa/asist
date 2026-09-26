@@ -1,0 +1,14 @@
+Image 1: style reference only (material, colors, lighting). Do not copy its scene or characters.
+
+Use: a sprite sheet of decorative props for the night scene of an animated promo video; each prop will be cut out and animated on its own.
+Subject: six separate props arranged in a neat 3 by 2 grid, each one centered in its own cell with wide empty space around it, none touching or overlapping:
+1. a plump soft-yellow crescent moon
+2. a plump five-pointed star in soft yellow
+3. a smaller plump five-pointed star in lavender
+4. a closed navy notebook with a pale-cyan crescent moon on the cover and a lavender elastic band and ribbon bookmark
+5. a round lavender alarm clock with a navy face, two bells on top, hands pointing at twelve
+6. a short lavender pencil with a cream tip
+Scene: none, isolated props on a transparent background, no ground, no cast shadows.
+Style: soft 3D clay-and-felt miniature exactly like the reference: matte felt texture with fine fibers, rounded chunky shapes, pastel palette, soft studio light from the upper left, gentle ambient occlusion, cute.
+Composition: straight-on view, all six props at a similar visual size, evenly spaced grid.
+Avoid: text, numbers on the clock, labels, grid lines, borders, extra props.
