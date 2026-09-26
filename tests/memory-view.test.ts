@@ -179,6 +179,17 @@ describe('the memory screen', () => {
     expect(useViewStore.getState().open?.app).not.toBe('memory')
   })
 
+  it('opens the address of a link in a document when it is pressed', async () => {
+    files['pages/松葉軒.md'] = FILES['pages/松葉軒.md'].replace('疲れた日に名前が出る。', '[地図](https://example.com/map) を見て行く。')
+    const view = await render()
+    await act(async () => itemByTitle(view, '松葉軒').click())
+    await act(async () => {})
+    const link = view.querySelector<HTMLButtonElement>('.my-markdown .my-link')!
+    expect(link.textContent).toBe('地図')
+    await act(async () => link.click())
+    expect(api.openExternal).toHaveBeenCalledWith('https://example.com/map')
+  })
+
   it('says that there is no memory yet and offers to start a curation', async () => {
     files = {}
     const view = await render()
