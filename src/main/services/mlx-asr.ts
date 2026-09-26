@@ -10,8 +10,11 @@ import * as runtime from './mlx-runtime'
 
 type MlxAsrModel = Extract<ResolvedAsrModel, `${string}-mlx`>
 
-const FINAL_TIMEOUT_MS = 60_000
-const PARTIAL_TIMEOUT_MS = 4_000
+/**
+ * How long a caller waits for a partial transcription. The worker still finishes a partial that took
+ * longer: stopping it would also fail the final transcription queued behind the partial.
+ */
+const PARTIAL_WAIT_MS = 4_000
 
 let worker: runtime.MlxWorker | null = null
 let workerModel: MlxAsrModel | null = null
@@ -104,15 +107,10 @@ function stopWorker(error: Error = new DOMException('MLX ASR worker stopped', 'A
   transcriptions.failWorker(stale.child, error)
 }
 
-function sendRequest(
-  model: MlxAsrModel,
-  samples: Float32Array,
-  id: string,
-  timeoutMs: number
-): Promise<string> {
+function sendRequest(model: MlxAsrModel, samples: Float32Array, id: string): Promise<string> {
   // The language is read here, per request, so that a change of the setting applies to the next
   // utterance without reloading the model.
-  return transcriptions.start(samples, id, timeoutMs, mlxAsrLanguage(model, conversationLocale()), () => {
+  return transcriptions.start(samples, id, mlxAsrLanguage(model, conversationLocale()), () => {
     // ensureServer waits for ready after the spawn, so the child is captured here, before any await, and
     // this request stays bound to that one child.
     const ready = ensureServer(model)
@@ -131,18 +129,25 @@ export function transcribe(
   samples: Float32Array,
   requestId?: string
 ): Promise<string> {
-  return sendRequest(model, samples, requestId || randomUUID(), FINAL_TIMEOUT_MS)
+  return sendRequest(model, samples, requestId || randomUUID())
 }
 
 export async function transcribePartial(
   model: MlxAsrModel,
   samples: Float32Array
 ): Promise<string> {
+  // The worker answers in arrival order, so a partial sent while it still works on another request,
+  // an abandoned partial included, would only delay the final transcription.
   if (transcriptions.size > 0) return ''
+  const answer = sendRequest(model, samples, randomUUID()).catch(() => '')
+  let timer: NodeJS.Timeout | undefined
+  const abandoned = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve(''), PARTIAL_WAIT_MS)
+  })
   try {
-    return await sendRequest(model, samples, randomUUID(), PARTIAL_TIMEOUT_MS)
-  } catch {
-    return ''
+    return await Promise.race([answer, abandoned])
+  } finally {
+    clearTimeout(timer)
   }
 }
 

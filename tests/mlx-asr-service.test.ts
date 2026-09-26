@@ -205,6 +205,40 @@ describe('MLX transcription lifecycle', () => {
     await vi.waitFor(() => expect(wavFiles()).toEqual([]))
   })
 
+  it('keeps the worker and the final transcription queued behind a partial that runs past its wait', async () => {
+    const child = await ready()
+    const partial = mlx.transcribePartial(MODEL, new Float32Array(16_000 * 5))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    const final = observe(mlx.transcribe(MODEL, new Float32Array(16_000 * 8), 'final'))
+    await vi.waitFor(() => expect(child.input).toHaveLength(2))
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(await partial).toBe('')
+
+    const partialId = JSON.parse(child.input[0]).id as string
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: partialId, text: '途中' })}\n`)
+    child.stdout.write('ASIST_JSON:{"type":"result","id":"final","text":"最後まで話しました"}\n')
+    expect(await final).toEqual({ text: '最後まで話しました', error: undefined })
+    expect(child.kill).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(wavFiles()).toEqual([]))
+  })
+
+  it('sends no further partial while the worker still computes one its caller stopped waiting for', async () => {
+    const child = await ready()
+    const first = mlx.transcribePartial(MODEL, new Float32Array([0.2]))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(await first).toBe('')
+    expect(await mlx.transcribePartial(MODEL, new Float32Array([0.2]))).toBe('')
+    expect(child.input).toHaveLength(1)
+
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: JSON.parse(child.input[0]).id, text: '遅れた' })}\n`)
+    await vi.advanceTimersByTimeAsync(10)
+    const next = mlx.transcribePartial(MODEL, new Float32Array([0.2]))
+    await vi.waitFor(() => expect(child.input).toHaveLength(2))
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: JSON.parse(child.input[1]).id, text: '次の途中' })}\n`)
+    expect(await next).toBe('次の途中')
+  })
+
   it('reports unavailable installation without leaving a cancellable request', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
     const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'unavailable'))
