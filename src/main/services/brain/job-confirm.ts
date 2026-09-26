@@ -58,13 +58,16 @@ export function jobConfirmation(plan: JobPlan): ConfirmInput {
   }
 }
 
-export function mergeConfirmation(job: { title: string; repo: string }, review: JobDiff): ConfirmInput {
+/** The job's title, and the repository and the branch the merge goes into. */
+type MergeTarget = { title: string; repo: string; into: string }
+
+export function mergeConfirmation(job: MergeTarget, review: JobDiff): ConfirmInput {
   return {
     title: t('jobs.confirm.mergeTitle'),
     message: t('jobs.confirm.mergeMessage'),
     detail: [
       t('jobs.confirm.job', { title: job.title }),
-      t('jobs.confirm.mergeInto', { into: review.into, repo: job.repo }),
+      t('jobs.confirm.mergeInto', { into: job.into, repo: job.repo }),
       '',
       review.stat
     ].join('\n'),
@@ -94,7 +97,7 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
 export const confirmJob = (plan: JobPlan, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(jobConfirmation(plan), signal)
 
-export const confirmMerge = (job: { title: string; repo: string }, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
+export const confirmMerge = (job: MergeTarget, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(mergeConfirmation(job, review), signal)
 
 export const confirmDiscard = (title: string, target: DiscardPreview, signal: AbortSignal): Promise<boolean> =>

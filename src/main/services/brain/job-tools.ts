@@ -298,8 +298,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
     {
       name: 'get_agent_job',
       description: {
-        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }。reviewには確認対象のcommitと差分、取り込み先のブランチ(into)、ジョブが触れたサブモジュールと.gitmodules(submodules)が入る。submodulesのあるジョブはASISTでは取り込めない。取り込み待ちのジョブの差分を読めなかったときは、reviewの代わりにreviewUnavailableにその理由が入る。',
-        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }, where review holds the commit to look over, its diff, the branch a merge goes into (into), and the submodules and .gitmodules the job touched (submodules). A job with any submodules cannot be merged by ASIST. When the diff of a job waiting to be merged cannot be read, reviewUnavailable gives the reason in place of review.'
+        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }。reviewには確認対象のcommitと差分、取り込み先のブランチ(into。HEADがブランチを指していないときはnullで、取り込めない)、ジョブが触れたサブモジュールと.gitmodules(submodules)が入る。submodulesのあるジョブはASISTでは取り込めない。取り込み待ちのジョブの差分を読めなかったときは、reviewの代わりにreviewUnavailableにその理由が入る。',
+        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, reviewUnavailable, logTail }, where review holds the commit to look over, its diff, the branch a merge goes into (into, null when HEAD is not on a branch, while nothing can be merged), and the submodules and .gitmodules the job touched (submodules). A job with any submodules cannot be merged by ASIST. When the diff of a job waiting to be merged cannot be read, reviewUnavailable gives the reason in place of review.'
       },
       usage: {
         ja: '特定のジョブの進捗や成果物のパスを知りたいとき、完了報告で詳細が要るとき',
@@ -441,11 +441,14 @@ export function jobTools(locale: ConversationLocale): Def[] {
       run: async (input, _ctx, signal) => {
         const job = requireJob(input)
         const commit = String(input.commit ?? '')
-        let review
-        // A job with nothing to merge is refused before the user is asked about it.
+        let review: JobDiff
+        let into: string
+        // A job with nothing to merge, or nowhere to merge it into, is refused before the user is asked.
         try {
           review = agentRunner.diff(job.id)
           if (review.commit !== commit) throw new Error(errorText('jobs.worktree.reviewStale'))
+          if (review.into === null) throw new Error(errorText('jobs.merging.detached'))
+          into = review.into
           if (review.submodules.length > 0) {
             throw new Error(errorText('jobs.merging.submodules', { paths: review.submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir }))
           }
@@ -453,7 +456,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         } catch (err) {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
         }
-        if (!(await confirmMerge({ title: job.title, repo: job.worktree!.repo }, review, signal))) {
+        if (!(await confirmMerge({ title: job.title, repo: job.worktree!.repo, into }, review, signal))) {
           return { merged: false, declined: true, jobId: job.id, note: TEXTS.mergeDeclined[language] }
         }
         let merged

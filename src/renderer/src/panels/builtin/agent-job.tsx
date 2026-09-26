@@ -126,10 +126,11 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
     >
       <p className="aj-text">{t(conflict ? 'jobs.card.merge.conflictText' : 'jobs.card.merge.text')}</p>
       <p className="aj-path">
-        {diff
+        {diff?.into
           ? t('jobs.card.merge.path', { branch: worktree.branch, into: diff.into, repo: worktree.repo })
           : `${worktree.branch} → ${worktree.repo}`}
       </p>
+      {diff && diff.into === null && <p className="aj-text">{t('jobs.merging.detached')}</p>}
       {diff && diff.submodules.length > 0 && (
         <p className="aj-text">
           {t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: worktree.branch, dir: worktree.dir })}

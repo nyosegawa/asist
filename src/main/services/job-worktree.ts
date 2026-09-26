@@ -99,9 +99,11 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
 export function assertMergeable(job: AgentJob, reviewed: ReviewedMerge): void {
   const worktree = job.worktree!
   const { commit, base } = reviewed
-  if (git.checkedOut(worktree.repo) !== reviewed.into || mergeBase(worktree, commit) !== base) {
-    throw new Error(errorText('jobs.merging.baseChanged'))
-  }
+  const into = git.checkedOut(worktree.repo)
+  // A merge into a detached HEAD moves only HEAD: the work is left to a reflog once the branch is checked
+  // out again, as after a bisect, while the job's branch and worktree are already deleted.
+  if (into === null) throw new Error(errorText('jobs.merging.detached'))
+  if (into !== reviewed.into || mergeBase(worktree, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
   const submodules = sortedUnique([...touchedSubmodules(worktree, base, commit), ...git.submodulesWithWork(worktree.dir)])
   if (submodules.length > 0) {
     throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir }))

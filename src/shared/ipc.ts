@@ -528,11 +528,11 @@ export interface JobDiff {
    */
   base: string
   /**
-   * The branch checked out in the repository when the diff was read, which the merge goes into, or the
-   * commit when HEAD is detached. The merge refuses to go on once another branch is checked out, or once a
-   * detached HEAD points at another commit, since a branch cut from the same commit keeps the merge base.
+   * The branch checked out in the repository when the diff was read, which the merge goes into, or null when
+   * HEAD is not on a branch, while nothing can be merged. The merge refuses to go on once another branch is
+   * checked out, since a branch cut from the same commit keeps the merge base.
    */
-  into: string
+  into: string | null
   stat: string
   patch: string
   /** The submodules the job touched, which keep ASIST from merging it (see `AgentJob.worktree.submodules`). */

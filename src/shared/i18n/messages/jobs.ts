@@ -1655,6 +1655,19 @@ export const jobs = defineMessages({
       'pt-BR': 'Este job mexeu em submódulos ou no .gitmodules ({paths}), então o ASIST não pode mesclá-lo. Mescle você mesmo o branch {branch}, ou descarte o job. Os commits feitos dentro de um submódulo podem existir só na cópia do worktree ({dir}): nesse caso, faça push de lá primeiro, senão o git submodule update no seu checkout não consegue buscá-los.',
       'es-419': 'Este trabajo tocó submódulos o .gitmodules ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo pueden existir solo en la copia del worktree ({dir}); en ese caso, haz push desde ahí primero, o git submodule update en tu checkout no podrá traerlos.',
       'es-ES': 'Este trabajo ha tocado submódulos o .gitmodules ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo. Los commits hechos dentro de un submódulo pueden existir solo en la copia del worktree ({dir}); en ese caso, haz push desde ahí primero, o git submodule update en tu checkout no podrá traerlos.'
+    },
+    detached: {
+      'ja-JP': 'リポジトリの HEAD がブランチを指していないので、取り込めません。取り込み先のブランチをチェックアウトしてから取り込んでください。',
+      'en-US': "The repository's HEAD is not on a branch, so nothing can be merged. Check out the branch to merge into, then merge.",
+      'fr-FR': 'Le HEAD du dépôt ne pointe sur aucune branche : rien ne peut être fusionné. Extrayez la branche dans laquelle fusionner, puis fusionnez.',
+      'de-DE': 'Der HEAD des Repositorys steht auf keinem Branch, deshalb lässt sich nichts übernehmen. Checken Sie den Branch aus, in den übernommen werden soll, und übernehmen Sie dann.',
+      'hi-IN': 'रिपॉज़िटरी का HEAD किसी ब्रांच पर नहीं है, इसलिए कुछ भी मर्ज नहीं हो सकता। जिस ब्रांच में मर्ज करना है उसे checkout करें, फिर मर्ज करें।',
+      'id-ID': 'HEAD repositori tidak berada di branch mana pun, jadi tidak ada yang bisa digabungkan. Checkout branch tujuan penggabungan, lalu gabungkan.',
+      'it-IT': "L'HEAD del repository non è su un branch, quindi non si può integrare nulla. Fai il checkout del branch in cui integrare, poi integra.",
+      'ko-KR': '저장소의 HEAD가 브랜치를 가리키지 않아서 병합할 수 없습니다. 병합할 브랜치를 체크아웃한 뒤에 병합하십시오.',
+      'pt-BR': 'O HEAD do repositório não está em um branch, então nada pode ser mesclado. Faça checkout do branch onde mesclar e depois mescle.',
+      'es-419': 'El HEAD del repositorio no está en una rama, así que no se puede fusionar nada. Haz checkout de la rama donde fusionar y luego fusiona.',
+      'es-ES': 'El HEAD del repositorio no está en una rama, así que no se puede fusionar nada. Haz checkout de la rama donde fusionar y luego fusiona.'
     }
   },
   confirm: {

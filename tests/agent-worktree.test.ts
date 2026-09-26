@@ -356,13 +356,24 @@ it('names the branch checked out in the repository as the one a merge goes into,
   expect(git(repo, 'rev-parse', 'main')).toBe(main)
 })
 
-it('names the commit a merge moves when the repository has no branch checked out', async () => {
+it('refuses to merge while the repository is in the middle of a bisect, and keeps the job\'s branch and worktree', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })
   fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
   mocks.launch.mock.calls[0][2].onExit(0)
-  git(repo, 'switch', '-q', '--detach')
-  expect(agent.diff(job.id).into).toBe(git(repo, 'rev-parse', 'HEAD'))
+  for (const message of ['second', 'third']) git(repo, 'commit', '-q', '--allow-empty', '-m', message)
+  const main = git(repo, 'rev-parse', 'main')
+  git(repo, 'bisect', 'start', 'HEAD', 'HEAD~2')
+  const review = agent.diff(job.id)
+  expect(review.into).toBeNull()
+  expect(review.stat).toContain('new.txt')
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.detached'))
+  git(repo, 'bisect', 'reset')
+  expect(git(repo, 'rev-parse', 'main')).toBe(main)
+  const { branch } = agent.get(job.id)!.worktree!
+  expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+  expect(fs.existsSync(job.cwd)).toBe(true)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
 })
 
 it('refuses the merge the card sends when a branch cut from the same commit was checked out after the review, and leaves that branch as it was', async () => {
@@ -398,23 +409,17 @@ it('refuses merge_agent_job when a branch cut from the same commit is checked ou
   expect(agent.get(job.id)?.mergeState).toBe('pending')
 })
 
-it('refuses merge_agent_job when the detached HEAD moves to another commit with the same merge base while its confirmation is open', async () => {
+it('refuses merge_agent_job before asking while HEAD is not on a branch', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })
   fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
   mocks.launch.mock.calls[0][2].onExit(0)
   git(repo, 'switch', '-q', '--detach')
-  const review = agent.diff(job.id)
-  let moved = ''
-  mocks.requestConfirm.mockImplementationOnce(async () => {
-    git(repo, 'commit', '-q', '--allow-empty', '-m', 'on the detached HEAD')
-    moved = git(repo, 'rev-parse', 'HEAD')
-    return true
-  })
-  await expect(mergeThroughTool(job.id, review.commit)).rejects.toThrow(ja('jobs.merging.baseChanged'))
-  expect(git(repo, 'merge-base', 'HEAD', review.commit)).toBe(review.base)
-  expect(git(repo, 'rev-parse', 'HEAD')).toBe(moved)
-  expect(agent.get(job.id)?.mergeState).toBe('pending')
+  const head = git(repo, 'rev-parse', 'HEAD')
+  await expect(mergeThroughTool(job.id, agent.diff(job.id).commit)).rejects.toThrow(ja('jobs.merging.detached'))
+  expect(mocks.requestConfirm).not.toHaveBeenCalled()
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
+  expect(fs.existsSync(job.cwd)).toBe(true)
 })
 
 it('refuses to discard a job that changed nothing', async () => {

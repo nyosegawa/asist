@@ -369,18 +369,20 @@ export function mergeBase(repo: string, commit: string): string | null {
 }
 
 /**
- * What a merge into repo goes into: the branch checked out there, or the commit when HEAD is detached, since
- * the merge moves whatever HEAD is at the time. The commit is the whole id: an abbreviated one grows as the
- * repository gains objects, and would then no longer equal the one a review showed.
+ * The branch checked out in repo, which a merge moves, or null when HEAD is not on a branch: detached, as
+ * during a bisect, at a stop of a rebase or after checking out a tag, or pointing outside refs/heads. The
+ * full name is read, since the short one of a branch that shares its name with a tag is `heads/<name>`.
  */
-export function checkedOut(repo: string): string {
+export function checkedOut(repo: string): string | null {
+  let ref: string
   try {
-    return git(repo, ['symbolic-ref', '--quiet', '--short', 'HEAD']).trim()
+    ref = git(repo, ['symbolic-ref', '--quiet', 'HEAD']).trim()
   } catch (error) {
     // With --quiet, symbolic-ref exits with 1 and prints nothing when HEAD is detached.
-    if ((error as { status?: number }).status !== 1) throw error
-    return headCommit(repo)
+    if ((error as { status?: number }).status === 1) return null
+    throw error
   }
+  return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null
 }
 
 /** Whether anything changed from base to commit. */

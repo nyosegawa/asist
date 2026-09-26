@@ -409,7 +409,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
 
   handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
   handle(IpcChannel.JobMerge, (_e, id: string, reviewed: ReviewedMerge) => {
-    agent.merge(String(id), { commit: String(reviewed.commit), base: String(reviewed.base), into: String(reviewed.into) })
+    const into = reviewed.into === null ? null : String(reviewed.into)
+    agent.merge(String(id), { commit: String(reviewed.commit), base: String(reviewed.base), into })
   })
   handle(IpcChannel.JobDiscard, (_e, id: string) => {
     agent.discard(String(id))
