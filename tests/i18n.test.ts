@@ -65,6 +65,36 @@ function markupLiterals(file: string): Array<{ line: number; text: string }> {
   return found.filter((entry) => /\p{L}{2,}/u.test(entry.text))
 }
 
+/** The calls that write a message in one language, which a thrown error must not be made of. */
+const IN_ONE_LANGUAGE = new Set(['t', 'translate', 'tConversation', 'formatMessage', 'displayError', 'errorMessage', 'errorMessageIn'])
+
+/**
+ * The lines of one file that throw an error made of a sentence in one language. The screen writes an error
+ * from the key errorText puts in its message, in the language of the interface at the time, and the log
+ * keeps it in English; a sentence already written in one language gives neither.
+ */
+function errorsInOneLanguage(file: string): number[] {
+  const ast = parse(readFileSync(path.join(ROOT, file), 'utf8'), { sourceType: 'module', plugins: ['typescript', 'jsx', 'importAttributes'] })
+  const found: number[] = []
+  type Node = { type?: string; callee?: { type?: string; name?: string }; arguments?: Node[]; loc?: { start: { line: number } } }
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(visit)
+    if (!node || typeof node !== 'object') return
+    const current = node as Node
+    const message = current.arguments?.[0]
+    if (
+      current.type === 'NewExpression' &&
+      /Error$/.test(current.callee?.name ?? '') &&
+      message?.type === 'CallExpression' &&
+      IN_ONE_LANGUAGE.has(message.callee?.name ?? '')
+    )
+      found.push(current.loc?.start.line ?? 0)
+    for (const [key, value] of Object.entries(current)) if (key !== 'loc' && !key.endsWith('Comments')) visit(value)
+  }
+  visit(ast.program)
+  return found
+}
+
 function leaves(node: unknown, prefix = ''): Array<[string, Message]> {
   return Object.entries(node as Record<string, unknown>).flatMap(([key, value]) =>
     'ja-JP' in (value as object) ? [[`${prefix}${key}`, value as Message] as [string, Message]] : leaves(value, `${prefix}${key}.`)
@@ -199,6 +229,13 @@ describe('the dictionary', () => {
         .map(({ line, text }) => `${file}:${line}: ${text}`)
     )
     expect(left).toEqual([])
+  })
+})
+
+describe('errors', () => {
+  it('throws no error made of a sentence in one language', { timeout: 30_000 }, () => {
+    const thrown = sourceFiles().flatMap((file) => errorsInOneLanguage(file).map((line) => `${file}:${line}`))
+    expect(thrown).toEqual([])
   })
 })
 

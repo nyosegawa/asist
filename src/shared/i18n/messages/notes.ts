@@ -105,6 +105,19 @@ export const notes = defineMessages({
       'pt-BR': "Abrir notas",
       'es-419': "Abrir notas",
       'es-ES': "Abrir notas"
+    },
+    loadFailed: {
+      'ja-JP': 'メモを読み込めませんでした',
+      'en-US': "Couldn't load the notes",
+      'fr-FR': 'Impossible de charger les notes',
+      'de-DE': 'Die Notizen konnten nicht geladen werden',
+      'hi-IN': 'नोट लोड नहीं हो सके',
+      'id-ID': 'Tidak bisa memuat catatan',
+      'it-IT': 'Impossibile caricare le note',
+      'ko-KR': '메모를 불러오지 못했습니다',
+      'pt-BR': 'Não foi possível carregar as notas',
+      'es-419': 'No se pudieron cargar las notas',
+      'es-ES': 'No se han podido cargar las notas'
     }
   },
   untitled: {

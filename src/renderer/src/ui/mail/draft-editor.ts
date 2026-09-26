@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { errorText } from '@shared/i18n/error-text'
 import type { MailDraft } from '@shared/mail'
 import { splitRecipients } from './format'
 import { displayError } from '@/display-error'
-import { translate } from '@/i18n'
 
 /**
  * Editing a draft, which behaves the same in the card and in the composer of the mail view. Input is
@@ -78,7 +78,7 @@ export function useDraftEditor(draft: MailDraft | null): {
     try {
       if (dirty) await save()
       const result = await window.api.mailDraftSend(id)
-      if (!result.saved) throw new Error(translate('mail.composer.notSent'))
+      if (!result.saved) throw new Error(errorText('mail.composer.notSent'))
       setError('')
       return result.summary
     } catch (err) {

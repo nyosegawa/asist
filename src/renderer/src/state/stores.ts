@@ -61,6 +61,7 @@ interface TurnState {
   activeTurnId: number
   /** Measurements of the latest turn, as shown in the HUD. */
   timings: TurnTimings
+  /** What the HUD says about the routing of the latest turn, empty until the first turn. */
   routerNote: string
   setPhase: (phase: Phase) => void
   setMic: (micState: TurnState['micState'], progress?: number) => void
@@ -78,7 +79,7 @@ export const useTurnStore = create<TurnState>((set) => ({
   partial: '',
   activeTurnId: -1,
   timings: {},
-  routerNote: 'idle',
+  routerNote: '',
   setPhase: (phase) => set({ phase }),
   setMic: (micState, progress = 0) => set({ micState, micProgress: progress }),
   setPartial: (partial) => set({ partial }),
@@ -182,11 +183,17 @@ let panelLifecycleTimer: ReturnType<typeof setTimeout> | null = null
 const normalizeTtl = (ttl: number | undefined): number | undefined =>
   ttl !== undefined && Number.isFinite(ttl) && ttl > 0 ? ttl : undefined
 
+/**
+ * When a panel next changes by itself. A ready panel turns stale when its TTL runs out, and a panel with a
+ * TTL is removed PANEL_STALE_GRACE_MS later. The TTL is how long data stays current, so a panel still
+ * loading or one that failed has none to go out of date: it keeps its state until it is removed, since a
+ * stale panel draws its body from the data.
+ */
 function nextPanelDeadline(panel: PanelSpec): number | undefined {
-  if (panel.state === 'stale') {
-    return (panel.staleAt ?? panel.updatedAt) + PANEL_STALE_GRACE_MS
-  }
-  return panel.ttl === undefined ? undefined : panel.updatedAt + panel.ttl
+  if (panel.state === 'stale') return (panel.staleAt ?? panel.updatedAt) + PANEL_STALE_GRACE_MS
+  if (panel.ttl === undefined) return undefined
+  const staleAt = panel.updatedAt + panel.ttl
+  return panel.state === 'ready' ? staleAt : staleAt + PANEL_STALE_GRACE_MS
 }
 
 function schedulePanelLifecycle(): void {
@@ -203,31 +210,15 @@ function schedulePanelLifecycle(): void {
   ;(panelLifecycleTimer as unknown as { unref?: () => void }).unref?.()
 }
 
-/** Evaluates the TTLs, turning an expired panel stale and removing a stale panel once its grace period is over. */
+/** Evaluates the TTLs, turning an expired panel stale and removing a panel once its grace period is over. */
 export function advancePanelLifecycle(now = Date.now()): void {
   const current = usePanelStore.getState()
   let changed = false
   const panels = current.panels.flatMap((panel): PanelSpec[] => {
-    if (panel.state === 'stale') {
-      const removeAt = (panel.staleAt ?? panel.updatedAt) + PANEL_STALE_GRACE_MS
-      if (now >= removeAt) {
-        changed = true
-        return []
-      }
-      return [panel]
-    }
-    if (panel.ttl !== undefined) {
-      const staleAt = panel.updatedAt + panel.ttl
-      if (now >= staleAt + PANEL_STALE_GRACE_MS) {
-        changed = true
-        return []
-      }
-      if (now >= staleAt) {
-        changed = true
-        return [{ ...panel, state: 'stale', staleAt }]
-      }
-    }
-    return [panel]
+    const deadline = nextPanelDeadline(panel)
+    if (deadline === undefined || now < deadline) return [panel]
+    changed = true
+    return panel.state === 'ready' && now < deadline + PANEL_STALE_GRACE_MS ? [{ ...panel, state: 'stale', staleAt: deadline }] : []
   })
   if (changed) {
     const focusedKey = panels.some((panel) => panel.key === current.focusedKey)

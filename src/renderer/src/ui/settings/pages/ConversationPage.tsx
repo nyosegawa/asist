@@ -21,6 +21,7 @@ import { UI_LOCALE_NAMES, type MessageKey, type Translate } from '@shared/i18n'
 import { keyReadable, type ApiKeyState } from '@shared/ipc'
 import { useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
+import { useFieldDraft } from '../field-draft'
 import { Btn, Chip, Group, Link, Page, Row, type ChipTone } from '../primitives'
 import { displayError } from '@/display-error'
 import { useT, useUiLocale } from '@/i18n'
@@ -40,6 +41,14 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
   const toast = useToastStore((s) => s.push)
   const t = useT()
   const [saving, setSaving] = useState(false)
+  const retention = useFieldDraft(settings.conversationLogRetentionDays, {
+    format: String,
+    parse: (text) => {
+      const days = Number(text)
+      return Number.isInteger(days) && days >= 1 ? days : null
+    },
+    save: (conversationLogRetentionDays) => set({ conversationLogRetentionDays })
+  })
   const conversation = settings.conversationModel
   const bridge = settings.bridgeModel
   const conversationInfo = LLM_PROVIDER_INFO[conversation.provider]
@@ -168,11 +177,7 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
             className="st-input is-mono"
             style={{ width: 88 }}
             aria-label={t('settingsConversation.log.retentionLabel')}
-            value={settings.conversationLogRetentionDays}
-            onChange={(e) => {
-              const days = Number(e.target.value)
-              if (Number.isInteger(days) && days >= 1) set({ conversationLogRetentionDays: days })
-            }}
+            {...retention.props}
           />
         </Row>
       </Group>

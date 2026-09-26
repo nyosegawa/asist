@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createTranslator, formatMessage } from '../src/shared/i18n'
+import { createTranslator } from '../src/shared/i18n'
 import { errorText, readErrorText } from '../src/shared/i18n/error-text'
 
 // The service writes the confirmation window in the language of the interface, which it reads from the settings.
@@ -270,9 +270,8 @@ describe('calendar dates', () => {
     expect(issue.success).toBe(false)
     const message = issue.error!.issues[0].message
     expect(message).toBe(errorText('calendar.errors.timeZoneUnknown'))
-    const wording = readErrorText(message)!.message
-    expect(formatMessage(wording, 'ja-JP')).toBe(createTranslator('ja-JP')('calendar.errors.timeZoneUnknown'))
-    expect(formatMessage(wording, 'en-US')).not.toMatch(JAPANESE)
+    expect(readErrorText(message, 'ja-JP')).toBe(createTranslator('ja-JP')('calendar.errors.timeZoneUnknown'))
+    expect(readErrorText(message, 'en-US')).not.toMatch(JAPANESE)
   })
 
   it('writes the summary sent to the model in the language of the conversation, with no Japanese left in it', () => {
