@@ -61,6 +61,30 @@ export interface Forecast {
   reportDatetime: string
   timeSeries: Array<{ timeDefines: string[]; areas: Area[] }>
 }
+
+/**
+ * The days of the short-term temperatures, read by their layout as JMA's forecast page reads them. The
+ * 5:00 and 11:00 releases list their own day's 09:00 and 00:00, then the next day's 00:00 and 09:00; they
+ * forecast no minimum for their own day, whose morning has begun, and its 00:00 holds the maximum's
+ * value. The 17:00 release lists the next day's 00:00 and 09:00 alone.
+ */
+function shortTermTemperatures(
+  timeDefines: string[],
+  temps: string[]
+): Array<Pick<WeatherDay, 'date' | 'min' | 'max'>> {
+  const day = (i: number): string => timeDefines[i].slice(0, 10)
+  const layout = timeDefines.map((at) => at.slice(11, 16)).join(' ')
+  if (temps.length === timeDefines.length) {
+    if (layout === '09:00 00:00 00:00 09:00' && day(0) === day(1) && day(1) < day(2) && day(2) === day(3))
+      return [
+        { date: day(0), min: null, max: numeric(temps[0]) },
+        { date: day(2), min: numeric(temps[2]), max: numeric(temps[3]) }
+      ]
+    if (layout === '00:00 09:00' && day(0) === day(1))
+      return [{ date: day(0), min: numeric(temps[0]), max: numeric(temps[1]) }]
+  }
+  throw new Error(errorText('cardsWeather.errors.badData'))
+}
 export function parseForecast(
   data: Forecast[],
   location: JmaWeatherLocation,
@@ -86,16 +110,12 @@ export function parseForecast(
           })
       })
     const point = series.areas.find((a) => a.area.code === location.stationId)
-    if (point?.temps)
-      series.timeDefines.forEach((at, i) => {
-        if (at.slice(0, 10) !== target) return
-        // The 5:00 and 11:00 releases forecast no minimum for their own day, whose morning has begun,
-        // yet still list 00:00 of that day, holding the maximum's value; JMA's forecast page reads
-        // that day's minimum as missing.
-        if (at.slice(11, 13) === '00' && Date.parse(at) > Date.parse(short.reportDatetime))
-          day.min = numeric(point.temps![i])
-        if (at.slice(11, 13) === '09') day.max = numeric(point.temps![i])
-      })
+    const temperatures = point?.temps && shortTermTemperatures(series.timeDefines, point.temps)
+    const found = temperatures?.find((d) => d.date === target)
+    if (found) {
+      day.min = found.min
+      day.max = found.max
+    }
   }
   const daily: WeatherDay[] = []
   const week = data[1]
