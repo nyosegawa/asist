@@ -95,9 +95,31 @@ describe('an xlsx sheet into rows', () => {
           { text: '7', numeric: true },
           { text: '', numeric: false }
         ]
-      ]
+      ],
+      rowCount: 2
     })
-    expect(sheetToRows('空', {})).toEqual({ name: '空', header: [], rows: [] })
+    expect(sheetToRows('空', {})).toEqual({ name: '空', header: [], rows: [], rowCount: 0 })
+  })
+
+  it('builds only the cells between the first and the last value, whatever range the file declares', () => {
+    // A 16 KB file can declare A1:XFD1048576, and SheetJS keeps that as !ref. A smaller part of such a range
+    // keeps this test short on a build that walks the declared range.
+    const sheet = { '!ref': 'A1:XFD40', A1: { t: 's', v: '氏名' }, B1: { t: 's', v: '数' }, A2: { t: 's', v: 'A' }, B2: { t: 'n', v: 3, w: '3' } }
+    expect(sheetToRows('表', sheet)).toEqual({
+      name: '表',
+      header: ['氏名', '数'],
+      rows: [[{ text: 'A', numeric: false }, { text: '3', numeric: true }]],
+      rowCount: 1
+    })
+  })
+
+  it('keeps as many rows as the focus view shows and counts the rest', () => {
+    const sheet: Record<string, unknown> = { '!ref': 'A1:A1201', A1: { t: 's', v: '番号' } }
+    for (let r = 2; r <= 1201; r++) sheet[`A${r}`] = { t: 'n', v: r - 1 }
+    const rows = sheetToRows('表', sheet)
+    expect(rows.rows).toHaveLength(500)
+    expect(rows.rows.at(-1)).toEqual([{ text: '500', numeric: true }])
+    expect(rows.rowCount).toBe(1200)
   })
 })
 

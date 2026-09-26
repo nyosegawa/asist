@@ -21,28 +21,45 @@ export interface SheetCell {
 export interface SheetRows {
   name: string
   header: string[]
+  /** The rows below the header, as many as the focus view shows. */
   rows: SheetCell[][]
+  /** Every row below the header, counted for the note on how many are left out. */
+  rowCount: number
 }
 
-/** Turns a sheet into a header and rows. An empty sheet gets neither. */
+const hasValue = (cell: XLSX.CellObject | undefined): cell is XLSX.CellObject => cell !== undefined && cell.v !== undefined && cell.v !== null
+
+/**
+ * The rows and columns between the first and the last cell that holds a value. The range a file declares
+ * (!ref) cannot stand in for it: SheetJS keeps the A1:XFD1048576 that a 16 KB file declares, and building
+ * the 17 billion cells of that range holds the renderer indefinitely.
+ */
+function usedRange(sheet: XLSX.WorkSheet): XLSX.Range | null {
+  let range: XLSX.Range | null = null
+  for (const address of Object.keys(sheet)) {
+    if (address.startsWith('!') || !hasValue(sheet[address] as XLSX.CellObject | undefined)) continue
+    const { r, c } = XLSX.utils.decode_cell(address)
+    if (!range) range = { s: { r, c }, e: { r, c } }
+    else range = { s: { r: Math.min(range.s.r, r), c: Math.min(range.s.c, c) }, e: { r: Math.max(range.e.r, r), c: Math.max(range.e.c, c) } }
+  }
+  return range
+}
+
+/** Turns a sheet into a header and rows. A sheet with no value gets neither. */
 export function sheetToRows(name: string, sheet: XLSX.WorkSheet): SheetRows {
-  if (!sheet['!ref']) return { name, header: [], rows: [] }
-  const range = XLSX.utils.decode_range(sheet['!ref'])
+  const range = usedRange(sheet)
+  if (!range) return { name, header: [], rows: [], rowCount: 0 }
   const grid: SheetCell[][] = []
-  for (let r = range.s.r; r <= range.e.r; r++) {
+  for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + FOCUS_ROWS); r++) {
     const row: SheetCell[] = []
     for (let c = range.s.c; c <= range.e.c; c++) {
       const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined
-      if (!cell || cell.v === undefined || cell.v === null) {
-        row.push({ text: '', numeric: false })
-        continue
-      }
-      row.push({ text: cell.w ?? String(cell.v), numeric: cell.t === 'n' })
+      row.push(hasValue(cell) ? { text: cell.w ?? String(cell.v), numeric: cell.t === 'n' } : { text: '', numeric: false })
     }
     grid.push(row)
   }
   const [header, ...rows] = grid
-  return { name, header: header.map((cell) => cell.text), rows }
+  return { name, header: header.map((cell) => cell.text), rows, rowCount: range.e.r - range.s.r }
 }
 
 async function parseXlsx(bytes: ArrayBuffer): Promise<SheetRows[]> {
@@ -71,7 +88,7 @@ export const XlsxViewer: Viewer = ({ item, mode, size }) => {
   const sheet = sheets[Math.min(active, sheets.length - 1)]
   const limit = mode === 'card' ? CARD_ROWS : FOCUS_ROWS
   const shown = sheet.rows.slice(0, limit)
-  const rest = sheet.rows.length - shown.length
+  const rest = sheet.rowCount - shown.length
   return (
     <Frame mode={mode} size={size}>
       {sheets.length > 1 && (
