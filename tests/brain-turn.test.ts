@@ -556,21 +556,32 @@ describe('brain turn', () => {
     history.noteContextTokens(HARD_LIMIT_TOKENS + 1_000_000, history.revision)
     let failSummary!: (error: Error) => void
     vi.mocked(completeText).mockReturnValueOnce(new Promise((_, reject) => { failSummary = reject }))
-    const saidIn = (turnId: number): string[] => events.flatMap((e) => (e.type === 'segment' && e.turnId === turnId ? [e.segment.text] : []))
+    const said = (turnId: number): string => events.flatMap((e) => (e.type === 'segment' && e.turnId === turnId ? [e.segment.text] : [])).join('')
     const sentence = createTranslator('ja-JP')('spoken.historyFull')
 
     // The summary is still being written while both of these turns are answered.
-    expect(saidIn(await runToDone(brain, '明日の天気は'))).toEqual([sentence])
-    expect(saidIn(await runToDone(brain, 'まだですか'))).toEqual([sentence])
+    expect(said(await runToDone(brain, '明日の天気は'))).toBe(sentence)
+    expect(said(await runToDone(brain, 'まだですか'))).toBe(sentence)
     expect(completeText).toHaveBeenCalledOnce()
     failSummary(new Error('overloaded'))
     await history.compact('quiet')
     // After the failure the next turn starts another summary and is answered without waiting for it either.
     const callsBefore = vi.mocked(completeText).mock.calls.length
     vi.mocked(completeText).mockReturnValueOnce(new Promise(() => {}))
-    expect(saidIn(await runToDone(brain, 'もう一度'))).toEqual([sentence])
+    const third = await runToDone(brain, 'もう一度')
+    expect(said(third)).toBe(sentence)
     expect(vi.mocked(completeText).mock.calls.length).toBe(callsBefore + 1)
     expect(mocks.requests).toEqual([])
+
+    // It is the app's reply, shown once as the reply line and not as a failure.
+    const ofThird = events.filter((e) => e.turnId === third)
+    expect(ofThird.filter((e) => e.type === 'error')).toEqual([])
+    expect(ofThird.flatMap((e) => (e.type === 'delta' ? [e.text] : [])).join('')).toBe(sentence)
+    expect(ofThird.at(-1)).toMatchObject({ type: 'done', fullText: sentence })
+    // The history holds what was said, so a later model does not read the request as left undone.
+    expect(readLog().findLast((r) => r.kind === 'assistant')).toMatchObject({ turnId: third, text: sentence })
+    expect(readLog().findLast((r) => r.kind === 'assistant')).not.toHaveProperty('failed')
+    expect(textOf(history.toMessages().at(-1)!)).toBe(sentence)
   })
 
   it('holds a job report while the history is at its hard limit and reports it once the summary is done, not with the sentence about the summary', async () => {

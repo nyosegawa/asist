@@ -103,7 +103,7 @@ function jobStatusNote(locale: ConversationLocale, block: string | null, shown: 
 
 /** Ends a turn with a prepared sentence, which is said aloud and therefore read in the language of the conversation. */
 class TurnStopError extends Error {
-  constructor(readonly key: Extract<MessageKey, 'spoken.replyTooLong' | 'spoken.cannotAnswer' | 'spoken.turnStopped' | 'spoken.historyFull'>) {
+  constructor(readonly key: Extract<MessageKey, 'spoken.replyTooLong' | 'spoken.cannotAnswer' | 'spoken.turnStopped'>) {
     super(key)
     this.name = 'TurnStopError'
   }
@@ -508,10 +508,30 @@ async function runTurn(
       }
     )
 
+  const closeReply = async (): Promise<void> => {
+    for (const sentence of assembler.flush()) synth.push(sentence)
+    await synth.drain()
+    // drain() returns at once on an abort and the sentences not synthesized yet are dropped, so a
+    // barge-in during it leaves the reply cut short rather than said.
+    signal.throwIfAborted()
+    recordAssistant(visibleReply)
+    emitUsage()
+    emit({ type: 'done', turnId, fullText: visibleReply })
+  }
+
   // Once the input is recorded, every way out of the turn goes through the catch below, which closes
   // the turn in the log and in the events however it ends.
   try {
-    if (historyFull) throw new TurnStopError('spoken.historyFull')
+    if (historyFull) {
+      // Nothing goes to the model. The sentence is the reply: the user sees and hears it as one, and
+      // the history records it as said, so neither the model nor the next summary reads the request as
+      // left undone.
+      visibleReply = tConversation('spoken.historyFull')
+      emit({ type: 'delta', turnId, text: visibleReply })
+      for (const sentence of assembler.push(visibleReply)) synth.push(sentence)
+      await closeReply()
+      return
+    }
     const messages: ConversationMessage[] = history.toMessages()
     let completed = false
     let maxTokenContinuations = 0
@@ -605,15 +625,7 @@ async function runTurn(
     if (!completed) {
       throw new TurnStopError('spoken.turnStopped')
     }
-
-    for (const sentence of assembler.flush()) synth.push(sentence)
-    await synth.drain()
-    // drain() returns at once on an abort and the sentences not synthesized yet are dropped, so a
-    // barge-in during it leaves the reply cut short rather than said.
-    signal.throwIfAborted()
-    recordAssistant(visibleReply)
-    emitUsage()
-    emit({ type: 'done', turnId, fullText: visibleReply })
+    await closeReply()
   } catch (err) {
     if (signal.aborted) {
       // On a barge-in, what was spoken so far is kept with a marker. Even when nothing was spoken the
