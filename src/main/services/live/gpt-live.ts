@@ -52,7 +52,7 @@ const OPEN = 1
 export interface GptLiveDeps extends LiveEngineDeps {
   client: () => OpenAI | null
   connect: (client: OpenAI) => LiveSocket
-  beginTurn: (text: string, typed: boolean, route: ReturnType<typeof liveRoute>) => TurnHandle | null
+  beginTurn: (text: string, typed: boolean, route: ReturnType<typeof liveRoute>) => TurnHandle
   /** Brain's turn events, which is how the voice model learns that a panel was opened. */
   onTurnEvent: (listener: (event: TurnEvent) => void) => () => void
   emitTurn: (event: TurnEvent) => void
@@ -254,20 +254,16 @@ export class GptLiveEngine extends LiveEngineBase {
    * transcript arrived at all, brain is told so instead of the voice model saying it could not hear.
    */
   private async delegate(delegationId: string): Promise<void> {
-    this.claimUserUtterance()
+    this.exchanges.claimUtterance()
     const startedAt = this.now()
     while (!this.delegationSettled(startedAt)) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
     if (!this.enabled) return
-    // The voice's line closes on screen under the id it was shown with, and what it said stays with the
-    // exchange brain takes over.
-    this.transcripts.flush('assistant')
-    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
+    const text = this.exchanges.takeUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
     const handle = this.deps.beginTurn(text, false, liveRoute((sentence, turn) => this.say(sentence, delegationId, turn)))
-    if (!handle) return
-    this.handOver(handle.turnId)
+    this.exchanges.handOver(handle.turnId)
     this.touch()
   }
 
@@ -278,7 +274,7 @@ export class GptLiveEngine extends LiveEngineBase {
    */
   private delegationSettled(startedAt: number): boolean {
     const waited = this.now() - startedAt
-    if (this.transcripts.pending('user') === '') return waited >= DELEGATION_START_WAIT_MS
+    if (this.exchanges.pending('user') === '') return waited >= DELEGATION_START_WAIT_MS
     return this.now() - this.lastInputDeltaAt >= DELEGATION_QUIET_MS || waited >= DELEGATION_MAX_WAIT_MS
   }
 
@@ -289,12 +285,12 @@ export class GptLiveEngine extends LiveEngineBase {
 
   /**
    * Hands one of brain's sentences to the voice model, opening the session first if it is closed. What
-   * the voice says from here on belongs to the turn the sentence comes from.
+   * the voice says next belongs to the turn the sentence comes from.
    */
   private async say(sentence: string, delegationId: string | null, turn: SpokenTurn): Promise<void> {
     await this.ensureOpen()
     if (!this.enabled || turn.signal.aborted) return
-    this.adoptTurn(turn.turnId)
+    this.exchanges.speakFor(turn.turnId)
     this.send({ type: 'session.commentary.append', delegation_id: delegationId, content: sentence })
     this.touch()
   }
@@ -308,8 +304,7 @@ export class GptLiveEngine extends LiveEngineBase {
     await this.ensureOpen()
     this.think(`${marker(conversationLocale(), 'typedInputForVoice')} ${text}`)
     const handle = this.deps.beginTurn(text, true, liveRoute((sentence, turn) => this.say(sentence, null, turn)))
-    if (!handle) return
-    this.adoptTurn(handle.turnId)
+    this.exchanges.speakFor(handle.turnId)
     this.touch()
   }
 

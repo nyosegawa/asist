@@ -374,43 +374,6 @@ describe('GptLiveEngine', () => {
     expect(turnEvents).toEqual([])
   })
 
-  it('records the short line and every sentence the voice reads for a delegated turn once, under brain turn, when the next exchange begins', async () => {
-    const { engine, sockets, beginTurn, turnEvents } = await setup()
-    engine.activity(true)
-    await vi.advanceTimersByTimeAsync(0)
-    const socket = sockets[0]
-    socket.started()
-    await vi.advanceTimersByTimeAsync(0)
-    const input = (delta: string, id: string): void => socket.emit({ type: 'session.input_transcript.delta', delta, event_id: id, start_ms: 0, end_ms: 1 })
-    const output = (delta: string, id: string): void => socket.emit({ type: 'session.output_transcript.delta', delta, event_id: id, start_ms: 0, end_ms: 1 })
-    input('明日の天気は', 'a')
-    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
-    output('明日の天気ですね、', 'b')
-    await vi.advanceTimersByTimeAsync(600)
-    expect(beginTurn).toHaveBeenCalledOnce()
-    const route = beginTurn.mock.calls[0][2] as { open: (ctx: unknown) => { push: (s: string) => void; drain: () => Promise<void> } }
-    const sink = route.open({ turnId: 42, signal: new AbortController().signal, emit: vi.fn() })
-    // The voice reads each of brain's sentences as it comes, and its transcript settles between them.
-    sink.push('明日は晴れです。')
-    await sink.drain()
-    output('明日は晴れです。', 'c')
-    await vi.advanceTimersByTimeAsync(3000)
-    sink.push('最高気温は20度です。')
-    await sink.drain()
-    output('最高気温は20度です。', 'e')
-    await vi.advanceTimersByTimeAsync(3000)
-    expect(mocks.record).not.toHaveBeenCalled()
-    input('ありがとう', 'f')
-    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([
-      { kind: 'assistant', turnId: 42, text: '明日の天気ですね、明日は晴れです。最高気温は20度です。' }
-    ])
-    await vi.advanceTimersByTimeAsync(1500)
-    // The next utterance is an exchange of its own.
-    expect(mocks.record.mock.calls.at(-1)?.[0]).toEqual({ kind: 'user', turnId: 101, text: 'ありがとう' })
-    expect(turnEvents).toEqual([])
-    await engine.stop()
-  })
-
   it('records what the voice reads for a job report under the report turn, and what it read for the turn before under that one', async () => {
     const { engine, sockets, beginTurn } = await setup()
     const sending = engine.sendText('3分タイマー')
@@ -431,23 +394,6 @@ describe('GptLiveEngine', () => {
       { kind: 'assistant', turnId: 42, text: '3分のタイマーを始めました。' },
       { kind: 'assistant', turnId: 43, text: '調査が終わりましたよ。' }
     ])
-  })
-
-  it('records a delegated turn once the session it was read in closes, so the next session starts from a history that has it', async () => {
-    const { engine, sockets } = await setup()
-    const sending = engine.sendText('明日の天気')
-    await vi.advanceTimersByTimeAsync(0)
-    sockets[0].started()
-    await sending
-    sockets[0].emit({ type: 'session.output_transcript.delta', delta: '晴れです。', event_id: 'a', start_ms: 0, end_ms: 1 })
-    await vi.advanceTimersByTimeAsync(1500)
-    expect(mocks.record).not.toHaveBeenCalled()
-    // The session goes idle and closes.
-    await vi.advanceTimersByTimeAsync(31_000)
-    expect(sockets[0].closed).toBe(true)
-    expect(mocks.record.mock.calls.map((c) => c[0])).toEqual([{ kind: 'assistant', turnId: 42, text: '晴れです。' }])
-    await engine.stop()
-    expect(mocks.record).toHaveBeenCalledOnce()
   })
 
   it('records the rest of an utterance whose transcript comes after the delegation took it as an exchange of its own, not as a second input of brain turn', async () => {

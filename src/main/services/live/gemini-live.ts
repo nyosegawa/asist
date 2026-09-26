@@ -95,8 +95,6 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   memoryBlock: () => string | null
   /** Records a note sent to the model after the utterance of the turn, with the ids of the memories it shows. */
   recordNote: (turnId: number, text: string, memoryIds: string[]) => void
-  /** Records typed input in the conversation log. A spoken user line is written when its transcript is final. */
-  recordUser: (turnId: number, text: string) => void
   history: () => HistoryMessage[]
   emitTurn: (event: TurnEvent) => void
 }
@@ -271,7 +269,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     const content = message.serverContent
     if (content) {
       if (content.inputTranscription?.text) this.pushTranscript('user', content.inputTranscription.text)
-      if (content.inputTranscription?.finished) this.transcripts.flush('user')
+      if (content.inputTranscription?.finished) this.exchanges.flush('user')
       if (content.outputTranscription?.text) this.pushTranscript('assistant', content.outputTranscription.text)
       for (const part of content.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
@@ -284,11 +282,11 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         // The transcript of what was spoken is finalized before the interruption is announced. In the
         // other order the final text reaches the renderer after it closed the line, and the same sentence
         // appears twice.
-        this.transcripts.flush('assistant')
+        this.exchanges.flush('assistant')
         this.events.emit('event', { type: 'interrupted' })
       }
       if (content.turnComplete) {
-        this.transcripts.flush('assistant')
+        this.exchanges.flush('assistant')
         this.emitUsage({ sessionSeconds: Math.round(this.inputSeconds), costUsd: geminiLiveCost(this.inputSeconds, this.outputSeconds) })
       }
     }
@@ -308,7 +306,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     const id = call.id ?? ''
     const name = call.name ?? ''
     const emit = (event: TurnEvent): void => this.deps.emitTurn(event)
-    const turnId = this.ensureTurnStarted(emit)
+    const turnId = this.exchanges.toolTurn()
     const controller = new AbortController()
     this.running.set(id, controller)
     this.touch()
@@ -372,8 +370,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   /** Typed input. No transcript event is emitted, because the renderer already shows the typed text in the feed. */
   async sendText(text: string): Promise<void> {
     await this.ensureOpen()
-    const turnId = this.exchange()
-    this.deps.recordUser(turnId, text)
+    this.exchanges.typedInput(text)
     this.sendUserText(`${marker(conversationLocale(), 'typedInput')} ${text}`)
   }
 

@@ -124,7 +124,7 @@ function createEngine(): LiveEngineBase {
         return key ? new OpenAI({ apiKey: key, maxRetries: 0 }) : null
       },
       connect: (client) => new LiveWS(client, { reconnect: null }),
-      beginTurn: (text, typed, route) => beginTurn({ text }, typed ? { typed: true } : {}, 'live', false, { route }),
+      beginTurn: (text, typed, route) => beginTurn({ text }, typed ? { typed: true } : {}, 'live', false, { route })!,
       onTurnEvent: (listener) => {
         brainEvents.on('event', listener)
         return () => brainEvents.off('event', listener)
@@ -145,9 +145,6 @@ function createEngine(): LiveEngineBase {
     functionDeclarations: () => toGeminiFunctionDeclarations(tools()),
     executeTool: (name, input, ctx) => executeClientTool(name, input, ctx),
     isParallel: (name) => toolRegistry().find(name)?.parallel ?? false,
-    recordUser: (turnId, text) => {
-      record({ kind: 'user', turnId, text })
-    },
     recordTool: (turnId, name, input, execution) => {
       const memoryIds = execution.isError ? [] : memoryIdsInToolResult(name, execution)
       record({

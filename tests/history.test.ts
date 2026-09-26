@@ -276,6 +276,53 @@ describe('ConversationHistory, derived from the conversation log', () => {
     expect(english.toTranscript().at(-1)).toEqual({ role: 'assistant', content: 'It will be sunny. The high is 20 degrees.' })
   })
 
+  it('keeps a reply with its turn when the voice records it after a later turn began, so it is not sent as a reply of that turn', () => {
+    const { history } = makeHistory()
+    history.apply(user(42, '明日の天気は'))
+    history.apply(message(42, 'assistant', [{ type: 'text', text: '晴れです。' }]))
+    history.apply(notice(43, '[システム通知] ジョブが完了した'))
+    history.apply(assistant(42, '明日は晴れですよ。'))
+    history.apply(assistant(43, 'ジョブが終わりました。'))
+    expect(history.toTranscript()).toEqual([
+      { role: 'user', content: '明日の天気は' },
+      { role: 'assistant', content: '明日は晴れですよ。' },
+      { role: 'user', content: '[システム通知] ジョブが完了した' },
+      { role: 'assistant', content: 'ジョブが終わりました。' }
+    ])
+    expect(history.toMessages().map((m) => [m.role, textOf(m)])).toEqual([
+      ['user', '[2026/9/8(火) 16:48] 明日の天気は'],
+      ['assistant', '晴れです。'],
+      ['user', '[システム通知] ジョブが完了した'],
+      ['assistant', 'ジョブが終わりました。']
+    ])
+  })
+
+  it('joins an input with what the voice said about it before brain recorded the input', () => {
+    const { history } = makeHistory()
+    history.apply(user(41, 'おはよう'))
+    history.apply(assistant(41, 'おはようございます。'))
+    history.apply(assistant(42, '天気ですね、'))
+    history.apply(user(42, '明日の天気は'))
+    history.apply(message(42, 'assistant', [{ type: 'text', text: '晴れです。' }]))
+    history.apply(assistant(42, '晴れです。'))
+    expect(history.toTranscript().slice(2)).toEqual([
+      { role: 'user', content: '明日の天気は' },
+      { role: 'assistant', content: '天気ですね、晴れです。' }
+    ])
+    expect(history.toMessages().slice(2).map((m) => [m.role, textOf(m)])).toEqual([
+      ['user', '[2026/9/8(火) 16:48] 明日の天気は'],
+      ['assistant', '晴れです。']
+    ])
+  })
+
+  it('keeps a tool record with its turn when a later utterance was recorded first', () => {
+    const { history } = makeHistory()
+    history.apply(user(10, 'いつもの店は'))
+    history.apply(user(11, 'あと営業時間も'))
+    history.apply({ ...tool(10, 'recall', '{"query":"店"}', '{"hits":[{"id":"m1"}]}'), memoryIds: ['m1'] })
+    expect(history.shownMemoryIds()).toEqual(new Set(['m1']))
+  })
+
   it('turns a record that carries only an assistant reply into a standalone assistant message', () => {
     const { history } = makeHistory()
     history.apply(assistant(1, 'タイマーが終わりました。'))

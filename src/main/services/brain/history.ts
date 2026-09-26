@@ -16,10 +16,13 @@ import { stampUserMessage } from './prompt'
  * shape on the next turn. Because nothing but the end changes, the prefix stays stable and the prompt
  * cache keeps working, and ids or paths a tool returned can still be referred to in later turns.
  *
- * Turns run one after another, so only the newest turn that has an input, an utterance or a notice,
- * can still be in progress, and the records that follow an input belong to it. A turn before it that
- * never got a reply will never get one: a voice model records what it said under an exchange of its
- * own, and a turn cut off by quitting or a crash is not resumed.
+ * A record belongs to the turn with its id. Brain's own records follow the turn's input, but a voice
+ * model records what it said whenever its transcript settles: before brain has recorded the input of
+ * the turn it took over, or after a later turn has begun. Turn ids never repeat, so each record still
+ * finds its turn. Turns run one after another, so only the newest turn that has an input, an utterance
+ * or a notice, can still be in progress. A turn before it that never got a reply will never get one: a
+ * voice model can record what it said under an exchange of its own, and a turn cut off by quitting or
+ * a crash is not resumed.
  *
  * Compaction is decided in tokens. The context length is the server's usage plus an estimate of what
  * was added since. Above compressAtTokens it runs when the conversation goes quiet; above limitTokens
@@ -200,17 +203,23 @@ export class ConversationHistory {
     if (record.kind === 'checkpoint') return
     if (record.kind === 'user' || record.kind === 'notice') {
       const { notes, jobStatus } = record
-      this.turns.push({
+      const input = {
         t: record.t,
-        turnId: record.turnId,
         user: record.text,
         ...(record.kind === 'notice' ? { notice: true } : {}),
         ...(notes ? { notes } : {}),
-        ...(jobStatus ? { jobStatus } : {}),
-        messages: [],
-        memoryIds: record.kind === 'user' ? [...(record.memoryIds ?? [])] : [],
-        records: [record]
-      })
+        ...(jobStatus ? { jobStatus } : {})
+      }
+      const memoryIds = record.kind === 'user' ? [...(record.memoryIds ?? [])] : []
+      // What the voice said about the input can come first, and the input joins it.
+      const spoken = this.turnOf(record.turnId)
+      if (spoken && spoken.user === undefined) {
+        Object.assign(spoken, input)
+        spoken.memoryIds.push(...memoryIds)
+        spoken.records.push(record)
+      } else {
+        this.turns.push({ turnId: record.turnId, ...input, messages: [], memoryIds, records: [record] })
+      }
       this.addedTokens += estimateTokens(record.text) + (notes ? estimateTokens(notes) : 0) + (jobStatus ? estimateTokens(jobStatus) : 0)
       return
     }
@@ -225,10 +234,7 @@ export class ConversationHistory {
       this.addedTokens += estimateTokens(record.text)
       return
     }
-    const current = this.currentIndex()
-    const own = current >= 0 && this.turns[current].turnId === record.turnId ? this.turns[current] : undefined
-    // A voice model records what it said as soon as its transcript settles, which can be while the
-    // turn's tools are still running, so the tool round trip recorded after that still belongs to the turn.
+    const own = this.turnOf(record.turnId)
     if (record.kind === 'tool') {
       if (own) {
         if (record.memoryIds) own.memoryIds.push(...record.memoryIds)
@@ -246,8 +252,8 @@ export class ConversationHistory {
       return
     }
     this.addedTokens += estimateTokens(record.text)
-    // A voice model that reads a turn's reply across two sessions records what it said in each, and
-    // the reply is both, in order.
+    // A voice model records each stretch of what it said for a turn as it settles, and the reply is all
+    // of them, in order.
     if (own) {
       own.assistant = joinSpeech(this.options.locale(), [own.assistant ?? '', record.text])
       if (record.interrupted) own.interrupted = record.interrupted
@@ -265,6 +271,11 @@ export class ConversationHistory {
       memoryIds: [],
       records: [record]
     })
+  }
+
+  /** The turn a record with this id belongs to, or undefined once it has been folded into the summary. */
+  private turnOf(turnId: number): HistoryTurn | undefined {
+    return this.turns.findLast((turn) => turn.turnId === turnId)
   }
 
   /** The ids of the memories already shown to the model in the raw history. An id drops out once its turn is folded into the summary. */

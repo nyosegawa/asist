@@ -88,7 +88,6 @@ async function setup(execute?: ExecuteTool): Promise<{
     findMemories,
     memoryBlock: () => '',
     recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
-    recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
     history: () => [{ role: 'user', content: '前の話' }],
     emitTurn: (event) => turnEvents.push(event)
   })
@@ -315,6 +314,48 @@ describe('GeminiLiveEngine', () => {
       { kind: 'user', turnId: 200, text: '大阪の天気' },
       { kind: 'user', turnId: 201, text: 'あ、やっぱり京都で' },
       { kind: 'assistant', turnId: 201, text: '京都は晴れです。' }
+    ])
+    await engine.stop()
+  })
+
+  it('ends a turn whose call still runs with the reply, not with a second utterance that comes before it', async () => {
+    const call = held()
+    const { engine, sessions, turnEvents } = await setup(() => call.task)
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: '大阪の天気', finished: true } } })
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'show_weather', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    session.message({ serverContent: { inputTranscription: { text: 'あと京都も', finished: true } } })
+    call.answer('{"shown":true}')
+    call.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(turnEvents.map((event) => [event.type, event.turnId])).toEqual([
+      ['started', 200],
+      ['tool', 200],
+      ['tool', 200]
+    ])
+    session.message({ serverContent: { outputTranscription: { text: '大阪も京都も晴れです。' } } })
+    session.message({ serverContent: { turnComplete: true } })
+    expect(turnEvents.at(-1)).toEqual({ type: 'done', turnId: 200, fullText: '大阪も京都も晴れです。' })
+    expect(mocks.record.mock.calls.map((c) => [c[0].kind, c[0].turnId])).toEqual([
+      ['user', 200],
+      ['user', 201],
+      ['assistant', 201]
+    ])
+    await engine.stop()
+  })
+
+  it('gives typed text and an utterance that follows it before the reply turns of their own', async () => {
+    const { engine, sessions } = await setup()
+    const session = await open(engine, sessions)
+    await engine.sendText('明日は何がある')
+    session.message({ serverContent: { inputTranscription: { text: 'あと天気も', finished: true } } })
+    session.message({ serverContent: { outputTranscription: { text: '会議が一つと、晴れです。' } } })
+    session.message({ serverContent: { turnComplete: true } })
+    expect(mocks.record.mock.calls.map((c) => [c[0].kind, c[0].turnId, c[0].text])).toEqual([
+      ['user', 200, '明日は何がある'],
+      ['user', 201, 'あと天気も'],
+      ['assistant', 201, '会議が一つと、晴れです。']
     ])
     await engine.stop()
   })
