@@ -7,10 +7,11 @@
 - **タイトルバー。** Windows では `titleBarStyle: 'hidden'` と `titleBarOverlay` を使います。
   - これで、画面の右上に Windows のボタンだけが重なります。
   - ボタンの背景と記号の色は、テーマの色に合わせる必要があります。AGENTS.md のとおり、色はテーマのトークン(`src/renderer/src/assets/themes.css`)から取ります。
-  - main は CSS を読めないので、renderer がテーマを切り替えたときに計算済みのトークンの値を IPC で送ります。main はその値で `setTitleBarOverlay` を呼びます。
+  - ボタンの背景は透明にし、テーマの背景の絵をそのまま見せます。記号の色だけを `--ui-text` から取ります。
+  - main は CSS を読めないので、renderer がテーマを切り替えたときに計算済みの色を IPC で送ります。main はその値で `setTitleBarOverlay` を呼びます。
 - **ドラッグできる帯と左の余白。** いまは、上の帯(`main.css:147-153`)の左に、信号機のボタンのための 96px の余白(`main.css:191-192`)を取っています。
-  - renderer は、capabilities の `os` を `document.documentElement.dataset.os` に入れます。
-  - Windows では左の余白をなくし、右に `env(titlebar-area-width)` から求めた余白を取ります。
+  - Windows では、ボタンの場所が CSS の `env(titlebar-area-x)` と `env(titlebar-area-width)` でわかります。上の帯の右の余白は、この値から求めます。ボタンの幅は、既定の高さで 137px でした(Windows 11、2026-09-27)。
+  - macOS ではこの値が無いので、値が無いときは左に信号機のボタンの 70px を取ります。renderer は OS を見ません。
 - **アプリのメニュー。** Windows では `Menu.setApplicationMenu(null)` にします。
   - Electron の既定のメニュー(File、Edit、View…)は、タイトルバーを隠すと見えません。それでも Alt キーで開いてしまいます。
   - 文字の欄でのコピーと貼り付けは、メニューが無くても Chromium が扱います。
@@ -25,8 +26,11 @@
 ## グローバルショートカット
 
 - `Alt+Space`(`os-integration.ts:95-97`)は、Windows ではウィンドウのシステムメニューと PowerToys Run が使っています。
-- ショートカットの値を capabilities の `hotkey` にし、OS ごとに既定の値を決めます。Windows の候補は `Ctrl+Alt+Space` ですが、これは実機で他のアプリとぶつからないかを確かめてから決めます。
-- 画面の「⌥Space」(`settings-voice.ts:641`)は、値から表記を作ります。Mac では `⌥Space`、Windows では `Ctrl+Alt+Space` になります。
+- ショートカットの値を capabilities の `hotkey` にし、OS ごとに既定の値を決めます。Windows は `Alt+Shift+Space` にしました。
+  - PowerToys、Copilot、Claude のアプリが動いている実機(2026-09-27)では、`Alt+Space` と `Ctrl+Alt+Space` はすでに使われていて、登録できませんでした。
+  - `Ctrl+Win+Space` と `Win+Shift+Space` は、入力の言語の切り替えに使われています。
+  - `Ctrl+Shift+Space` は空いていましたが、Word や VS Code の中の操作を横取りしてしまいます。
+- 画面の「⌥Space」(`settings-voice.ts:641`)は、値から表記を作ります。Mac では `⌥Space`、Windows では `Alt+Shift+Space` になります。
 - 登録に失敗したときは、いまは `console.warn` だけです(`os-integration.ts:106`)。これを、設定の画面に失敗として出すように変えます。この変更は Mac でも同じです。
 
 ## 通知

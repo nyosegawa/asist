@@ -5,7 +5,6 @@
 | 問い | いまの案 | 決める時期 |
 |---|---|---|
 | Windows でカレンダーをどう作るか(CalDAV、Google Calendar API、Microsoft Graph、作らない) | 最初は出さない | 第2段階の前 |
-| Windows のショートカットの既定の値 | `Ctrl+Alt+Space`(実機でぶつからないか確かめてから) | M3-4 |
 | 署名と配布(署名しない、個人向けの証明書、Microsoft Store) | 当分は署名しない。SmartScreen の警告をドキュメントに書く | 配布の前 |
 | 紹介動画を作り直すか | 公開済みの動画はそのままにし、必要なら Windows の告知の短い動画を別に作る | M6 |
 | macOS で、ネイティブのマイクが動いている最中に落ちたとき、getUserMedia に切り替える動きを残すか(AGENTS.md の「fallback を足さない」とぶつかる) | Windows の対応とは別の PR で決める | いつでも |
