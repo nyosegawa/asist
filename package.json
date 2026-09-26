@@ -27,7 +27,8 @@
     "i18n": "node scripts/i18n.mjs",
     "website": "npm --prefix website run dev --",
     "website:build": "npm --prefix website run build",
-    "promo:video": "node promotions/x-promo-video/scripts/render.mjs && uv run promotions/x-promo-video/scripts/audio.py && sh promotions/x-promo-video/scripts/encode.sh",
+    "promo:video": "node promotions/launch-video/scripts/render.mjs && uv run promotions/launch-video/scripts/audio.py && sh promotions/launch-video/scripts/encode.sh",
+    "promo:thumbnail": "node promotions/launch-video/scripts/thumbnail.mjs",
     "cf": "node scripts/wrangler.mjs",
     "website:deploy": "npm run website:build && node scripts/wrangler.mjs deploy --config website/www/wrangler.jsonc && node scripts/wrangler.mjs deploy --config website/wrangler.jsonc"
   },

@@ -31,3 +31,8 @@ __pycache__/
 
 # The login and the local state of wrangler (scripts/wrangler.mjs keeps its login in .wrangler/config).
 .wrangler/
+
+# What imagegen returns for the launch video, and the pictures passed to it. The committed props and
+# characters are cut from the first by tools/cutout.py; tools/refs.py makes the second from the website.
+promotions/launch-video/assets/gen/raw/
+promotions/launch-video/assets/gen/refs/
