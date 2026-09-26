@@ -155,13 +155,13 @@ describe('the notes screen', () => {
     await act(async () => button(view, t('notes.newNote')).click())
     await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, '# 買い物\n\n牛乳\n'))
     // open_app naming the screen as it is leaves the draft where it is without asking.
-    await act(async () => useViewStore.getState().openApp({ app: 'notes' }))
+    await act(async () => void useViewStore.getState().openApp({ app: 'notes' }))
     expect(useConfirmStore.getState().queue).toEqual([])
     const leaves = [
       () => view.querySelector<HTMLButtonElement>('header > button')!.click(),
-      () => useViewStore.getState().toggleApp('notes'),
-      () => useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }),
-      () => useViewStore.getState().openApp({ app: 'tasks' })
+      () => void useViewStore.getState().toggleApp('notes'),
+      () => void useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }),
+      () => void useViewStore.getState().openApp({ app: 'tasks' })
     ]
     for (const leave of leaves) {
       await act(async () => leave())
@@ -169,12 +169,24 @@ describe('the notes screen', () => {
       expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: null, editing: true })
       expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('# 買い物\n\n牛乳\n')
     }
-    await act(async () => useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }))
+    await act(async () => void useViewStore.getState().openApp({ app: 'notes', noteId: TRIP }))
     await answerConfirm(true)
     await settle()
     expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: TRIP, editing: false })
     expect(heading(view)).toBe('旅行の持ち物')
     expect(api.noteCreate).not.toHaveBeenCalled()
+    // Once the draft is thrown away, leaving for another screen asks nothing more, even while the view is
+    // still drawn as it closes.
+    await act(async () => button(view, t('notes.newNote')).click())
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, '# 買い物\n\n卵\n'))
+    await act(async () => void useViewStore.getState().openApp({ app: 'tasks' }))
+    await answerConfirm(true)
+    expect(useViewStore.getState().open?.app).toBe('tasks')
+    await act(async () => void useViewStore.getState().openApp({ app: 'calendar' }))
+    expect(useConfirmStore.getState().queue).toEqual([])
+    expect(useViewStore.getState().open?.app).toBe('calendar')
+    await act(async () => void useViewStore.getState().openApp({ app: 'notes' }))
+    await settle()
     // With nothing left to lose, the back button closes the screen without asking.
     await act(async () => view.querySelector<HTMLButtonElement>('header > button')!.click())
     expect(useViewStore.getState().open).toBeNull()

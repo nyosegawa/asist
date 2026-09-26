@@ -1,7 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
-import { dayKey } from '@shared/calendar-layout'
-import { openMiniAppSchema, type MiniApp, type MiniAppTarget, type MiniAppView } from '@shared/mini-apps'
+import {
+  openMiniAppSchema,
+  placeMiniApp,
+  sameMiniAppView,
+  type MiniApp,
+  type MiniAppTarget,
+  type MiniAppView
+} from '@shared/mini-apps'
 
 /**
  * Which mini app is open and what it shows. The state is the MiniAppView itself: the Dock, the cards'
@@ -13,62 +19,8 @@ import { openMiniAppSchema, type MiniApp, type MiniAppTarget, type MiniAppView }
 export type MiniAppState<A extends MiniApp> = Extract<MiniAppView, { app: A }>
 type MiniAppPatch<A extends MiniApp> = Partial<Omit<MiniAppState<A>, 'app'>>
 
-/**
- * Where a target places a mini app. A field the target leaves out keeps what the open mini app shows,
- * or what the mini app shows by itself when it is not open yet. A calendar moved to another day or
- * view closes the event it showed, whose card would point at a chip no longer drawn, and a mail box
- * changed without a message or draft closes the pane.
- */
-export function placeMiniApp(current: MiniAppView | null, target: MiniAppTarget, today = new Date()): MiniAppView {
-  switch (target.app) {
-    case 'notes': {
-      const base = current?.app === 'notes' ? current : { app: 'notes' as const, noteId: null, editing: false }
-      return target.noteId === undefined ? base : { app: 'notes', noteId: target.noteId, editing: false }
-    }
-    case 'tasks': {
-      const base = current?.app === 'tasks' ? current : { app: 'tasks' as const, view: 'board' as const, taskId: null }
-      return { app: 'tasks', view: target.view ?? base.view, taskId: target.taskId ?? base.taskId }
-    }
-    case 'mail': {
-      const base = current?.app === 'mail' ? current : { app: 'mail' as const, box: 'inbox' as const, accountId: null, query: '', pane: null }
-      const box = target.box ?? (target.draftId !== undefined ? 'drafts' : base.box)
-      const pane =
-        target.messageId !== undefined
-          ? { kind: 'message' as const, id: target.messageId }
-          : target.draftId !== undefined
-            ? { kind: 'draft' as const, id: target.draftId }
-            : box === base.box
-              ? base.pane
-              : null
-      return { app: 'mail', box, accountId: base.accountId, query: base.query, pane }
-    }
-    case 'calendar': {
-      const base = current?.app === 'calendar' ? current : { app: 'calendar' as const, view: 'month' as const, date: dayKey(today), eventId: null }
-      const view = target.view ?? base.view
-      const date = target.date ?? base.date
-      const eventId = target.eventId ?? (view === base.view && date === base.date ? base.eventId : null)
-      return { app: 'calendar', view, date, eventId }
-    }
-    case 'jobs': {
-      const base = current?.app === 'jobs' ? current : { app: 'jobs' as const, jobId: null }
-      return { app: 'jobs', jobId: target.jobId ?? base.jobId }
-    }
-    case 'memory': {
-      const base = current?.app === 'memory' ? current : { app: 'memory' as const, file: null }
-      return { app: 'memory', file: target.file ?? base.file }
-    }
-    case 'settings': {
-      const base = current?.app === 'settings' ? current : { app: 'settings' as const, page: 'conversation' as const }
-      return { app: 'settings', page: target.page ?? base.page }
-    }
-  }
-}
-
 /** Asks the open mini app whether what it shows may change, and resolves true when it may. */
 type LeaveGuard = () => Promise<boolean>
-
-/** Two views compare by their parsed form, which puts the keys in the schema's order. */
-const viewKey = (open: MiniAppView | null): string => JSON.stringify(openMiniAppSchema.parse(open))
 
 interface ViewState {
   open: MiniAppView | null
@@ -79,10 +31,14 @@ interface ViewState {
    * app's own navigation goes through update, which does not ask.
    */
   leaveGuard: LeaveGuard | null
-  openApp: (target: MiniAppTarget) => void
+  /**
+   * The three resolve once the change is made or turned down; without a guard to ask, the change is made
+   * before they return. They reject when the guard cannot ask, which leaves the mini app as it is.
+   */
+  openApp: (target: MiniAppTarget) => Promise<void>
   /** Opens the mini app, or closes it when it is the one open, as a button of the Dock does. */
-  toggleApp: (app: MiniApp) => void
-  closeApp: () => void
+  toggleApp: (app: MiniApp) => Promise<void>
+  closeApp: () => Promise<void>
   /**
    * Changes what the open mini app shows. A patch for a mini app that is not open is dropped, because
    * a view keeps running its effects through its leave animation and must not open itself again. A
@@ -94,20 +50,10 @@ interface ViewState {
 /** Only one mini app is open at a time. */
 export const useViewStore = create<ViewState>((set, get) => {
   /** Shows what `next` makes of the open mini app, once its leave guard agrees when there is one to ask. */
-  const navigate = (next: (open: MiniAppView | null) => MiniAppView | null): void => {
+  const navigate = async (next: (open: MiniAppView | null) => MiniAppView | null): Promise<void> => {
     const { open, leaveGuard } = get()
-    if (!leaveGuard || viewKey(next(open)) === viewKey(open)) {
-      set((s) => ({ open: next(s.open) }))
-      return
-    }
-    leaveGuard().then(
-      (approved) => {
-        if (approved) set((s) => ({ open: next(s.open) }))
-      },
-      // The guard asks through the confirmation sheet, which refuses while another confirmation is on it;
-      // the mini app then stays as it is.
-      (error: unknown) => console.error('mini app leave guard failed:', error)
-    )
+    if (leaveGuard && !sameMiniAppView(next(open), open) && !(await leaveGuard())) return
+    set((s) => ({ open: next(s.open) }))
   }
   return {
     open: null,
@@ -171,4 +117,15 @@ export function startMiniAppReports(): () => void {
   }
   send(useViewStore.getState().open)
   return useViewStore.subscribe((s) => send(s.open))
+}
+
+/**
+ * Reports the open mini app to main even when it has not changed. open_app and close_app in main wait for
+ * the report that follows their request, and a request the user turns down to keep a draft changes nothing
+ * that would be reported otherwise.
+ */
+export function reportMiniAppAnswer(): void {
+  window.api
+    .reportMiniAppView(openMiniAppSchema.parse(useViewStore.getState().open))
+    .catch((error: unknown) => console.error('mini app report failed:', error))
 }
