@@ -437,7 +437,9 @@ function launch(job: AgentJob, args: string[] = buildStartArgs(job)): void {
         entry.process = null
         if (!isJobExecuting(entry.job.status)) return
         const stopped = entry.job.status === 'stopping'
-        const failed = code !== 0 || Boolean(entry.processError) || entry.result?.ok === false
+        const failed = !stopped && (code !== 0 || Boolean(entry.processError) || entry.result?.ok === false)
+        // A CLI that handles the SIGTERM of a stop exits with a code of its own, which says nothing more
+        // than the cancellation the card already shows.
         update(id, {
           status: stopped ? 'cancelled' : failed ? 'error' : 'done',
           processIdentity: undefined,
