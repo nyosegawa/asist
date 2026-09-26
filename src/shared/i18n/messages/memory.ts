@@ -1135,17 +1135,17 @@ export const memory = defineMessages({
       'es-ES': '{file} no es un archivo ni una carpeta normal, así que no se ha leído'
     },
     changedSinceOpened: {
-      'ja-JP': '{file} は開いたあとに記憶の整理などで変わったため、保存しませんでした。書いた内容を控えてから編集を取り消すと、今の内容が表示されます',
-      'en-US': '{file} changed after you opened it, for example in a memory curation, so it was not saved. Copy what you wrote, then cancel editing to see the current version',
-      'fr-FR': "{file} a changé après son ouverture, par exemple lors d'une organisation de la mémoire, il n'a donc pas été enregistré. Copiez ce que vous avez écrit, puis annulez la modification pour voir la version actuelle",
-      'de-DE': '{file} hat sich nach dem Öffnen geändert, etwa durch die Gedächtnispflege, und wurde daher nicht gespeichert. Kopieren Sie Ihren Text und brechen Sie die Bearbeitung ab, um die aktuelle Fassung zu sehen',
-      'hi-IN': '{file} खोलने के बाद बदल गई, जैसे याददाश्त की सफ़ाई से, इसलिए सेव नहीं हुई। जो लिखा है उसे कॉपी करें, फिर बदलाव रद्द करें, तब अभी का रूप दिखेगा',
-      'id-ID': '{file} berubah setelah Anda membukanya, misalnya karena penataan ingatan, jadi tidak disimpan. Salin yang Anda tulis, lalu batalkan pengeditan untuk melihat versi terbaru',
-      'it-IT': "{file} è cambiato dopo che l'hai aperto, per esempio con un riordino della memoria, quindi non è stato salvato. Copia quello che hai scritto, poi annulla la modifica per vedere la versione attuale",
-      'ko-KR': '{file}이(가) 연 뒤에 기억 정리 등으로 바뀌어 저장하지 않았습니다. 쓴 내용을 복사해 둔 뒤 편집을 취소하면 지금 내용이 보입니다',
-      'pt-BR': '{file} mudou depois que você o abriu, por exemplo numa organização da memória, por isso não foi salvo. Copie o que escreveu e cancele a edição para ver a versão atual',
-      'es-419': '{file} cambió después de que lo abriste, por ejemplo en una organización de la memoria, así que no se guardó. Copia lo que escribiste y cancela la edición para ver la versión actual',
-      'es-ES': '{file} ha cambiado después de abrirlo, por ejemplo en una organización de la memoria, así que no se ha guardado. Copia lo que has escrito y cancela la edición para ver la versión actual'
+      'ja-JP': '開いたあとに内容が変わったため、保存しませんでした。「キャンセル」を押すと今の内容を表示します',
+      'en-US': 'It changed after you opened it, so it was not saved. Press "Cancel" to see the current version',
+      'fr-FR': "Modifié après l'ouverture, donc non enregistré. « Annuler » affiche la version actuelle",
+      'de-DE': 'Nach dem Öffnen geändert, daher nicht gespeichert. „Abbrechen“ zeigt die aktuelle Fassung',
+      'hi-IN': 'खोलने के बाद बदलाव हुआ, इसलिए सेव नहीं हुआ। "रद्द करें" से अभी का रूप दिखेगा',
+      'id-ID': 'Berubah setelah dibuka, jadi tidak disimpan. “Batal” menampilkan versi terbaru',
+      'it-IT': "Cambiato dopo l'apertura, quindi non salvato. «Annulla» mostra la versione attuale",
+      'ko-KR': '연 뒤에 내용이 바뀌어 저장하지 않았습니다. “취소”를 누르면 지금 내용을 표시합니다',
+      'pt-BR': 'Mudou depois de aberto, por isso não foi salvo. “Cancelar” mostra a versão atual',
+      'es-419': 'Cambió después de abrirlo, así que no se guardó. «Cancelar» muestra la versión actual',
+      'es-ES': 'Ha cambiado tras abrirlo y no se ha guardado. “Cancelar” muestra la versión actual'
     }
   }
 })

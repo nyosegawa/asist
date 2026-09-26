@@ -206,7 +206,7 @@ export function readDocument(file: string, dir = memoryDir()): string | null {
  */
 export function writeDocument(file: string, markdown: string, base: string, dir = memoryDir()): MemoryDocument {
   const full = documentPath(dir, file)
-  if (readFileOf(dir, file) !== base) throw new Error(errorText('memory.errors.changedSinceOpened', { file }))
+  if (readFileOf(dir, file) !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`

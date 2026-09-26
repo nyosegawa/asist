@@ -35,7 +35,7 @@ const api = {
   memoryDocuments: vi.fn(async () => listed().map((file) => documentOf(file, files[file]))),
   memoryDocumentRead: vi.fn(async (file: string) => files[file] ?? null),
   memoryDocumentWrite: vi.fn(async (file: string, markdown: string, base: string) => {
-    if (files[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened', { file }))
+    if (files[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
     files[file] = markdown
     return documentOf(file, markdown)
   }),
@@ -161,7 +161,7 @@ describe('the memory screen', () => {
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
       kind: 'error',
       title: t('memory.saveFailed'),
-      body: t('memory.errors.changedSinceOpened', { file: 'instruction.md' })
+      body: t('memory.errors.changedSinceOpened')
     })
     expect(files['instruction.md']).toBe(curated)
     expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(draft)

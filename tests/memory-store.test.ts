@@ -148,7 +148,7 @@ describe('the memory store', () => {
     git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'merge curation'])
     const before = commits(dir)
     const draft = opened.replace('- 予約サービスの企画担当', '- 予約サービスの企画担当(2026-09 から)')
-    expect(() => store.writeDocument(file, draft, opened)).toThrow(errorText('memory.errors.changedSinceOpened', { file }))
+    expect(() => store.writeDocument(file, draft, opened)).toThrow(errorText('memory.errors.changedSinceOpened'))
     expect(store.readDocument(file)).toBe(curated)
     expect(commits(dir)).toBe(before)
     // Saved over the version read now, the edit goes through.
