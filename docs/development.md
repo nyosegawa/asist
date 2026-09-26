@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-Windows 11(x64)では、Node.js 22、上の「Windows で clone する」のとおりに設定した Git for Windows、Visual Studio の「C++ によるデスクトップ開発」が要ります。Visual Studio は Build Tools だけでもかまいません。準備のスクリプトは、git の代わりに MinGit を取得し、エージェントの CLI を動かす `asist-agent-launcher.exe` を、`vswhere` で見つけた Visual Studio の `cl.exe` でコンパイルします。Visual Studio 2017 Community と、CI の Visual Studio 2022 で確かめました。コマンドは macOS と同じです。アプリは、設定と記憶を `%APPDATA%\asist` に、ログを `%APPDATA%\asist\logs` に書きます。
+Windows 11(x64)では、Node.js 22、上の「Windows で clone する」のとおりに設定した Git for Windows、Visual Studio の「C++ によるデスクトップ開発」が要ります。Visual Studio は Build Tools だけでもかまいません。準備のスクリプトは、git の代わりに MinGit を取得し、エージェントの CLI を動かす `asist-agent-launcher.exe` を、`vswhere` で見つけた Visual Studio の `cl.exe` でコンパイルします。Visual Studio Community 2017 と、CI(windows-latest)の Visual Studio 2026 で確かめました。コマンドは macOS と同じです。アプリは、設定と記憶を `%APPDATA%\asist` に、ログを `%APPDATA%\asist\logs` に書きます。
 
 起動時の環境変数は、親プロセスの環境変数、実行ディレクトリの `.env` の順に優先します。Finder や Dock から開いたアプリは `/` で起動するので、実行ディレクトリの `.env` を読むのは、`npm run dev` のようにリポジトリから起動したときだけです。
 
