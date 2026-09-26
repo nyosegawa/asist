@@ -549,7 +549,10 @@ describe('git service with an isolated worktree', () => {
     })
 
     describe('in a sparse checkout', () => {
-      /** A worktree cut from a repository whose checkout holds src/ alone, which the worktree takes over. */
+      /**
+       * A worktree cut from a repository whose checkout holds src/ alone, which the worktree takes over. The
+       * branch `other` changes docs/x.txt.
+       */
       const sparseWorktree = (sparseIndex = false): { wt: string; base: string } => {
         for (const file of ['src/a.txt', 'src/b.txt', 'docs/x.txt', 'docs/y.txt', 'docs/deep/z.txt']) {
           fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true })
@@ -557,6 +560,10 @@ describe('git service with an isolated worktree', () => {
         }
         run(repo, ['add', '-A'])
         run(repo, [...ID, 'commit', '-q', '-m', 'tree'])
+        run(repo, ['checkout', '-q', '-b', 'other'])
+        fs.writeFileSync(path.join(repo, 'docs', 'x.txt'), 'changed on other\n')
+        run(repo, [...ID, 'commit', '-q', '-am', 'other'])
+        run(repo, ['checkout', '-q', 'main'])
         run(repo, ['sparse-checkout', 'set', '--cone', ...(sparseIndex ? ['--sparse-index'] : []), 'src'])
         const wt = path.join(root, 'wt')
         git.worktreeAdd(repo, wt, 'asist/sparse')
@@ -601,6 +608,51 @@ describe('git service with an isolated worktree', () => {
         expect(committed(wt, base)).toEqual([`${kind}\t${file}`])
         expect(git.isSettled(wt)).toBe(true)
         expect(userIndex().equals(before)).toBe(true)
+      })
+
+      /** Commands with which the agent stages a file left out, leaving it without skip-worktree, and what they stage. */
+      const STAGING: Record<string, { stage: (wt: string) => void; staged: string | null }> = {
+        'apply --cached and a commit': {
+          stage: (wt) => {
+            const patch = path.join(root, 'fix.patch')
+            fs.writeFileSync(patch, 'diff --git a/docs/x.txt b/docs/x.txt\n--- a/docs/x.txt\n+++ b/docs/x.txt\n@@ -1 +1 @@\n-docs/x.txt\n+fixed by the agent\n')
+            run(wt, ['apply', '--cached', patch])
+            run(wt, [...ID, 'commit', '-q', '-m', 'fix docs'])
+          },
+          staged: 'fixed by the agent'
+        },
+        'restore --staged --source': {
+          stage: (wt) => run(wt, ['restore', '--staged', '--source=other', '--', 'docs/x.txt']),
+          staged: 'changed on other'
+        },
+        'update-index --cacheinfo': {
+          stage: (wt) => {
+            const content = path.join(root, 'plumbing.txt')
+            fs.writeFileSync(content, 'written by plumbing\n')
+            const blob = run(wt, ['hash-object', '-w', content])
+            run(wt, ['update-index', '--cacheinfo', `100644,${blob},docs/x.txt`])
+          },
+          staged: 'written by plumbing'
+        },
+        'read-tree HEAD': { stage: (wt) => run(wt, ['read-tree', 'HEAD']), staged: null }
+      }
+
+      it.each([
+        ['apply --cached and a commit', false],
+        ['apply --cached and a commit', true],
+        ['restore --staged --source', false],
+        ['update-index --cacheinfo', false],
+        ['update-index --cacheinfo', true],
+        ['read-tree HEAD', false],
+        ['read-tree HEAD', true]
+      ])('keeps what %s stages for a file left out, which git leaves absent without skip-worktree, sparse index %s', (command, sparseIndex) => {
+        const { wt, base } = sparseWorktree(sparseIndex)
+        const { stage, staged } = STAGING[command]
+        stage(wt)
+        git.commitAll(wt, 'asist: job')
+        expect(committed(wt, base)).toEqual(staged === null ? [] : ['M\tdocs/x.txt'])
+        expect(run(wt, ['show', 'HEAD:docs/x.txt'])).toBe(staged ?? 'docs/x.txt')
+        expect(git.isSettled(wt)).toBe(true)
       })
 
       it('commits a change inside the checkout without staging the deletion of the files it leaves out', () => {
