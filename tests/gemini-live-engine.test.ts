@@ -411,4 +411,30 @@ describe('GeminiLiveEngine', () => {
     expect(second.toolResponses).toEqual([])
     await engine.stop()
   })
+
+  it('reopens a session the provider ends only once per start of speech, so a provider that ends each one at once cannot make it reconnect in a loop', async () => {
+    const { engine, sessions } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    for (let i = 0; i < 5; i++) {
+      const session = sessions[sessions.length - 1]
+      session.message({ setupComplete: {} })
+      await vi.advanceTimersByTimeAsync(0)
+      engine.pushAudio(new Float32Array(1600))
+      session.params.callbacks.onclose('code 1007')
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    // Each session costs money and is sent the pre-roll again.
+    expect(sessions).toHaveLength(2)
+    engine.activity(false)
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sessions[2].message({ setupComplete: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    sessions[2].params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions).toHaveLength(4)
+    sessions[3].message({ setupComplete: {} })
+    await engine.stop()
+  })
 })

@@ -64,8 +64,12 @@ export abstract class LiveEngineBase {
    * delegation takes it, the reply's transcript neither finalizes it nor closes the exchange.
    */
   private userClaimed = false
-  /** Whether the user is speaking, from the renderer's start of speech to its end. */
-  private speaking = false
+  /**
+   * Whether a session the provider ends reopens at once, because the user is speaking. The start of
+   * speech allows one such reopen and its end withdraws it, so a provider that ends every session as
+   * soon as it starts cannot keep the engine reconnecting, and billing a session each time.
+   */
+  private reopenForSpeech = false
   protected readonly transcripts: TranscriptTracker
   /** Response latency measurement: when the last user transcript arrived and whether audio is still awaited. */
   private lastUserDeltaAt = -Infinity
@@ -111,7 +115,7 @@ export abstract class LiveEngineBase {
     this.enabled = false
     if (this.ticker) clearInterval(this.ticker)
     this.ticker = null
-    this.speaking = false
+    this.reopenForSpeech = false
     // A delegation ends with the engine and hands nothing to brain, so an utterance it claimed is
     // recorded as it was heard, like any other still in progress.
     this.userClaimed = false
@@ -136,7 +140,7 @@ export abstract class LiveEngineBase {
   /** The renderer's VAD heard a human voice start or stop. The start opens a closed session. */
   activity(active: boolean): void {
     if (!this.enabled) return
-    this.speaking = active
+    this.reopenForSpeech = active
     if (active && this.policy.onUserSpeech(this.now()) === 'open') void this.ensureOpen()
   }
 
@@ -209,7 +213,9 @@ export abstract class LiveEngineBase {
     this.policy.closed()
     if (!this.enabled) return
     this.setConnection('idle')
-    if (this.speaking) void this.ensureOpen()
+    if (!this.reopenForSpeech) return
+    this.reopenForSpeech = false
+    void this.ensureOpen()
   }
 
   /** Marks the conversation as still going, such as model audio or brain work, and pushes back the idle close. */
