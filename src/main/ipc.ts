@@ -2,7 +2,7 @@ import os from 'node:os'
 import { shouldPushJobCard } from '@shared/job-cards'
 import { calendarStatus, changeCalendar, listCalendar, requestCalendarAccess } from './services/calendar'
 import { events as mailEvents, getMailService, openMailGuide } from './services/mail'
-import { confirmEvents, resolveConfirm } from './services/confirm'
+import { confirmEvents, pendingConfirms, resolveConfirm } from './services/confirm'
 import { app, dialog, ipcMain, shell, systemPreferences, type BrowserWindow } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -453,6 +453,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   })
   // Pressing send on a draft is itself the approval, so no confirmation appears.
   handle(IpcChannel.MailDraftSend, (_e, id: string) => getMailService().draftSend(String(id), new AbortController().signal))
+  handle(IpcChannel.ConfirmPending, () => pendingConfirms())
   handle(IpcChannel.ConfirmResolve, (_e, id: string, approved: boolean) => {
     resolveConfirm(String(id), approved === true)
   })

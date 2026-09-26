@@ -23,7 +23,7 @@ import * as memory from '../memory'
 import * as projectIndex from '../project-index'
 import type { ToolContext } from './tools'
 import { detail } from './tool-error-text'
-import { confirmJob, confirmMerge } from './job-confirm'
+import { confirmDiscard, confirmJob, confirmMerge } from './job-confirm'
 
 /**
  * The tools for the coding agent's jobs and for the places those jobs run in: starting one, following
@@ -447,19 +447,29 @@ export function jobTools(locale: ConversationLocale): Def[] {
     {
       name: 'discard_agent_job',
       description: {
-        ja: 'worktreeで隔離して行った変更を捨てる(worktreeとブランチを消す。元に戻せない)。結果は { discarded, jobId }。',
-        en: 'Throws away the changes made in an isolated worktree, deleting the worktree and its branch, which cannot be undone. The result is { discarded, jobId }.'
+        ja: 'worktreeで隔離して行った変更を捨てる(worktreeとブランチを消す。元に戻せない)。手順: 呼ぶと確認画面が出て、ユーザーが承認したときだけ捨てる。後条件: 結果は { discarded, jobId }。キャンセルされたら { declined } が返り、worktree は残る。',
+        en: 'Throws away the changes made in an isolated worktree, deleting the worktree and its branch, which cannot be undone. Steps: calling it brings up a confirmation window, and the changes are thrown away only when the user approves it. Postcondition: the result is { discarded, jobId }. When the user cancels, the result is { declined } and the worktree stays.'
       },
       usage: {
-        ja: '「捨てて」「なかったことにして」。取り込み待ちの変更を破棄する',
-        en: 'When the user asks to throw the changes away or forget them. It discards the changes that were waiting to be merged.'
+        ja: '「捨てて」「なかったことにして」。取り込み待ちの変更を破棄する。呼ぶ前に確認画面で承認するよう伝える',
+        en: 'When the user asks to throw the changes away or forget them. It discards the changes that were waiting to be merged. Before calling it, tell the user to approve it in the confirmation window.'
       },
       inputSchema: jobIdInput,
       parallel: false,
-      timeoutMs: LOCAL_TIMEOUT_MS,
+      timeoutMs: CONFIRM_TIMEOUT_MS,
       maxResultChars: SMALL_RESULT_MAX,
-      run: (input) => {
+      run: async (input, _ctx, signal) => {
         const job = requireJob(input)
+        let target
+        // A job with nothing to discard, or not ready for it, is refused before the user is asked about it.
+        try {
+          target = agentRunner.discardPreview(job.id)
+        } catch (err) {
+          throw new ToolError(TEXTS.discardFailed(detail(err, language)))
+        }
+        if (!(await confirmDiscard(job.title, target, signal))) {
+          return { discarded: false, declined: true, jobId: job.id, note: TEXTS.discardDeclined[language] }
+        }
         try {
           agentRunner.discard(job.id)
         } catch (err) {
@@ -549,6 +559,10 @@ const TEXTS = {
   mergeDeclined: {
     ja: 'ユーザーが確認画面でキャンセルしたので、取り込んでいない。worktree はそのまま残っている。そのことを短く伝えること。',
     en: 'The user cancelled it in the confirmation window, so nothing was merged and the worktree is still there. Say so briefly.'
+  },
+  discardDeclined: {
+    ja: 'ユーザーが確認画面でキャンセルしたので、捨てていない。worktree はそのまま残っている。そのことを短く伝え、自分から呼び直さないこと。',
+    en: 'The user cancelled it in the confirmation window, so nothing was thrown away and the worktree is still there. Say so briefly and do not call again on your own.'
   },
   noProject: {
     ja: '見つからない。フルパスを聞くか、「このフォルダ覚えて」と言ってもらって register_project で登録すること。パスを推測しない。',

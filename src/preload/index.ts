@@ -145,6 +145,7 @@ const api: RendererApi = {
   mailDraftRemove: (id) => ipcRenderer.invoke(IpcChannel.MailDraftRemove, id),
   mailDraftSend: (id) => ipcRenderer.invoke(IpcChannel.MailDraftSend, id),
   onConfirmEvent: subscribe<ConfirmEvent>(IpcChannel.ConfirmEvent),
+  confirmPending: () => ipcRenderer.invoke(IpcChannel.ConfirmPending),
   confirmResolve: (id, approved) => ipcRenderer.invoke(IpcChannel.ConfirmResolve, id, approved),
   getSettings: () => ipcRenderer.invoke(IpcChannel.GetSettings),
   saveSettings: (patch) => ipcRenderer.invoke(IpcChannel.SaveSettings, patch),

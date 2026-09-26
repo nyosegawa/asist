@@ -32,7 +32,9 @@ const mocks = vi.hoisted(() => {
     settingsListener: null as ((state: { settings: unknown }, before: { settings: unknown }) => void) | null,
     player: null as unknown,
     voice: null as unknown,
-    live: null as unknown
+    live: null as unknown,
+    /** The requests the conversation put on the confirmation sheet. */
+    confirmOpened: [] as unknown[]
   }
 })
 
@@ -112,7 +114,9 @@ vi.mock('@/voice/aizuchi-bank', () => ({
   pickListeningClip: vi.fn(() => ({ text: 'うん', audio: 'eA==' }))
 }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
-vi.mock('@/state/confirm', () => ({ useConfirmStore: { getState: () => ({ open: () => {}, close: () => {} }) } }))
+vi.mock('@/state/confirm', () => ({
+  useConfirmStore: { getState: () => ({ open: (request: unknown) => mocks.confirmOpened.push(request), close: () => {} }) }
+}))
 vi.mock('@/state/view', () => ({
   startMiniAppReports: () => {},
   useViewStore: { getState: () => ({ openApp: () => {}, closeApp: () => {} }) }
@@ -167,6 +171,7 @@ function api(overrides: Record<string, unknown>): unknown {
       if (key in target) return target[key]
       if (key.startsWith('on')) return () => () => {}
       if (key === 'getStatus') return async () => ({ asr: true, tts: true })
+      if (key === 'confirmPending') return async () => []
       return async () => undefined
     }
   })
@@ -214,6 +219,7 @@ beforeEach(() => {
   mocks.turn.phase = 'idle'
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
+  mocks.confirmOpened = []
   for (const key of Object.keys(mocks.settings)) delete mocks.settings[key]
   Object.assign(mocks.settings, structuredClone(baseSettings))
   // The mocked modules survive resetModules, so the listeners of the previous test's conversation go.
@@ -432,5 +438,24 @@ describe('a change of how long a quiet live session stays open', () => {
 
     expect(live.disable).toHaveBeenCalled()
     live.current = 'off'
+  })
+})
+
+describe('a page that loads while main waits for the answer to a confirmation', () => {
+  it('puts every request main is waiting on onto the sheet, asking for them only once it listens for new ones', async () => {
+    const request = { id: 'c1', title: 't', message: 'm', detail: 'd', confirmLabel: 'ok', destructive: false, holdsConversation: true }
+    const calls: string[] = []
+    await start({
+      onConfirmEvent: () => {
+        calls.push('listen')
+        return () => {}
+      },
+      confirmPending: async () => {
+        calls.push('ask')
+        return [request]
+      }
+    })
+    expect(calls).toEqual(['listen', 'ask'])
+    expect(mocks.confirmOpened).toEqual([request])
   })
 })

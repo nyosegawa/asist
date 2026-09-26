@@ -365,11 +365,14 @@ async function initializeConversation(): Promise<void> {
   })
   void useMailStore.getState().refresh()
   void useMailStore.getState().loadDrafts()
-  // Confirmations that main asks for, on mail and calendar, are answered in the app's own sheet.
+  // Confirmations that main asks for are answered in the app's own sheet. A page that loads while main
+  // already waits, after a reload or a crash of the renderer, missed their open events, so it asks for
+  // them once it listens; a request that opens in between arrives both ways and is queued once.
   window.api.onConfirmEvent((event) => {
     if (event.type === 'open') useConfirmStore.getState().open(event.request)
     else useConfirmStore.getState().close(event.id)
   })
+  for (const request of await window.api.confirmPending()) useConfirmStore.getState().open(request)
 
   window.api.onHotkeyMic(() => void enableMic())
 

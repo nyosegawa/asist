@@ -10,16 +10,17 @@ import type { ConfirmRequest } from '@shared/confirm'
  */
 
 /** A confirmation a screen asks for. It has no title, because the user has just pressed the button it is about. */
-export type LocalConfirmRequest = Omit<ConfirmRequest, 'id' | 'title' | 'detail'> & { detail?: string }
+export type LocalConfirmRequest = Omit<ConfirmRequest, 'id' | 'title' | 'detail' | 'holdsConversation'> & { detail?: string }
 
 /** A request from main is answered over IPC; one from a screen carries `resolve` and is answered to the waiting caller. */
 export type ShownConfirm =
   | (ConfirmRequest & { resolve?: undefined })
-  | (LocalConfirmRequest & { id: string; title?: undefined; resolve: (approved: boolean) => void })
+  | (LocalConfirmRequest & { id: string; title?: undefined; holdsConversation?: undefined; resolve: (approved: boolean) => void })
 
 interface ConfirmState {
   /** Main's requests, then the screens' questions, each oldest first; the first is on screen. */
   queue: ShownConfirm[]
+  /** Queues a request from main. One already queued, which a reloaded page can hear of twice, stays as it is. */
   open: (request: ConfirmRequest) => void
   /** Resolves true when the user confirms, and false on cancel or when main's request takes the screen from it. */
   ask: (request: LocalConfirmRequest) => Promise<boolean>
@@ -32,6 +33,7 @@ let nextLocalConfirm = 1
 export const useConfirmStore = create<ConfirmState>((set, get) => ({
   queue: [],
   open: (request) => {
+    if (get().queue.some((queued) => queued.id === request.id)) return
     const [shown, ...waiting] = get().queue
     // Main's approval gate gives up after a few minutes and cannot wait behind a delete the user is
     // still deciding on, so the delete counts as cancelled and main's request goes ahead of the

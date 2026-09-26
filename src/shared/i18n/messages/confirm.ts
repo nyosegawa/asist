@@ -26,5 +26,18 @@ export const confirm = defineMessages({
     'pt-BR': 'Não foi possível exibir a confirmação.',
     'es-419': 'No se pudo mostrar la confirmación.',
     'es-ES': 'No se ha podido mostrar la confirmación.'
+  },
+  conversationWaits: {
+    'ja-JP': 'ボタンで答えるまで、話しかけた内容は保留になります。',
+    'en-US': 'Anything you say waits until you answer with a button.',
+    'fr-FR': "Ce que vous dites reste en attente jusqu'à ce que vous répondiez avec un bouton.",
+    'de-DE': 'Was Sie sagen, wartet, bis Sie mit einer Schaltfläche antworten.',
+    'hi-IN': 'जब तक आप बटन से जवाब नहीं देते, आपकी कही बात रुकी रहती है।',
+    'id-ID': 'Apa pun yang Anda katakan ditunda sampai Anda menjawab dengan tombol.',
+    'it-IT': 'Quello che dici resta in attesa finché non rispondi con un pulsante.',
+    'ko-KR': '버튼으로 답할 때까지 말씀하신 내용은 보류됩니다.',
+    'pt-BR': 'O que você disser fica em espera até você responder com um botão.',
+    'es-419': 'Lo que digas queda en espera hasta que respondas con un botón.',
+    'es-ES': 'Lo que digas queda en espera hasta que respondas con un botón.'
   }
 })

@@ -63,6 +63,11 @@
   scrollbar-width: thin;
   scrollbar-color: var(--ui-line) transparent;
 }
+.confirm-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-holo-dim);
+}
 .confirm-actions {
   display: flex;
   justify-content: flex-end;

@@ -279,6 +279,47 @@ it.each([
   expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
 })
 
+it('shows the folder, the branch and the changes a discard removes, and then removes exactly those', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'thrown away\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const worktree = agent.get(job.id)!.worktree!
+  const preview = agent.discardPreview(job.id)
+  expect(preview).toMatchObject({ repo, dir: worktree.dir, branch: worktree.branch })
+  expect(preview.stat).toContain('new.txt')
+  agent.discard(job.id)
+  expect(fs.existsSync(worktree.dir)).toBe(false)
+  expect(git(repo, 'branch', '--list', worktree.branch)).toBe('')
+  expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false)
+})
+
+it.each([
+  ['merged', (agent: typeof import('../src/main/services/agent'), id: string): void => {
+    agent.merge(id, agent.diff(id).commit)
+  }],
+  ['already discarded', (agent: typeof import('../src/main/services/agent'), id: string): void => {
+    agent.discard(id)
+  }]
+])('refuses to discard a job whose changes were %s, so the user is not asked about changes that are gone', async (_case, settle) => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'changed\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  settle(agent, job.id)
+  const nothing = errorText('jobs.discard.noChanges', { id: job.id })
+  expect(() => agent.discardPreview(job.id)).toThrow(nothing)
+  expect(() => agent.discard(job.id)).toThrow(nothing)
+})
+
+it('refuses to discard a job that changed nothing', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('unchanged')
+  expect(() => agent.discardPreview(job.id)).toThrow(errorText('jobs.discard.noChanges', { id: job.id }))
+})
+
 it('reports a job state that cannot be saved while the agent runs in its log instead of throwing into the output listener', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })

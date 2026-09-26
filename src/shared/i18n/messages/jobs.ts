@@ -1826,6 +1826,71 @@ export const jobs = defineMessages({
       'pt-BR': 'Mesclar alterações',
       'es-419': 'Fusionar cambios',
       'es-ES': 'Fusionar cambios'
+    },
+    discardTitle: {
+      'ja-JP': '変更の破棄を確認',
+      'en-US': 'Confirm the discard',
+      'fr-FR': "Confirmer l'abandon",
+      'de-DE': 'Verwerfen bestätigen',
+      'hi-IN': 'बदलाव छोड़ने की पुष्टि करें',
+      'id-ID': 'Konfirmasi pembuangan',
+      'it-IT': 'Conferma lo scarto',
+      'ko-KR': '변경 버리기 확인',
+      'pt-BR': 'Confirmar o descarte',
+      'es-419': 'Confirmar el descarte',
+      'es-ES': 'Confirmar el descarte'
+    },
+    discardMessage: {
+      'ja-JP': 'このジョブの変更を捨てますか?',
+      'en-US': 'Discard the changes from this job?',
+      'fr-FR': 'Abandonner les modifications de ce job ?',
+      'de-DE': 'Die Änderungen dieses Jobs verwerfen?',
+      'hi-IN': 'इस जॉब के बदलाव छोड़ दें?',
+      'id-ID': 'Buang perubahan dari pekerjaan ini?',
+      'it-IT': 'Scartare le modifiche di questo incarico?',
+      'ko-KR': '이 작업의 변경을 버리겠습니까?',
+      'pt-BR': 'Descartar as alterações deste job?',
+      'es-419': '¿Descartar los cambios de este trabajo?',
+      'es-ES': '¿Descartar los cambios de este trabajo?'
+    },
+    discardWarning: {
+      'ja-JP': '取り込んでいない変更は worktree とブランチごと消え、元に戻せません。',
+      'en-US': 'The changes that were not merged are deleted along with the worktree and its branch, and cannot be restored.',
+      'fr-FR': 'Les modifications non fusionnées sont supprimées avec le worktree et sa branche, sans retour possible.',
+      'de-DE': 'Die nicht übernommenen Änderungen werden mit dem worktree und seinem Branch gelöscht und lassen sich nicht wiederherstellen.',
+      'hi-IN': 'जो बदलाव मर्ज नहीं हुए, वे worktree और उसकी ब्रांच के साथ मिट जाते हैं और वापस नहीं आ सकते।',
+      'id-ID': 'Perubahan yang belum digabungkan terhapus bersama worktree dan branch-nya, dan tidak bisa dikembalikan.',
+      'it-IT': 'Le modifiche non integrate vengono eliminate insieme al worktree e al suo branch, e non si possono recuperare.',
+      'ko-KR': '병합하지 않은 변경은 worktree와 브랜치와 함께 삭제되며 되돌릴 수 없습니다.',
+      'pt-BR': 'As alterações que não foram mescladas são apagadas junto com o worktree e o branch dele, e não podem ser recuperadas.',
+      'es-419': 'Los cambios que no se fusionaron se borran junto con el worktree y su rama, y no se pueden recuperar.',
+      'es-ES': 'Los cambios que no se han fusionado se borran junto con el worktree y su rama, y no se pueden recuperar.'
+    },
+    discard: {
+      'ja-JP': '変更を捨てる',
+      'en-US': 'Discard changes',
+      'fr-FR': 'Abandonner les modifications',
+      'de-DE': 'Änderungen verwerfen',
+      'hi-IN': 'बदलाव छोड़ दें',
+      'id-ID': 'Buang perubahan',
+      'it-IT': 'Scarta le modifiche',
+      'ko-KR': '변경 버리기',
+      'pt-BR': 'Descartar alterações',
+      'es-419': 'Descartar cambios',
+      'es-ES': 'Descartar cambios'
+    },
+    branch: {
+      'ja-JP': 'ブランチ: {branch}({repo})',
+      'en-US': 'Branch: {branch} ({repo})',
+      'fr-FR': 'Branche : {branch} ({repo})',
+      'de-DE': 'Branch: {branch} ({repo})',
+      'hi-IN': 'ब्रांच: {branch} ({repo})',
+      'id-ID': 'Branch: {branch} ({repo})',
+      'it-IT': 'Branch: {branch} ({repo})',
+      'ko-KR': '브랜치: {branch} ({repo})',
+      'pt-BR': 'Branch: {branch} ({repo})',
+      'es-419': 'Rama: {branch} ({repo})',
+      'es-ES': 'Rama: {branch} ({repo})'
     }
   }
 })

@@ -1,14 +1,15 @@
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
 import type { AgentEngine, JobDiff } from '@shared/ipc'
+import type { DiscardPreview } from '../agent'
 import { requestConfirm, type ConfirmInput } from '../confirm'
 import { t } from '../i18n'
 
 /**
  * The confirmation the user answers before an agent job that the conversation model asked for starts,
- * carries on or is merged. The model's context holds text from mail, the web, notes and the calendar,
- * so a request to run a job may come from someone other than the user; the sheet therefore shows the
- * instruction exactly as the agent receives it, where it runs and whether it may write, and only a
- * click on the sheet lets it through.
+ * carries on, is merged or has its changes thrown away. The model's context holds text from mail, the
+ * web, notes and the calendar, so a request to run a job may come from someone other than the user; the
+ * sheet therefore shows the instruction exactly as the agent receives it, where it runs and whether it
+ * may write, and only a click on the sheet lets it through.
  */
 
 export type JobPlace =
@@ -67,8 +68,28 @@ export function mergeConfirmation(job: { title: string; repo: string }, review: 
   }
 }
 
+export function discardConfirmation(title: string, target: DiscardPreview): ConfirmInput {
+  return {
+    title: t('jobs.confirm.discardTitle'),
+    message: t('jobs.confirm.discardMessage'),
+    detail: [
+      t('jobs.confirm.job', { title }),
+      t('jobs.confirm.place', { place: target.dir }),
+      t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
+      ...(target.stat ? ['', target.stat] : []),
+      '',
+      t('jobs.confirm.discardWarning')
+    ].join('\n'),
+    confirmLabel: t('jobs.confirm.discard'),
+    destructive: true
+  }
+}
+
 export const confirmJob = (plan: JobPlan, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(jobConfirmation(plan), signal)
 
 export const confirmMerge = (job: { title: string; repo: string }, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(mergeConfirmation(job, review), signal)
+
+export const confirmDiscard = (title: string, target: DiscardPreview, signal: AbortSignal): Promise<boolean> =>
+  requestConfirm(discardConfirmation(title, target), signal)

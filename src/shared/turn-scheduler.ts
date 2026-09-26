@@ -1,10 +1,19 @@
 /**
  * Runs conversation turns strictly one at a time and aborts the running turn when a new one arrives.
+ * A turn that is waiting for the user's answer holds the abort off until it lets go. Every turn runs,
+ * in the order it started: one that a newer turn replaced while it waited runs with its signal already
+ * aborted and closes at once, so that what the user said in it is still recorded.
  */
 
 export interface TurnRunContext {
   turnId: number
   signal: AbortSignal
+  /**
+   * Keeps the turn from being aborted until the returned release is called. An abort asked for
+   * meanwhile, by abort() or by a newer turn, takes effect at the release, and the newer turn still
+   * waits for this one to end.
+   */
+  hold: () => () => void
 }
 
 export interface TurnHandle {
@@ -13,28 +22,31 @@ export interface TurnHandle {
   completion: Promise<void>
 }
 
+interface ScheduledTurn {
+  turnId: number
+  controller: AbortController
+  holds: number
+  abortAtRelease: boolean
+}
+
 export class LatestTurnScheduler {
   private nextTurnId = 1
-  private current: { turnId: number; controller: AbortController } | null = null
+  private current: ScheduledTurn | null = null
   private tail: Promise<void> = Promise.resolve()
 
   start(run: (ctx: TurnRunContext) => Promise<void>): TurnHandle {
-    this.current?.controller.abort()
+    if (this.current) this.stop(this.current)
 
-    const turnId = this.nextTurnId++
-    const controller = new AbortController()
+    const turn: ScheduledTurn = { turnId: this.nextTurnId++, controller: new AbortController(), holds: 0, abortAtRelease: false }
+    const { turnId, controller } = turn
     const previous = this.tail.catch(() => {})
     const completion = previous
-      .then(async () => {
-        // While this turn waited for the previous one, a newer turn replaced it.
-        if (controller.signal.aborted) return
-        await run({ turnId, signal: controller.signal })
-      })
+      .then(() => run({ turnId, signal: controller.signal, hold: () => this.hold(turn) }))
       .finally(() => {
         if (this.current?.turnId === turnId) this.current = null
       })
 
-    this.current = { turnId, controller }
+    this.current = turn
     // A failed turn must not block the turns behind it.
     this.tail = completion.catch(() => {})
     return { turnId, signal: controller.signal, completion }
@@ -47,7 +59,23 @@ export class LatestTurnScheduler {
   }
 
   abort(turnId: number): void {
-    if (this.current?.turnId === turnId) this.current.controller.abort()
+    if (this.current?.turnId === turnId) this.stop(this.current)
+  }
+
+  private stop(turn: ScheduledTurn): void {
+    if (turn.holds > 0) turn.abortAtRelease = true
+    else turn.controller.abort()
+  }
+
+  private hold(turn: ScheduledTurn): () => void {
+    turn.holds++
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      turn.holds--
+      if (turn.holds === 0 && turn.abortAtRelease) turn.controller.abort()
+    }
   }
 
   get activeTurnId(): number | null {

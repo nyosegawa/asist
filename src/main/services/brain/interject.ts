@@ -17,6 +17,8 @@ export async function interject(text: string): Promise<void> {
   }
   const route = currentSpeechRoute()
   const handle = turnScheduler.startIfIdle(async ({ turnId, signal }) => {
+    // A user turn that replaced this one before it began has nothing of it to close.
+    if (signal.aborted) return
     emit({ type: 'started', turnId, origin: 'interject' })
     history.ensureLoaded()
     const synth = route.open({ turnId, signal, emit })

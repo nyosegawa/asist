@@ -154,7 +154,8 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
           translate('mail.confirm.body', { body: '火曜の14時でお願いします。場所は前回と同じ会議室で大丈夫です。' })
         ].join('\n\n'),
         confirmLabel: translate('mail.confirm.action.send'),
-        destructive: false
+        destructive: false,
+        holdsConversation: true
       })
   },
   toasts: { open: showToasts }

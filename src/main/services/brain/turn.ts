@@ -21,6 +21,7 @@ import { conversationLocale, features } from '../conversation-locale'
 import { getSettings } from '../settings'
 import * as agentRunner from '../agent'
 import { randomClip as randomAizuchiClip } from '../aizuchi'
+import { askingFrom } from '../confirm'
 import * as memory from '../memory'
 import { summarizeToolInput, summarizeToolResult, type NoticeKind } from './conversation-log'
 import { openAppNote } from './mini-app-tools'
@@ -135,14 +136,14 @@ export function beginTurn(
   onlyIfIdle: boolean,
   runtime: TurnRuntime = {}
 ): TurnHandle | null {
-  const run = async ({ turnId, signal }: TurnRunContext): Promise<void> => {
+  const run = async ({ turnId, signal, hold }: TurnRunContext): Promise<void> => {
     emit({
       type: 'started',
       turnId,
       origin,
       requestId: options.clientRequestId
     })
-    await runTurn(turnId, input, options, signal, runtime.route ?? currentSpeechRoute())
+    await runTurn(turnId, input, options, signal, hold, runtime.route ?? currentSpeechRoute())
   }
   const handle = onlyIfIdle ? turnScheduler.startIfIdle(run) : turnScheduler.start(run)
   if (!handle) return null
@@ -159,6 +160,7 @@ async function runTurn(
   input: TurnInput,
   options: TurnStartOptions,
   signal: AbortSignal,
+  hold: TurnRunContext['hold'],
   route: SpeechRoute
 ): Promise<void> {
   const userText = input.text
@@ -379,6 +381,16 @@ async function runTurn(
     }
   }
 
+  // A tool that opens a confirmation holds the turn until its round's results are recorded. The user's
+  // next words then neither close the sheet as a refusal nor cut off the operation they approve, and the
+  // newer turn starts from the result. A round that has closed its signal holds nothing any more.
+  let releaseHold = null as (() => void) | null
+  const holdForAnswer = (roundSignal: AbortSignal): boolean => {
+    if (roundSignal.aborted) return false
+    releaseHold ??= hold()
+    return true
+  }
+
   // A tool that runs longer than 2.5 seconds, such as a panel fetch, gets the filler to cover the pause.
   let slowToolTimer: ReturnType<typeof setTimeout> | null = null
   const logToolResult = ({ call, execution }: ToolRoundResult): void => {
@@ -408,11 +420,11 @@ async function runTurn(
       signal,
       locale,
       isParallel: (name) => toolRegistry().find(name)?.parallel ?? false,
-      execute: (call, roundSignal) => executeClientTool(call.name, call.input, {
+      execute: (call, roundSignal) => askingFrom(() => holdForAnswer(roundSignal), () => executeClientTool(call.name, call.input, {
         ...ctx,
         signal: roundSignal,
         emit: (event) => { if (!roundSignal.aborted) emit(event) }
-      }),
+      })),
       onStart: (call) => {
         toolCalls++
         slowToolTimer ??= setTimeout(() => playWorkFiller(round.signal), 2500)
@@ -577,6 +589,8 @@ async function runTurn(
         if (slowToolTimer) clearTimeout(slowToolTimer)
         slowToolTimer = null
         await toolRound.close()
+        releaseHold?.()
+        releaseHold = null
       }
     }
 

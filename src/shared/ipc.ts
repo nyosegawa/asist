@@ -2,7 +2,7 @@ import type { AizuchiClassification } from './aizuchi-classifier'
 import type { AgentStreamEvent } from './agent-stream'
 import type { UsageDay } from './api-usage'
 import type { CalendarChange, CalendarChangeResult, CalendarEvent, CalendarListRange, CalendarStatus } from './calendar'
-import type { ConfirmEvent } from './confirm'
+import type { ConfirmEvent, ConfirmRequest } from './confirm'
 import type { MiniAppTarget, MiniAppView } from './mini-apps'
 import type { NoteSummary } from './notes'
 import type {
@@ -789,6 +789,7 @@ export const IpcChannel = {
   MailDraftRemove: 'mail-draft-remove',
   MailDraftSend: 'mail-draft-send',
   ConfirmEvent: 'confirm-event',
+  ConfirmPending: 'confirm-pending',
   ConfirmResolve: 'confirm-resolve',
   GetSettings: 'get-settings',
   SaveSettings: 'save-settings',
@@ -1022,8 +1023,10 @@ export interface RendererApi {
   mailDraftRemove(id: string): Promise<void>
   /** Sends a draft. Pressing the button is the approval, so no confirmation screen appears, and the draft is removed once it is sent. */
   mailDraftSend(id: string): Promise<MailChangeResult>
-  /** The confirmations main asks for, in mail and calendar. `open` shows the screen and `close` takes it away. */
+  /** The confirmations main asks for, in mail, calendar and agent jobs. `open` shows the screen and `close` takes it away. */
   onConfirmEvent(callback: (event: ConfirmEvent) => void): () => void
+  /** The requests main is waiting on, oldest first, whose `open` a page that loaded after them never heard. */
+  confirmPending(): Promise<ConfirmRequest[]>
   confirmResolve(id: string, approved: boolean): Promise<void>
   getSettings(): Promise<AppSettings>
   saveSettings(patch: SettingsPatch): Promise<AppSettings>

@@ -140,7 +140,7 @@ function demoConfirm(title: string, message: string, detail: string, confirmLabe
       confirmListeners.forEach((listener) => listener({ type: 'close', id }))
       resolve(approved)
     })
-    confirmListeners.forEach((listener) => listener({ type: 'open', request: { id, title, message, detail, confirmLabel, destructive } }))
+    confirmListeners.forEach((listener) => listener({ type: 'open', request: { id, title, message, detail, confirmLabel, destructive, holdsConversation: false } }))
   })
 }
 
@@ -683,6 +683,7 @@ export const mockApi: RendererApi = {
     confirmListeners.add(callback)
     return () => confirmListeners.delete(callback)
   },
+  confirmPending: async () => [],
   confirmResolve: async (id, approved) => {
     confirmPending.get(id)?.(approved)
   },

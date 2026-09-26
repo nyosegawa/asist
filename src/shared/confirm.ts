@@ -2,7 +2,7 @@
  * The shared shape of the approval gate. The main process asks before an operation that reaches
  * outside or is hard to undo, and the renderer answers from a confirmation screen inside the app; no
  * native dialog is used. If the requester aborts before an answer arrives, a `close` event follows and
- * the screen goes away.
+ * the screen goes away. A renderer that loads while requests wait asks main for them.
  */
 
 export interface ConfirmRequest {
@@ -17,6 +17,11 @@ export interface ConfirmRequest {
   confirmLabel: string
   /** The operation removes something, such as a mail going to the trash, and its button is drawn as a warning. */
   destructive: boolean
+  /**
+   * A conversation turn asked and waits for the answer: what the user says meanwhile neither answers nor
+   * cancels it, and is taken up once the answer is in.
+   */
+  holdsConversation: boolean
 }
 
 export type ConfirmEvent = { type: 'open'; request: ConfirmRequest } | { type: 'close'; id: string }

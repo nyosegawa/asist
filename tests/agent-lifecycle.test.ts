@@ -85,7 +85,7 @@ describe('starting an agent', () => {
     expect(agent.get(signalled.id)?.summary).toBeUndefined()
   })
 
-  it('waits for the previous process to close before continuing, and launches nothing when the wait is aborted', async () => {
+  it('waits for the previous process to close before continuing, and carries on even when the caller gives up during that wait', async () => {
     let close!: () => void
     mocks.launch.mockImplementation((_job, _args, handlers) => ({
       stop: mocks.kill,
@@ -100,9 +100,23 @@ describe('starting an agent', () => {
     const continuation = agent.continueJob(job.id, '続きを調べる', controller.signal)
     expect(agent.get(job.id)?.status).toBe('stopping')
     expect(mocks.launch).toHaveBeenCalledOnce()
+    // The approval came near the tool's time limit, which runs out while the running job stops.
     controller.abort()
     close()
-    await expect(continuation).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(continuation).resolves.toMatchObject({ parentId: job.id, status: 'running' })
+    expect(mocks.launch).toHaveBeenCalledTimes(2)
+  })
+
+  it('neither stops the running job nor starts a continuation when the caller gave up before asking for it', async () => {
+    mocks.launch.mockImplementation(() => ({ stop: mocks.kill, completion: new Promise<void>(() => {}) }))
+    const agent = await import('../src/main/services/agent')
+    const job = agent.start('調査する', options)
+    mocks.launch.mock.calls[0][2].onEvent({ kind: 'init', model: 'codex', sessionId: 'session' })
+    const controller = new AbortController()
+    controller.abort()
+    await expect(agent.continueJob(job.id, '続きを調べる', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    expect(agent.get(job.id)?.status).toBe('running')
+    expect(mocks.kill).not.toHaveBeenCalled()
     expect(mocks.launch).toHaveBeenCalledOnce()
   })
 
