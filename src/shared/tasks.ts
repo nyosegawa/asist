@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isoWithOffset } from './calendar'
+import { localIsoWithOffset } from './calendar'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { StoredFormat } from './stored-format'
@@ -299,11 +299,7 @@ export function openTasks(tasks: readonly Task[]): Task[] {
 export const titleIdentity = (title: string): string =>
   title.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ja')
 
-/**
- * The shape returned to the Agent. It always carries the id, the status and the due date. The time a
- * task was finished is local time with its offset, as the calendar and mail give theirs: the utterance
- * carries local time, so a UTC stamp would put a task finished at 0:30 in Japan on the day before.
- */
+/** The shape returned to the Agent. It always carries the id, the status and the due date. */
 export function taskSummary(task: Task, language: PromptLanguage): Record<string, unknown> {
   return {
     id: task.id,
@@ -312,8 +308,6 @@ export function taskSummary(task: Task, language: PromptLanguage): Record<string
     statusLabel: TASK_STATUS_LABEL[task.status][language],
     due: task.due,
     ...(task.notes ? { notes: task.notes } : {}),
-    ...(task.completedAt
-      ? { completedAt: isoWithOffset(task.completedAt, Intl.DateTimeFormat().resolvedOptions().timeZone) }
-      : {})
+    ...(task.completedAt ? { completedAt: localIsoWithOffset(task.completedAt) } : {})
   }
 }
