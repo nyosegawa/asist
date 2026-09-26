@@ -280,7 +280,7 @@ describe('echo of what the speaker played', () => {
     expect(turnStart).not.toHaveBeenCalled()
   })
 
-  it('keeps the user\'s own "はい" when the only "はい。" clip started after the capture ended', async () => {
+  it('keeps a word the user said when the only aizuchi clip saying it started after the capture ended', async () => {
     const turnStart = vi.fn(async () => 7)
     await start({ turnStart })
     const end = speechEnd(performance.now() - 2500)
