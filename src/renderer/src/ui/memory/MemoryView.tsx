@@ -178,6 +178,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
           // because a save is refused when a curation has changed it since the editor opened.
           const text = await window.api.memoryDocumentRead(doc.file)
           setMarkdown(text ?? '')
+          await reload()
         }
       )
       .catch((err: unknown) => setError(displayError(err)))

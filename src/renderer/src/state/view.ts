@@ -101,7 +101,9 @@ export const useViewStore = create<ViewState>((set, get) => {
       return
     }
     leaveGuard().then(
-      (approved) => approved && set((s) => ({ open: next(s.open) })),
+      (approved) => {
+        if (approved) set((s) => ({ open: next(s.open) }))
+      },
       // The guard asks through the confirmation sheet, which refuses while another confirmation is on it;
       // the mini app then stays as it is.
       (error: unknown) => console.error('mini app leave guard failed:', error)
