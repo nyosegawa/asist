@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
   # The dependency audit depends on advisories published after a commit, so it also runs on its own.
   schedule:
     - cron: '0 21 * * 1'
