@@ -118,7 +118,11 @@ export type SearchEvent =
 export interface ConversationResult {
   message: ConversationMessage
   stop: StopReason
-  usage: RoundUsage
+  /**
+   * Null when the response ended but its usage never arrived, which only a provider that sends the
+   * usage after the finish reason, Cerebras, can do. Nothing stands in for it.
+   */
+  usage: RoundUsage | null
   /**
    * A provider-side tool (web search) has not returned its result within this response. The next user
    * message must hold tool results only: added text makes the API treat the search as abandoned.

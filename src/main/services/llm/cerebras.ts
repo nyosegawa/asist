@@ -123,14 +123,15 @@ class CerebrasStream extends AdapterStream {
       }
       if (choice.finish_reason) finish = choice.finish_reason
     }
-    // Cerebras puts the usage on the final chunk of every stream (the README of its SDK), so a stream
-    // that ended without it was cut off even when its finish reason arrived.
-    if (finish === null || usage === null) streamCutOff(request.signal, 'Cerebras')
+    if (finish === null) streamCutOff(request.signal, 'Cerebras')
     if (open !== null) confirm(open)
     this.closeText()
 
     const stop: StopReason = drafts.size > 0 ? 'tool_calls' : finish === 'length' ? 'max_tokens' : finish === 'content_filter' ? 'refusal' : 'end'
-    return { message: { role: 'assistant', parts: [...this.parts] }, stop, usage: roundUsage(usage) }
+    // The finish reason ends the response. The usage rides on the last chunk, which is either the one
+    // with the finish reason or one more after it, so a stream cut between the two keeps its answer
+    // but has no usage.
+    return { message: { role: 'assistant', parts: [...this.parts] }, stop, usage: usage ? roundUsage(usage) : null }
   }
 }
 

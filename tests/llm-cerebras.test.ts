@@ -155,10 +155,16 @@ describe('the Cerebras stream', () => {
     expect(isTransientApiError(error)).toBe(true)
   })
 
-  it('fails as a transient error on a stream that ended after its finish reason but before its usage, instead of counting no tokens', async () => {
+  it('keeps an answer cut off between its finish reason and its usage, by the server or by the timeout of the round, and reports no usage for it', async () => {
     mocks.chunks = [delta({ content: '要約です。' }, 'stop')]
-    const error = await (await open()).stream.final().then(() => null, (reason: unknown) => reason)
-    expect(isTransientApiError(error)).toBe(true)
+    const closed = await (await open()).stream.final()
+    expect(closed).toMatchObject({ message: { parts: [{ type: 'text', text: '要約です。' }] }, stop: 'end', usage: null })
+
+    mocks.chunks = [delta({ content: '晴れです。' }, 'stop'), { choices: [], usage: USAGE }]
+    const controller = new AbortController()
+    const { stream } = await open({ signal: controller.signal })
+    stream.on('text', () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')))
+    expect(await stream.final()).toMatchObject({ message: { parts: [{ type: 'text', text: '晴れです。' }] }, stop: 'end', usage: null })
   })
 
   it('keeps an answer whose finish reason arrived before the timeout of the round fired', async () => {

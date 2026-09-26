@@ -36,7 +36,8 @@ interface RoundEmitter {
   untilAborted: () => Promise<never>
 }
 
-type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason }>
+/** A round that returns `usage: null` finished without the provider's usage, as a Cerebras stream cut after its finish reason does. */
+type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason; usage?: null }>
 
 const USAGE = { input: 100, cacheRead: 900, cacheCreation: 0, output: 20 }
 
@@ -89,13 +90,13 @@ class FakeStream {
         })
     }
     const partial = await this.script(emitter)
-    return { message: { role: 'assistant', parts: [...this.parts] }, stop: partial.stop ?? 'end', usage: USAGE }
+    return { message: { role: 'assistant', parts: [...this.parts] }, stop: partial.stop ?? 'end', usage: partial.usage === null ? null : USAGE }
   }
 }
 
 const mocks = vi.hoisted(() => ({
   userData: '',
-  rounds: [] as Array<(round: RoundEmitter) => Promise<{ stop?: StopReason }>>,
+  rounds: [] as RoundScript[],
   requests: [] as Array<{ messages: ConversationMessage[]; system: Array<{ text: string }> }>,
   fetchPanel: vi.fn(),
   conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
@@ -278,6 +279,21 @@ describe('brain turn', () => {
       ['assistant', '明日は晴天です。']
     ])
     expect(readLog()[1]).toMatchObject({ kind: 'message', role: 'assistant', parts: [{ type: 'text', text: '明日は晴天です。' }] })
+  })
+
+  it('reports no token counts for a turn whose round finished without its usage, and keeps the history estimating its context', async () => {
+    mocks.rounds.push(async (round) => {
+      round.text('晴天です。')
+      return { usage: null }
+    })
+    const { brain, events } = await loadBrain()
+    const { history } = await import('../src/main/services/brain/session')
+    await runToDone(brain, '明日の天気は')
+    const metrics = events.find((e) => e.type === 'metrics' && 'toolCalls' in e.timings)
+    expect(metrics).toMatchObject({ timings: { toolCalls: 0 } })
+    expect(metrics && metrics.type === 'metrics' && 'inputTokens' in metrics.timings).toBe(false)
+    // A measured context of no tokens would hold off compaction until the next measurement.
+    expect(history.contextTokens).toBeGreaterThan(0)
   })
 
   it('resumes exactly once after a disconnect that happens mid-reply, carrying the confirmed text and the tool results', async () => {

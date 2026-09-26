@@ -1,4 +1,4 @@
-import type { TurnStartOptions } from '@shared/ipc'
+import type { RoundUsage, TurnStartOptions } from '@shared/ipc'
 import type { ConversationMessage, ConversationResult, ConversationStream, SystemLayer } from '@shared/conversation'
 import { waitWithAbort, withTimeoutSignal } from '@shared/abort'
 import { apiErrorKey, errMessage, isTransientApiError } from '@shared/api-errors'
@@ -311,9 +311,9 @@ async function runTurn(
   let ttftSent = false
   let lastTextAt = Date.now()
   let visibleReply = ''
-  // The usage of each round. At the end of the turn the total and the context length of the last
-  // round go into the metrics.
-  const roundUsages: import('@shared/ipc').RoundUsage[] = []
+  // The usage of each round, null for a round whose usage never arrived. At the end of the turn the
+  // total and the context length of the last round go into the metrics.
+  const roundUsages: Array<RoundUsage | null> = []
   let toolCalls = 0
   // A stream dropped after speaking began is resumed at most once per turn.
   let resumed = false
@@ -321,9 +321,11 @@ async function runTurn(
   let cacheMissReason: CacheMissReason | null = null
   const emitUsage = (): void => {
     if (roundUsages.length === 0) return
-    const usage = summarizeTurnUsage(roundUsages)
+    // A round without its usage leaves the turn's token counts unknown, so none are reported and the
+    // history keeps its own estimate of the context.
+    const usage = roundUsages.every((round): round is RoundUsage => round !== null) ? summarizeTurnUsage(roundUsages) : null
     // The context length the server counted goes to the history, which decides the compaction thresholds from it.
-    history.noteContextTokens(usage.contextTokens ?? 0, revision)
+    if (usage) history.noteContextTokens(usage.contextTokens ?? 0, revision)
     emit({
       type: 'metrics',
       turnId,
@@ -540,7 +542,8 @@ async function runTurn(
         }
         roundUsages.push(result.usage)
         if (fingerprint) {
-          cacheMissReason = diagnoseCacheMiss(lastRequestFingerprint(), fingerprint, roundUsages[0])
+          // Without the usage of the round there is no telling whether the cache was read.
+          cacheMissReason = result.usage ? diagnoseCacheMiss(lastRequestFingerprint(), fingerprint, result.usage) : null
           noteRequestFingerprint(fingerprint)
         }
 

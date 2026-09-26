@@ -50,6 +50,19 @@ describe('recording the use of a conversation model', () => {
     expect(mocks.recordUsage).not.toHaveBeenCalled()
   })
 
+  it('records nothing for a response that finished without its usage, rather than a use of no tokens, and says so in the log', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      mocks.final.mockReturnValue(Promise.resolve({ usage: null }))
+      await streamConversation(request, 'conversation').final()
+      await Promise.resolve()
+      expect(mocks.recordUsage).not.toHaveBeenCalled()
+      expect(warn).toHaveBeenCalledOnce()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('records a JSON call under its purpose and hands back only the value', async () => {
     mocks.completeJson.mockResolvedValueOnce({ value: { bridge: 'x' }, usage })
     const value = await completeJson({ provider: 'openai', id: 'unknown-model' }, 's', 'u', { type: 'object' }, 10, new AbortController().signal, 'bridge')

@@ -41,12 +41,16 @@ function recordCall(purpose: LlmPurpose, model: ConversationModel, usage: RoundU
 
 /**
  * A response that fails or is aborted is not recorded: its usage never arrives, even though the
- * provider may bill the tokens it produced before the failure.
+ * provider may bill the tokens it produced before the failure. Neither is one that finished without
+ * its usage, which is only logged.
  */
 export function streamConversation(request: ConversationRequest, purpose: LlmPurpose): ConversationStream {
   const stream = ADAPTERS[request.model.provider].stream(request, requireKey(request.model.provider))
   stream.final().then(
-    (result) => recordCall(purpose, request.model, result.usage),
+    (result) => {
+      if (result.usage) recordCall(purpose, request.model, result.usage)
+      else console.warn(`llm: a ${purpose} response of ${request.model.id} finished without its usage, so it is not recorded`)
+    },
     () => {}
   )
   return stream
