@@ -138,6 +138,23 @@ describe('brain tools registry', () => {
     expect(required).toEqual([])
   })
 
+  it('tells the model to write no field a tool does not name, in every object of every tool', async () => {
+    const { tools } = await load()
+    const open: string[] = []
+    const visit = (schema: unknown, where: string): void => {
+      if (!schema || typeof schema !== 'object') return
+      const node = schema as Record<string, unknown>
+      if (node.type === 'object' && node.properties && node.additionalProperties !== false) open.push(where)
+      for (const [field, value] of Object.entries(node.properties ?? {})) visit(value, `${where}.${field}`)
+      if (node.items) visit(node.items, `${where}[]`)
+      for (const branch of ['anyOf', 'oneOf', 'allOf'] as const) {
+        for (const [index, value] of ((node[branch] ?? []) as unknown[]).entries()) visit(value, `${where}|${index}`)
+      }
+    }
+    for (const spec of tools()) visit(spec.inputSchema, spec.name)
+    expect(open).toEqual([])
+  })
+
   it('hands the fetcher what the model wrote as it is, even text from outside that looks like a packed pair', async () => {
     mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'Google News' })
     const { executeClientTool } = await load()
