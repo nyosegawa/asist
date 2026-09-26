@@ -102,22 +102,20 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
       .finally(() => setBusy(false))
   }
   // Commits made inside a submodule of the worktree may have no other copy and the diff does not show them,
-  // so a discard asks first when the job touched a submodule. Every other change is in the diff above.
-  const discard = async (): Promise<void> => {
-    const submodules = worktree.submodules ?? []
-    if (
-      submodules.length > 0 &&
-      !(await askConfirm({
-        message: t('jobs.confirm.discardMessage'),
-        detail: t('jobs.discard.submoduleWork', { paths: submodules.join(', ') }),
-        confirmLabel: t('jobs.card.merge.discard'),
-        destructive: true
-      }))
-    ) {
-      return
-    }
-    act(() => window.api.jobDiscard(job.id))
-  }
+  // so a discard asks first when main finds possible work in a submodule. Every other change is in the diff.
+  const discard = (): void =>
+    act(async () => {
+      const { submodules } = await window.api.jobDiscardPreview(job.id)
+      const approved =
+        submodules.length === 0 ||
+        (await askConfirm({
+          message: t('jobs.confirm.discardMessage'),
+          detail: t('jobs.discard.submoduleWork', { paths: submodules.join(', ') }),
+          confirmLabel: t('jobs.card.merge.discard'),
+          destructive: true
+        }))
+      if (approved) await window.api.jobDiscard(job.id)
+    })
   return (
     <Box
       title={t(conflict ? 'jobs.merge.conflict' : 'jobs.card.merge.title')}
@@ -159,7 +157,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
             {t('jobs.card.merge.merge')}
           </Action>
         )}
-        <Action tone="danger" disabled={busy} onClick={() => void discard()}>
+        <Action tone="danger" disabled={busy} onClick={discard}>
           {t('jobs.card.merge.discard')}
         </Action>
       </Actions>

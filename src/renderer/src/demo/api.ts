@@ -574,6 +574,7 @@ export const mockApi: RendererApi = {
   jobCancel: async () => {},
   jobMerge: async () => {},
   jobDiscard: async () => {},
+  jobDiscardPreview: async () => ({ repo: '/Users/demo/repo', dir: '/Users/demo/repo/.asist-worktrees/asist-readme', branch: 'asist/readme-note', stat: '', submodules: [] }),
   jobDiff: async () => ({
     commit: 'abc',
     base: 'a0c',

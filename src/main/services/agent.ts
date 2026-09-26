@@ -5,7 +5,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import mitt, { type Emitter } from 'mitt'
-import type { AgentJob, JobDiff, JobEvent, JobLogEvent, JobLogLine, ReviewedMerge } from '@shared/ipc'
+import type { AgentJob, DiscardPreview, JobDiff, JobEvent, JobLogEvent, JobLogLine, ReviewedMerge } from '@shared/ipc'
 import { artifactPaths, type AgentStreamEvent } from '@shared/agent-stream'
 import { buildResumeArgs, buildStartArgs, displayCommand } from '@shared/agent-cli'
 import { formatJobContextBlock, resolveJobAccess, workspaceDirName, worktreeBranchName } from '@shared/job-workspace'
@@ -18,7 +18,15 @@ import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
 import type { AgentProcess } from './agent-process-lifetime'
 import { recoverAgentProcess } from './agent-process-identity'
-import { assertMergeable, assertWorktreePresent, assertWorktreeReview, captureWorktree, discardStat, readWorktreeDiff } from './job-worktree'
+import {
+  assertMergeable,
+  assertWorktreePresent,
+  assertWorktreeReview,
+  captureWorktree,
+  discardStat,
+  readWorktreeDiff,
+  submodulesAtRisk
+} from './job-worktree'
 import * as projectIndex from './project-index'
 import { installSkill } from './memory-curation-skill'
 import * as git from './git'
@@ -539,18 +547,12 @@ function discardableWorktree(id: string): NonNullable<AgentJob['worktree']> {
   return job.worktree
 }
 
-/** What a discard of a job would remove, which the conversation shows the user before asking. */
-export interface DiscardPreview {
-  repo: string
-  dir: string
-  branch: string
-  /** What a merge of the branch would have brought in, as git's stat. */
-  stat: string
-  /** The submodules the job touched, whose changes the discard deletes with the worktree. */
-  submodules: string[]
-}
-
-/** It refuses as discard does, so that the user is never asked about a discard that cannot happen. */
+/**
+ * What a discard of a job would delete, which the card and discard_agent_job show the user before asking. It
+ * refuses as discard does, so that the user is never asked about a discard that cannot happen. The
+ * submodules are looked into now rather than read from the job, since work can appear in them after it
+ * settled and a job whose settling failed has none recorded.
+ */
 export function discardPreview(id: string): DiscardPreview {
   const worktree = discardableWorktree(id)
   return {
@@ -558,7 +560,7 @@ export function discardPreview(id: string): DiscardPreview {
     dir: worktree.dir,
     branch: worktree.branch,
     stat: discardStat(worktree),
-    submodules: worktree.submodules ?? []
+    submodules: submodulesAtRisk(worktree)
   }
 }
 

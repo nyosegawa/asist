@@ -84,6 +84,7 @@ export const rendererApiMethods = [
   'jobCancel',
   'jobMerge',
   'jobDiscard',
+  'jobDiscardPreview',
   'jobDiff',
   'jobList',
   'jobLog',

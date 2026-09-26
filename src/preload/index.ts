@@ -110,6 +110,7 @@ const api: RendererApi = {
   jobCancel: (id) => ipcRenderer.invoke(IpcChannel.JobCancel, id),
   jobMerge: (id, reviewed) => ipcRenderer.invoke(IpcChannel.JobMerge, id, reviewed),
   jobDiscard: (id) => ipcRenderer.invoke(IpcChannel.JobDiscard, id),
+  jobDiscardPreview: (id) => ipcRenderer.invoke(IpcChannel.JobDiscardPreview, id),
   jobDiff: (id) => ipcRenderer.invoke(IpcChannel.JobDiff, id),
   jobList: () => ipcRenderer.invoke(IpcChannel.JobList),
   jobLog: (id) => ipcRenderer.invoke(IpcChannel.JobLog, id),

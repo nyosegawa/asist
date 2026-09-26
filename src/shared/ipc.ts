@@ -542,6 +542,20 @@ export interface JobDiff {
 /** What the user saw and approved in a review, which a merge carries so that main merges only that. */
 export type ReviewedMerge = Pick<JobDiff, 'commit' | 'base' | 'into'>
 
+/** What a discard of a job would delete, read when it is asked about. */
+export interface DiscardPreview {
+  repo: string
+  dir: string
+  branch: string
+  /** What a merge of the branch would have brought in, as git's stat. */
+  stat: string
+  /**
+   * The submodules whose work in the worktree the discard may delete, as submodulesWithWork finds them now.
+   * Empty when the worktree's folder is gone.
+   */
+  submodules: string[]
+}
+
 /**
  * One line of a job log. A CLI event is kept in its own shape and only the display side turns it into
  * text. `system` is ASIST's own record of the launch command, the write access and the merge, and
@@ -742,6 +756,7 @@ export const IpcChannel = {
   JobCancel: 'job-cancel',
   JobMerge: 'job-merge',
   JobDiscard: 'job-discard',
+  JobDiscardPreview: 'job-discard-preview',
   JobDiff: 'job-diff',
   JobList: 'job-list',
   JobLog: 'job-log',
@@ -982,6 +997,8 @@ export interface RendererApi {
   /** Merges the worktree's changes into the user's repository, or discards them. The diff is what the user reviews before merging. */
   jobMerge(id: string, reviewed: ReviewedMerge): Promise<void>
   jobDiscard(id: string): Promise<void>
+  /** What jobDiscard would delete, so that a screen can ask before throwing away work it does not show. */
+  jobDiscardPreview(id: string): Promise<DiscardPreview>
   jobDiff(id: string): Promise<JobDiff>
   jobList(): Promise<AgentJob[]>
   jobLog(id: string): Promise<JobLogLine[]>

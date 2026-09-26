@@ -422,6 +422,23 @@ it('refuses merge_agent_job before asking while HEAD is not on a branch', async 
   expect(fs.existsSync(job.cwd)).toBe(true)
 })
 
+it('warns before discarding a job whose worktree came to hold a staged move of a submodule after it settled', async () => {
+  const sub = path.join(mocks.root, 'sub')
+  fs.mkdirSync(sub)
+  git(sub, 'init', '-q', '-b', 'main')
+  git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 's')
+  git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'vendor/sub')
+  git(repo, 'commit', '-qm', 'submodule')
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.discardPreview(job.id).submodules).toEqual([])
+  git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'v2')
+  git(job.cwd, 'update-index', '--cacheinfo', `160000,${git(sub, 'rev-parse', 'HEAD')},vendor/sub`)
+  expect(agent.discardPreview(job.id).submodules).toEqual(['vendor/sub'])
+})
+
 it('refuses to discard a job that changed nothing', async () => {
   const agent = await import('../src/main/services/agent')
   const job = agent.startIsolated('修正する', { cwd: repo })
@@ -569,6 +586,32 @@ describe('a repository with a submodule', () => {
     mocks.launch.mock.calls[0][2].onExit(0)
     expectRefused(agent, job.id, ['vendor/sub'], head)
     expect(fs.existsSync(onlyCopy)).toBe(true)
+  })
+
+  it('warns before discarding a job whose settling failed while its submodule holds a commit', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    const inside = path.join(job.cwd, 'vendor', 'sub')
+    git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'agent work')
+    // An empty repository nested in the worktree makes `git add -A` fail, so the job cannot settle.
+    git(job.cwd, 'init', '-q', 'scratch')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.mergeState).toBe('error')
+    expect(agent.discardPreview(job.id).submodules).toEqual(['vendor/sub'])
+  })
+
+  it('has nothing to warn about before discarding a job whose worktree folder is gone', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.discardPreview(job.id).submodules).toEqual(['vendor/sub'])
+    fs.rmSync(job.cwd, { recursive: true, force: true })
+    expect(agent.discardPreview(job.id).submodules).toEqual([])
+    agent.discard(job.id)
+    expect(agent.get(job.id)?.mergeState).toBe('discarded')
   })
 
   it('does not merge a job that wrote into the folder of a submodule that is not initialized, and keeps its worktree', async () => {

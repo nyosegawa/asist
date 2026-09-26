@@ -1,6 +1,5 @@
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
-import type { AgentEngine, JobDiff } from '@shared/ipc'
-import type { DiscardPreview } from '../agent'
+import type { AgentEngine, DiscardPreview, JobDiff } from '@shared/ipc'
 import { requestConfirm, type ConfirmInput } from '../confirm'
 import { t } from '../i18n'
 

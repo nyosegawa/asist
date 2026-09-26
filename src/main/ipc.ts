@@ -415,6 +415,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.JobDiscard, (_e, id: string) => {
     agent.discard(String(id))
   })
+  handle(IpcChannel.JobDiscardPreview, (_e, id: string) => agent.discardPreview(String(id)))
   handle(IpcChannel.JobDiff, (_e, id: string) => agent.diff(String(id)))
   handle(IpcChannel.JobList, () => agent.userJobs())
   handle(IpcChannel.JobLog, (_e, id: string) => agent.getLog(id))

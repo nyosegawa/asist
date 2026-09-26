@@ -33,10 +33,12 @@ describe('renderer preload bridge contract', () => {
     expect(await api.jobDiff('worktree-job')).toEqual(diff)
     const reviewed = { commit: diff.commit, base: diff.base, into: diff.into }
     await api.jobMerge('worktree-job', reviewed)
+    await api.jobDiscardPreview('worktree-job')
     expect(mocks.invoke.mock.calls).toEqual([
       [IpcChannel.JobCancel, 'running-job'],
       [IpcChannel.JobDiff, 'worktree-job'],
-      [IpcChannel.JobMerge, 'worktree-job', reviewed]
+      [IpcChannel.JobMerge, 'worktree-job', reviewed],
+      [IpcChannel.JobDiscardPreview, 'worktree-job']
     ])
   })
 

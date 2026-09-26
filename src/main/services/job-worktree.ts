@@ -50,6 +50,11 @@ export function captureWorktree(job: AgentJob): Pick<AgentJob, 'worktree' | 'mer
   return { worktree: settled, mergeState: 'pending' }
 }
 
+/** The submodules whose work in the worktree a discard may delete; none when its folder is gone. */
+export function submodulesAtRisk(worktree: Worktree): string[] {
+  return fs.existsSync(worktree.dir) ? git.submodulesWithWork(worktree.dir) : []
+}
+
 /** What a discard of the worktree's branch would throw away, counted as a settled job's changes are. */
 export function discardStat(worktree: Worktree): string {
   return git.diffStat(worktree.repo, jobBase(worktree, worktree.branch), worktree.branch)
