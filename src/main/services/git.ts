@@ -131,6 +131,17 @@ const literal = (file: string): string => `:(literal)${file}`
 const WHOLE = { maxBuffer: Infinity }
 
 /**
+ * What ASIST reads to settle, review or merge a job is the exact change, whatever the repository's settings
+ * for showing changes say, and only the command line overrides those. `submodule.<name>.ignore` in .gitmodules
+ * or the configuration, and `diff.ignoreSubmodules`, hide a moved submodule from git diff and git status, so
+ * a job that only moved one looked unchanged and its worktree was removed with the only copy of the commit;
+ * `status.showUntrackedFiles=no` hides new files the same way; and `diff.external`, a textconv driver or
+ * `color.diff` replace what git diff prints, so the patch under review would not be the change.
+ */
+const EXACT_DIFF = ['--no-color', '--no-ext-diff', '--no-textconv', '--no-relative', '--ignore-submodules=none']
+const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
+
+/**
  * Commits every uncommitted change in dir as it is, and returns false when there is nothing to commit.
  *
  * The commit is built by write-tree and commit-tree from a copy of the index in a folder of its own, so no
@@ -140,7 +151,7 @@ const WHOLE = { maxBuffer: Infinity }
  * branch goes back, so that a commit that fails leaves the index and the branch as they were.
  */
 export function commitAll(dir: string, message: string): boolean {
-  if (git(dir, ['status', '--porcelain'], WHOLE).trim() === '') return false
+  if (git(dir, ['status', '--porcelain', ...EXACT_STATUS], WHOLE).trim() === '') return false
   const head = hasHead(dir) ? headCommit(dir) : null
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
   const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
@@ -195,7 +206,7 @@ function rawEntries(raw: string): RawEntry[] {
  * to another commit, added or removed, or a path turned into a submodule or out of one.
  */
 export function submoduleEntryChanges(repo: string, base: string, commit: string): string[] {
-  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', base, commit], WHOLE))
+  return rawEntries(git(repo, ['diff', ...EXACT_DIFF, '--raw', '-z', '--no-renames', base, commit], WHOLE))
     .filter((entry) => entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES)
     .map((entry) => entry.path)
 }
@@ -215,7 +226,7 @@ export function submodulesWithChanges(dir: string): string[] {
   // listed, since otherwise git does not look for new files inside a submodule either.
   const fixedFields: Record<string, number> = { '1': 8, u: 10 }
   const status = git(dir, [
-    'status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal', '--ignore-submodules=none', '--', ...submodules.map(literal)
+    'status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)
   ])
   for (const entry of status.split('\0')) {
     const count = fixedFields[entry[0]]
@@ -262,11 +273,12 @@ function writtenWhileUninitialized(folder: string): boolean {
 }
 
 /**
- * Whether dir holds no change that commitAll would commit. It does not look inside submodules, whose changes
- * no commit of dir carries and which submodulesWithChanges finds instead.
+ * Whether dir holds no change that commitAll would commit, new files included whatever
+ * status.showUntrackedFiles says. It does not look inside submodules, whose changes no commit of dir carries
+ * and which submodulesWithChanges finds instead.
  */
 export function isSettled(dir: string): boolean {
-  return git(dir, ['status', '--porcelain', '--ignore-submodules=all'], WHOLE).trim() === ''
+  return git(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], WHOLE).trim() === ''
 }
 
 /**
@@ -287,7 +299,7 @@ export function mergeBase(repo: string, commit: string): string | null {
 /** Whether anything changed from base to commit. */
 export function hasChanges(repo: string, base: string, commit: string): boolean {
   try {
-    git(repo, ['diff', '--quiet', base, commit])
+    git(repo, ['diff', ...EXACT_DIFF, '--quiet', base, commit])
     return false
   } catch (error) {
     if ((error as { status?: number }).status === 1) return true
@@ -300,7 +312,7 @@ export function hasChanges(repo: string, base: string, commit: string): boolean 
  * An empty string means nothing changed.
  */
 export function diffStat(repo: string, base: string, commit: string): string {
-  return git(repo, ['diff', '--stat', '--stat-count=500', base, commit]).trim()
+  return git(repo, ['diff', ...EXACT_DIFF, '--stat', '--stat-count=500', base, commit]).trim()
 }
 
 export interface DiffEntry {
@@ -311,7 +323,7 @@ export interface DiffEntry {
 
 /** Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an addition. */
 export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
-  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', base, commit], WHOLE))
+  return rawEntries(git(repo, ['diff', ...EXACT_DIFF, '--raw', '-z', '--no-renames', base, commit], WHOLE))
     .map((entry) => ({ path: entry.path, mode: entry.newMode }))
 }
 
@@ -324,7 +336,7 @@ export function diffEntries(repo: string, base: string, commit: string): DiffEnt
 export function diffPatch(repo: string, base: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = git(repo, ['diff', base, commit], { maxBuffer: maxChars * 4 })
+    patch = git(repo, ['diff', ...EXACT_DIFF, base, commit], { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }

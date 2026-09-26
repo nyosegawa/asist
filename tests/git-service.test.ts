@@ -334,6 +334,26 @@ describe('git service with an isolated worktree', () => {
     })
   })
 
+  it('reads the exact change whatever the repository configures for showing a diff', () => {
+    const base = git.headCommit(repo)
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/shown')
+    fs.writeFileSync(path.join(wt, 'a.txt'), 'hello\nworld\n')
+    git.commitAll(wt, 'asist: job')
+    const replaced = path.join(root, 'replaced.sh')
+    fs.writeFileSync(replaced, '#!/bin/sh\necho replaced\n', { mode: 0o755 })
+    run(repo, ['config', 'diff.external', replaced])
+    run(repo, ['config', 'diff.shown.textconv', replaced])
+    run(repo, ['config', 'color.diff', 'always'])
+    fs.mkdirSync(path.join(repo, '.git', 'info'), { recursive: true })
+    fs.writeFileSync(path.join(repo, '.git', 'info', 'attributes'), '*.txt diff=shown\n')
+    const patch = git.diffPatch(repo, base, 'asist/shown')
+    expect(patch).toContain('+world')
+    expect(patch).not.toContain('replaced')
+    expect(patch).not.toContain('\u001b[')
+    expect(git.diffStat(repo, base, 'asist/shown')).toContain('a.txt')
+  })
+
   it('reports a dirty working tree before a merge', () => {
     fs.writeFileSync(path.join(repo, 'a.txt'), 'dirty\n')
     expect(git.isClean(repo)).toBe(false)
