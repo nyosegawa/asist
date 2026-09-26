@@ -48,6 +48,15 @@ export const createImapClient: ImapClientFactory = (account, password) =>
     maxIdleTime: IDLE_MS
   })
 
+/** Ends a connection with LOGOUT, and closes the socket when the server does not answer it. */
+export async function disconnect(client: Pick<ImapClient, 'logout' | 'close'>): Promise<void> {
+  try {
+    await client.logout()
+  } catch {
+    client.close()
+  }
+}
+
 /** Whether the server offers the Gmail extensions: thread ids, labels and the Gmail search syntax. */
 export const supportsGmail = (client: Pick<ImapClient, 'capabilities'>): boolean => client.capabilities.has('X-GM-EXT-1')
 
