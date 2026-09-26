@@ -539,25 +539,31 @@ describe('a repository with a submodule', () => {
     git(repo, 'commit', '-qm', 'submodule')
   })
 
-  it('removes the worktree of a job that changed nothing after the agent initialized the submodule', async () => {
+  it('keeps the worktree of a job whose agent only initialized the submodule, since the commits of its repository may exist nowhere else', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
     const agent = await import('../src/main/services/agent')
     const job = agent.startIsolated('ビルドが通るか確かめる', { cwd: repo })
     git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
     mocks.launch.mock.calls[0][2].onExit(0)
-    expect(agent.get(job.id)?.mergeState).toBe('unchanged')
-    expect(fs.existsSync(job.cwd)).toBe(false)
+    expectRefused(agent, job.id, ['vendor/sub'], head)
   })
 
-  it('removes the worktree once a job whose agent initialized the submodule is merged', async () => {
+  it('keeps the worktree of a job that committed inside the submodule and deinitialized it, whose repository outlasts the deinit', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
     const agent = await import('../src/main/services/agent')
     const job = agent.startIsolated('直す', { cwd: repo })
     git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    const inside = path.join(job.cwd, 'vendor', 'sub')
+    const pinned = git(inside, 'rev-parse', 'HEAD')
+    git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'agent work')
+    const onlyCopy = git(inside, 'rev-parse', '--absolute-git-dir')
+    git(inside, 'checkout', '-q', pinned)
+    git(job.cwd, 'submodule', 'deinit', '-q', '-f', 'vendor/sub')
     fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
     mocks.launch.mock.calls[0][2].onExit(0)
-    mergeReviewed(agent, job.id)
-    expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
-    expect(fs.existsSync(job.cwd)).toBe(false)
-    expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
+    expectRefused(agent, job.id, ['vendor/sub'], head)
+    expect(fs.existsSync(onlyCopy)).toBe(true)
   })
 
   it('does not merge a job that wrote into the folder of a submodule that is not initialized, and keeps its worktree', async () => {

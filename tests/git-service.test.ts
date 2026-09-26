@@ -320,6 +320,18 @@ describe('git service with an isolated worktree', () => {
       expect(git.submodulesWithWork(wt)).toEqual(['vendor/sub'])
     })
 
+    it('finds the repository a deinitialized submodule leaves in the worktree, by its path while .gitmodules names it and by its name after', () => {
+      run(repo, [...FILE, 'submodule', 'add', '-q', '--name', 'lib', makeSub(), 'vendor/lib'])
+      run(repo, [...ID, 'commit', '-q', '-m', 'sub'])
+      const { wt } = cut('asist/deinit')
+      run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
+      run(wt, ['submodule', 'deinit', '-q', '-f', 'vendor/lib'])
+      expect(fs.readdirSync(path.join(wt, 'vendor', 'lib'))).toEqual([])
+      expect(git.submodulesWithWork(wt)).toEqual(['vendor/lib'])
+      run(wt, ['config', '-f', '.gitmodules', '--remove-section', 'submodule.lib'])
+      expect(git.submodulesWithWork(wt)).toEqual(['lib'])
+    })
+
     it('does not take a folder .gitmodules still names for a submodule once it holds ordinary files', () => {
       run(repo, [...FILE, 'submodule', 'add', '-q', makeSub(), 'lib'])
       run(repo, [...ID, 'commit', '-q', '-m', 'sub'])

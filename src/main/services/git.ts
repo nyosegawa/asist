@@ -239,32 +239,37 @@ export function submoduleEntryChanges(repo: string, base: string, commit: string
 }
 
 /**
- * The submodules of dir whose own folder holds work that no commit of dir carries and that may exist
- * nowhere else: files changed or added inside one that is initialized, a commit it moved to, commits of its
- * own repository that its remote does not have, or, in one that is not initialized, files written into its
- * folder, which git status does not show at all. The repository of a submodule initialized in a worktree lives
- * in the worktree's own git folder and is deleted with it.
+ * The submodules of dir that may hold work no commit of dir carries, which is deleted with the worktree: one
+ * whose folder holds anything, or whose repository is kept in the worktree's git folder. In a new worktree
+ * the folder of a submodule is empty, so anything in it was put there by the job: its repository after an
+ * init, or files written into it, which git status does not show while the submodule is not initialized. The
+ * repository of a submodule initialized in a worktree lives in the worktree's git folder and outlasts a
+ * `deinit`. Whether its commits exist anywhere else cannot be told from here, since a tag, a shallow clone or
+ * a branch deleted upstream look the same as a commit made by the job, so any such repository counts.
+ * Changes that git status shows, such as a staged move of a submodule, count as well.
  */
 export function submodulesWithWork(dir: string): string[] {
+  const found = new Set<string>()
   const submodules = gitlinks(dir)
-  if (submodules.length === 0) return []
-  const changed = new Set<string>()
-  // With -z an entry of the second porcelain format is one field, and its path is all that follows the
-  // fixed fields, spaces included. Without renames no entry carries a second path.
-  const fixedFields: Record<string, number> = { '1': 8, u: 10 }
-  const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)], WHOLE)
-  for (const entry of status.split('\0')) {
-    const count = fixedFields[entry[0]]
-    if (count === undefined) continue
-    const fields = entry.split(' ')
-    if (fields[2].startsWith('S')) changed.add(fields.slice(count).join(' '))
+  if (submodules.length > 0) {
+    // With -z an entry of the second porcelain format is one field, and its path is all that follows the
+    // fixed fields, spaces included. Without renames no entry carries a second path.
+    const fixedFields: Record<string, number> = { '1': 8, u: 10 }
+    const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', ...EXACT_STATUS, '--', ...submodules.map(literal)], WHOLE)
+    for (const entry of status.split('\0')) {
+      const count = fixedFields[entry[0]]
+      if (count === undefined) continue
+      const fields = entry.split(' ')
+      if (fields[2].startsWith('S')) found.add(fields.slice(count).join(' '))
+    }
+    for (const file of submodules) if (holdsAnything(path.join(dir, file))) found.add(file)
   }
-  for (const file of submodules) {
-    if (changed.has(file)) continue
-    const folder = path.join(dir, file)
-    if (writtenWhileUninitialized(folder) || holdsUnpublishedCommits(folder)) changed.add(file)
+  const modules = moduleRepositories(dir)
+  if (modules.length > 0) {
+    const paths = submodulePaths(dir)
+    for (const name of modules) found.add(paths.get(name) ?? name)
   }
-  return [...changed].sort()
+  return [...found].sort()
 }
 
 /**
@@ -280,30 +285,63 @@ function gitlinks(dir: string): string[] {
     .map((entry) => entry.slice(entry.indexOf('\t') + 1))
 }
 
-/** A folder of a submodule that is not initialized is empty in a new worktree, and git does not look inside it. */
-function writtenWhileUninitialized(folder: string): boolean {
-  let names: string[]
+function holdsAnything(folder: string): boolean {
   try {
-    names = fs.readdirSync(folder)
+    return fs.readdirSync(folder).length > 0
   } catch (error) {
     // A folder that is gone or replaced by a file shows in git status already.
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT' || code === 'ENOTDIR') return false
     throw error
   }
-  return names.length > 0 && !names.includes('.git')
 }
 
 /**
- * Whether the repository of an initialized submodule has a commit that none of its remote-tracking branches
- * reaches: one on a branch, a tag or the stash, or one only its reflog remembers, as after a commit on a side
- * branch and a checkout of the pinned commit again. What its remote has can be fetched again, so only that
- * is left out. A pinned commit that no remote branch reaches counts as well, since nothing here shows that
- * it exists anywhere else.
+ * The names of the submodule repositories kept in the git folder of the worktree dir, under `modules/`. A
+ * name may hold slashes, so folders are looked into until one that is a repository, whose own `modules/`
+ * belongs to it.
  */
-function holdsUnpublishedCommits(folder: string): boolean {
-  if (!fs.existsSync(path.join(folder, '.git'))) return false
-  return git(folder, ['rev-list', '-n', '1', '--all', '--reflog', '--not', '--remotes']).trim() !== ''
+function moduleRepositories(dir: string): string[] {
+  const root = path.join(git(dir, ['rev-parse', '--absolute-git-dir']).trim(), 'modules')
+  const names: string[] = []
+  const walk = (folder: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(folder, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    if (entries.some((entry) => entry.name === 'HEAD' && entry.isFile())) {
+      names.push(path.relative(root, folder).split(path.sep).join('/'))
+      return
+    }
+    for (const entry of entries) if (entry.isDirectory()) walk(path.join(folder, entry.name))
+  }
+  walk(root)
+  return names
+}
+
+/** The path of each submodule by its name, as the .gitmodules of dir gives them. */
+function submodulePaths(dir: string): Map<string, string> {
+  const paths = new Map<string, string>()
+  const file = path.join(dir, GITMODULES)
+  if (!fs.existsSync(file)) return paths
+  let listed: string
+  try {
+    listed = git(dir, ['config', '--file', file, '--null', '--get-regexp', '^submodule\\..*\\.path$'])
+  } catch (error) {
+    // config exits with 1 when nothing matches.
+    if ((error as { status?: number }).status === 1) return paths
+    throw error
+  }
+  // With --null each entry is the key, a newline and the value.
+  for (const entry of listed.split('\0')) {
+    const newline = entry.indexOf('\n')
+    if (newline < 0) continue
+    paths.set(entry.slice('submodule.'.length, newline - '.path'.length), entry.slice(newline + 1))
+  }
+  return paths
 }
 
 /**

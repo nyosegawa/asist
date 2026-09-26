@@ -42,8 +42,8 @@ const REPORT: Readonly<
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
   },
   submodules: {
-    ja: ` このジョブはサブモジュール({paths})を変えたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。サブモジュールの中で作ったコミットはworktree({dir})の中の複製にしかないので、ユーザーのチェックアウトでgit submodule updateをしても取ってこられない。ユーザー自身がそこからpushしてブランチを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとその複製も消える。`,
-    en: ` This job changed submodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Commits made inside a submodule exist only in the copy in the worktree ({dir}), so git submodule update in the user's checkout cannot fetch them. Tell the user they can push them from there and merge the branch themselves, or throw the job away with discard_agent_job, which deletes that copy too.`
+    ja: ` このジョブはサブモジュールか.gitmodules({paths})に触れたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。サブモジュールの中で作ったコミットはworktree({dir})の中の複製にしかないことがあり、その場合はユーザーのチェックアウトでgit submodule updateをしても取ってこられない。ユーザー自身が必要ならそこからpushしてブランチを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとその複製も消える。`,
+    en: ` This job touched submodules or .gitmodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Commits made inside a submodule may exist only in the copy in the worktree ({dir}), and if so git submodule update in the user's checkout cannot fetch them. Tell the user they can push them from there if needed and merge the branch themselves, or throw the job away with discard_agent_job, which deletes that copy too.`
   },
   mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
   merged: { ja: ` 変更はすでに取り込んだ。`, en: ` The changes have already been taken in.` },
