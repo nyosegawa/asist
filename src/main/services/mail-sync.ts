@@ -136,6 +136,9 @@ export class MailAccountSync {
         client.close()
       }
     }
+    // An operation that was running can still write what it fetched into the cache, so a caller that
+    // clears part of the cache after stopping waits for it to end.
+    await this.queue
     this.setState('off')
   }
 
