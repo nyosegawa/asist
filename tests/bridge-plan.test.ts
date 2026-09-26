@@ -103,6 +103,33 @@ describe('BridgePlanner', () => {
     expect(planner.current()).toBeNull()
   })
 
+  it('plans the next capture on its first partial transcript while a request of the previous capture is still in flight', async () => {
+    const { planner, request, resolvers, onPlan } = setup()
+    planner.observe({ text: '昨日の会議で', lastAssistantText: '' })
+    planner.reset()
+    planner.observe({ text: '明日の予定を教えて', lastAssistantText: '' })
+    const settled = planner.finish({ text: '明日の予定を教えて', lastAssistantText: '' })
+    expect(request).toHaveBeenLastCalledWith({ text: '明日の予定を教えて', lastAssistantText: '' })
+
+    // The stale plan returns first and is dropped; the new capture still waits for its own.
+    resolvers[0](plan('古い'))
+    await flush()
+    expect(planner.current()).toBeNull()
+    resolvers[1](plan('明日の予定ですね。'))
+    await expect(settled).resolves.toEqual(plan('明日の予定ですね。'))
+    expect(onPlan).toHaveBeenCalledOnce()
+  })
+
+  it('sends the last partial transcript at the end of an utterance whose capture has sent nothing, whatever the previous capture still runs', async () => {
+    const { planner, request, resolvers } = setup()
+    planner.observe({ text: '昨日の会議で', lastAssistantText: '' })
+    planner.reset()
+    const settled = planner.finish({ text: 'あの件', lastAssistantText: '' })
+    expect(request).toHaveBeenLastCalledWith({ text: 'あの件', lastAssistantText: '' })
+    resolvers[1](plan('あの件ですね。'))
+    await expect(settled).resolves.toEqual(plan('あの件ですね。'))
+  })
+
   it('reports a failure and sends again on the next partial transcript', async () => {
     const { planner, request, rejecters, resolvers, onFailure } = setup()
     planner.observe({ text: '昨日の会議で', lastAssistantText: '' })

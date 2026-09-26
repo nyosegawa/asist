@@ -7,7 +7,7 @@ sidebar:
 
 Under "Voice engine" in "Conversation", choose what listens and speaks. The default combines speech recognition on this Mac, the conversation model, and reading aloud on this Mac.
 
-When you choose GPT-Live or Gemini Live, the microphone audio goes straight to the provider, and ASIST speaks in the provider's voice. The model handles backchannels, listening, and deciding when you have finished speaking or interrupted. Speech recognition and reading aloud on this Mac, the bridge phrase and MaAI are not used. After you change the engine, turn the microphone off and on again.
+When you choose GPT-Live or Gemini Live, the microphone audio goes straight to the provider, and ASIST speaks in the provider's voice. The model handles backchannels, listening, and deciding when you have finished speaking or interrupted. Speech recognition and reading aloud on this Mac, the bridge phrase and MaAI are not used. Changing the engine, "Model", "Voice" or "Close the session after" turns the microphone off, so turn it on again.
 
 | Engine | Decisions and tools | Estimated cost | Key needed |
 |---|---|---|---|

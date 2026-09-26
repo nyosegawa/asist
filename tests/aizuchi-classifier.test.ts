@@ -114,6 +114,20 @@ describe('AizuchiClassifierFeed', () => {
     expect(feed.current()).toEqual({ cls: 'work', prob: 0.6, complete: 0.1 })
   })
 
+  it('classifies the first partial transcript of the next capture while a request of the previous capture is still in flight', async () => {
+    const { feed, classify, resolvers } = setup()
+    feed.observe({ prev: '', text: '昨日の会議で' })
+    feed.reset()
+    feed.observe({ prev: '', text: '明日の予定を教えて' })
+    expect(classify).toHaveBeenLastCalledWith({ prev: '', text: '明日の予定を教えて' })
+
+    resolvers[1]({ cls: 'work', prob: 0.9, complete: 0.9 })
+    await flush()
+    resolvers[0]({ cls: 'hold', prob: 0.99, complete: 0 })
+    await flush()
+    expect(feed.current()).toEqual({ cls: 'work', prob: 0.9, complete: 0.9 })
+  })
+
   it('drops a stale result that arrives after a reset, and reports a hold through holding()', async () => {
     const { feed, resolvers, onResult } = setup()
     feed.observe({ prev: '', text: 'えっとね' })

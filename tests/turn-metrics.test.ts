@@ -105,6 +105,16 @@ describe('TurnMetrics', () => {
     expect(save).toHaveBeenCalledOnce()
   })
 
+  it('writes the values counted after done when the wait for the end of playback expires', () => {
+    const { metrics, save } = setup()
+    metrics.finish(1)
+    metrics.increment(1, 'bargeIns')
+    vi.runAllTimers()
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(save.mock.calls[1][0]).toMatchObject({ id: 'request', revision: 2, bargeIns: 1 })
+    expect(metrics.increment(1, 'bargeIns')).toBe(false)
+  })
+
   it('retries a failed save without mixing in values from later turns or updates', async () => {
     const { metrics, save } = setup()
     save.mockRejectedValueOnce(new Error('IPC interrupted'))

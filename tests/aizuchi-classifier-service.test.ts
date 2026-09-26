@@ -9,6 +9,7 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/unused', getPath: () => '/unused', on: vi.fn()
 } }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'en-US' }) }))
 
 function fakeChild() {
   const input: Array<{ id: string; prev: string; text: string }> = []
@@ -33,7 +34,7 @@ beforeEach(async () => {
   vi.stubEnv('ASIST_EMBEDDING_PYTHON', '/unused/python')
   vi.spyOn(fs, 'existsSync').mockReturnValue(true)
   child = fakeChild()
-  mocks.spawn.mockReturnValue(child)
+  mocks.spawn.mockReset().mockReturnValue(child)
   classifier = await import('../src/main/services/aizuchi-classifier')
 })
 afterEach(() => {
@@ -112,5 +113,36 @@ describe('worker lifetime of the aizuchi-classifier service', () => {
     await vi.advanceTimersByTimeAsync(5_100)
     await failed
     expect(classifier.running()).toBe(false)
+  })
+
+  it('stops a worker whose input pipe breaks and fails its request, without an uncaught error', async () => {
+    await ready()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const request = classifier.classify({ prev: '', text: '明日の天気' })
+    const outcome = request.then(() => 'resolved', () => 'rejected')
+    const uncaught: Error[] = []
+    const onUncaught = (error: Error): void => { uncaught.push(error) }
+    process.prependListener('uncaughtException', onUncaught)
+    try {
+      child.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      await vi.advanceTimersByTimeAsync(10)
+    } finally {
+      process.removeListener('uncaughtException', onUncaught)
+    }
+    expect(uncaught).toEqual([])
+    expect(await outcome).toBe('rejected')
+    expect(classifier.running()).toBe(false)
+  })
+
+  it('lets a preparation wait for the worker a start is already loading, instead of starting another', async () => {
+    const starting = classifier.ensureStarted()
+    const preparing = classifier.prepare(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    child.stdout.write('ASIST_JSON:{"type":"ready"}\n')
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    expect((await preparing).ok).toBe(true)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+    expect(child.kill).not.toHaveBeenCalled()
   })
 })

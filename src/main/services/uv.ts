@@ -62,13 +62,18 @@ export function runUv(args: string[], signal: AbortSignal): Promise<void> {
       spawned.kill('SIGTERM')
     }
     signal.addEventListener('abort', abort, { once: true })
-    spawned.once('error', reject)
-    spawned.once('exit', (code) => {
+    // A process that fails to spawn emits only 'error', never 'exit', so both end the run here.
+    const finish = (error: Error | null): void => {
       signal.removeEventListener('abort', abort)
       running.delete(spawned)
-      if (signal.aborted) reject(new DOMException(errorText('settingsModels.preparation.stopped'), 'AbortError'))
-      else if (code === 0) resolve()
-      else reject(new Error(stderr.trim() || `uv exited with ${code}`))
+      if (error) reject(error)
+      else resolve()
+    }
+    spawned.once('error', finish)
+    spawned.once('exit', (code) => {
+      if (signal.aborted) finish(new DOMException(errorText('settingsModels.preparation.stopped'), 'AbortError'))
+      else if (code === 0) finish(null)
+      else finish(new Error(stderr.trim() || `uv exited with ${code}`))
     })
   })
 }

@@ -46,30 +46,30 @@ export const voice = defineMessages({
   },
   engineChanged: {
     title: {
-      'ja-JP': '声のエンジンを変えました',
-      'en-US': 'Voice engine changed',
-      'fr-FR': 'Moteur vocal changé',
-      'de-DE': 'Sprach-Engine geändert',
-      'hi-IN': 'वॉइस इंजन बदल दिया',
-      'id-ID': 'Mesin suara diganti',
-      'it-IT': 'Motore vocale cambiato',
-      'ko-KR': '음성 엔진을 변경했습니다',
-      'pt-BR': 'Motor de voz alterado',
-      'es-419': 'Se cambió el motor de voz',
-      'es-ES': 'Has cambiado el motor de voz'
+      'ja-JP': '声のエンジンの設定を変えました',
+      'en-US': 'Voice engine settings changed',
+      'fr-FR': 'Réglages du moteur vocal modifiés',
+      'de-DE': 'Einstellungen der Sprach-Engine geändert',
+      'hi-IN': 'वॉइस इंजन की सेटिंग बदल दी',
+      'id-ID': 'Pengaturan mesin suara diubah',
+      'it-IT': 'Impostazioni del motore vocale cambiate',
+      'ko-KR': '음성 엔진 설정을 변경했습니다',
+      'pt-BR': 'Configurações do motor de voz alteradas',
+      'es-419': 'Se cambió la configuración del motor de voz',
+      'es-ES': 'Has cambiado la configuración del motor de voz'
     },
     body: {
-      'ja-JP': 'マイクをオンにし直すと新しいエンジンで話せます。',
-      'en-US': 'Turn the microphone off and on again to speak with the new engine.',
-      'fr-FR': 'Désactivez puis réactivez le microphone pour parler avec le nouveau moteur.',
-      'de-DE': 'Schalten Sie das Mikrofon aus und wieder ein, um mit der neuen Engine zu sprechen.',
-      'hi-IN': 'नए इंजन से बात करने के लिए माइक्रोफ़ोन बंद करके फिर चालू करें।',
-      'id-ID': 'Matikan lalu nyalakan lagi mikrofon untuk berbicara dengan mesin yang baru.',
-      'it-IT': 'Disattiva e riattiva il microfono per parlare con il nuovo motore.',
-      'ko-KR': '마이크를 껐다가 다시 켜면 새 엔진으로 말할 수 있습니다.',
-      'pt-BR': 'Desative e ative o microfone para falar com o novo motor.',
-      'es-419': 'Desactiva y vuelve a activar el micrófono para hablar con el motor nuevo.',
-      'es-ES': 'Desactiva el micrófono y vuelve a activarlo para hablar con el nuevo motor.'
+      'ja-JP': 'マイクをオンにし直すと新しい設定で話せます。',
+      'en-US': 'Turn the microphone on again to speak with the new settings.',
+      'fr-FR': 'Réactivez le microphone pour parler avec les nouveaux réglages.',
+      'de-DE': 'Schalten Sie das Mikrofon wieder ein, um mit den neuen Einstellungen zu sprechen.',
+      'hi-IN': 'नई सेटिंग से बात करने के लिए माइक्रोफ़ोन फिर से चालू करें।',
+      'id-ID': 'Nyalakan lagi mikrofon untuk berbicara dengan pengaturan yang baru.',
+      'it-IT': 'Riattiva il microfono per parlare con le nuove impostazioni.',
+      'ko-KR': '마이크를 다시 켜면 새 설정으로 말할 수 있습니다.',
+      'pt-BR': 'Ative o microfone de novo para falar com as novas configurações.',
+      'es-419': 'Vuelve a activar el micrófono para hablar con la configuración nueva.',
+      'es-ES': 'Vuelve a activar el micrófono para hablar con la nueva configuración.'
     }
   },
   services: {
