@@ -205,6 +205,40 @@ describe('MLX transcription lifecycle', () => {
     await vi.waitFor(() => expect(wavFiles()).toEqual([]))
   })
 
+  it('keeps the worker and the final transcription queued behind a partial that runs past its wait', async () => {
+    const child = await ready()
+    const partial = mlx.transcribePartial(MODEL, new Float32Array(16_000 * 5))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    const final = observe(mlx.transcribe(MODEL, new Float32Array(16_000 * 8), 'final'))
+    await vi.waitFor(() => expect(child.input).toHaveLength(2))
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(await partial).toBe('')
+
+    const partialId = JSON.parse(child.input[0]).id as string
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: partialId, text: '途中' })}\n`)
+    child.stdout.write('ASIST_JSON:{"type":"result","id":"final","text":"最後まで話しました"}\n')
+    expect(await final).toEqual({ text: '最後まで話しました', error: undefined })
+    expect(child.kill).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(wavFiles()).toEqual([]))
+  })
+
+  it('sends no further partial while the worker still computes one its caller stopped waiting for', async () => {
+    const child = await ready()
+    const first = mlx.transcribePartial(MODEL, new Float32Array([0.2]))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(await first).toBe('')
+    expect(await mlx.transcribePartial(MODEL, new Float32Array([0.2]))).toBe('')
+    expect(child.input).toHaveLength(1)
+
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: JSON.parse(child.input[0]).id, text: '遅れた' })}\n`)
+    await vi.advanceTimersByTimeAsync(10)
+    const next = mlx.transcribePartial(MODEL, new Float32Array([0.2]))
+    await vi.waitFor(() => expect(child.input).toHaveLength(2))
+    child.stdout.write(`ASIST_JSON:${JSON.stringify({ type: 'result', id: JSON.parse(child.input[1]).id, text: '次の途中' })}\n`)
+    expect(await next).toBe('次の途中')
+  })
+
   it('reports unavailable installation without leaving a cancellable request', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
     const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'unavailable'))
@@ -227,5 +261,50 @@ describe('MLX transcription lifecycle', () => {
     expect(wavFiles()).toHaveLength(1)
     child.stdout.write('ASIST_JSON:{"type":"result","id":"in-use","text":"残っています"}\n')
     expect((await response).text).toBe('残っています')
+  })
+
+  it('fails the requests of a worker whose input pipe breaks, and stops it without an uncaught error', async () => {
+    const child = await ready()
+    const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'broken-pipe'))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    const uncaught: Error[] = []
+    const onUncaught = (error: Error): void => { uncaught.push(error) }
+    process.prependListener('uncaughtException', onUncaught)
+    try {
+      child.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      expect((await response).error?.message).toBe('write EPIPE')
+    } finally {
+      process.removeListener('uncaughtException', onUncaught)
+    }
+    expect(uncaught).toEqual([])
+    expect(child.kill).toHaveBeenCalled()
+    expect(await mlx.available(MODEL)).toBe(false)
+  })
+})
+
+describe('starting the MLX worker from a preparation and from elsewhere at once', () => {
+  it('lets a start from the watchdog wait for the worker a preparation is loading', async () => {
+    const preparing = mlx.prepare(MODEL, () => {})
+    await vi.waitFor(() => expect(children).toHaveLength(1))
+    const revived = mlx.ensureServer(MODEL)
+    children[0].stdout.write('ASIST_JSON:{"type":"ready"}\n')
+    expect(await revived).toBe(true)
+    expect((await preparing).ok).toBe(true)
+    expect(children).toHaveLength(1)
+    expect(children[0].kill).not.toHaveBeenCalled()
+  })
+
+  it('lets a preparation wait for the worker a transcription is already loading', async () => {
+    const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'while-loading'))
+    expect(children).toHaveLength(1)
+    const preparing = mlx.prepare(MODEL, () => {})
+    await vi.advanceTimersByTimeAsync(10)
+    children[0].stdout.write('ASIST_JSON:{"type":"ready"}\n')
+    expect((await preparing).ok).toBe(true)
+    await vi.waitFor(() => expect(children[0].input).toHaveLength(1))
+    children[0].stdout.write('ASIST_JSON:{"type":"result","id":"while-loading","text":"聞こえました"}\n')
+    expect((await response).text).toBe('聞こえました')
+    expect(children).toHaveLength(1)
+    expect(children[0].kill).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -8,8 +7,8 @@ import type { SetupProgress, VapState, VapStatus } from '@shared/ipc'
 import { parseVapWorkerLine } from '@shared/vap-protocol'
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
-import { userAgent } from './user-agent'
 import { childEnv } from './child-env'
+import { downloadPinnedFile } from './onnx-runtime'
 import { resourcePath } from './resource-path'
 import { createEnvironment, environmentCurrent, installRequirements, recordEnvironment } from './uv'
 
@@ -139,7 +138,7 @@ const MODELS: Record<'vap' | 'bcDet' | 'mimiOnnx' | 'mimiMeta' | 'bc' | 'nod' | 
 
 let child: ChildProcessWithoutNullStreams | null = null
 let workerReady = false
-let ensureInFlight: Promise<boolean> | null = null
+let startInFlight: Promise<boolean> | null = null
 let prepareInFlight: Promise<{ ok: boolean; message: string }> | null = null
 let prepareController: AbortController | null = null
 let onState: ((state: VapState) => void) | null = null
@@ -276,10 +275,27 @@ async function startWorker(): Promise<boolean> {
   }
   spawned.on('error', detach)
   spawned.on('exit', detach)
+  // A write between the worker's death and its exit event, or after it closed its input, fails with
+  // EPIPE, which becomes an uncaught exception unless the stream has a listener.
+  spawned.stdin.on('error', (error) => {
+    console.warn(`vap: worker input failed: ${error.message}`)
+    if (child === spawned) stop()
+  })
 
   const ready = await waitUntilReady(spawned)
   if (!ready && child === spawned) stop()
   return ready
+}
+
+/** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
+function start(): Promise<boolean> {
+  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
+  if (startInFlight) return startInFlight
+  const operation = startWorker().finally(() => {
+    if (startInFlight === operation) startInFlight = null
+  })
+  startInFlight = operation
+  return operation
 }
 
 /**
@@ -290,13 +306,7 @@ async function startWorker(): Promise<boolean> {
  */
 export function ensureStarted(stateHandler: (state: VapState) => void): Promise<boolean> {
   onState = stateHandler
-  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
-  if (ensureInFlight) return ensureInFlight
-  const operation = startWorker().finally(() => {
-    if (ensureInFlight === operation) ensureInFlight = null
-  })
-  ensureInFlight = operation
-  return operation
+  return start()
 }
 
 /** Takes the two 16 kHz channels and writes them interleaved to the worker. Audio is dropped while the worker is not running. */
@@ -327,45 +337,6 @@ export function stop(): void {
     }, 1_000)
     killTimer.unref?.()
   }
-}
-
-/** Streams one file to a temporary path and renames it into place only after its sha256 has been verified. */
-async function downloadModel(
-  model: ModelFile,
-  signal: AbortSignal,
-  onBytes: (bytes: number) => void
-): Promise<void> {
-  const target = modelPath(model)
-  await fs.promises.mkdir(path.dirname(target), { recursive: true })
-  const response = await fetch(model.url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!response.ok || !response.body) {
-    throw new Error(errorText('settingsModels.preparation.downloadFailed', { file: model.file, status: response.status }))
-  }
-  const temporary = `${target}.download`
-  const hash = crypto.createHash('sha256')
-  const out = fs.createWriteStream(temporary, { mode: 0o600 })
-  try {
-    for await (const chunk of response.body) {
-      const bytes = Buffer.from(chunk)
-      hash.update(bytes)
-      onBytes(bytes.length)
-      if (!out.write(bytes)) await new Promise((resolve) => out.once('drain', resolve))
-    }
-    await new Promise<void>((resolve, reject) => {
-      out.once('error', reject)
-      out.end(resolve)
-    })
-  } catch (error) {
-    out.destroy()
-    await fs.promises.rm(temporary, { force: true })
-    throw error
-  }
-  const digest = hash.digest('hex')
-  if (digest !== model.sha256) {
-    await fs.promises.rm(temporary, { force: true })
-    throw new Error(errorText('settingsModels.preparation.checksumMismatch', { file: model.file, digest }))
-  }
-  await fs.promises.rename(temporary, target)
 }
 
 export function cancelPreparation(): boolean {
@@ -414,7 +385,7 @@ async function prepareOnce(
       const totalMb = missing.reduce((sum, model) => sum + model.mb, 0)
       let downloaded = 0
       for (const model of missing) {
-        await downloadModel(model, controller.signal, (bytes) => {
+        await downloadPinnedFile(model, modelPath(model), controller.signal, (bytes) => {
           downloaded += bytes
           const downloadedMb = downloaded / 1e6
           onProgress({
@@ -428,7 +399,7 @@ async function prepareOnce(
       }
     }
     progress(t('settingsModels.preparation.loading', { model: MAAI }))
-    const ready = await startWorker()
+    const ready = await start()
     if (!ready) throw new Error(errorText('settingsModels.preparation.startFailed', { model: MAAI }))
     onProgress({ status: 'done', pct: 100, downloadedMb: 0, totalMb: 0 })
     return { ok: true, message: t('settingsModels.preparation.ready', { feature: t('settingsModels.features.turnTaking'), model: MAAI }) }
