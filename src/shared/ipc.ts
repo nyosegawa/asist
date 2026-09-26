@@ -497,8 +497,11 @@ export interface AgentJob {
   sessionId?: string
   /** The job this one continues. */
   parentId?: string
-  /** Where a job writing into a git repository is isolated. `cwd` is the worktree's path, so the user's repository is untouched until the merge. */
-  worktree?: { repo: string; branch: string; base: string; commit?: string }
+  /**
+   * Where a job writing into a git repository is isolated, so the user's repository is untouched until the merge.
+   * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it.
+   */
+  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string }
   /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and changed nothing. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
