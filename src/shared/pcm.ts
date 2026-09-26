@@ -61,7 +61,9 @@ export class StreamResampler {
       out[count++] = src[i] * (1 - frac) + src[i + 1] * frac
       pos += ratio
     }
-    const keep = Math.floor(pos)
+    // Downsampling can step past the end of the chunk; the position then continues into the next one
+    // instead of restarting at its first sample.
+    const keep = Math.min(Math.floor(pos), src.length)
     this.carry = src.slice(keep)
     this.pos = pos - keep
     return out.subarray(0, count)

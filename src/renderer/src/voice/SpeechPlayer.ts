@@ -4,6 +4,7 @@ import { speechTag } from '@shared/conversation-locale'
 import { estimateSpeechMs } from '@shared/speech-rate'
 import { conversationLocale } from '@/conversation-locale'
 import { PcmScheduler } from './pcm-scheduler'
+import { isAnswerSegment } from './answer-segment'
 import { SegmentStream } from './segment-stream'
 
 type SpeechEvents = {
@@ -64,7 +65,7 @@ export class SpeechPlayer {
   /** Lets interrupt and recover fail a wait on resume, play or decode. */
   private pendingStageCancel: ((error: Error) => void) | null = null
   private currentTurn = -1
-  /** When a body segment, one with index 0 or above, was last queued. It tells whether the bridge beat the answer. */
+  /** When a sentence of the answer was last queued. It tells whether the bridge beat the answer. */
   private bodyQueuedAt = -Infinity
   /** A decode or Web Speech callback that began before an interrupt belongs to an older generation and is ignored. */
   private playbackGeneration = 0
@@ -208,6 +209,12 @@ registerProcessor('speech-tap', TapProcessor)
     return this.playing && segment !== null && segment.index === -1
   }
 
+  /** The turn whose reply is sounding, or about to, or -1 while only a clip or nothing plays. */
+  get readingTurn(): number {
+    const segment = this.current?.segment ?? this.starting
+    return this.playing && segment !== null && segment.index >= 0 ? segment.turnId : -1
+  }
+
   /**
    * The text of the segment being read and how far through it is, from 0 to 1, for the karaoke
    * subtitle. An aizuchi clip, which has index -1, is not included.
@@ -244,7 +251,7 @@ registerProcessor('speech-tap', TapProcessor)
 
   enqueue(segment: SpeechSegment): void {
     if (segment.turnId !== this.currentTurn) return
-    if (segment.index >= 0) this.bodyQueuedAt = performance.now()
+    if (isAnswerSegment(segment)) this.bodyQueuedAt = performance.now()
     if (segment.stream) this.segmentStreams.set(segment, new SegmentStream(segment.stream.sampleRate, segment.text))
     this.queue.push(segment)
     if (!this.playing) void this.playNext()
@@ -325,10 +332,10 @@ registerProcessor('speech-tap', TapProcessor)
     this.masterGain.gain.setTargetAtTime(1, t, DUCK_RAMP_S)
   }
 
-  /** Stops at once and drops the queue, for a barge-in. */
+  /** Stops at once and drops the queue, for a barge-in. The idle it reports carries the turn that was stopped. */
   interrupt(): void {
-    this.currentTurn = -1
     this.stopPlayback()
+    this.currentTurn = -1
   }
 
   /**
@@ -337,14 +344,15 @@ registerProcessor('speech-tap', TapProcessor)
    * aizuchi that started at the end of speech belongs to that new input, so it keeps playing.
    */
   discardBody(): void {
-    this.currentTurn = -1
     this.bodyQueuedAt = -Infinity
     const clips = this.queue.filter((s) => s.index === -1)
     if (this.isPlayingClip) {
+      this.currentTurn = -1
       this.queue = clips
       return
     }
     this.stopPlayback()
+    this.currentTurn = -1
     this.queue = clips
     if (clips.length > 0) void this.playNext()
   }
@@ -408,6 +416,11 @@ registerProcessor('speech-tap', TapProcessor)
         if (generation !== this.playbackGeneration) return
         console.error('audio playback failed:', err)
       }
+    }
+    // The system voice would read a listening aizuchi at full volume over the user, so it is skipped.
+    if (segment.clip === 'listening') {
+      void this.playNext(generation)
+      return
     }
     this.playFallback(segment, generation)
   }

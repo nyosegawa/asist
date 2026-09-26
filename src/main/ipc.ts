@@ -49,6 +49,7 @@ import {
 } from './services/llm'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, sameModel } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
+import { stopsLiveEngine } from '@shared/live-session-policy'
 import { appendJsonl } from './services/store'
 import * as watchdog from './services/watchdog'
 import * as nativeMic from './services/native-mic'
@@ -486,14 +487,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       }
 
       const after = saveSettings(patch)
-      // Changing the engine, or a live model or voice, stops the running live engine, and the renderer
-      // stops the microphone with it.
-      if (
-        before.voiceEngine !== after.voiceEngine ||
-        JSON.stringify(before.gptLive) !== JSON.stringify(after.gptLive) ||
-        JSON.stringify(before.geminiLive) !== JSON.stringify(after.geminiLive) ||
-        before.liveIdleSeconds !== after.liveIdleSeconds
-      ) {
+      if (stopsLiveEngine(before, after)) {
         void live.stop().catch((error) => console.error('live stop failed:', error))
       }
       if (

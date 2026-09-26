@@ -78,7 +78,7 @@ export class LiveVoice {
         if (!current()) return
       }
       if (!nativeActive) {
-        await this.mic.start(feed)
+        await this.mic.start(feed, () => void this.recover())
         if (!current()) return
       }
       this.setState('on')

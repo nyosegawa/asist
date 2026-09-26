@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isSelfEcho, normalizeForEcho, stripClipEcho } from '@shared/self-echo'
+import { ECHO_TAIL_MS, isSelfEcho, normalizeForEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
 
 describe('normalizeForEcho', () => {
   it('removes punctuation, spaces and symbols and lowercases the rest', () => {
@@ -103,5 +103,46 @@ describe('stripClipEcho removes an aizuchi clip that leaked into the transcript'
   it('strips the punctuation of any language around the clip, not only the marks Japanese writes', () => {
     expect(stripClipEcho('Right, what is the weather tomorrow?', ['Right.'])).toBe('what is the weather tomorrow?')
     expect(stripClipEcho('¿Sí? dime la hora', ['Sí'])).toBe('dime la hora')
+  })
+})
+
+describe('PlaybackLog tells what the microphone can have picked up during a capture', () => {
+  const question = { text: 'クラシックとジャズ、どちらを再生しますか？' }
+  const texts = (log: PlaybackLog, from: number, to: number): string[] => log.heardDuring(from, to).map((sound) => sound.text)
+
+  it('leaves out a question that finished before the answer was captured, so the answer is judged on its own', () => {
+    const log = new PlaybackLog()
+    log.started(question, 1000)
+    log.stopped(3500)
+    const heard = texts(log, 3500 + ECHO_TAIL_MS + 50, 4400)
+    expect(heard).toEqual([])
+    expect(isSelfEcho('クラシック', heard)).toBe(false)
+  })
+
+  it('includes a sound that was playing, or still echoing, during the capture', () => {
+    const log = new PlaybackLog()
+    log.started(question, 1000)
+    log.stopped(3500)
+    // Captured while the question played, and captured inside its echo tail.
+    expect(texts(log, 3000, 3800)).toEqual([question.text])
+    expect(texts(log, 3500 + ECHO_TAIL_MS - 50, 4400)).toEqual([question.text])
+    // A sound still playing reaches every capture that starts after it.
+    log.started({ text: '再生します。' }, 5000)
+    expect(texts(log, 9000, 9500)).toEqual(['再生します。'])
+  })
+
+  it('leaves out a clip that starts only after the capture ended, such as the aizuchi played at speech end', () => {
+    const log = new PlaybackLog()
+    log.started({ text: 'はい。', clip: 'aizuchi' }, 4400)
+    expect(log.heardDuring(2000, 4400)).toEqual([])
+    expect(log.heardDuring(4000, 4500)).toEqual([{ text: 'はい。', clip: true }])
+  })
+
+  it('ends a sound when the next one starts', () => {
+    const log = new PlaybackLog()
+    log.started({ text: '一文目です。' }, 1000)
+    log.started({ text: '二文目です。' }, 2000)
+    log.stopped(3000)
+    expect(texts(log, 2000 + ECHO_TAIL_MS + 10, 2800)).toEqual(['二文目です。'])
   })
 })
