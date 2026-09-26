@@ -62,6 +62,14 @@ describe('open_app', () => {
     expect(() => parseTarget({ app: 'browser' })).toThrow(ToolError)
   })
 
+  it('refuses a day that does not exist, so the renderer never has to report a view it cannot parse', () => {
+    for (const date of ['2026-02-30', '2026-13-01', '2026-00-10']) {
+      expect(() => parseTarget({ app: 'calendar', date }), date).toThrow(ToolError)
+    }
+    const leapDay = parseTarget({ app: 'calendar', date: '2028-02-29' })
+    expect(openMiniAppSchema.safeParse(placeMiniApp(null, leapDay)).success).toBe(true)
+  })
+
   it('sends nothing to the renderer when the input is refused', async () => {
     await expect(run('open_app', { app: 'notes', jobId: 'job-1' })).rejects.toThrow(ToolError)
   })

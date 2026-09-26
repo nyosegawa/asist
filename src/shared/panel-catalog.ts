@@ -123,10 +123,16 @@ export const PANEL_CATALOG: PanelCatalogEntry[] = [
         .string()
         .default('USD')
         .describe(bilingual({ ja: '基準通貨。例: USD', en: 'The currency being converted from, such as USD.' })),
+      // Left out, the fetcher takes the currency of the region, which only the main process knows.
       quote: z
         .string()
-        .default('JPY')
-        .describe(bilingual({ ja: '相手通貨。例: JPY', en: 'The currency it is priced in, such as EUR.' })),
+        .optional()
+        .describe(
+          bilingual({
+            ja: '相手通貨。例: JPY。省略すると設定の地域の通貨',
+            en: 'The currency it is priced in, such as EUR. Left out, it is the currency of the region in the settings.'
+          })
+        ),
       amount: z
         .number()
         .optional()

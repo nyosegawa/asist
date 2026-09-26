@@ -1,12 +1,11 @@
 import regions from './data/regions.json'
 import type { PromptText } from '@shared/conversation-locale'
-import { bilingual } from '@shared/tool-registry'
 import type { JmaWeatherLocation, WeatherIssue } from '@shared/weather'
 
 /**
  * What the model is told when a place name resolves to no Japanese municipality, or to several. The
- * conversation can be held in any language while the region stays Japan, so each hint is a packed pair
- * that the tool result unpacks into the language of the turn.
+ * conversation can be held in any language while the region stays Japan, so each hint carries both
+ * prompt languages and show_weather picks the one of the turn.
  */
 const HINTS = {
   notFound: {
@@ -50,7 +49,7 @@ export function resolveWeatherLocation(requested: string): JmaWeatherLocation | 
     return {
       status: 'location_not_found',
       requestedLocation: requested,
-      hint: bilingual(HINTS.notFound)
+      hint: HINTS.notFound
     }
   if (matches.length > 1)
     return {
@@ -60,11 +59,11 @@ export function resolveWeatherLocation(requested: string): JmaWeatherLocation | 
         location: p.prefecture + p.name,
         municipalityCode: p.code
       })),
-      hint: bilingual(HINTS.ambiguous)
+      hint: HINTS.ambiguous
     }
   const p = matches[0]
   if (!p.officeCode)
-    return { status: 'location_unavailable', requestedLocation: requested, hint: bilingual(HINTS.unavailable) }
+    return { status: 'location_unavailable', requestedLocation: requested, hint: HINTS.unavailable }
   return {
     source: 'jma',
     requested,

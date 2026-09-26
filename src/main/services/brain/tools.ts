@@ -1,9 +1,8 @@
 import { resolveWeatherCard } from '../weather'
 import { weatherCardKeyOf, type WeatherData } from '@shared/weather'
-import { z } from 'zod'
 import { PANEL_CATALOG, type PanelCatalogEntry } from '@shared/panel-catalog'
 import type { AgentJob, PanelEvent, TurnEvent } from '@shared/ipc'
-import type { JsonSchema, SearchSource, ToolSpec } from '@shared/conversation'
+import type { SearchSource, ToolSpec } from '@shared/conversation'
 import {
   promptLanguage,
   type ConversationLocale,
@@ -16,6 +15,7 @@ import {
   ToolError,
   createToolRegistry,
   executeTool,
+  inputJsonSchema,
   renderToolGuide,
   resolvePromptTexts,
   type ToolDefinition,
@@ -26,7 +26,7 @@ import {
 import { conversationLocale } from '../conversation-locale'
 import { t } from '../i18n'
 import * as agentRunner from '../agent'
-import { fetchPanel } from '../panel-fetchers'
+import { completePanelProps, fetchPanel } from '../panel-fetchers'
 import * as timers from '../timers'
 import { calendarTools } from './calendar-tools'
 import { taskTools } from './task-tools'
@@ -35,7 +35,7 @@ import { agentTool, jobTools, projectTools } from './job-tools'
 import { memoryTools } from './memory-tools'
 import { miniAppTools } from './mini-app-tools'
 import { noteTools } from './note-tools'
-import { detail, errMessage } from './tool-error-text'
+import { cardError, detail, issueText } from './tool-error-text'
 
 /**
  * The client tools the conversation model can call, held in a registry. One tool is one definition
@@ -62,10 +62,6 @@ const PANEL_RESULT_MAX = 3000
 const DISPLAY_ONLY_RESULT_MAX = 1500
 
 const LOCAL_WRITE_PANELS = new Set(['timer'])
-
-/** The reasons a schema rejected the input, as one sentence the model reads. */
-const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
-  issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
 
 /** The panels that get their own line in the tool guide; the other show_ tools are collapsed into a single line. */
 const PANEL_USAGE: Record<string, PromptText> = {
@@ -94,7 +90,7 @@ function panelTool(entry: PanelCatalogEntry, language: PromptLanguage): Def {
     name: `show_${type.replace(/-/g, '_')}`,
     description: entry.description,
     ...(PANEL_USAGE[type] ? { usage: PANEL_USAGE[type] } : {}),
-    inputSchema: z.toJSONSchema(entry.schema) as JsonSchema,
+    inputSchema: inputJsonSchema(entry.schema),
     // Showing and fetching only read, while the timer writes locally and therefore runs serially.
     parallel: !localWrite,
     timeoutMs: entry.fetch ? FETCHER_TIMEOUT_MS : LOCAL_TIMEOUT_MS,
@@ -114,18 +110,28 @@ async function runPanelTool(
   const parsed = entry.schema.safeParse(input)
   if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
   // A default the schema filled in may be a packed pair, so the fetcher and the card see one language.
-  const parsedProps = resolvePromptTexts(parsed.data, language)
+  // Only a field the model left out can hold one; what it wrote may quote text from outside.
+  const given = Object.fromEntries(
+    Object.entries(parsed.data as Record<string, unknown>).map(([field, value]) => [
+      field,
+      field in input ? value : resolvePromptTexts(value, language)
+    ])
+  )
+  // What the model is told when the card cannot be filled, in the language of the conversation; a card
+  // that is already up shows the same error in the language of the interface.
+  const failure = (err: unknown): ToolError => new ToolError(TEXTS.panelFailed(detail(err, language)))
   if (type === 'weather') {
     signal.throwIfAborted()
-    const props = parsedProps as Record<string, unknown>
-    const place = resolveWeatherCard(String(props.location))
-    if ('status' in place) return place
-    const result = await fetchPanel(type, props, signal)
+    const place = resolveWeatherCard(String(given.location))
+    if ('status' in place) return { ...place, hint: place.hint[language] }
+    const result = await fetchPanel(type, given, signal).catch((err: unknown) => {
+      throw failure(err)
+    })
     signal.throwIfAborted()
     const weather = result.props.weather as WeatherData
     const key = weatherCardKeyOf(place.cardId, weather.targetDate)
     const previous =
-      typeof props.replacesLocation === 'string' ? resolveWeatherCard(props.replacesLocation) : null
+      typeof given.replacesLocation === 'string' ? resolveWeatherCard(given.replacesLocation) : null
     const replacesKey =
       previous && !('status' in previous)
         ? weatherCardKeyOf(previous.cardId, weather.targetDate)
@@ -135,12 +141,17 @@ async function runPanelTool(
     } })
     return { shown: true, panel: type, data: weather }
   }
-  let props = parsedProps as Record<string, unknown>
+  let props: Record<string, unknown>
+  try {
+    props = completePanelProps(type, given)
+  } catch (err) {
+    throw failure(err)
+  }
   const key = entry.key(props)
   const panelEvent = (event: PanelEvent): void =>
     ctx.emit({ type: 'panel', turnId: ctx.turnId, event })
-  const failPanel = (message: string): void =>
-    panelEvent({ op: 'patch', key, state: 'error', error: message })
+  const failPanel = (err: unknown): void =>
+    panelEvent({ op: 'patch', key, state: 'error', error: cardError(err) })
 
   if (type === 'agent-job') return showAgentJob(props, panelEvent)
 
@@ -163,7 +174,7 @@ async function runPanelTool(
       panelEvent({ op: 'patch', key, props, state: 'ready', source: t('cardsTime.timer.source') })
       return { shown: true, panel: type, started: true, timer }
     } catch (err) {
-      failPanel(detail(err, language))
+      failPanel(err)
       throw new ToolError(TEXTS.timerFailed(detail(err, language)))
     }
   }
@@ -173,8 +184,8 @@ async function runPanelTool(
     panelEvent({ op: 'patch', key, props: result.props, state: 'ready', source: result.source })
     return { shown: true, panel: type, data: result.data ?? result.props }
   } catch (err) {
-    failPanel(detail(err, language))
-    throw new ToolError(TEXTS.panelFailed(detail(err, language)))
+    failPanel(err)
+    throw failure(err)
   }
 }
 

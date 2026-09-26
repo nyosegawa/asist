@@ -265,6 +265,14 @@ export function isoWithOffset(at: number, timeZone: string): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${offset}`
 }
 
+/**
+ * A moment as the conversation reads it: the same form in the time zone of this machine. The utterance
+ * carries local time, so a UTC stamp would put mail that arrived, or a task finished, before 9 a.m. in
+ * Japan on the day before.
+ */
+export const localIsoWithOffset = (at: number): string =>
+  isoWithOffset(at, Intl.DateTimeFormat().resolvedOptions().timeZone)
+
 export function summarizeCalendarEvent(locale: ConversationLocale, event: CalendarEvent): CalendarEventSummary {
   const lastDay = calendarDateLabel(locale, lastInstant(event))
   const date = calendarDateLabel(locale, event.start)

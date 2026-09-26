@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   ToolError,
   bilingual,
   createToolRegistry,
   executeTool,
   formatToolResult,
+  inputJsonSchema,
   renderToolGuide,
   resolvePromptTexts,
   truncateMiddle,
@@ -92,6 +94,17 @@ describe('renderToolGuide', () => {
   })
 })
 
+describe('inputJsonSchema', () => {
+  it('lets the model leave out a field with a default, and still tells it to write no key the schema does not list', () => {
+    const schema = inputJsonSchema(
+      z.object({ place: z.string(), mode: z.enum(['place', 'search']).default('place'), origin: z.object({ name: z.string() }).optional() })
+    )
+    expect(schema.required).toEqual(['place'])
+    expect(schema.additionalProperties).toBe(false)
+    expect((schema.properties as Record<string, { additionalProperties?: unknown }>).origin.additionalProperties).toBe(false)
+  })
+})
+
 describe('createToolRegistry', () => {
   it('rejects two definitions that share a name', () => {
     const a = def({ name: 'a', run: () => 1 })
@@ -120,6 +133,20 @@ describe('executeTool', () => {
     const registry = createToolRegistry([def({ name: 'echo', run: (input) => ({ got: input.x }) })])
     const result = await executeTool(registry, 'echo', { x: 1 }, ctx, signal, 'ja')
     expect(result).toMatchObject({ content: '{"got":1}', isError: false, truncated: false, resultLength: 9 })
+  })
+
+  it('passes text from outside through as it is, even text that looks like a packed pair', async () => {
+    const subjects = ['bilingual: 請求書', bilingual({ ja: '請求書について', en: 'About the invoice' }), 'Re: 見積もりの件']
+    const registry = createToolRegistry([
+      def({ name: 'list_mail', run: () => ({ messages: subjects.map((subject) => ({ subject })) }) }),
+      def({ name: 'read_mail', run: () => { throw new Error(subjects[0]) } })
+    ])
+    const listed = await executeTool(registry, 'list_mail', {}, ctx, signal, 'ja')
+    expect(listed.isError).toBe(false)
+    expect(JSON.parse(listed.content)).toEqual({ messages: subjects.map((subject) => ({ subject })) })
+    const failed = await executeTool(registry, 'read_mail', {}, ctx, signal, 'ja')
+    expect(failed.isError).toBe(true)
+    expect(failed.content).toContain(subjects[0])
   })
 
   it('returns a failed result for an unregistered tool instead of throwing', async () => {

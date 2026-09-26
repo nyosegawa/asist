@@ -53,15 +53,29 @@ const DEFAULT_REGIONS: Record<ConversationLocale, string> = {
 export const defaultRegion = (locale: ConversationLocale): string => DEFAULT_REGIONS[locale]
 
 /**
- * The countries the region can be set to, as ISO 3166-1 alpha-2 codes. The list is fixed so that every
- * entry can be checked, and it holds the default region of each language. The names are not written
- * here: a picker reads them from `Intl.DisplayNames` in the language of the interface.
+ * The countries the region can be set to, as ISO 3166-1 alpha-2 codes, each with the ISO 4217 code of
+ * its currency, which an exchange rate is quoted in when the user names only the other side (ADR 0001).
+ * `Intl` has no way from a country to its currency, so the table holds it. The list is fixed so that
+ * every entry can be checked, and it holds the default region of each language. The names are not
+ * written here: a picker reads them from `Intl.DisplayNames` in the language of the interface.
  */
-export const REGIONS: readonly string[] = [
-  'AR', 'AT', 'AU', 'BE', 'BR', 'CA', 'CH', 'CL', 'CN', 'CO', 'CZ', 'DE', 'DK', 'EG', 'ES', 'FI', 'FR',
-  'GB', 'GR', 'HK', 'ID', 'IE', 'IL', 'IN', 'IT', 'JP', 'KR', 'MX', 'MY', 'NG', 'NL', 'NO', 'NZ', 'PE',
-  'PH', 'PL', 'PT', 'RO', 'SA', 'SE', 'SG', 'TH', 'TR', 'TW', 'UA', 'US', 'VN', 'ZA'
-]
+const REGION_CURRENCIES: Readonly<Record<string, string>> = {
+  AR: 'ARS', AT: 'EUR', AU: 'AUD', BE: 'EUR', BR: 'BRL', CA: 'CAD', CH: 'CHF', CL: 'CLP', CN: 'CNY',
+  CO: 'COP', CZ: 'CZK', DE: 'EUR', DK: 'DKK', EG: 'EGP', ES: 'EUR', FI: 'EUR', FR: 'EUR', GB: 'GBP',
+  GR: 'EUR', HK: 'HKD', ID: 'IDR', IE: 'EUR', IL: 'ILS', IN: 'INR', IT: 'EUR', JP: 'JPY', KR: 'KRW',
+  MX: 'MXN', MY: 'MYR', NG: 'NGN', NL: 'EUR', NO: 'NOK', NZ: 'NZD', PE: 'PEN', PH: 'PHP', PL: 'PLN',
+  PT: 'EUR', RO: 'RON', SA: 'SAR', SE: 'SEK', SG: 'SGD', TH: 'THB', TR: 'TRY', TW: 'TWD', UA: 'UAH',
+  US: 'USD', VN: 'VND', ZA: 'ZAR'
+}
+
+export const REGIONS: readonly string[] = Object.keys(REGION_CURRENCIES)
+
+/**
+ * The currency of a region, or undefined for a region outside the list, which the settings still
+ * accept as any two capital letters.
+ */
+export const regionCurrency = (region: string): string | undefined =>
+  Object.hasOwn(REGION_CURRENCIES, region) ? REGION_CURRENCIES[region] : undefined
 
 /** The ISO 639-1 language of a locale, which is what speech recognition and most web APIs take. */
 export const languageOf = (locale: ConversationLocale): string => locale.split('-')[0]

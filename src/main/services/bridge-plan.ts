@@ -92,16 +92,19 @@ const PLAN_USER: PromptText = {
 
 const PLAN_USER_NO_LAST: PromptText = { ja: `(なし)`, en: `(none)` }
 
-/** The fast model's output. The line is cut short, because a long one overlaps the real answer. */
+/**
+ * The fast model's output. The line is cut short, because a long one overlaps the real answer. It is
+ * measured without the brackets the model wraps it in, as the prompt's own examples do, since they
+ * are stripped before it is spoken.
+ */
 const planSchema = (language: PromptLanguage): z.ZodType<BridgePlan> =>
   z.object({
     bridge: z
       .string()
-      .trim()
+      .overwrite((text) => text.replace(/^[「『"'\s]+|[」』"'\s]+$/g, ''))
       .refine((text) => bridgeLength(language, text) <= BRIDGE_CAP[language], {
         message: `bridge is longer than ${BRIDGE_CAP[language]}`
       })
-      .transform((text) => text.replace(/^[「『"'\s]+|[」』"'\s]+$/g, ''))
   })
 
 /**

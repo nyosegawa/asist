@@ -408,6 +408,7 @@ export interface PanelSpec {
   ttl?: number
   /** When the panel turned stale, which the renderer's lifecycle uses. */
   staleAt?: number
+  /** The failure as the error's own message, which the card words in the language of the interface. */
   error?: string
   /** The turn that owns the panel, so the renderer can clean up panels a finished turn left unfinished. */
   ownerTurnId?: number

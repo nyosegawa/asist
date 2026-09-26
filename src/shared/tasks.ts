@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { localIsoWithOffset } from './calendar'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { StoredFormat } from './stored-format'
@@ -307,6 +308,6 @@ export function taskSummary(task: Task, language: PromptLanguage): Record<string
     statusLabel: TASK_STATUS_LABEL[task.status][language],
     due: task.due,
     ...(task.notes ? { notes: task.notes } : {}),
-    ...(task.completedAt ? { completedAt: new Date(task.completedAt).toISOString() } : {})
+    ...(task.completedAt ? { completedAt: localIsoWithOffset(task.completedAt) } : {})
   }
 }
