@@ -30,7 +30,7 @@ export interface LiveEngineDeps {
  * How long the transcript stays quiet before an utterance is final. It is long enough not to cut at a
  * pause inside a sentence, which runs around 0.5 seconds, and short enough to separate two utterances.
  */
-export const TRANSCRIPT_QUIET_MS = 1500
+const TRANSCRIPT_QUIET_MS = 1500
 /**
  * How much audio is buffered while the session is closed. It is long enough that the roughly one second
  * the connection takes does not swallow the start of an utterance.

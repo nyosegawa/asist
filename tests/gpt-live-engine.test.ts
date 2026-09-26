@@ -353,40 +353,50 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
-  it('hands brain an utterance that went quiet before the delegation arrived', async () => {
-    const { engine, sockets, events, beginTurn } = await setup()
-    engine.activity(true)
+  /**
+   * Opens a session and lets a delegation with nothing heard at all run, which hands brain the notice
+   * that no transcript arrived. The tests compare what follows with it rather than with its wording.
+   */
+  async function withNoTranscriptNotice(): Promise<Awaited<ReturnType<typeof setup>> & { socket: FakeSocket; noTranscript: string }> {
+    const context = await setup()
+    context.engine.activity(true)
     await vi.advanceTimersByTimeAsync(0)
-    const socket = sockets[0]
+    const socket = context.sockets[0]
     socket.started()
     await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd0', offset_ms: 0, delegation: { id: 'dlg0', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(2200)
+    expect(context.beginTurn).toHaveBeenCalledOnce()
+    return { ...context, socket, noTranscript: context.beginTurn.mock.calls[0][0] as string }
+  }
+
+  it('hands brain a request that went quiet before a late delegation, followed by a note that no utterance of the delegation’s own arrived', async () => {
+    const { engine, socket, events, beginTurn, noTranscript } = await withNoTranscriptNotice()
     socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気を調べて', event_id: 'a', start_ms: 0, end_ms: 1 })
-    await vi.advanceTimersByTimeAsync(1600)
+    await vi.advanceTimersByTimeAsync(2600)
     socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
     await vi.advanceTimersByTimeAsync(2200)
-    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['明日の天気を調べて'])
+    const [request, note, ...rest] = (beginTurn.mock.calls[1][0] as string).split('\n')
+    expect([request, rest]).toEqual(['明日の天気を調べて', []])
+    // The request may be that line, so brain is not told that its transcript never arrived.
+    expect(note).toBeTruthy()
+    expect(note).not.toBe(noTranscript)
     expect(events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [e.text] : []))).toEqual(['明日の天気を調べて'])
     expect(mocks.record).not.toHaveBeenCalled()
     await engine.stop()
   })
 
-  it('tells brain that the request was not heard, after the earlier lines, when a delegation whose transcript never arrives comes well after a backchannel', async () => {
-    const { engine, sockets, beginTurn } = await setup()
-    engine.activity(true)
-    await vi.advanceTimersByTimeAsync(0)
-    const socket = sockets[0]
-    socket.started()
-    await vi.advanceTimersByTimeAsync(0)
-    // A delegation with nothing heard at all hands brain the notice alone.
-    socket.emit({ type: 'session.delegation.created', event_id: 'd1', offset_ms: 0, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
-    await vi.advanceTimersByTimeAsync(2200)
-    const notice = beginTurn.mock.calls[0][0] as string
-    // A backchannel while the voice reads, then a question that takes a second to say and whose transcript never arrives.
+  it('hands brain a backchannel followed by that note, not as the request, when a delegation with no transcript of its own comes 1.6 s after it', async () => {
+    const { engine, socket, beginTurn, noTranscript } = await withNoTranscriptNotice()
+    // A backchannel while the voice reads, then a question whose transcript never arrives.
     socket.emit({ type: 'session.input_transcript.delta', delta: 'うん', event_id: 'a', start_ms: 0, end_ms: 1 })
-    await vi.advanceTimersByTimeAsync(2600)
-    socket.emit({ type: 'session.delegation.created', event_id: 'd2', offset_ms: 1, delegation: { id: 'dlg2', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(1600)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
     await vi.advanceTimersByTimeAsync(2200)
-    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual([notice, `うん\n${notice}`])
+    const [backchannel, note, ...rest] = (beginTurn.mock.calls[1][0] as string).split('\n')
+    expect([backchannel, rest]).toEqual(['うん', []])
+    expect(note).toBeTruthy()
+    expect(note).not.toBe(noTranscript)
     await engine.stop()
   })
 
@@ -579,17 +589,20 @@ describe('GptLiveEngine', () => {
     socket.started()
     await saying
     // The next utterance is a line of its own, which the stopped delegation does not take for brain,
-    // and the next delegation, which comes just after it went quiet, hands brain nothing heard before the stop.
+    // and the next delegation hands brain nothing heard before the stop.
     socket.emit({ type: 'session.output_transcript.delta', delta: 'うん。', event_id: 'b', start_ms: 1, end_ms: 2 })
     await vi.advanceTimersByTimeAsync(100)
     socket.emit({ type: 'session.input_transcript.delta', delta: 'はい', event_id: 'c', start_ms: 2, end_ms: 3 })
-    await vi.advanceTimersByTimeAsync(1600)
+    await vi.advanceTimersByTimeAsync(3000)
     const finals = events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [[e.turnId, e.text]] : []))
     expect(finals).toEqual([[100, '明日の天気は'], [101, 'はい']])
     expect(beginTurn).not.toHaveBeenCalled()
     socket.emit({ type: 'session.delegation.created', event_id: 'd2', offset_ms: 3, delegation: { id: 'dlg2', type: 'delegation', target: 'client' } })
     await vi.advanceTimersByTimeAsync(2200)
-    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['はい'])
+    expect(beginTurn).toHaveBeenCalledOnce()
+    const handed = beginTurn.mock.calls[0][0] as string
+    expect(handed.split('\n')[0]).toBe('はい')
+    expect(handed).not.toContain('明日の天気は')
     expect(mocks.record).not.toHaveBeenCalled()
     // Nobody has spoken since the start, so a session the provider ends stays closed.
     socket.fire('close', 1000, '')

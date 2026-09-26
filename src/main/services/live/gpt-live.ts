@@ -14,7 +14,7 @@ import type { HistoryMessage } from '../brain/history'
 import { turnScheduler } from '../brain/session'
 import { liveRoute } from '../brain/speech-route'
 import { decodeOutput } from './audio'
-import { LiveEngineBase, TRANSCRIPT_QUIET_MS, type LiveEngineDeps } from './engine'
+import { LiveEngineBase, type LiveEngineDeps } from './engine'
 import type { TranscriptRole } from './transcripts'
 
 /**
@@ -74,19 +74,8 @@ const OPEN_TIMEOUT_MS = 15_000
 /** How long the input transcript stays quiet before a delegation takes it. */
 const DELEGATION_QUIET_MS = 400
 /**
- * How long after the last fragment of the newest utterance no delegation took, a delegation that finds
- * nothing in progress is still taken to be for that utterance. A delegation in time finds its
- * transcript in progress and takes it once it has been quiet for DELEGATION_QUIET_MS, while the quiet
- * timer settles a transcript TRANSCRIPT_QUIET_MS after its last fragment. One that comes within
- * DELEGATION_QUIET_MS of that settling is late by no more than the quiet a delegation waits for anyway.
- * One later than that is at least as likely a new request whose transcript never arrived, such as a
- * question after a backchannel, and brain is told so with the earlier lines as context, from which it
- * can still take the request when that is where it was.
- */
-const LATE_DELEGATION_MS = TRANSCRIPT_QUIET_MS + DELEGATION_QUIET_MS
-/**
  * How long a delegation waits for the input transcript to begin, which can be after the delegation.
- * Past it brain is told that no transcript arrived.
+ * Past it brain is told that no utterance of the delegation's own arrived.
  */
 const DELEGATION_START_WAIT_MS = 2000
 /**
@@ -98,6 +87,15 @@ const DELEGATION_MAX_WAIT_MS = 10_000
 const NO_TRANSCRIPT: PromptText = {
   ja: `[声の担当からの依頼。直前の発話の転写が届いていない。文脈から推測して短く応じ、分からなければ聞き返す]`,
   en: `[A request from the voice. The transcript of the utterance before it never arrived. Guess from the context and answer briefly, and ask back when you cannot tell.]`
+}
+/**
+ * What follows the lines no delegation took when a delegation came without an utterance in progress.
+ * Its request is either the last of those lines, delegated late, or an utterance whose transcript never
+ * arrived, such as a question after a backchannel, and nothing tells the two apart.
+ */
+const DELEGATED_WITHOUT_UTTERANCE: PromptText = {
+  ja: `[声の担当からの依頼。上の発話は聞き取れたが、依頼のときに新しい発話の転写は届いていない。依頼は上の最後の発話かもしれないし、聞き取れなかった別の発話かもしれない。上の発話から答えられれば答え、分からなければ短く聞き返す]`,
+  en: `[A request from the voice. The lines above were heard, but no transcript of a new utterance came with the request. The request may be the last of those lines, or something that was not heard. Answer from them if you can, and ask back briefly if you cannot.]`
 }
 
 /** The cards on screen, which the voice model cannot see and which "this" refers to. */
@@ -289,22 +287,18 @@ export class GptLiveEngine extends LiveEngineBase {
     }
     // A stop meanwhile ended the delegation, and closed the user's line as it was heard.
     if (!this.enabled) return
-    this.deps.beginTurn(this.delegatedInput(startedAt), false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
+    this.deps.beginTurn(this.delegatedInput(), false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     this.touch()
   }
 
-  /**
-   * What a delegation created at `createdAt` hands brain: the utterances no delegation took, then its
-   * own. When nothing was in progress, its own either settled before it came, or never arrived.
-   */
-  private delegatedInput(createdAt: number): string {
+  /** What a delegation hands brain: the utterances no delegation took, then its own or a note on its absence. */
+  private delegatedInput(): string {
     const own = this.takeUserUtterance()
     const earlier = this.takeUnhanded()
-    const lines = earlier.map((utterance) => utterance.text)
-    if (own) return [...lines, own].join('\n')
-    const newest = earlier.at(-1)
-    if (newest && createdAt - newest.endedAt < LATE_DELEGATION_MS) return lines.join('\n')
-    return [...lines, promptText(conversationLocale(), NO_TRANSCRIPT)].join('\n')
+    if (own) return [...earlier, own].join('\n')
+    const locale = conversationLocale()
+    if (earlier.length === 0) return promptText(locale, NO_TRANSCRIPT)
+    return [...earlier, promptText(locale, DELEGATED_WITHOUT_UTTERANCE)].join('\n')
   }
 
   /** Takes the user's utterance in progress, closing its line on screen under the id it was shown with. */
@@ -316,7 +310,7 @@ export class GptLiveEngine extends LiveEngineBase {
 
   /** The input of a brain turn, after the utterances no delegation took, one per line. */
   private withUnhanded(input: string): string {
-    return [...this.takeUnhanded().map((utterance) => utterance.text), input].filter(Boolean).join('\n')
+    return [...this.takeUnhanded(), input].filter(Boolean).join('\n')
   }
 
   /**
@@ -326,11 +320,11 @@ export class GptLiveEngine extends LiveEngineBase {
    * however the session ended in between, whether it closed for quiet, the provider ended it or the
    * network dropped it.
    */
-  private takeUnhanded(): Array<{ text: string; endedAt: number }> {
+  private takeUnhanded(): string[] {
     const idleMs = this.settings().liveIdleSeconds * 1000
     const fresh = this.unhanded.filter((utterance) => this.now() - utterance.endedAt < idleMs)
     this.unhanded = []
-    return fresh
+    return fresh.map((utterance) => utterance.text)
   }
 
   private userLineId(): number {
