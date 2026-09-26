@@ -1,4 +1,4 @@
-import { messageIdOf, quotation, replyRecipients, type MailAccount, type MailDraft, type MailMessage, type MailStatus } from '@shared/mail'
+import { messageIdOf, quotation, replyRecipients, type MailAccount, type MailDraft, type MailMessage, type MailReply, type MailStatus } from '@shared/mail'
 
 /**
  * The mail of the demo. Two accounts, work (Gmail) and personal (iCloud), get messages built relative to
@@ -238,6 +238,21 @@ export const DEMO_MAIL_CARD = {
     .slice(0, 8)
 }
 
+/** A reply settled from a demo message, as main's settleReply makes one. The demo keeps no References, so the chain is the message itself. */
+export function demoReplyOf(message: MailMessage, replyAll: boolean): MailReply {
+  const account = DEMO_MAIL_ACCOUNTS.find((a) => a.id === message.accountId) ?? DEMO_MAIL_ACCOUNTS[0]
+  return {
+    id: message.id,
+    subject: message.subject,
+    from: message.from,
+    replyAll,
+    ...replyRecipients(message, account.email, replyAll),
+    inReplyTo: message.messageId,
+    references: [message.messageId],
+    quote: quotation({ date: message.date, from: message.from, text: DEMO_MAIL_BODIES.get(message.id) ?? '' })
+  }
+}
+
 const interview = DEMO_MAIL_MESSAGES.find((m) => m.folder === 'inbox' && m.uid === 1040)!
 
 /**
@@ -264,16 +279,7 @@ export const DEMO_MAIL_DRAFTS: MailDraft[] = [
     cc: [],
     subject: '',
     body: '鈴木さん\n\n9/25(木) 11:00 でお願いします。',
-    reply: {
-      id: interview.id,
-      subject: interview.subject,
-      from: interview.from,
-      replyAll: true,
-      ...replyRecipients(interview, me.address, true),
-      inReplyTo: interview.messageId,
-      references: [interview.messageId],
-      quote: quotation({ date: interview.date, from: interview.from, text: DEMO_MAIL_BODIES.get(interview.id) ?? '' })
-    },
+    reply: demoReplyOf(interview, true),
     origin: 'agent',
     createdAt: ago(1),
     updatedAt: ago(1)

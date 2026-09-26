@@ -6,6 +6,7 @@ import {
   mailChangeSchema,
   mailDraftInputSchema,
   mailDraftPatchSchema,
+  mailReplySendSchema,
   parseAddress,
   parseMailInput,
   parseMessageId,
@@ -51,8 +52,9 @@ import { formatLocaleOf } from '@shared/conversation-locale'
  * The approval rule: for an operation that leaves the machine, sending or replying, approval is the user
  * pressing the send button after seeing the recipients and the whole body. An Agent that wants to send
  * does not send; it writes a draft and waits for the user to press the button on the card or the screen.
- * Sending from the compose form or from a draft is already approved by that press, so no confirmation
- * dialog is shown. Every other Agent operation (archive, trash, mark read, star) and trashing from the
+ * Sending from the compose form, from the reply form of the reader or from a draft is already approved
+ * by that press, so no confirmation dialog is shown. A reply is settled before it is shown, and what is
+ * shown is what is sent. Every other Agent operation (archive, trash, mark read, star) and trashing from the
  * screen goes through the confirmation dialog. A send is attempted exactly once, and a failure whose
  * outcome is unknown is never retried.
  */
@@ -87,13 +89,15 @@ const CONFIRM_BODY_MAX = 1200
 const REJECTED = errorText('mail.errors.change.rejected')
 
 /** The words on the confirmation's button: the operation itself, so that the button says what pressing it does. */
-function confirmAction(input: MailChange): string {
+function confirmAction(input: PlannedChange): string {
   if (input.operation === 'markRead') return t(input.read ? 'mail.confirm.action.markRead' : 'mail.confirm.action.markUnread')
   if (input.operation === 'star') return t(input.starred ? 'mail.confirm.action.star' : 'mail.confirm.action.unstar')
   if (input.operation === 'send') return t('mail.confirm.action.send')
-  if (input.operation === 'reply') return t('mail.confirm.action.reply')
   return t(input.operation === 'archive' ? 'mail.confirm.action.archive' : 'mail.confirm.action.trash')
 }
+
+/** A reply never goes through a plan: it is settled first so that its recipients can be shown. */
+type PlannedChange = Exclude<MailChange, { operation: 'reply' }>
 
 export class MailService {
   private readonly syncs = new Map<string, MailAccountSync>()
@@ -343,15 +347,17 @@ export class MailService {
       const draft = this.draftCreate({ accountId: input.accountId, to: input.to, cc: input.cc, subject: input.subject, body: input.body }, 'agent')
       return { drafted: true, saved: false, draftId: draft.id, summary: draftSummary(draft) }
     }
-    if (source === 'agent' && input.operation === 'reply') {
-      // The draft carries the reply settled here, so the card shows the recipients it is sent to.
+    if (input.operation === 'reply') {
+      // A reply goes out only after the addresses it is sent to were on screen: the Agent's becomes a draft
+      // carrying the reply settled here, and the reader's is settled by replySettle and sent by replySend.
+      if (source !== 'agent') throw new Error('a reply from the screen is settled with replySettle and sent with replySend')
       const message = this.requireMessage(input.id)
       const account = this.accountOf(message.accountId)
       const reply = await this.settleReply(message, account, input.replyAll)
       const draft = this.deps.drafts.create({ accountId: account.id, to: [], cc: [], subject: '', body: input.body, reply, origin: 'agent' })
       return { drafted: true, saved: false, draftId: draft.id, summary: draftSummary(draft) }
     }
-    const plan = await this.plan(input)
+    const plan = this.plan(input)
     const needsConfirm = source === 'agent' || input.operation === 'trash'
     if (needsConfirm) {
       if (this.confirming) throw new Error(errorText('mail.errors.change.confirmBusy'))
@@ -417,12 +423,28 @@ export class MailService {
       if (!draft.body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
       const result = draft.reply
         ? await this.sendReply(this.accountOf(draft.accountId), draft.reply, draft.body)
-        : await (await this.plan({ operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body })).perform()
+        : await this.plan({ operation: 'send', accountId: draft.accountId, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body }).perform()
       this.deps.drafts.remove(id)
       return result
     } finally {
       this.sendingDrafts.delete(id)
     }
+  }
+
+  /** A reply for the reader to show before it is sent. The reader hands the same reply to replySend. */
+  async replySettle(id: string, replyAll: boolean): Promise<MailReply> {
+    if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
+    const message = this.requireMessage(id)
+    return this.settleReply(message, this.accountOf(message.accountId), replyAll)
+  }
+
+  /** Sends a reply replySettle settled and the reader showed. The user's press is the approval, so no confirmation is shown. */
+  async replySend(value: unknown, signal: AbortSignal): Promise<MailChangeResult> {
+    const { reply, body } = parseMailInput(mailReplySendSchema, value)
+    signal.throwIfAborted()
+    if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
+    if (!body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
+    return this.sendReply(this.accountOf(parseMessageId(reply.id).accountId), reply, body)
   }
 
   /**
@@ -478,7 +500,7 @@ export class MailService {
    * together with the function that performs it. Nothing here changes state on the server, so a plan the
    * user rejects leaves no trace.
    */
-  private async plan(input: MailChange): Promise<{ detail: string; perform: () => Promise<MailChangeResult> }> {
+  private plan(input: PlannedChange): { detail: string; perform: () => Promise<MailChangeResult> } {
     if (input.operation === 'send') {
       const account = this.senderAccount(input.accountId)
       const to = input.to.map(parseAddress)
@@ -497,21 +519,6 @@ export class MailService {
         detail,
         perform: () => this.send(account, { from: { name: account.name, address: account.email }, to, cc, subject: input.subject, text: input.body }, null)
       }
-    }
-    if (input.operation === 'reply') {
-      const message = this.requireMessage(input.id)
-      const account = this.accountOf(message.accountId)
-      const reply = await this.settleReply(message, account, input.replyAll)
-      const detail = [
-        t('mail.confirm.reply', { label: account.label, email: account.email, ...describe(message) }),
-        t('mail.confirm.to', { addresses: reply.to.map(formatAddress).join(', ') }),
-        reply.cc.length ? t('mail.confirm.cc', { addresses: reply.cc.map(formatAddress).join(', ') }) : '',
-        t('mail.confirm.subject', { subject: replySubject(reply.subject) }),
-        t('mail.confirm.bodyQuoted', { body: clip(input.body) })
-      ]
-        .filter(Boolean)
-        .join('\n\n')
-      return { detail, perform: () => this.sendReply(account, reply, input.body) }
     }
     if (input.operation === 'markRead') return this.planMarkRead(input.ids, input.read)
     const message = this.requireMessage(input.id)

@@ -31,9 +31,10 @@ import {
   mailListQuerySchema,
   parseAddress,
   parseMailInput,
-  replyRecipients,
+  parseMessageId,
   replySubject,
   mailDraftInputSchema,
+  mailReplySendSchema,
   type MailAddress,
   type MailChangeResult,
   type MailDraft,
@@ -45,7 +46,7 @@ import { CARD_GROUPS } from './fixtures/cards'
 import { DEMO_JOB, DEMO_JOB_LOG, DEMO_JOBS } from './fixtures/jobs'
 import { DEMO_NOTES, demoNoteSummary, type DemoNote } from './fixtures/notes'
 import { DEMO_TASKS } from './fixtures/tasks'
-import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, demoMailStatus } from './fixtures/mail'
+import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from './fixtures/mail'
 import { commitDrafts, createDemoDraft, demoDraft, demoDrafts, emitMail, mailListeners } from './mail-state'
 import { DEMO_MEMORY, demoDocuments, demoPageTemplate } from './fixtures/memory'
 import { parseMemoryPageInput, validateDocument, documentOf } from '@shared/memory-page'
@@ -219,12 +220,7 @@ async function demoMailChange(value: Parameters<RendererApi['mailChange']>[0]): 
   if (input.operation === 'send') {
     return demoSend(input.accountId ?? 'demo-work', input.to.map(parseAddress), input.cc.map(parseAddress), input.subject, input.body, null)
   }
-  if (input.operation === 'reply') {
-    const original = demoMailMessage(input.id)
-    const account = DEMO_MAIL_ACCOUNTS.find((a) => a.id === original.accountId) ?? DEMO_MAIL_ACCOUNTS[0]
-    const { to, cc } = replyRecipients(original, account.email, input.replyAll)
-    return demoSend(account.id, to, cc, replySubject(original.subject), input.body, original.id)
-  }
+  if (input.operation === 'reply') throw new Error('a reply from the screen is settled with mailReplySettle and sent with mailReplySend')
   if (input.operation === 'markRead') {
     const ids = new Set(input.ids)
     const targets = demoMail.filter((m) => ids.has(m.id))
@@ -636,6 +632,11 @@ export const mockApi: RendererApi = {
     demoMail.filter((m) => m.accountId === accountId && m.threadId === threadId).sort((a, b) => a.date - b.date).map((m) => ({ ...m })),
   mailRead: async (id) => ({ message: { ...demoMailMessage(id) }, text: DEMO_MAIL_BODIES.get(id) ?? '' }),
   mailChange: async (change) => demoMailChange(change),
+  mailReplySettle: async (id, replyAll) => demoReplyOf(demoMailMessage(id), replyAll),
+  mailReplySend: async (value) => {
+    const { reply, body } = parseMailInput(mailReplySendSchema, value)
+    return demoSend(parseMessageId(reply.id).accountId, reply.to, reply.cc, replySubject(reply.subject), body, reply.id)
+  },
   mailSyncNow: async () => {
     emitMail({ type: 'status', status: demoMailStatus(demoMail) })
   },

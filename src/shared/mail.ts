@@ -304,27 +304,34 @@ export type MailChangeResult =
    */
   | { drafted: true; saved: false; draftId: string; summary: string }
 
+const addressSchema = z.strictObject({ name: z.string(), address: z.string().min(1) })
+
 /**
- * A reply as it will go out, settled from the message it answers when the reply is made. The recipients
- * shown before the send button is pressed are these, and so are the ones it is sent to; the message
- * answered is not needed again, so the reply still goes out after that message was archived or left the
- * range that is fetched.
+ * A reply as it will go out, settled by main from the message it answers when the reply is made. The
+ * recipients shown before the send button is pressed are these, and so are the ones it is sent to; the
+ * message answered is not needed again, so the reply still goes out after that message was archived or
+ * left the range that is fetched.
  */
-export interface MailReply {
+export const mailReplySchema = z.strictObject({
   /** The message answered, as it was named when the reply was made. It is marked answered after the send while it is still there. */
-  id: string
+  id: idSchema,
   /** The subject and the sender of the message answered, which name that message on screen. */
-  subject: string
-  from: MailAddress
-  replyAll: boolean
-  to: MailAddress[]
-  cc: MailAddress[]
+  subject: z.string(),
+  from: addressSchema,
+  replyAll: z.boolean(),
+  to: z.array(addressSchema).min(1),
+  cc: z.array(addressSchema),
   /** The Message-ID of the message answered, or an empty string when it has none. */
-  inReplyTo: string
-  references: string[]
+  inReplyTo: z.string(),
+  references: z.array(z.string()),
   /** The line naming the original and the quoted original body, appended below the reply's body. */
-  quote: string
-}
+  quote: z.string()
+})
+export type MailReply = z.infer<typeof mailReplySchema>
+
+/** A reply from the reader of the mail screen: the reply main settled and the screen showed, and the body. */
+export const mailReplySendSchema = z.strictObject({ reply: mailReplySchema, body: bodySchema })
+export type MailReplySend = z.infer<typeof mailReplySendSchema>
 
 /**
  * A draft. Both what the Agent composed and what the user is still writing on screen are held in the

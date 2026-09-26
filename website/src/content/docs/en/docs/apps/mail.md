@@ -17,4 +17,4 @@ Ask "Do I have any unread mail?" for a list card, or "Read it" for a card with o
 
 ## From the Dock
 
-Under "Mail" in the Dock, you see the mail of all your accounts together, sorted by date, and you can search, view threads, reply, compose and save drafts. Sending from the screen happens when you click "Send". Moving to the trash goes through the same confirmation screen as in the conversation. The number in the Dock is the count of unread messages that arrived in the last 24 hours.
+Under "Mail" in the Dock, you see the mail of all your accounts together, sorted by date, and you can search, view threads, reply, compose and save drafts. Sending from the screen happens when you click "Send". The reply form also shows the addresses the reply goes to, Cc included. Moving to the trash goes through the same confirmation screen as in the conversation. The number in the Dock is the count of unread messages that arrived in the last 24 hours.

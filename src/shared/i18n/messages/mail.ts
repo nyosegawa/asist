@@ -911,19 +911,6 @@ export const mail = defineMessages({
       'es-419': 'Acciones del mensaje',
       'es-ES': 'Acciones del mensaje'
     },
-    replyTo: {
-      'ja-JP': '{name} へ返信',
-      'en-US': 'Reply to {name}',
-      'fr-FR': 'Répondre à {name}',
-      'de-DE': 'An {name} antworten',
-      'hi-IN': '{name} को जवाब',
-      'id-ID': 'Balas ke {name}',
-      'it-IT': 'Rispondi a {name}',
-      'ko-KR': '{name}에게 답장',
-      'pt-BR': 'Responder a {name}',
-      'es-419': 'Responder a {name}',
-      'es-ES': 'Responder a {name}'
-    },
     replyBody: {
       'ja-JP': '返信の本文',
       'en-US': 'Reply body',
@@ -2045,19 +2032,6 @@ export const mail = defineMessages({
         'es-419': 'Enviar correo',
         'es-ES': 'Enviar el mensaje'
       },
-      reply: {
-        'ja-JP': '返信を送信',
-        'en-US': 'Send reply',
-        'fr-FR': 'Envoyer la réponse',
-        'de-DE': 'Antwort senden',
-        'hi-IN': 'जवाब भेजें',
-        'id-ID': 'Kirim balasan',
-        'it-IT': 'Invia la risposta',
-        'ko-KR': '답장 보내기',
-        'pt-BR': 'Enviar resposta',
-        'es-419': 'Enviar respuesta',
-        'es-ES': 'Enviar la respuesta'
-      },
       archive: {
         'ja-JP': 'アーカイブする',
         'en-US': 'Archive',
@@ -2150,19 +2124,6 @@ export const mail = defineMessages({
       'es-419': 'Envía un correo desde {label} ({email}).',
       'es-ES': 'Envía un mensaje desde {label} ({email}).'
     },
-    reply: {
-      'ja-JP': '{label}({email})から「{subject}」({name}、{date})に返信します。',
-      'en-US': 'Sends a reply from {label} ({email}) to "{subject}" ({name}, {date}).',
-      'fr-FR': 'Envoie une réponse depuis {label} ({email}) à « {subject} » ({name}, {date}).',
-      'de-DE': 'Sendet eine Antwort von {label} ({email}) auf „{subject}“ ({name}, {date}).',
-      'hi-IN': '{label} ({email}) से "{subject}" ({name}, {date}) का जवाब भेजा जाएगा।',
-      'id-ID': 'Mengirim balasan dari {label} ({email}) untuk “{subject}” ({name}, {date}).',
-      'it-IT': 'Invia una risposta da {label} ({email}) a «{subject}» ({name}, {date}).',
-      'ko-KR': '{label}({email})에서 “{subject}”({name}, {date}) 메일에 답장합니다.',
-      'pt-BR': 'Envia uma resposta de {label} ({email}) para “{subject}” ({name}, {date}).',
-      'es-419': 'Envía una respuesta desde {label} ({email}) a «{subject}» ({name}, {date}).',
-      'es-ES': 'Envía una respuesta desde {label} ({email}) a “{subject}” ({name}, {date}).'
-    },
     to: {
       'ja-JP': '宛先: {addresses}',
       'en-US': 'To: {addresses}',
@@ -2214,19 +2175,6 @@ export const mail = defineMessages({
       'pt-BR': "Mensagem:\n{body}",
       'es-419': "Cuerpo:\n{body}",
       'es-ES': "Cuerpo:\n{body}"
-    },
-    bodyQuoted: {
-      'ja-JP': '本文:\n{body}\n(この下に元のメールを引用します)',
-      'en-US': 'Body:\n{body}\n(The original is quoted below.)',
-      'fr-FR': "Corps du message :\n{body}\n(Le message d'origine est cité en dessous.)",
-      'de-DE': "Text:\n{body}\n(Darunter wird die ursprüngliche E-Mail zitiert.)",
-      'hi-IN': "टेक्स्ट:\n{body}\n(इसके नीचे मूल मेल जुड़ी रहेगी।)",
-      'id-ID': "Isi:\n{body}\n(Email aslinya dikutip di bawah.)",
-      'it-IT': "Testo:\n{body}\n(Sotto viene citato il messaggio originale.)",
-      'ko-KR': "본문:\n{body}\n(이 아래에 원본 메일을 인용합니다)",
-      'pt-BR': "Mensagem:\n{body}\n(A mensagem original vai citada abaixo.)",
-      'es-419': "Cuerpo:\n{body}\n(Abajo se cita el mensaje original.)",
-      'es-ES': "Cuerpo:\n{body}\n(El mensaje original se cita debajo.)"
     },
     clipped: {
       'ja-JP': { other: '(ほか {count} 文字)' },

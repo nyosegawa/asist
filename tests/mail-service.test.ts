@@ -96,6 +96,11 @@ async function setup(options: { provider?: MailAccount['provider']; enabled?: bo
   return { imap, cache, drafts, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
 }
 
+/** What the reader's reply form does: main settles the reply the form shows, and the same reply is sent. */
+async function replyFromReader(f: Awaited<ReturnType<typeof setup>>, id: string, body: string, replyAll = false) {
+  return f.service.replySend({ reply: await f.service.replySettle(id, replyAll), body }, f.signal.signal)
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ now: NOW })
 })
@@ -249,7 +254,7 @@ describe('sending and replying', () => {
 
   it('replies to the sender with Re:, quotes the original body, carries the thread headers, and flags the original as answered', async () => {
     const f = await setup()
-    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'screen')
+    const result = await replyFromReader(f, f.ids.question, '了解です。')
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.outgoing()).toMatchObject({
       to: [{ name: '田中', address: 't@example.com' }],
@@ -267,7 +272,7 @@ describe('sending and replying', () => {
 
   it('adds the original recipients and Cc to a reply-all, leaving out the account address itself', async () => {
     const f = await setup()
-    await f.service.change({ operation: 'reply', id: f.ids.question, body: 'ok', replyAll: true }, f.signal.signal, 'screen')
+    await replyFromReader(f, f.ids.question, 'ok', true)
     expect(f.outgoing()).toMatchObject({
       to: [{ name: '田中', address: 't@example.com' }],
       cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }]
@@ -275,12 +280,33 @@ describe('sending and replying', () => {
     await f.service.stop()
   })
 
+  it('sends a reply from the reader to exactly the To and Cc it settled for the form, which follow Reply-To rather than the sender', async () => {
+    const f = await setup()
+    const elsewhere = { name: '上司', address: 'attacker@evil.example' }
+    const phishing = f.imap.put('INBOX', { subject: '請求書の件', from: [{ name: '上司', address: 'boss@company.example' }], replyTo: [elsewhere], to: [...me, ...suzuki], date: new Date(NOW - HOUR), text: '至急返信して', messageId: '<m1@x>' })
+    await f.service.syncNow()
+    const reply = await f.service.replySettle(messageIdOf('a1', 'inbox', phishing.uid), true)
+    expect({ to: reply.to, cc: reply.cc }).toEqual({ to: [elsewhere], cc: suzuki })
+    await f.service.replySend({ reply, body: '確認します' }, f.signal.signal)
+    expect({ to: f.outgoing().to, cc: f.outgoing().cc }).toEqual({ to: reply.to, cc: reply.cc })
+    await f.service.stop()
+  })
+
+  it('refuses a reply from the screen that was not settled first, and fails to settle one without a connection to the account', async () => {
+    const f = await setup()
+    await expect(f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'screen')).rejects.toThrow()
+    await expect(f.service.replySend({ reply: { id: f.ids.question }, body: '了解です。' }, f.signal.signal)).rejects.toThrow()
+    await f.service.stop()
+    await expect(f.service.replySettle(f.ids.question, false)).rejects.toThrow(errorText('mail.errors.account.off'))
+    expect(f.smtp.send).not.toHaveBeenCalled()
+  })
+
   it('carries the parent References followed by its Message-ID, so that a reply to a later message joins the same thread', async () => {
     const f = await setup({ provider: 'icloud' })
     const second = f.imap.put('INBOX', { subject: 'Re: 打合せ', from: tanaka, to: me, date: new Date(NOW - HOUR), text: '二通目', messageId: '<p2@x>', inReplyTo: '<p1@x>', references: '<root@x> <p1@x>' })
     await f.service.syncNow()
     const id = messageIdOf('a1', 'inbox', second.uid)
-    await f.service.change({ operation: 'reply', id, body: '了解です。' }, f.signal.signal, 'screen')
+    await replyFromReader(f, id, '了解です。')
     expect(f.outgoing()).toMatchObject({ inReplyTo: '<p2@x>', references: ['<root@x>', '<p1@x>', '<p2@x>'] })
     // The thread the sync puts the sent copy in, from the headers the reply carries.
     const replyThread = threadIdOf({ messageId: '<sent-1@me>', inReplyTo: f.outgoing().inReplyTo ?? '', references: f.outgoing().references ?? [], fallback: 'x' })

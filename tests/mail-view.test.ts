@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings } from '@shared/settings'
 import type { MailListQuery, MailMessage } from '@shared/mail'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { MailView } from '../src/renderer/src/ui/mail/MailView'
 import { useMailStore, useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
-import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES, demoMailStatus } from '../src/renderer/src/demo/fixtures/mail'
+import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from '../src/renderer/src/demo/fixtures/mail'
 
 const t = createTranslator('ja-JP')
 const inbox = (): MailMessage[] => DEMO_MAIL_MESSAGES.filter((m) => m.folder === 'inbox').sort((a, b) => b.date - a.date)
@@ -24,6 +25,8 @@ const api = {
   mailThread: vi.fn(async (accountId: string, threadId: string) => DEMO_MAIL_MESSAGES.filter((m) => m.accountId === accountId && m.threadId === threadId).sort((a, b) => a.date - b.date)),
   mailRead: vi.fn(async (id: string) => ({ message: DEMO_MAIL_MESSAGES.find((m) => m.id === id)!, text: DEMO_MAIL_BODIES.get(id) ?? '' })),
   mailChange: vi.fn(async (change: { operation: string }) => ({ saved: true, operation: change.operation, id: 'x', summary: '済み' })),
+  mailReplySettle: vi.fn(async (id: string, replyAll: boolean) => demoReplyOf(DEMO_MAIL_MESSAGES.find((m) => m.id === id)!, replyAll)),
+  mailReplySend: vi.fn(async () => ({ saved: true, operation: 'reply', id: '<x>', summary: '済み' })),
   mailStatus: vi.fn(async () => demoMailStatus(DEMO_MAIL_MESSAGES)),
   mailSyncNow: vi.fn(async () => {}),
   mailDraftList: vi.fn(async () => DEMO_MAIL_DRAFTS),
@@ -149,11 +152,52 @@ describe('reading', () => {
     expect(reader.querySelector('.ml-message[data-open] .ml-text')?.textContent).toContain('火曜 14時か水曜 10時')
     await act(async () => [...reader.querySelectorAll<HTMLButtonElement>('.ml-actions .cal-btn')].find((el) => el.textContent?.includes(t('mail.reply')))!.click())
     const form = reader.querySelector<HTMLFormElement>('.ml-reply')!
+    expect(api.mailReplySettle).toHaveBeenCalledWith(first.id, false)
     await act(async () => setValue(form.querySelector('textarea')!, '火曜 14時でお願いします。'))
     await act(async () => form.requestSubmit())
-    expect(api.mailChange).toHaveBeenCalledWith({ operation: 'reply', id: first.id, body: '火曜 14時でお願いします。', replyAll: false })
+    expect(api.mailReplySend).toHaveBeenCalledWith({ reply: demoReplyOf(first, false), body: '火曜 14時でお願いします。' })
+    expect(api.mailChange).not.toHaveBeenCalledWith(expect.objectContaining({ operation: 'reply' }))
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'ok', title: t('mail.done.reply') })
     expect(reader.querySelector('.ml-reply')).toBeNull()
+  })
+
+  it('shows in the reply form the To and Cc main settled, keeps them in step with a switch to reply-all, and sends that same reply', async () => {
+    const view = await render()
+    const withReplyTo = inbox()[1]
+    await act(async () => view.querySelectorAll<HTMLButtonElement>('.ml-row-main')[1].click())
+    await act(async () => {})
+    const reader = view.querySelector('.ml-reader')!
+    const button = (key: 'mail.reply' | 'mail.replyAll'): HTMLButtonElement => [...reader.querySelectorAll<HTMLButtonElement>('.ml-actions .cal-btn')].find((el) => el.textContent?.trim() === t(key))!
+    let answerReply!: (reply: ReturnType<typeof demoReplyOf>) => void
+    api.mailReplySettle.mockImplementationOnce(() => new Promise((resolve) => (answerReply = resolve)))
+    await act(async () => button('mail.reply').click())
+    const form = reader.querySelector<HTMLFormElement>('.ml-reply')!
+    const send = (): HTMLButtonElement => form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    expect(form.querySelectorAll('.ml-static')).toHaveLength(0)
+    await act(async () => setValue(form.querySelector('textarea')!, '9/25(木) でお願いします。'))
+    expect(send().disabled).toBe(true)
+    await act(async () => button('mail.replyAll').click())
+    // The answer for plain reply arrives after the switch and is dropped, so the form keeps the reply-all it shows.
+    await act(async () => answerReply(demoReplyOf(withReplyTo, false)))
+    const shown = [...form.querySelectorAll('.ml-static')].map((field) => field.textContent)
+    expect(shown).toEqual(['採用チーム <recruiting@example.co.jp>', '田中 誠 <tanaka@example.co.jp>'])
+    expect(form.querySelector('textarea')!.value).toBe('9/25(木) でお願いします。')
+    await act(async () => form.requestSubmit())
+    expect(api.mailReplySend).toHaveBeenCalledWith({ reply: demoReplyOf(withReplyTo, true), body: '9/25(木) でお願いします。' })
+  })
+
+  it('says why a reply cannot be settled and keeps the send button off', async () => {
+    api.mailReplySettle.mockRejectedValueOnce(new Error(errorText('mail.errors.account.off')))
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click())
+    await act(async () => {})
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.ml-actions .cal-btn')].find((el) => el.textContent?.trim() === t('mail.reply'))!.click())
+    const form = view.querySelector<HTMLFormElement>('.ml-reply')!
+    await act(async () => setValue(form.querySelector('textarea')!, '了解です。'))
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe(t('mail.errors.account.off'))
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true)
+    await act(async () => form.requestSubmit())
+    expect(api.mailReplySend).not.toHaveBeenCalled()
   })
 
   it('closes the reader after an archive and keeps it open when the confirmation is cancelled', async () => {
