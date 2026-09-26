@@ -159,7 +159,7 @@ export const settingsModels = defineMessages({
       'es-ES': 'Whisper en el navegador'
     },
     browserWhisperHint: {
-      'ja-JP': 'このパソコンの音声認識が止まったときに、代わりに使います。',
+      'ja-JP': 'このコンピュータの音声認識が止まったときに、代わりに使います。',
       'en-US': 'Takes over when speech recognition on this computer stops.',
       'fr-FR': "Prend le relais quand la reconnaissance vocale de cet ordinateur s'arrête.",
       'de-DE': 'Springt ein, wenn die Spracherkennung auf diesem Computer stehen bleibt.',
@@ -252,7 +252,7 @@ export const settingsModels = defineMessages({
       'es-ES': 'No hace falta ninguna aplicación más.'
     },
     qwen: {
-      'ja-JP': '{model} をこのパソコン上で動かします。音声認識と共有の実行環境とモデル(約 1.9GB)を取得します。常駐中は約 2GB のメモリを使うので、16GB 以上のパソコンに向きます。',
+      'ja-JP': '{model} をこのコンピュータ上で動かします。音声認識と共有の実行環境とモデル(約 1.9GB)を取得します。常駐中は約 2GB のメモリを使うので、16GB 以上のコンピュータに向きます。',
       'en-US': '{model} runs on this computer. Downloads the model (about 1.9 GB) and the runtime it shares with speech recognition. It holds about 2 GB of memory while resident, so it suits a computer with 16 GB or more.',
       'fr-FR': "{model} tourne sur cet ordinateur. Télécharge le modèle (environ 1,9 Go) et l'environnement d'exécution qu'il partage avec la reconnaissance vocale. Il occupe environ 2 Go de mémoire tant qu'il reste chargé, ce qui convient à un ordinateur de 16 Go ou plus.",
       'de-DE': '{model} läuft auf diesem Computer. Lädt das Modell (rund 1,9 GB) und die Laufzeitumgebung, die es mit der Spracherkennung teilt. Solange es im Speicher bleibt, belegt es rund 2 GB und passt damit zu einem Computer mit 16 GB oder mehr.',
@@ -279,7 +279,7 @@ export const settingsModels = defineMessages({
         'es-ES': '{model} se ejecuta en este Mac. Descarga el modelo (unos 1,9 GB) y el entorno de ejecución que comparte con el reconocimiento de voz. Mientras está residente ocupa unos 2 GB de memoria. Este Mac tiene menos de 16 GB, así que le van mejor VOICEVOX o la voz de macOS.'
       },
       windows: {
-        'ja-JP': '{model} をこのパソコン上で動かします。音声認識と共有の実行環境とモデル(約 1.9GB)を取得します。常駐中は約 2GB のメモリを使います。このパソコンはメモリが 16GB 未満なので、VOICEVOX か Windows の音声合成を勧めます。',
+        'ja-JP': '{model} をこのコンピュータ上で動かします。音声認識と共有の実行環境とモデル(約 1.9GB)を取得します。常駐中は約 2GB のメモリを使います。このコンピュータはメモリが 16GB 未満なので、VOICEVOX か Windows の音声合成を勧めます。',
         'en-US': '{model} runs on this computer. Downloads the model (about 1.9 GB) and the runtime it shares with speech recognition. It holds about 2 GB of memory while resident. This computer has less than 16 GB of memory, so VOICEVOX or the Windows voice suits it better.',
         'fr-FR': "{model} tourne sur cet ordinateur. Télécharge le modèle (environ 1,9 Go) et l'environnement d'exécution qu'il partage avec la reconnaissance vocale. Il occupe environ 2 Go de mémoire tant qu'il reste chargé. Cet ordinateur a moins de 16 Go de mémoire : VOICEVOX ou la voix de Windows lui conviennent mieux.",
         'de-DE': '{model} läuft auf diesem Computer. Lädt das Modell (rund 1,9 GB) und die Laufzeitumgebung, die es mit der Spracherkennung teilt. Solange es im Speicher bleibt, belegt es rund 2 GB. Dieser Computer hat weniger als 16 GB Arbeitsspeicher, deshalb passen VOICEVOX oder die Windows-Stimme besser.',
@@ -388,7 +388,7 @@ export const settingsModels = defineMessages({
       'es-ES': 'Detectada'
     },
     description: {
-      'ja-JP': '{engine} の CLI をこのパソコンにインストールして、認証しておきます。ジョブと記憶の整理で使います。',
+      'ja-JP': '{engine} の CLI をこのコンピュータにインストールして、認証しておきます。ジョブと記憶の整理で使います。',
       'en-US': 'Install the {engine} CLI on this computer and sign in to it. It runs jobs and organizes the memory.',
       'fr-FR': 'Installez le CLI {engine} sur cet ordinateur et connectez-vous. Il exécute les jobs et organise la mémoire.',
       'de-DE': 'Installieren Sie die CLI von {engine} auf diesem Computer und melden Sie sich darin an. Sie führt die Jobs aus und pflegt das Gedächtnis.',
@@ -606,7 +606,7 @@ export const settingsModels = defineMessages({
   },
   preparation: {
     unsupported: {
-      'ja-JP': '{feature}はこのパソコンでは使えません。',
+      'ja-JP': '{feature}はこのコンピュータでは使えません。',
       'en-US': "{feature} doesn't run on this computer.",
       'fr-FR': '{feature} ne fonctionne pas sur cet ordinateur.',
       'de-DE': '{feature} läuft auf diesem Computer nicht.',

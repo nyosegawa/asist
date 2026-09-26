@@ -218,7 +218,7 @@ export const setup = defineMessages({
         'es-ES': 'Escuchar'
       },
       lead: {
-        'ja-JP': '声を文字にするモデルを、このパソコンに準備します。',
+        'ja-JP': '声を文字にするモデルを、このコンピュータに準備します。',
         'en-US': 'Prepare the model that turns your voice into text on this computer.',
         'fr-FR': 'Préparez sur cet ordinateur le modèle qui met votre voix en texte.',
         'de-DE': 'Bereiten Sie auf diesem Computer das Modell vor, das Ihre Stimme in Text verwandelt.',
@@ -1015,7 +1015,7 @@ export const setup = defineMessages({
       }
     },
     keyStoredNote: {
-      'ja-JP': 'キーは実際に {provider} へ問い合わせて、使えると分かったときだけこのパソコンに保存します。',
+      'ja-JP': 'キーは実際に {provider} へ問い合わせて、使えると分かったときだけこのコンピュータに保存します。',
       'en-US': 'The key is tried against {provider} and stored on this computer only once it is known to work.',
       'fr-FR': "La clé est essayée auprès de {provider} et n'est enregistrée sur cet ordinateur qu'une fois qu'elle s'avère utilisable.",
       'de-DE': 'Der Schlüssel wird bei {provider} ausprobiert und erst dann auf diesem Computer gespeichert, wenn feststeht, dass er funktioniert.',
@@ -1155,7 +1155,7 @@ export const setup = defineMessages({
       'es-ES': '{model} (recomendado)'
     },
     unknownModel: {
-      'ja-JP': 'このパソコンに合わせた音声認識',
+      'ja-JP': 'このコンピュータに合わせた音声認識',
       'en-US': 'Speech recognition suited to this computer',
       'fr-FR': 'Reconnaissance vocale adaptée à cet ordinateur',
       'de-DE': 'Spracherkennung, die zu diesem Computer passt',
@@ -1396,7 +1396,7 @@ export const setup = defineMessages({
         'es-ES': 'Este Mac no tiene una voz en {language}. Añade una en Ajustes del Sistema > Accesibilidad > Contenido hablado.'
       },
       windows: {
-        'ja-JP': 'このパソコンに{language}の声が入っていません。Windows の設定 > 時刻と言語 で追加してください。',
+        'ja-JP': 'このコンピュータに{language}の声が入っていません。Windows の設定 > 時刻と言語 で追加してください。',
         'en-US': 'This computer has no {language} voice. Add one in Windows Settings > Time & language.',
         'fr-FR': "Cet ordinateur n'a aucune voix en {language}. Ajoutez-en une dans Paramètres Windows > Heure et langue.",
         'de-DE': 'Auf diesem Computer fehlt eine Stimme für {language}. Fügen Sie eine unter Windows-Einstellungen > Zeit und Sprache hinzu.',
@@ -1455,7 +1455,7 @@ export const setup = defineMessages({
       },
       qwen3tts: {
         detail: {
-          'ja-JP': '文を作りながら読み始めます。モデル(約 1.9GB)をこのパソコンに取得して動かし、動いている間は約 2GB のメモリを使います。',
+          'ja-JP': '文を作りながら読み始めます。モデル(約 1.9GB)をこのコンピュータに取得して動かし、動いている間は約 2GB のメモリを使います。',
           'en-US': 'Starts reading while the sentence is still being generated. The model (about 1.9 GB) is downloaded and run on this computer, and uses about 2 GB of memory while it runs.',
           'fr-FR': "Commence à lire pendant que la phrase s'écrit encore. Le modèle (environ 1,9 Go) est téléchargé et exécuté sur cet ordinateur, et occupe environ 2 Go de mémoire pendant son fonctionnement.",
           'de-DE': 'Beginnt zu lesen, während der Satz noch entsteht. Das Modell (rund 1,9 GB) wird auf diesen Computer geladen und läuft hier; solange es läuft, belegt es rund 2 GB Arbeitsspeicher.',

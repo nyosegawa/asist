@@ -220,7 +220,7 @@ export const settingsVoice = defineMessages({
     },
     engines: {
       qwen3tts: {
-        'ja-JP': 'Qwen3-TTS(このパソコン上で実行)',
+        'ja-JP': 'Qwen3-TTS(このコンピュータ上で実行)',
         'en-US': 'Qwen3-TTS (runs on this computer)',
         'fr-FR': 'Qwen3-TTS (tourne sur cet ordinateur)',
         'de-DE': 'Qwen3-TTS (läuft auf diesem Computer)',
@@ -366,7 +366,7 @@ export const settingsVoice = defineMessages({
       'es-ES': 'Reconocimiento de voz'
     },
     description: {
-      'ja-JP': 'このパソコン上で動かします。',
+      'ja-JP': 'このコンピュータ上で動かします。',
       'en-US': 'Runs on this computer.',
       'fr-FR': 'Tourne sur cet ordinateur.',
       'de-DE': 'Läuft auf diesem Computer.',
@@ -496,7 +496,7 @@ export const settingsVoice = defineMessages({
       'es-ES': 'Whisper en el navegador'
     },
     browserWhisperOn: {
-      'ja-JP': 'このパソコンの音声認識が止まったとき、ブラウザ内の Whisper に切り替えて認識を続けます。',
+      'ja-JP': 'このコンピュータの音声認識が止まったとき、ブラウザ内の Whisper に切り替えて認識を続けます。',
       'en-US': 'When speech recognition on this computer stops, recognition continues with Whisper in the browser.',
       'fr-FR': "Quand la reconnaissance vocale de cet ordinateur s'arrête, la reconnaissance continue avec Whisper dans le navigateur.",
       'de-DE': 'Bleibt die Spracherkennung auf diesem Computer stehen, läuft die Erkennung mit Whisper im Browser weiter.',
@@ -509,7 +509,7 @@ export const settingsVoice = defineMessages({
       'es-ES': 'Cuando el reconocimiento de voz de este ordenador se detiene, el reconocimiento continúa con Whisper en el navegador.'
     },
     browserWhisperOff: {
-      'ja-JP': '準備しておくと、このパソコンの音声認識が止まったときに代わりに使います。',
+      'ja-JP': '準備しておくと、このコンピュータの音声認識が止まったときに代わりに使います。',
       'en-US': 'Once prepared, it takes over when speech recognition on this computer stops.',
       'fr-FR': "Une fois préparé, il prend le relais quand la reconnaissance vocale de cet ordinateur s'arrête.",
       'de-DE': 'Einmal vorbereitet, springt es ein, wenn die Spracherkennung auf diesem Computer stehen bleibt.',

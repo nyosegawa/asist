@@ -155,7 +155,7 @@ export const app = defineMessages({
       'es-ES': 'El trabajo ha fallado'
     },
     unsupported: {
-      'ja-JP': 'このパソコンでは通知を出せません。',
+      'ja-JP': 'このコンピュータでは通知を出せません。',
       'en-US': "This computer can't show notifications.",
       'fr-FR': 'Cet ordinateur ne peut pas afficher de notification.',
       'de-DE': 'Dieser Computer kann keine Mitteilungen anzeigen.',

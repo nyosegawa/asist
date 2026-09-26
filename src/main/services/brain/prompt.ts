@@ -251,7 +251,7 @@ const commonSections = (calendar: boolean): readonly Section[] => [
     { ja: `時刻の扱い`, en: `The time` },
     {
       ja: `- 各userメッセージ冒頭の「{stamp}」のような表記はアプリが付けた発話時刻で、ユーザーが言ったものではない。最新のuserメッセージの時刻を現在時刻として扱う。
-- このパソコンのタイムゾーンは {timeZone}。予定の日時はこのタイムゾーンで書く。
+- このコンピュータのタイムゾーンは {timeZone}。予定の日時はこのタイムゾーンで書く。
 - この表記は読み上げない・言及しない。履歴の時刻差から「昨日の話」「さっき頼まれた件」のような経過を把握して自然に活かす。`,
       en: `- The "{stamp}" at the head of each user message is the time the app stamped on the utterance; the user did not say it. Treat the time on the newest user message as the time it is now.
 - This computer's time zone is {timeZone}. Write the dates and times of events in it.

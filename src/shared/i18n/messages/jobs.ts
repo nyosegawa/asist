@@ -1880,7 +1880,7 @@ export const jobs = defineMessages({
       'es-ES': 'Instrucción para el agente'
     },
     warning: {
-      'ja-JP': 'ジョブはあなたの権限で動き、このパソコンのファイルを読めます。頼んだ覚えのない指示なら、キャンセルしてください。',
+      'ja-JP': 'ジョブはあなたの権限で動き、このコンピュータのファイルを読めます。頼んだ覚えのない指示なら、キャンセルしてください。',
       'en-US': 'The job runs with your permissions and can read the files on this computer. If you did not ask for this, cancel it.',
       'fr-FR': "Le job s'exécute avec vos droits et peut lire les fichiers de cet ordinateur. Si vous ne l'avez pas demandé, annulez-le.",
       'de-DE': 'Der Job läuft mit Ihren Rechten und kann die Dateien auf diesem Computer lesen. Wenn Sie ihn nicht angefordert haben, brechen Sie ab.',

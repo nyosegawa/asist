@@ -6,7 +6,7 @@ export const voiceEngines = defineMessages({
     // The three parts are named as briefly as the row allows: a longer label widens the select and
     // squeezes the hint beside it into one word per line.
     label: {
-      'ja-JP': 'このパソコンの音声認識 + 会話モデル + 読み上げ',
+      'ja-JP': 'このコンピュータの音声認識 + 会話モデル + 読み上げ',
       'en-US': 'Speech recognition on this computer + model + speech',
       'fr-FR': 'Reconnaissance vocale de cet ordinateur + modèle + synthèse vocale',
       'de-DE': 'Spracherkennung auf diesem Computer + Modell + Sprachausgabe',
@@ -19,7 +19,7 @@ export const voiceEngines = defineMessages({
       'es-ES': 'Reconocimiento de voz en este ordenador + modelo + lectura'
     },
     hint: {
-      'ja-JP': 'このパソコンの音声認識が文字にして、会話モデルが答え、「声」で選んだエンジンが読み上げます。相槌と割り込みは ASIST が判断します。',
+      'ja-JP': 'このコンピュータの音声認識が文字にして、会話モデルが答え、「声」で選んだエンジンが読み上げます。相槌と割り込みは ASIST が判断します。',
       'en-US': 'This computer turns your speech into text, the conversation model answers, and the engine chosen on the Voice page reads the reply. ASIST decides the backchannels and the interruptions.',
       'fr-FR': 'La reconnaissance vocale de cet ordinateur met vos paroles en texte, le modèle de conversation répond, et le moteur choisi sur la page Voix lit la réponse. ASIST décide des acquiescements et des interruptions.',
       'de-DE': 'Dieser Computer wandelt Ihre Sprache in Text um, das Gesprächsmodell antwortet, und die unter „Stimme“ gewählte Engine liest die Antwort vor. Über Hörersignale und Unterbrechungen entscheidet ASIST.',

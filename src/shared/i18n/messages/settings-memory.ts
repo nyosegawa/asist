@@ -42,7 +42,7 @@ export const settingsMemory = defineMessages({
       'es-ES': 'Búsqueda semántica'
     },
     description: {
-      'ja-JP': '言い方が違っても記憶を引けるように、話した内容と記憶をこのパソコン上のモデル(multilingual-e5 small)で比べます。',
+      'ja-JP': '言い方が違っても記憶を引けるように、話した内容と記憶をこのコンピュータ上のモデル(multilingual-e5 small)で比べます。',
       'en-US': 'Compares what you say with your memories using a model on this computer (multilingual-e5 small), so a memory is found even when you word it differently.',
       'fr-FR': "Compare ce que vous dites avec vos souvenirs à l'aide d'un modèle installé sur cet ordinateur (multilingual-e5 small), pour retrouver un souvenir même formulé autrement.",
       'de-DE': 'Vergleicht das Gesagte mit Ihren Erinnerungen über ein Modell auf diesem Computer (multilingual-e5 small), damit eine Erinnerung auch bei anderer Formulierung gefunden wird.',

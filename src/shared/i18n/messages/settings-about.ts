@@ -73,7 +73,7 @@ export const settingsAbout = defineMessages({
   },
   local: {
     title: {
-      'ja-JP': 'このパソコンで動くモデル',
+      'ja-JP': 'このコンピュータで動くモデル',
       'en-US': 'Models that run on this computer',
       'fr-FR': 'Modèles qui tournent sur cet ordinateur',
       'de-DE': 'Modelle, die auf diesem Computer laufen',
@@ -86,7 +86,7 @@ export const settingsAbout = defineMessages({
       'es-ES': 'Modelos que se ejecutan en este ordenador'
     },
     description: {
-      'ja-JP': 'どれもこのパソコンの中だけで動きます。音声も文も外へ送りません。',
+      'ja-JP': 'どれもこのコンピュータの中だけで動きます。音声も文も外へ送りません。',
       'en-US': 'They all run on this computer alone. No audio and no text leaves it.',
       'fr-FR': 'Tous fonctionnent uniquement sur cet ordinateur. Aucun son ni texte n’en sort.',
       'de-DE': 'Sie laufen alle nur auf diesem Computer. Weder Ton noch Text verlässt ihn.',
@@ -551,7 +551,7 @@ export const settingsAbout = defineMessages({
       'es-ES': 'Lista de los municipios'
     },
     uv: {
-      'ja-JP': 'このパソコンで動かすモデルの Python 環境の準備',
+      'ja-JP': 'このコンピュータで動かすモデルの Python 環境の準備',
       'en-US': 'Preparing the Python environments of the models that run on this computer',
       'fr-FR': 'Préparation des environnements Python des modèles exécutés sur cet ordinateur',
       'de-DE': 'Vorbereitung der Python-Umgebungen für die Modelle auf diesem Computer',

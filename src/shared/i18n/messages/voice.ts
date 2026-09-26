@@ -194,7 +194,7 @@ export const voice = defineMessages({
         'es-ES': 'Este Mac no puede usar la voz de macOS. Elige otro motor de lectura en la página “Voz” de Ajustes.'
       },
       windows: {
-        'ja-JP': 'このパソコンでは Windows の音声合成を使えません。設定の「声」でほかの読み上げを選んでください。',
+        'ja-JP': 'このコンピュータでは Windows の音声合成を使えません。設定の「声」でほかの読み上げを選んでください。',
         'en-US': "This computer can't use the Windows voice. Choose another speech engine on the Voice page in Settings.",
         'fr-FR': 'Cet ordinateur ne peut pas utiliser la voix de Windows. Choisissez un autre moteur de synthèse vocale sur la page Voix des réglages.',
         'de-DE': 'Dieser Computer kann die Windows-Stimme nicht verwenden. Wählen Sie auf der Seite „Stimme“ in den Einstellungen eine andere Engine für die Sprachausgabe.',
@@ -344,7 +344,7 @@ export const voice = defineMessages({
       }
     },
     unsupported: {
-      'ja-JP': 'このパソコンではマイクを使えません。',
+      'ja-JP': 'このコンピュータではマイクを使えません。',
       'en-US': "This computer can't use a microphone.",
       'fr-FR': 'Cet ordinateur ne peut pas utiliser de microphone.',
       'de-DE': 'Dieser Computer kann kein Mikrofon verwenden.',

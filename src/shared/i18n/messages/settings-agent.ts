@@ -29,7 +29,7 @@ export const settingsAgent = defineMessages({
       'es-ES': 'Motor y permisos'
     },
     description: {
-      'ja-JP': 'Codex は codex exec、Claude Code は claude -p で実行します。このパソコンに入っている CLI と認証をそのまま使います。',
+      'ja-JP': 'Codex は codex exec、Claude Code は claude -p で実行します。このコンピュータに入っている CLI と認証をそのまま使います。',
       'en-US': 'Codex runs with codex exec and Claude Code with claude -p, using the CLI and the sign-in already on this computer.',
       'fr-FR': "Codex s'exécute avec codex exec et Claude Code avec claude -p, en se servant du CLI et de la connexion déjà présents sur cet ordinateur.",
       'de-DE': 'Codex läuft mit codex exec, Claude Code mit claude -p, und zwar mit der CLI und der Anmeldung, die schon auf diesem Computer liegen.',

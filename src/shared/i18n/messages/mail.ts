@@ -1484,7 +1484,7 @@ export const mail = defineMessages({
         'es-ES': 'No se ha podido leer la contraseña guardada. Vuelve a introducirla en los ajustes.'
       },
       encryptionUnavailable: {
-        'ja-JP': 'このパソコンではパスワードを暗号化して保存できません。',
+        'ja-JP': 'このコンピュータではパスワードを暗号化して保存できません。',
         'en-US': "This computer can't store a password encrypted.",
         'fr-FR': 'Cet ordinateur ne peut pas enregistrer un mot de passe chiffré.',
         'de-DE': 'Dieser Computer kann ein Passwort nicht verschlüsselt ablegen.',

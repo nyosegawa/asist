@@ -240,7 +240,7 @@ export const settingsIntegrations = defineMessages({
     },
     errors: {
       encryptionUnavailable: {
-        'ja-JP': 'このパソコンでは API キーを暗号化して保存できません。',
+        'ja-JP': 'このコンピュータでは API キーを暗号化して保存できません。',
         'en-US': "This computer can't store an API key encrypted.",
         'fr-FR': 'Cet ordinateur ne peut pas enregistrer une clé API chiffrée.',
         'de-DE': 'Dieser Computer kann einen API-Schlüssel nicht verschlüsselt ablegen.',

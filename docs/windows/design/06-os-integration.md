@@ -69,7 +69,7 @@
   - 会話のモデルへの文(`brain/prompt.ts:238,241` の「この Mac のタイムゾーン」)
 - **書き分けの方針。**
   - **OS の部品の名前を出すもの**(Finder とエクスプローラー、システム設定と Windows の設定、`~/Library/Logs` と `%APPDATA%\ASIST\logs`)は、OS ごとのキーを作ります。renderer は capabilities の `os` で選び、main はプロセスの OS で選びます。
-  - **「この Mac」のように機械を指すだけのもの**は、OS に依らない言い方にします。例えば「このパソコン」「this computer」です。
+  - **「この Mac」のように機械を指すだけのもの**は、OS に依らない言い方にします。例えば「このコンピュータ」「this computer」です。
   - **モデルへの文**は、`PromptText` の `{ ja, en }` を OS に依らない言い方にします。
 - **進め方。** `ui-text` スキルに従い、11言語を同じ変更で直し、`npm run i18n -- check` と `demo:fit` で確かめます。
 

@@ -745,7 +745,7 @@ export const cardsTime = defineMessages({
         'es-ES': 'Ya hay un temporizador con este id en marcha con otros ajustes.'
       },
       clockInvalid: {
-        'ja-JP': 'タイマーを作れません。パソコンの時計が正しい時刻を返していません。',
+        'ja-JP': 'タイマーを作れません。コンピュータの時計が正しい時刻を返していません。',
         'en-US': "Couldn't create the timer. The clock on your computer is not returning a valid time.",
         'fr-FR': "Impossible de créer le minuteur. L'horloge de votre ordinateur ne renvoie pas une heure valable.",
         'de-DE': 'Der Timer ließ sich nicht anlegen. Die Uhr Ihres Computers gibt keine gültige Zeit zurück.',
