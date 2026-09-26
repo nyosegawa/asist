@@ -1,0 +1,9 @@
+Image 1: character reference. Draw exactly this girl.
+Image 2: style reference only (material, colors, lighting).
+
+Use: a cut-out character for the opening of an animated promo video, where she talks to her voice assistant.
+Subject: the girl from Image 1, from the waist up, turned three-quarters toward the viewer's right, talking cheerfully with her mouth open in a small happy "o", one hand raised beside her face with the palm open as if calling out "hey!". Keep the exact design: navy-blue bob haircut with turquoise-cyan tips, lavender over-ear headphones, black bead eyes, pink cheeks, a light-blue hoodie with a navy arch-shaped "A" emblem on the chest.
+Scene: none, isolated character on a transparent background, no ground, no desk, no laptop, no cast shadow.
+Style: soft 3D clay-and-felt miniature exactly like the references: matte felt texture with fine fibers, rounded chunky shapes, pastel palette, soft studio light from the upper left, gentle ambient occlusion, cute and friendly.
+Composition: waist-up portrait, the figure fills about two thirds of the frame height, bottom edge cut cleanly at the waist, generous empty margin at the top and sides.
+Avoid: text, speech bubbles, extra characters, the robot, background objects, outlines, drop shadows.
