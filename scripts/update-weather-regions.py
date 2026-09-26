@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections import Counter
 import re
 import sys
 import urllib.request
@@ -24,8 +25,17 @@ municipalities = []
 for pref, pref_name, code, name in re.findall(r"=\s*'(\d+),([^,]+),(\d+),([^']+)';", raw['muni.js'].decode()):
     municipalities.append({'code': code.zfill(5), 'name': name.replace('　', ''), 'prefecture': pref_name, 'prefectureId': ids[int(pref)-1]})
 by_name = {(m['prefectureId'], m['name']): m for m in municipalities}
+codes = {m['code'] for m in municipalities}
+# The villages of the Northern Territories have no forecast area of the Japan Meteorological Agency.
+# They are checked before any search by name, which would give 泊村 among them the area and the code
+# of 古宇郡泊村.
+northern_territories = {'01695', '01696', '01697', '01698', '01699', '01700'}
 missing = []
+aliases = []
 for m in municipalities:
+    if m['code'] in northern_territories:
+        m['unavailable'] = 'この市区町村に対応する気象庁の予報区域がありません。'
+        continue
     subareas = sorted(k for k in area['class20s'] if k[:5] == m['code'])
     if not subareas and '市' in m['name']:
         parent = by_name.get((m['prefectureId'], m['name'].split('市')[0] + '市'))
@@ -33,13 +43,15 @@ for m in municipalities:
             subareas = sorted(k for k in area['class20s'] if k[:5] == parent['code'])
     if not subareas:
         subareas = sorted(k for k,v in area['class20s'].items() if k[:2] == m['code'][:2] and v['name'].startswith(m['name']))
-    if not subareas and m['code'] in {'01695','01696','01697','01698','01699','01700'}:
-        m['unavailable'] = 'この市区町村に対応する気象庁の予報区域がありません。'
-        continue
     if not subareas:
         missing.append(m); continue
     chosen = subareas[0]
-    if area['class20s'][chosen]['name'] == m['name']:
+    if area['class20s'][chosen]['name'] == m['name'] and chosen[:5] != m['code']:
+        # muni.js keeps some municipalities under an older code as well, as it keeps 富谷市 under 04423,
+        # the code of 富谷町. When another entry already carries the code found here, this one is that
+        # municipality again and is left out.
+        if chosen[:5] in codes:
+            aliases.append(m); continue
         m['code'] = chosen[:5]
     class15 = area['class20s'][chosen]['parent']
     class10 = area['class15s'][class15]['parent']
@@ -52,6 +64,11 @@ for m in municipalities:
               'stationId': station, 'stationName': stations[station]['kjName'], 'representativeArea': len(subareas)>1})
 if missing:
     print(json.dumps(missing, ensure_ascii=False)); raise SystemExit('Unmapped municipalities')
+municipalities = [m for m in municipalities if not any(m is alias for alias in aliases)]
+shared = sorted(code for code, count in Counter(m['code'] for m in municipalities).items() if count > 1)
+if shared:
+    raise SystemExit(f'Municipalities sharing a code: {shared}')
+by_name = {(m['prefectureId'], m['name']): m for m in municipalities}
 prefectures = []
 for i, (id, capital) in enumerate(zip(ids, capitals)):
     m = by_name[(id, capital)]

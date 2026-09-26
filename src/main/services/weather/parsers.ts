@@ -1,3 +1,4 @@
+import { errorText } from '@shared/i18n/error-text'
 import type {
   JmaWeatherLocation,
   WeatherCondition,
@@ -14,14 +15,18 @@ export const numeric = (value: unknown): number | null =>
     ? Number(value)
     : null
 
+/**
+ * The icons of a sky the Japan Meteorological Agency writes in words. Fog has no icon of its own and is
+ * drawn as cloud, as Open-Meteo's fog is; code 209 is 霧 alone and would otherwise read as no sky at all.
+ */
 export function condition(label: string): WeatherCondition | null {
   const found: WeatherIcon[] = []
-  const pattern = /晴|くもり|曇|雨|雪|雷/g
+  const pattern = /晴|くもり|曇|霧|雨|雪|雷/g
   for (const match of label.matchAll(pattern)) {
     const icon: WeatherIcon =
       match[0] === '晴'
         ? 'clear'
-        : /くもり|曇/.test(match[0])
+        : /くもり|曇|霧/.test(match[0])
           ? 'cloudy'
           : match[0] === '雨'
             ? 'rain'
@@ -62,7 +67,7 @@ export function parseForecast(
   target: string
 ): Pick<WeatherData, 'day' | 'daily' | 'precipitationPeriods'> {
   const short = data[0]
-  if (!short?.timeSeries) throw new Error('短期予報の形式が不正です')
+  if (!short?.timeSeries) throw new Error(errorText('cardsWeather.errors.badData'))
   const day = emptyDay(target)
   const precipitationPeriods: WeatherData['precipitationPeriods'] = []
   for (const series of short.timeSeries) {
@@ -134,10 +139,11 @@ export function parseHourly(
 ): Pick<WeatherData, 'hourly' | 'temperaturePoint'> {
   const area = data.areaTimeSeries
   const point = data.pointTimeSeries
-  if (!area?.timeDefines || !point?.timeDefines) throw new Error('3時間予報の形式が不正です')
+  if (!area?.timeDefines || !point?.timeDefines) throw new Error(errorText('cardsWeather.errors.badData'))
   const hourly = area.timeDefines.flatMap((time, i) => {
     if (time.dateTime.slice(0, 10) !== target) return []
-    if (time.duration !== 'PT3H') throw new Error(`未対応の予報間隔です: ${time.duration}`)
+    // The card lays the hours out in columns of three, so another interval is data it cannot read.
+    if (time.duration !== 'PT3H') throw new Error(errorText('cardsWeather.errors.badData'))
     const ti = point.timeDefines.findIndex(
       (p) => Date.parse(p.dateTime) === Date.parse(time.dateTime)
     )

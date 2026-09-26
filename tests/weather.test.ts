@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { errorText } from '../src/shared/i18n/error-text'
 import { WMO_WEATHER, weatherCardKey, weatherInputSchema, wmoCondition } from '../src/shared/weather'
 import { resolveWeatherLocation, weeklyCandidates } from '../src/main/services/weather/locations'
 import {
@@ -55,6 +56,17 @@ describe('resolving a weather location', () => {
     expect(resolve('神戸市').prefectureId).toBe('hyogo')
     expect(resolve('釧路市').usedRepresentative).toBe(true)
   })
+  it('gives no two municipalities the same code', () => {
+    const codes = regions.municipalities.map((place) => place.code)
+    expect(codes.filter((code, i) => codes.indexOf(code) !== i)).toEqual([])
+  })
+  it('resolves a municipality listed once, and a name shared with a place without a forecast to the place with one', () => {
+    expect(resolve('宮城県富谷市').municipalityCode).toBe('04216')
+    // 国後郡泊村 has no forecast area, so 泊村 is 古宇郡泊村.
+    expect(resolve('北海道泊村').municipalityCode).toBe('01403')
+    expect(resolve('泊村').municipalityCode).toBe('01403')
+    expect(resolveWeatherLocation('色丹村')).toMatchObject({ status: 'location_unavailable' })
+  })
 })
 describe('weather codes', () => {
   it('has a word and icons of the existing set for every code, and treats an unknown code as missing', () => {
@@ -87,6 +99,20 @@ describe('Japan Meteorological Agency data', () => {
     expect(w.day.condition?.icons).toContain('rain')
     expect(w.day.min).toBe(21)
     expect(w.daily[0].percent).toBeNull()
+  })
+  it('reads fog as a sky of its own rather than as a missing one', () => {
+    const location = resolve('東京都')
+    const fog = structuredClone(forecast)
+    const series = fog[0].timeSeries.find((s) => s.areas.some((a) => 'weatherCodes' in a))!
+    const area = series.areas.find((a) => a.area.code === location.forecastAreaCode) as { weatherCodes: string[] }
+    area.weatherCodes = area.weatherCodes.map(() => '209')
+    expect(parseForecast(fog, location, '2026-09-16').day.condition).toMatchObject({ label: '霧', icons: ['cloudy'] })
+  })
+  it('reports data it cannot read as such, in the language of whoever reads it', () => {
+    expect(() => parseForecast([] as never, resolve('東京都'), '2026-09-16')).toThrow(errorText('cardsWeather.errors.badData'))
+    const odd = structuredClone(hourly)
+    odd.areaTimeSeries.timeDefines = odd.areaTimeSeries.timeDefines.map((time) => ({ ...time, duration: 'PT1H' }))
+    expect(() => parseHourly(odd, '2026-09-15')).toThrow(errorText('cardsWeather.errors.badData'))
   })
   it('matches the condition to the temperature by time rather than by position in the array', () => {
     const shifted = structuredClone(hourly)
