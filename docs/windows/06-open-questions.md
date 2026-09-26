@@ -23,7 +23,6 @@
 | huggingface_hub がシンボリックリンクを作れないときの、ダウンロードの進み具合の数え方 | M5-6 | 進み具合の表示 |
 | VOICEVOX と AivisSpeech の Windows のインストール先 | M5-10 | 自動起動の候補 |
 | claude の記憶の整理で、PowerShell のツールのときに許すコマンドをどう書くか | M4-6 | 整理のジョブの引数 |
-| 読むだけの codex のジョブ(`-s read-only` と `windows.sandbox="elevated"`)で、フォルダの中への書き込みも拒まれるか。書き込むジョブと記憶の整理のジョブは、elevated の sandbox で外への書き込みとネットワークが閉じることを確かめた(design/03) | M4-6 | 読むだけのジョブの引数 |
 | MinGit で、フックが動くか、worktree の削除がロックで失敗しないか | M4-7 | 削除の再試行 |
 | MinGit から Git Credential Manager などを消しても、ASIST の使う git の操作が全部動くか | M2-2、M3-1 | 同梱する大きさ |
 | windows-latest の runner に日本語のフォント(Yu Gothic)があるか | M2-9 | `demo:fit` を Windows の CI で動かせるか |

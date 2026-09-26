@@ -108,7 +108,7 @@ AGENTS.md の「外に書き込むジョブの承認の関門を保つ」と、�
   - sandbox の指定なしの記憶の整理では、すべてのコマンドが "blocked by policy" で拒まれました。unelevated では、すべてのコマンドが `CreateProcessAsUserW failed: 5`(アクセス拒否)で起動しませんでした。
   - (4) ができたのは、workspace-write の sandbox が macOS と同じく、どこのファイルでも読めるためです。
   - 記憶の整理のジョブは、自分のフォルダの中の検証用のスクリプトを書き換えられました。codex ではそのスクリプトも同じ sandbox の中で動くので、書き換えてもできることは増えません。
-  - 読むだけのジョブ(`-s read-only` と elevated)は、試していません。
+  - 読むだけのジョブ(`-s read-only` と elevated)では、フォルダの中にも外にも書けず、取得は接続できずに失敗し、読むこととフォルダの中で node のスクリプトを動かすことはできました。
 - **API キー。**
   - Windows の safeStorage(DPAPI)は、同じユーザーのほかのプロセスから守りません。
   - ジョブが `%APPDATA%\ASIST\Local State` と `api-keys.json` を読めば、キーを取り出せます。
