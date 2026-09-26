@@ -358,6 +358,20 @@ describe('todo and notes cards', () => {
     expect(useViewStore.getState().open).toEqual({ app: 'notes', noteId: ids[2], editing: false })
   })
 
+  it('says the notes could not be read rather than that there are none, and reads them again on retry', async () => {
+    useNoteStore.setState({ notes: [], loaded: false, error: '' })
+    const denied = "EACCES: permission denied, scandir '/Users/me/Library/Application Support/ASIST/notes'"
+    api.notesList.mockRejectedValueOnce(new Error(`Error invoking remote method 'notes-list': Error: ${denied}`))
+    const card = await renderAt(spec('notes', {}), L)
+    await act(async () => {})
+    expect(card.textContent).not.toContain(t('notes.card.emptyList'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('notes.card.loadFailed'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(denied)
+    api.notesList.mockResolvedValueOnce([summarizeNote('20260923-090000-0001', '# 買い物\n', 1)])
+    await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
+    expect([...card.querySelectorAll('.nt-item .card-row-title')].map((el) => el.textContent)).toEqual(['買い物'])
+  })
+
   it('redraws when main delivers the notes it has written', async () => {
     const card = await renderAt(spec('notes', {}), L)
     expect(card.querySelector('.card-empty')).not.toBeNull()
