@@ -155,6 +155,27 @@ describe('individual line shapes of the codex parser', () => {
   })
 })
 
+// Each line is parsed in a listener on the CLI's output, where a throw becomes an uncaught exception of the
+// main process, so a line of any shape comes out as events.
+describe.each([
+  ['claude', createClaudeStreamParser],
+  ['codex', createCodexStreamParser]
+])('the %s parser with a line of an unexpected shape', (_name, create) => {
+  it.each(['null', '[1,2]', '"text"', '42'])('turns %s, JSON that is not an object, into raw text like a line that is not JSON', (line) => {
+    expect(create()(line)).toEqual([{ kind: 'raw', text: line }])
+  })
+
+  it.each([
+    { type: 'assistant', message: { content: [null, 5, { type: 'tool_use', id: 't', name: 'Bash', input: null }] } },
+    { type: 'system', subtype: 'init', model: { toString: 1, valueOf: 1 } },
+    { type: 'item.completed', item: { type: 'file_change', changes: [null, { path: 5 }] } },
+    { type: 'item.completed', item: { type: 'command_execution', command: { toString: 1, valueOf: 1 } } }
+  ])('does not throw on %j', (value) => {
+    const parse = create()
+    expect(() => parse(JSON.stringify(value))).not.toThrow()
+  })
+})
+
 describe('artifactPaths', () => {
   it('keeps only the absolute paths of a file-change and returns nothing for other events', () => {
     expect(artifactPaths({ kind: 'file-change', paths: ['/w/a.md', 'rel.txt'] })).toEqual(['/w/a.md'])
