@@ -22,7 +22,7 @@ import { DfnDenoiser } from './DfnDenoiser'
 import { AsrEngine, type AsrProgress } from './AsrEngine'
 import { speechPlayer } from './SpeechPlayer'
 import { conversationLocale } from '@/conversation-locale'
-import { displayError } from '@/display-error'
+import { displayError, errorMessageOf } from '@/display-error'
 
 export type VoiceState = 'off' | 'loading' | 'listening' | 'capturing' | 'transcribing'
 
@@ -725,7 +725,7 @@ export class VoiceController {
     } catch (serverError) {
       ensureCurrent()
       if (!this.localFallbackEnabled) {
-        throw new Error(errorText('speechRecognition.errors.serverTranscribeFailed', { detail: displayError(serverError) }))
+        throw new Error(errorText('speechRecognition.errors.serverTranscribeFailed', { detail: errorMessageOf(serverError) }))
       }
 
       // A server that dies after accepting the utterance hands the same audio to local, once.

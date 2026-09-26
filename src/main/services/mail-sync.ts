@@ -259,7 +259,7 @@ export class MailAccountSync {
       const message = errorMessage(error)
       this.setState('error', message)
       this.scheduleReconnect()
-      throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: message }))
+      throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: errMessage(error) }))
     }
     this.client = client
     this.gmail = supportsGmail(client)

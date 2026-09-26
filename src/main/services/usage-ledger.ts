@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { addUsage, localDate, usageDaysSchema, type UsageDay, type UsageItem } from '@shared/api-usage'
+import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
-import { errorMessage } from './i18n'
 import { storedContent, type StoredFormat } from '@shared/stored-format'
 import { dataPath, writeJson } from './store'
 import { openStoredFileSync } from './stored-file'
@@ -34,12 +34,12 @@ function load(): UsageDay[] {
     source = fs.readFileSync(file, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return (days = [])
-    throw new Error(errorText('settingsUsage.errors.unreadable', { file, detail: errorMessage(error) }))
+    throw new Error(errorText('settingsUsage.errors.unreadable', { file, detail: errMessage(error) }))
   }
   try {
     return (days = openStoredFileSync(file, JSON.parse(source) as unknown, USAGE_FORMAT))
   } catch (error) {
-    throw new Error(errorText('settingsUsage.errors.invalid', { file, detail: errorMessage(error) }))
+    throw new Error(errorText('settingsUsage.errors.invalid', { file, detail: errMessage(error) }))
   }
 }
 
@@ -57,6 +57,6 @@ export function recordUsage(item: UsageItem, at = new Date()): void {
     writeJson(USAGE_FILE, storedContent(USAGE_FORMAT, next))
     days = next
   } catch (error) {
-    console.error('usage-ledger: could not record the use of', item.kind, errorMessage(error))
+    console.error('usage-ledger: could not record the use of', item.kind, errMessage(error))
   }
 }

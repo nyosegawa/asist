@@ -31,6 +31,7 @@ import {
   type MailSettings,
   type MailStatus
 } from '@shared/mail'
+import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { promptLanguage } from '@shared/conversation-locale'
 import { conversationLocale } from './conversation-locale'
@@ -205,7 +206,7 @@ export class MailService {
       await client.connect()
     } catch (error) {
       client.close()
-      throw new Error(errorText('mail.errors.account.connectFailed', { reason: errorMessage(error) }))
+      throw new Error(errorText('mail.errors.account.connectFailed', { reason: errMessage(error) }))
     }
     try {
       const folders = await client.list()

@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings } from '@shared/ipc'
+import { createTranslator } from '@shared/i18n'
+import { errorText, readErrorText } from '@shared/i18n/error-text'
 
 class FakeAudioContext {
   currentTime = 0
@@ -162,6 +164,22 @@ describe('VoiceController ASR recovery', () => {
     expect(controller.localFallbackEnabled).toBe(false)
     expect(asr.init).not.toHaveBeenCalled()
     expect(asr.transcribe).not.toHaveBeenCalled()
+  })
+
+  it('keeps the reason the server gave whole in its error, so the screen words it in the language shown when it is read', async () => {
+    const controller = new VoiceController()
+    const state = internals(controller)
+    state.asr = fakeAsr()
+    const reason = errorText('speechRecognition.errors.transcribeTimeout')
+    vi.mocked(window.api.transcribe).mockRejectedValue(new Error(`Error invoking remote method 'asr-transcribe': Error: ${reason}`))
+
+    // The interface is in Japanese while the error is thrown, and in English when it is read.
+    const thrown = await state.transcribeWithRecovery(new Float32Array([0.1])).catch((error: unknown) => error as Error)
+    const en = createTranslator('en-US')
+    expect(readErrorText(thrown.message, 'en-US')).toBe(
+      en('speechRecognition.errors.serverTranscribeFailed', { detail: en('speechRecognition.errors.transcribeTimeout') })
+    )
+    expect(thrown.message).not.toContain('Error invoking remote method')
   })
 
   it('rescues the same server utterance through explicitly enabled local ASR', async () => {
