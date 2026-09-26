@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
+  STOP_GRACE_MS,
   ToolError,
   bilingual,
   createToolRegistry,
@@ -214,6 +215,36 @@ describe('executeTool', () => {
       expect(cut).toMatchObject({ isError: true, unfinished: true })
       expect(cut.content).toContain('archive')
     } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps waiting for a tool that timed out until it stops, and gives up on one that ignores its abort after the grace, saying so', async () => {
+    vi.useFakeTimers()
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      let finishCleanup!: () => void
+      const registry = createToolRegistry([
+        def({ name: 'cleanup', run: () => new Promise((resolve) => (finishCleanup = () => resolve('done'))) }),
+        def({ name: 'stuck', run: () => new Promise(() => {}) })
+      ])
+      const ended: string[] = []
+      const cleanup = executeTool(registry, 'cleanup', {}, ctx, signal, 'ja')
+      const stuck = executeTool(registry, 'stuck', {}, ctx, signal, 'ja')
+      void cleanup.completion.then(() => ended.push('cleanup'))
+      void stuck.completion.then(() => ended.push('stuck'))
+      await vi.advanceTimersByTimeAsync(1000)
+      expect((await cleanup).isError).toBe(true)
+      expect((await stuck).isError).toBe(true)
+      await vi.advanceTimersByTimeAsync(STOP_GRACE_MS - 1)
+      expect(ended).toEqual([])
+      finishCleanup()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(ended).toEqual(['cleanup', 'stuck'])
+      expect(errors).toHaveBeenCalledOnce()
+      expect(String(errors.mock.calls[0][0])).toContain('stuck')
+    } finally {
+      errors.mockRestore()
       vi.useRealTimers()
     }
   })

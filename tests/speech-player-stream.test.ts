@@ -114,6 +114,36 @@ describe('SpeechPlayer.streamPush', () => {
   })
 })
 
+describe('SpeechPlayer.streamPush while the output starts', () => {
+  it('plays the chunks in the order they arrived when a chunk arrives while the <audio> element is still starting', async () => {
+    // HTMLMediaElement.play() sets paused to false at once and settles its promise in a later task, so
+    // a chunk that arrives in between sees an element that is no longer paused.
+    let started!: () => void
+    class StartingAudio extends FakeAudio {
+      override paused = true
+      override readonly play = vi.fn(() => {
+        this.paused = false
+        return new Promise<void>((resolve) => (started = resolve))
+      })
+    }
+    vi.stubGlobal('Audio', StartingAudio)
+    const { SpeechPlayer } = await import('../src/renderer/src/voice/SpeechPlayer')
+    const player = new SpeechPlayer()
+    const context = FakeAudioContext.instances.at(-1)!
+    player.streamPush(new Float32Array(2400), 24_000)
+    await vi.advanceTimersByTimeAsync(0)
+    player.streamPush(new Float32Array(4800), 24_000)
+    await vi.advanceTimersByTimeAsync(0)
+    started()
+    await vi.advanceTimersByTimeAsync(0)
+    const scheduled = context.sources.map((source) => [source.buffer?.duration, source.startedAt])
+    expect(scheduled).toEqual([
+      [0.1, 0.12],
+      [0.2, 0.22]
+    ])
+  })
+})
+
 describe('SpeechPlayer with a streamed segment', () => {
   const RATE = 24_000
   const piece = (seconds: number): Float32Array => new Float32Array(Math.round(seconds * RATE))

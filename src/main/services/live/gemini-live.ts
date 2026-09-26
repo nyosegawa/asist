@@ -9,7 +9,7 @@ import { conversationLocale } from '../conversation-locale'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { ToolCallOrder } from '@shared/tool-call-order'
-import type { MemoryInjection } from '@shared/memory-injection'
+import { buildMemoryInjection, memoryIdsInToolResult, type InjectableMemory } from '@shared/memory-injection'
 import type { ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -89,8 +89,10 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   /** Whether the registry lets the tool run at the same time as other calls, which a writing tool does not. */
   isParallel: (name: string) => boolean
   recordTool: (turnId: number, name: string, input: Record<string, unknown>, execution: ToolExecution) => void
-  /** Looks for memories related to the user's utterance and returns a note about them with their ids, or null. */
-  memoryInjection: (text: string) => Promise<Pick<MemoryInjection, 'text' | 'ids'> | null>
+  /** Looks for the memories related to the user's utterance. */
+  findMemories: (text: string) => Promise<readonly InjectableMemory[]>
+  /** The memory block of the system instruction, whose memories a note leaves out, or null when memory is unavailable. */
+  memoryBlock: () => string | null
   /** Records a note sent to the model after the utterance of the turn, with the ids of the memories it shows. */
   recordNote: (turnId: number, text: string, memoryIds: string[]) => void
   /** Records typed input in the conversation log. A spoken user line is written when its transcript is final. */
@@ -114,6 +116,15 @@ const CANCELLED_AFTER_APPROVAL: PromptText = {
 const OPEN_TIMEOUT_MS = 15_000
 /** How long a resumption handle is reused. The provider allows two hours, and this leaves a margin. */
 const RESUMPTION_TTL_MS = 100 * 60_000
+/**
+ * How much of the session's audio a memory shown to it is assumed to stay in its context. The sliding
+ * window cuts the oldest turns once the context passes its trigger and keeps half of it (SlidingWindow
+ * in @google/genai), without saying when. Five minutes of audio is about 9,600 tokens at the 32 tokens a
+ * second Gemini counts for audio, inside that half for a context of 32,000 tokens or more. A memory shown
+ * earlier may have been cut, and a note shows it again when an utterance calls for it, which costs a
+ * repeated note at most.
+ */
+const SESSION_MEMORY_AUDIO_SECONDS = 5 * 60
 const INPUT_MIME = 'audio/pcm;rate=16000'
 const OUTPUT_RATE = 24_000
 
@@ -131,7 +142,12 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * opened blank, it has had the history as its context.
    */
   private owned: { session: GeminiSession | null; ready: boolean } | null = null
-  private resumption: { handle: string; at: number } | null = null
+  /**
+   * The last handle the provider offered as resumable, with the memories the session held when it
+   * arrived. A handle carries the session's state only up to the moment it was issued, and the provider
+   * offers none while it generates or runs a call, so what is sent after it is lost on a resume.
+   */
+  private resumption: { handle: string; at: number; memories: ReadonlyMap<string, number> } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
   /** The calls that still owe the model a result, waiting for their turn or running, by the id Gemini gave them. */
@@ -141,6 +157,13 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * arrive while an earlier one still waits for approval.
    */
   private readonly order = new ToolCallOrder()
+  /**
+   * The memories sent to the current session in its notes and recall results, each with the session's
+   * audio seconds when it was sent, which a note does not show again while they are recent. A session
+   * that opens blank is seeded with the transcript, which carries neither, so it holds none of them
+   * whatever earlier sessions were shown. A resumed session holds those its handle held.
+   */
+  private sessionMemories = new Map<string, number>()
 
   constructor(
     info: LiveEngineInfo,
@@ -149,14 +172,15 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     super(info, deps)
   }
 
-  protected async openSession(): Promise<void> {
+  protected async openSession(signal: AbortSignal): Promise<void> {
     const key = this.deps.apiKey()
     if (!key) {
       const info = LLM_PROVIDER_INFO.google
       throw new Error(errorText('llmModels.errors.keyMissing', { provider: info.label, envKey: info.envKey }))
     }
     const settings = this.settings().geminiLive
-    const resume = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption.handle : null
+    const resumption = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption : null
+    const resume = resumption?.handle ?? null
     const owned: { session: GeminiSession | null; ready: boolean } = { session: null, ready: false }
     this.owned = owned
     let connected!: Promise<GeminiSession>
@@ -166,6 +190,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         reject(error)
       }
       const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+      signal.addEventListener('abort', () => fail(signal.reason), { once: true })
       connected = this.deps.connect({
         model: settings.model,
         voice: settings.voice,
@@ -208,6 +233,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     const session = await connected
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
     if (!resume) this.seedHistory(session)
+    this.sessionMemories = new Map(resumption?.memories)
     owned.ready = true
   }
 
@@ -291,7 +317,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
       this.running.delete(id)
     }
     if (message.sessionResumptionUpdate?.resumable && message.sessionResumptionUpdate.newHandle) {
-      this.resumption = { handle: message.sessionResumptionUpdate.newHandle, at: this.now() }
+      this.resumption = { handle: message.sessionResumptionUpdate.newHandle, at: this.now(), memories: new Map(this.sessionMemories) }
     }
     if (message.goAway) console.warn(`gemini-live: GoAway (${message.goAway.timeLeft ?? '?'})`)
   }
@@ -348,7 +374,9 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.deps.emitTurn({ type: 'tool', turnId, name, status: execution.isError ? 'error' : 'done' })
     this.deps.recordTool(turnId, name, call.args ?? {}, execution)
     this.touch()
-    this.session?.sendToolResponse({
+    const session = this.session
+    if (!session) return
+    session.sendToolResponse({
       functionResponses: [
         {
           id,
@@ -358,6 +386,17 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         }
       ]
     })
+    this.memoriesSent(memoryIdsInToolResult(name, execution))
+  }
+
+  private memoriesSent(ids: readonly string[]): void {
+    for (const id of ids) this.sessionMemories.set(id, this.inputSeconds + this.outputSeconds)
+  }
+
+  /** The memories the session can still be assumed to hold. */
+  private memoriesHeld(): Set<string> {
+    const now = this.inputSeconds + this.outputSeconds
+    return new Set([...this.sessionMemories].flatMap(([id, at]) => (now - at < SESSION_MEMORY_AUDIO_SECONDS ? [id] : [])))
   }
 
   protected override working(): boolean {
@@ -389,17 +428,26 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   }
 
   /**
-   * A user utterance is final. Any related memory is added to the context silently, without asking for
-   * a reply, and is recorded on the utterance's turn only once a session has it.
+   * A user utterance is final. Any related memory the session does not hold yet is added to its context
+   * silently, without asking for a reply, and is recorded on the utterance's turn only once a session
+   * has it. The note is written when it is sent rather than when the search starts, so that two
+   * searches that end together do not both show the same memory.
    */
   protected override onUserUtterance(turnId: number, text: string): void {
     void this.deps
-      .memoryInjection(text)
-      .then((injection) => {
+      .findMemories(text)
+      .then((memories) => {
         const session = this.session
-        if (!injection || !session) return
-        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection.text }] }], turnComplete: false })
-        this.deps.recordNote(turnId, injection.text, injection.ids)
+        if (!session) return
+        const note = buildMemoryInjection(memories, {
+          locale: conversationLocale(),
+          memoryBlock: this.deps.memoryBlock(),
+          excludeIds: this.memoriesHeld()
+        })
+        if (!note) return
+        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: note.text }] }], turnComplete: false })
+        this.memoriesSent(note.ids)
+        this.deps.recordNote(turnId, note.text, note.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
   }
