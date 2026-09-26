@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => {
     turn,
     settings,
     feed,
+    windows: false,
     playing: false,
     readingTurn: -1,
     settingsListener: null as ((state: { settings: unknown }, before: { settings: unknown }) => void) | null,
@@ -71,6 +72,10 @@ const baseSettings = {
   geminiLive: { model: 'gemini-live', voice: 'Puck' }
 }
 
+vi.mock('@/platform', async () => {
+  const { MACOS, WINDOWS } = await import('./helpers/platform')
+  return { platformCapabilities: () => (mocks.windows ? WINDOWS : MACOS), loadPlatformCapabilities: async () => {} }
+})
 vi.mock('@/voice/VoiceController', async () => {
   const { default: mittFactory } = await import('mitt')
   const voiceController = {
@@ -248,6 +253,22 @@ beforeEach(() => {
   ;(mocks.player as { events: Emitter } | null)?.events.all.clear()
   vi.clearAllMocks()
   vi.stubGlobal('document', { addEventListener: () => {}, visibilityState: 'visible' })
+})
+
+describe('the native microphone', () => {
+  it('is tried only on a machine that has one, whatever the setting says', async () => {
+    const preferred = (): unknown[] => [mocks.voice, mocks.live].map((source) => (source as { nativeMicPreferred?: boolean }).nativeMicPreferred)
+    await start({})
+    expect(preferred()).toEqual([true, true])
+    mocks.windows = true
+    try {
+      vi.resetModules()
+      await start({})
+      expect(preferred()).toEqual([false, false])
+    } finally {
+      mocks.windows = false
+    }
+  })
 })
 
 describe('the opening of a speech that never becomes a turn', () => {

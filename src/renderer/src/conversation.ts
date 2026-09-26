@@ -27,6 +27,7 @@ import {
 import { useConfirmStore } from '@/state/confirm'
 import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
 import { displayError, errorMessageOf } from '@/display-error'
+import { platformCapabilities } from '@/platform'
 
 /** The conversation orchestrator, wiring the voice pipeline, brain, panels and feed. It initializes once, when App mounts. */
 
@@ -536,7 +537,9 @@ function handleLiveEvent(event: LiveEvent): void {
 function applySettings(): void {
   const s = useSettingsStore.getState().settings
   if (!s) return
-  liveVoice.nativeMicPreferred = s.nativeMic
+  // The native helper is tried only where the OS has one; elsewhere capture starts on getUserMedia.
+  const nativeMic = s.nativeMic && platformCapabilities().nativeMic
+  liveVoice.nativeMicPreferred = nativeMic
   liveVoice.noiseSuppression = s.noiseSuppression
   voiceController.bargeIn = s.bargeIn
   voiceController.partialIntervalMs = s.partialIntervalMs
@@ -545,7 +548,7 @@ function applySettings(): void {
   voiceController.holdProvider =
     s.aizuchi && conversationFeatures(s.conversationLocale).aizuchi ? () => classifier.holding() : null
   voiceController.localFallbackEnabled = s.localAsrEnabled
-  voiceController.nativeMicPreferred = s.nativeMic
+  voiceController.nativeMicPreferred = nativeMic
   voiceController.noiseSuppression = s.noiseSuppression
   voiceController.vapEnabled = s.vapEnabled
   voiceController.setHangover(s.hangoverMs)

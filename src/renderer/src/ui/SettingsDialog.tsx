@@ -25,6 +25,7 @@ import { AboutPage } from './settings/pages/AboutPage'
 import { UsagePage } from './settings/pages/UsagePage'
 import { usdFormatter } from './settings/usage-format'
 import { displayError } from '@/display-error'
+import { platformCapabilities } from '@/platform'
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
 
 /**
@@ -214,13 +215,15 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   // needs preparing without opening the page. Speech can only be missing when a separate engine is
   // selected, since the macOS speech synthesis needs no preparation.
   const features = conversationFeatures(settings.conversationLocale)
+  const { cpuSidecars, calendar } = platformCapabilities()
   const missing = [
-    setup !== null && !setup.asr.ready,
+    setup?.asr != null && !setup.asr.ready,
     status !== null && ttsNeedsPreparation(settings.ttsEngine) && !status.tts,
     status !== null && !status.agent,
-    features.maai && vap !== null && !(vap.runtimeInstalled && vap.modelsInstalled),
-    embedding !== null && !(embedding.runtimeInstalled && embedding.modelInstalled),
-    features.aizuchi &&
+    cpuSidecars && features.maai && vap !== null && !(vap.runtimeInstalled && vap.modelsInstalled),
+    cpuSidecars && embedding !== null && !(embedding.runtimeInstalled && embedding.modelInstalled),
+    cpuSidecars &&
+      features.aizuchi &&
       aizuchiClassifier !== null &&
       !(aizuchiClassifier.runtimeInstalled && aizuchiClassifier.modelInstalled)
   ].filter(Boolean).length
@@ -254,10 +257,12 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
             })
     },
     appearance: { text: t(`settingsAppearance.themes.${settings.theme}.name`) },
-    memory: { text: t(settings.memoryEmbeddingEnabled ? 'settings.summary.memorySemanticOn' : 'settings.summary.memorySemanticOff') },
+    memory: { text: cpuSidecars ? t(settings.memoryEmbeddingEnabled ? 'settings.summary.memorySemanticOn' : 'settings.summary.memorySemanticOff') : '' },
     agent: { text: `${agentEngine} · ${AGENT_MODE_NAME[settings.agentEngine][settings.agentMode]}` },
     integrations: {
-      text: t(settings.calendar.enabled ? 'settings.summary.integrationsCalendarOn' : 'settings.summary.integrationsCalendarOff', keyCounts)
+      text: !calendar
+        ? t('settings.summary.integrationsKeys', keyCounts)
+        : t(settings.calendar.enabled ? 'settings.summary.integrationsCalendarOn' : 'settings.summary.integrationsCalendarOff', keyCounts)
     },
     models:
       missing > 0

@@ -1,3 +1,5 @@
+import type { PlatformCapabilities } from './platform'
+
 /**
  * The local speech synthesis model. Measured on 2026-09-20 with mlx-audio 0.4.7, one Japanese
  * sentence at a time: on an M5 the first audio arrives 0.19 s after the request and one second of
@@ -59,6 +61,14 @@ export function qwenTtsLanguage(locale: string): string | null {
   return QWEN_TTS_LANGUAGES[locale.split('-')[0].toLowerCase()] ?? null
 }
 
-export function recommendQwenTts(totalMemoryBytes: number, platform: NodeJS.Platform, arch: string): boolean {
-  return platform === 'darwin' && arch === 'arm64' && Math.round(totalMemoryBytes / 1024 ** 3) >= QWEN_TTS_MIN_RECOMMENDED_MEMORY_GB
+/** Whether the speech runtime of this machine can run Qwen3-TTS at all, which so far only MLX does. */
+export function qwenTtsRuns(
+  speechRuntime: PlatformCapabilities['speechRuntime']
+): speechRuntime is Extract<PlatformCapabilities['speechRuntime'], { memoryGb: number }> {
+  return speechRuntime.kind === 'mlx'
+}
+
+/** Whether to offer Qwen3-TTS: a runtime that runs it, with the memory for it beside the speech recognition. */
+export function recommendQwenTts(speechRuntime: PlatformCapabilities['speechRuntime']): boolean {
+  return qwenTtsRuns(speechRuntime) && speechRuntime.memoryGb >= QWEN_TTS_MIN_RECOMMENDED_MEMORY_GB
 }
