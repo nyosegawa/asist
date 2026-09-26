@@ -3,6 +3,7 @@ import { errorText } from '@shared/i18n/error-text'
 import type { MailDraft } from '@shared/mail'
 import { splitRecipients } from './format'
 import { displayError } from '@/display-error'
+import { useMailStore } from '@/state/stores'
 
 /**
  * Editing a draft, which behaves the same in the card and in the composer of the mail view. Input is
@@ -27,9 +28,12 @@ export function useDraftEditor(draft: MailDraft | null): {
   set: (patch: Partial<DraftFields>) => void
   dirty: boolean
   busy: 'save' | 'send' | 'discard' | null
+  /** A send of the draft is under way, from this editor or from another one open on the same draft. */
+  sending: boolean
   /**
-   * A send of the draft started and did not fail, so the mail may have gone out and the draft can only be
-   * discarded. A send under way in this editor does not count; its button already says it is sending.
+   * A send of the draft started and neither finished nor failed while this window waited for it, as when the
+   * mail went out and the draft could not be removed, or the app stopped in the middle of sending. The mail
+   * may have gone out, and the draft can only be discarded.
    */
   sendStarted: boolean
   error: string
@@ -45,6 +49,8 @@ export function useDraftEditor(draft: MailDraft | null): {
   latest.current = fields
   const id = draft?.id ?? null
   const updatedAt = draft?.updatedAt ?? 0
+  const sending = useMailStore((s) => id !== null && s.sending.includes(id))
+  const setSending = useMailStore((s) => s.setSending)
 
   // A draft changed from outside, by the Agent, is taken over unless something is half typed here.
   useEffect(() => {
@@ -78,8 +84,9 @@ export function useDraftEditor(draft: MailDraft | null): {
   }
 
   const send = async (): Promise<string | null> => {
-    if (!id || busy === 'send' || busy === 'discard') return null
+    if (!id || sending || busy === 'discard') return null
     setBusy('send')
+    setSending(id, true)
     try {
       if (dirty) await save()
       const result = await window.api.mailDraftSend(id)
@@ -90,12 +97,13 @@ export function useDraftEditor(draft: MailDraft | null): {
       setError(displayError(err))
       return null
     } finally {
+      setSending(id, false)
       setBusy(null)
     }
   }
 
   const discard = async (): Promise<boolean> => {
-    if (!id || busy === 'send') return false
+    if (!id || sending) return false
     setBusy('discard')
     try {
       await window.api.mailDraftRemove(id)
@@ -108,7 +116,7 @@ export function useDraftEditor(draft: MailDraft | null): {
     }
   }
 
-  const sendStarted = (draft?.sendStartedAt ?? null) !== null && busy !== 'send'
-  return { fields, set, dirty, busy, sendStarted, error, send, discard }
+  const sendStarted = (draft?.sendStartedAt ?? null) !== null && !sending
+  return { fields, set, dirty, busy, sending, sendStarted, error, send, discard }
 }
 

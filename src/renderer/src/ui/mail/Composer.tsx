@@ -148,7 +148,7 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
   const editor = useDraftEditor(draft)
   const t = useT()
   const account = accounts.find((item) => item.id === draft.accountId)
-  const busy = editor.busy === 'send' || editor.busy === 'discard'
+  const busy = editor.sending || editor.busy === 'discard'
   const locked = busy || editor.sendStarted
   const ready = editor.fields.body.trim().length > 0 && (draft.reply !== null || splitRecipients(editor.fields.to).length > 0)
   const stopEscape = stopEscapeWith(onClose)
@@ -250,7 +250,7 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
         </button>
         {!editor.sendStarted && (
           <button type="submit" className="cal-primary" disabled={!ready || busy}>
-            {editor.busy === 'send' ? t('mail.sending') : t('mail.send')}
+            {editor.sending ? t('mail.sending') : t('mail.send')}
           </button>
         )}
       </div>

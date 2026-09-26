@@ -49,7 +49,7 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
     )
   }
   const account = accounts?.find((item) => item.id === draft.accountId)
-  const busy = editor.busy === 'send' || editor.busy === 'discard'
+  const busy = editor.sending || editor.busy === 'discard'
   const locked = busy || editor.sendStarted
   const send = async (): Promise<void> => {
     const summary = await editor.send()
@@ -124,7 +124,7 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
       <Actions>
         {!editor.sendStarted && (
           <Action tone="primary" disabled={busy || !editor.fields.body.trim()} onClick={() => void send()}>
-            {editor.busy === 'send' ? t('mail.sending') : t('mail.send')}
+            {editor.sending ? t('mail.sending') : t('mail.send')}
           </Action>
         )}
         <Action tone="danger" disabled={busy} onClick={() => void editor.discard()}>

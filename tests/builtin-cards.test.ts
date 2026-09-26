@@ -676,7 +676,7 @@ describe('mail draft card', () => {
   const reply = DEMO_MAIL_DRAFTS[1]
   beforeEach(() => {
     useSettingsStore.setState({ settings: { mail: { enabled: true, accounts: DEMO_MAIL_ACCOUNTS, defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } } as AppSettings })
-    useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true })
+    useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true, sending: [] })
     useToastStore.setState({ toasts: [] })
   })
 
