@@ -60,6 +60,7 @@ interface VoiceInternals {
   }
   transcribeWithRecovery(audio: Float32Array): Promise<string>
   enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: 'early' | 'extended' | 'fixed'): void
+  endCapture(utterance: { samples: Float32Array; vadMs: number; mode: 'early' | 'extended' | 'fixed' } | null): void
   partialTick(): Promise<void>
 }
 
@@ -402,15 +403,44 @@ describe('VoiceController ASR recovery', () => {
     controller.events.on('utterance', () => events.push('utterance'))
 
     state.captureIsBackchannel = true
-    state.enqueueUtterance(new Float32Array([0.1]), 300, 'fixed')
+    state.endCapture({ samples: new Float32Array([0.1]), vadMs: 300, mode: 'fixed' })
     await Promise.resolve()
     expect(transcribe).not.toHaveBeenCalled()
     expect(events).toEqual([])
 
     // The next capture behaves normally.
-    state.enqueueUtterance(new Float32Array([0.1]), 300, 'fixed')
+    state.endCapture({ samples: new Float32Array([0.1]), vadMs: 300, mode: 'fixed' })
     await vi.waitFor(() => expect(events).toContain('utterance'))
     expect(events[0]).toBe('speechend')
+  })
+
+  it('builds capture again when the microphone goes away, and reports it when no microphone is left', async () => {
+    const controller = new VoiceController()
+    controller.nativeMicPreferred = false
+    const state = internals(controller)
+    let deviceGone!: () => void
+    const mic = {
+      start: vi
+        .fn()
+        .mockImplementationOnce(async (_feed: unknown, onEnded: () => void) => {
+          deviceGone = onEnded
+        })
+        .mockImplementationOnce(async () => {
+          throw new DOMException('Requested device not found', 'NotFoundError')
+        }),
+      stop: vi.fn()
+    }
+    state.mic = mic
+    const errors: string[] = []
+    controller.events.on('error', (message) => errors.push(message))
+    await controller.enable()
+    expect(controller.current).toBe('listening')
+
+    deviceGone()
+
+    await vi.waitFor(() => expect(controller.current).toBe('off'))
+    expect(mic.start).toHaveBeenCalledTimes(2)
+    expect(errors).toHaveLength(1)
   })
 
   it('drops a partial transcription that belongs to an obsolete capture', async () => {

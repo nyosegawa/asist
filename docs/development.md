@@ -41,9 +41,11 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
 | `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
-| `result` | ほかの job がどれも失敗していないこと |
+| `result` | ほかの job に、失敗したものも取り消されたものもないこと |
 
 main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、`test`、`fit`、`build` をスキップします。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
+
+プルリクエストに新しいコミットを push すると、前のコミットでまだ動いている実行は取り消します。main への push は取り消さず、続けてマージしてもコミットごとに最後まで確かめます。失敗したときに、どのコミットで壊れたかがわかるようにするためです。
 
 CodeQL(`.github/workflows/codeql.yml`)は、main への push のたびと毎週 1 回、アプリに入る部分の JavaScript/TypeScript、Python、Actions を解析します。プルリクエストでは動きません。開発のときだけ使う `scripts/`、`tests/`、`website/`、`promotions/`、`skills/` は、解析の対象から外しています(`.github/codeql/codeql-config.yml`)。
 

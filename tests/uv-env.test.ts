@@ -1,8 +1,17 @@
-import { describe, expect, it, vi } from 'vitest'
+import { getEventListeners } from 'node:events'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => '/unused', on: vi.fn() } }))
+const mocks = vi.hoisted(() => ({ appPath: process.cwd() }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => mocks.appPath, getPath: () => '/unused', on: vi.fn() } }))
 
-import { uvEnv } from '../src/main/services/uv'
+import { runUv, uvEnv } from '../src/main/services/uv'
+
+afterEach(() => {
+  mocks.appPath = process.cwd()
+})
 
 describe('the environment uv runs with', () => {
   it('drops the user uv settings that would change the Python or the package index, and keeps its files under userData', () => {
@@ -21,5 +30,18 @@ describe('the environment uv runs with', () => {
 
   it('passes no provider key to uv', () => {
     expect(uvEnv({ ANTHROPIC_API_KEY: 'sk-test' }, '/data').ANTHROPIC_API_KEY).toBeUndefined()
+  })
+})
+
+describe('running uv', () => {
+  it('rejects when uv cannot be started, and leaves nothing listening on the signal', async () => {
+    mocks.appPath = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-no-uv-'))
+    try {
+      const controller = new AbortController()
+      await expect(runUv(['--version'], controller.signal)).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(getEventListeners(controller.signal, 'abort')).toEqual([])
+    } finally {
+      fs.rmSync(mocks.appPath, { recursive: true, force: true })
+    }
   })
 })

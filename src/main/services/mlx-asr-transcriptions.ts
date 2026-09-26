@@ -12,6 +12,12 @@ export interface MlxTranscriptionWorker {
   stop: () => void
 }
 
+/**
+ * A worker that leaves a request unanswered this long is taken to be hung and is stopped. The worker
+ * answers one request at a time in arrival order, so the time also covers the requests queued ahead.
+ */
+const ANSWER_TIMEOUT_MS = 60_000
+
 type Result = { text: string } | { error: Error }
 interface Request {
   id: string
@@ -49,7 +55,6 @@ export class MlxTranscriptions {
   start(
     samples: Float32Array,
     id: string,
-    timeoutMs: number,
     language: string,
     acquireWorker: () => MlxTranscriptionWorker
   ): Promise<string> {
@@ -61,7 +66,7 @@ export class MlxTranscriptions {
       this.pending.set(id, request)
       try {
         request.worker = acquireWorker()
-        void this.prepare(request, samples, timeoutMs).catch((error: unknown) => {
+        void this.prepare(request, samples).catch((error: unknown) => {
           this.finish(request, { error: error instanceof Error ? error : new Error(String(error)) })
         })
       } catch (error) {
@@ -103,7 +108,7 @@ export class MlxTranscriptions {
     }
   }
 
-  private async prepare(request: Request, samples: Float32Array, timeoutMs: number): Promise<void> {
+  private async prepare(request: Request, samples: Float32Array): Promise<void> {
     const worker = request.worker!
     try {
       const ready = await worker.ready
@@ -121,7 +126,7 @@ export class MlxTranscriptions {
       request.timer = setTimeout(() => {
         this.finish(request, { error: new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError') })
         worker.stop()
-      }, timeoutMs)
+      }, ANSWER_TIMEOUT_MS)
       request.timer.unref?.()
       request.sent = true
       worker.child.stdin.write(`${JSON.stringify({ id: request.id, wavPath: request.wavPath, language: request.language })}\n`, (error) => {
