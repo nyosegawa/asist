@@ -120,9 +120,11 @@ function failedExecution(err: unknown): ToolExecution {
 export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwner {
   /**
    * The session the engine owns, from the call that creates it until it is closed. Connecting resolves
-   * only once the socket is open, so the session itself is filled in then.
+   * only once the socket is open, so the session itself is filled in then, and closing reaches it from
+   * that moment. Anything else is sent only once it is `ready`: its setup has completed and, when it
+   * opened blank, it has had the history as its context.
    */
-  private owned: { session: GeminiSession | null } | null = null
+  private owned: { session: GeminiSession | null; ready: boolean } | null = null
   private resumption: { handle: string; at: number } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
@@ -149,66 +151,67 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     }
     const settings = this.settings().geminiLive
     const resume = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption.handle : null
-    const owned: { session: GeminiSession | null } = { session: null }
+    const owned: { session: GeminiSession | null; ready: boolean } = { session: null, ready: false }
     this.owned = owned
-    let ready = false
+    let connected!: Promise<GeminiSession>
     const setup = new Promise<void>((resolve, reject) => {
       const fail = (error: Error): void => {
         clearTimeout(timer)
         reject(error)
       }
       const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
-      this.deps
-        .connect({
-          model: settings.model,
-          voice: settings.voice,
-          systemInstruction: this.deps.systemInstruction(new Date(this.now())),
-          functionDeclarations: this.deps.functionDeclarations(),
-          resumptionHandle: resume,
-          callbacks: {
-            onmessage: (message) => {
-              if (this.owned !== owned) return
-              if (message.setupComplete !== undefined) {
-                ready = true
-                clearTimeout(timer)
-                resolve()
-              }
-              this.onMessage(message)
-            },
-            onerror: (error) => {
-              if (this.owned !== owned) return
-              console.error('gemini-live error:', errMessage(error))
-              // Before the setup the error is why the session did not open, and the failure to connect reports it.
-              if (ready) this.events.emit('event', { type: 'error', message: errMessage(error) })
-              else fail(error)
-            },
-            onclose: (reason) => {
-              if (this.owned !== owned) return
-              if (ready) this.onClosed(reason)
-              else fail(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
+      connected = this.deps.connect({
+        model: settings.model,
+        voice: settings.voice,
+        systemInstruction: this.deps.systemInstruction(new Date(this.now())),
+        functionDeclarations: this.deps.functionDeclarations(),
+        resumptionHandle: resume,
+        callbacks: {
+          onmessage: (message) => {
+            if (this.owned !== owned) return
+            if (message.setupComplete !== undefined) {
+              clearTimeout(timer)
+              resolve()
             }
-          }
-        })
-        .then(
-          (session) => {
-            owned.session = session
-            // The opening failed and was let go before the session arrived.
-            if (this.owned !== owned) session.close()
+            this.onMessage(message)
           },
-          (error: unknown) => fail(error instanceof Error ? error : new Error(String(error)))
-        )
+          onerror: (error) => {
+            if (this.owned !== owned) return
+            console.error('gemini-live error:', errMessage(error))
+            // While the session is still opening, the error is why it did not open, and the failure to connect reports it.
+            if (owned.ready) this.events.emit('event', { type: 'error', message: errMessage(error) })
+            else fail(error)
+          },
+          onclose: (reason) => {
+            if (this.owned !== owned) return
+            if (owned.ready) this.onClosed(reason)
+            else fail(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
+          }
+        }
+      })
+      connected.then(
+        (session) => {
+          owned.session = session
+          // The opening failed and was let go before the session arrived.
+          if (this.owned !== owned) session.close()
+        },
+        (error: unknown) => fail(error instanceof Error ? error : new Error(String(error)))
+      )
     })
     await setup
+    const session = await connected
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
-    if (!resume) this.seedHistory()
+    if (!resume) this.seedHistory(session)
+    owned.ready = true
   }
 
+  /** The session anything but closing is sent to, which is none while one is still opening. */
   private get session(): GeminiSession | null {
-    return this.owned?.session ?? null
+    return this.owned?.ready ? this.owned.session : null
   }
 
   protected async closeSession(): Promise<void> {
-    const session = this.session
+    const session = this.owned?.session ?? null
     this.disown()
     if (!session) return
     try {
@@ -242,10 +245,10 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.running.clear()
   }
 
-  private seedHistory(): void {
+  private seedHistory(session: GeminiSession): void {
     const messages = this.deps.history().slice(-30)
-    if (messages.length === 0 || !this.session) return
-    this.session.sendClientContent({
+    if (messages.length === 0) return
+    session.sendClientContent({
       turns: messages.map((message) => ({ role: message.role === 'user' ? 'user' : 'model', parts: [{ text: message.content }] })),
       turnComplete: false
     })

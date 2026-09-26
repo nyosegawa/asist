@@ -437,4 +437,23 @@ describe('GeminiLiveEngine', () => {
     sessions[3].message({ setupComplete: {} })
     await engine.stop()
   })
+
+  it('sends nothing but the history to a session before its setup completes, so a memory note that settles meanwhile is neither sent nor recorded', async () => {
+    const { engine, sessions, memoryInjection } = await setup()
+    let ready!: (injection: { text: string; ids: string[] }) => void
+    memoryInjection.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
+    const first = await open(engine, sessions)
+    first.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    first.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    const second = sessions[1]
+    ready({ text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(second.contents).toEqual([])
+    second.message({ setupComplete: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(second.contents).toEqual([{ turns: [{ role: 'user', parts: [{ text: '前の話' }] }], turnComplete: false }])
+    expect(mocks.record.mock.calls.map((c) => c[0].kind)).toEqual(['user'])
+    await engine.stop()
+  })
 })
