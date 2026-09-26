@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { CornerUpLeft, PenLine } from 'lucide-react'
 import type { PanelSpec } from '@shared/ipc'
-import { displayName } from '@shared/mail'
+import { displayName, formatAddress } from '@shared/mail'
 import { useMailStore, useSettingsStore, useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 import { useDraftEditor } from '@/ui/mail/draft-editor'
@@ -14,8 +14,9 @@ import { useT } from '@/i18n'
  * Mail draft card. It carries the text an agent wrote through change_mail's send or reply, so that it can be
  * corrected before it goes out. Pressing "送信" is itself the approval, so no confirmation appears. Once the
  * draft has been sent or discarded, main's delivery drops it and the card closes with it. The content comes
- * from main's drafts (useMailStore.drafts) and the props carry only the draftId. A reply takes its recipient
- * and subject from the message it answers, so neither is shown.
+ * from main's drafts (useMailStore.drafts) and the props carry only the draftId. A reply's recipients were
+ * settled from the message it answers, Reply-To and a reply-all's Cc included, and are shown as the full
+ * addresses it is sent to, since the sender's name alone would hide a Reply-To that points elsewhere.
  */
 
 const ROWS: Record<CardContext['size'], number> = { l: 8, m: 6, s: 4, focus: 16 }
@@ -64,11 +65,23 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
       <Box title={t('mailCards.draft.content')} note={editor.busy === 'save' ? t('common.saving') : editor.dirty ? t('mail.composer.notSaved') : t('mailCards.draft.editable')}>
         <div className="md-fields">
           {draft.reply && replyValues ? (
-            <p className="md-reply">
-              <CornerUpLeft size={13} />
-              <span>{draft.reply.replyAll ? t('mailCards.draft.replyToAll', replyValues) : t('mailCards.draft.replyTo', replyValues)}</span>
-              <small>{t('mailCards.draft.quoteNote')}</small>
-            </p>
+            <>
+              <p className="md-reply">
+                <CornerUpLeft size={13} />
+                <span>{draft.reply.replyAll ? t('mailCards.draft.replyToAll', replyValues) : t('mailCards.draft.replyTo', replyValues)}</span>
+                <small>{t('mailCards.draft.quoteNote')}</small>
+              </p>
+              <div className="md-field is-static">
+                <span>{t('mail.fields.to')}</span>
+                <span className="md-static">{draft.reply.to.map(formatAddress).join(', ')}</span>
+              </div>
+              {draft.reply.cc.length > 0 && (
+                <div className="md-field is-static">
+                  <span>Cc</span>
+                  <span className="md-static">{draft.reply.cc.map(formatAddress).join(', ')}</span>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <label className="md-field">

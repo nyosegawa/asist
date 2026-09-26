@@ -32,10 +32,36 @@ export function sizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Splits the recipient field on commas, semicolons, the Japanese comma "、" and newlines. */
+/**
+ * Splits the recipient field on commas, semicolons, the Japanese comma "、" and newlines. A separator ends
+ * an entry only once the entry holds an address, and never inside quotes or angle brackets, so that a
+ * name such as "Tanaka, Taro" in `Tanaka, Taro <taro@example.com>` stays with its address and the field
+ * a draft's recipients are joined into splits back into the same entries.
+ */
 export function splitRecipients(text: string): string[] {
-  return text
-    .split(/[,;、\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
+  const entries: string[] = []
+  let entry = ''
+  let quoted = false
+  let angled = false
+  let addressed = false
+  for (const char of text) {
+    if (char === '"') quoted = !quoted
+    if (!quoted) {
+      if (char === '<') angled = true
+      else if (char === '>') angled = false
+      else if (char === '@') addressed = true
+      else if (!angled && /[,;、\n]/.test(char)) {
+        if (addressed) {
+          entries.push(entry.trim())
+          entry = ''
+          addressed = false
+          continue
+        }
+        if (!entry.trim()) continue
+      }
+    }
+    entry += char
+  }
+  if (entry.trim()) entries.push(entry.trim())
+  return entries
 }

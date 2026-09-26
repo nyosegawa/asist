@@ -52,11 +52,32 @@
   font-size: 12px;
   color: var(--ui-text-strong);
 }
+/* The sentence stays beside the icon and wraps there, instead of moving below it as a whole. */
+.md-reply span {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .md-reply small {
   width: 100%;
   padding-left: 19px;
   font-size: 10px;
   color: var(--ui-text-muted);
+}
+.md-field.is-static {
+  align-items: baseline;
+}
+/* A reply's recipients are shown in full, never cut with an ellipsis. A long Cc list scrolls after three
+   lines so that the card still fits its size. */
+.md-static {
+  max-height: calc(3 * 1.5em);
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-text-strong);
+  overflow-wrap: anywhere;
+}
+.card[data-size='focus'] .md-static {
+  max-height: none;
 }
 .card[data-size='s'] .md-fields {
   gap: 4px;

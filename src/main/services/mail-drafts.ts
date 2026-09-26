@@ -1,15 +1,28 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { MAX_MAIL_DRAFTS, mailDraftPatchSchema, parseMailInput, type MailDraft } from '@shared/mail'
+import { MAX_MAIL_DRAFTS, mailDraftPatchSchema, parseMailInput, replySubject, type MailDraft } from '@shared/mail'
 import { errorText } from '@shared/i18n/error-text'
 import { storedContent, type StoredFormat } from '@shared/stored-format'
 import { openStoredFileSync } from './stored-file'
 
 export const DRAFTS_FORMAT: StoredFormat<MailDraft[]> = {
   name: 'mail-drafts.json',
-  version: 1,
-  upgrades: {},
+  version: 2,
+  upgrades: {
+    // A version 1 reply held only the message it answered, and its recipients were decided when it was
+    // sent. Nothing in the file says where it would have gone, so it becomes a new message with an empty
+    // To, which the user fills in before it can be sent.
+    1: (content) => {
+      const drafts = (content as { drafts?: unknown } | null)?.drafts
+      if (!Array.isArray(drafts)) throw new Error('drafts is not a list')
+      return {
+        drafts: drafts.map((draft: { reply?: { subject?: unknown } | null }) =>
+          draft.reply ? { ...draft, to: [], cc: [], subject: replySubject(String(draft.reply.subject ?? '')), reply: null } : draft
+        )
+      }
+    }
+  },
   parse: (content) => {
     const drafts = (content as { drafts?: unknown } | null)?.drafts
     if (!Array.isArray(drafts)) throw new Error('drafts is not a list')
@@ -99,10 +112,9 @@ export class MailDraftStore {
     const index = current.findIndex((draft) => draft.id === id)
     if (index < 0) throw new Error(errorText('mail.errors.draft.gone'))
     const before = current[index]
-    const { replyAll, ...fields } = patch
-    // A reply draft takes its recipients and subject from the message it answers, so only the body and
-    // the reply-all flag can be edited.
-    const allowed = before.reply ? { body: fields.body, reply: { ...before.reply, replyAll: replyAll ?? before.reply.replyAll } } : fields
+    // A reply draft keeps the recipients and the subject settled from the message it answers, so only
+    // the body can be edited.
+    const allowed = before.reply ? { body: patch.body } : patch
     const next: MailDraft = { ...before, ...stripUndefined(allowed), updatedAt: this.now() }
     this.commit(current.map((draft, at) => (at === index ? next : draft)))
     return { ...next }

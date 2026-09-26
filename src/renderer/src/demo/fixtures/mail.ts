@@ -1,4 +1,4 @@
-import { messageIdOf, type MailAccount, type MailDraft, type MailMessage, type MailStatus } from '@shared/mail'
+import { messageIdOf, quotation, replyRecipients, type MailAccount, type MailDraft, type MailMessage, type MailStatus } from '@shared/mail'
 
 /**
  * The mail of the demo. Two accounts, work (Gmail) and personal (iCloud), get messages built relative to
@@ -40,6 +40,7 @@ interface Seed {
   from: MailMessage['from']
   to?: MailMessage['to']
   cc?: MailMessage['cc']
+  replyTo?: MailMessage['replyTo']
   subject: string
   at: number
   text: string
@@ -57,6 +58,7 @@ const design = { name: 'Design Weekly', address: 'news@design-weekly.example' }
 const dentist = { name: 'さくら歯科', address: 'info@sakura-dental.example' }
 const mom = { name: '母', address: 'mother@example.com' }
 const store = { name: 'ヨドバシ.com', address: 'order@yodobashi.example' }
+const recruiting = { name: '採用チーム', address: 'recruiting@example.co.jp' }
 
 const SEEDS: Seed[] = [
   {
@@ -78,7 +80,8 @@ const SEEDS: Seed[] = [
     from: suzuki,
     to: [me],
     cc: [tanaka],
-    subject: 'Re: 採用面談の候補日',
+    replyTo: [recruiting],
+    subject: '採用面談の候補日',
     at: ago(2),
     unread: true,
     starred: true,
@@ -190,7 +193,7 @@ export const DEMO_MAIL_MESSAGES: MailMessage[] = SEEDS.map((seed) => {
     from: seed.from,
     to: seed.to ?? [me],
     cc: seed.cc ?? [],
-    replyTo: [],
+    replyTo: seed.replyTo ?? [],
     date: seed.at,
     snippet: seed.text.replace(/\s+/g, ' ').trim().slice(0, 200),
     unread: seed.unread ?? false,
@@ -235,7 +238,12 @@ export const DEMO_MAIL_CARD = {
     .slice(0, 8)
 }
 
-/** The drafts: one new message asked for by voice, and one reply to a message in the inbox. */
+const interview = DEMO_MAIL_MESSAGES.find((m) => m.folder === 'inbox' && m.uid === 1040)!
+
+/**
+ * The drafts: one new message asked for by voice, and one reply to everyone on a message in the inbox whose
+ * Reply-To names a team address, so that the reply goes to that address and not to its sender.
+ */
 export const DEMO_MAIL_DRAFTS: MailDraft[] = [
   {
     id: 'draft-greeting',
@@ -250,14 +258,23 @@ export const DEMO_MAIL_DRAFTS: MailDraft[] = [
     updatedAt: ago(0.1)
   },
   {
-    id: 'draft-reply-meeting',
+    id: 'draft-reply-interview',
     accountId: 'demo-work',
     to: [],
     cc: [],
     subject: '',
-    body: '田中さん\n\n火曜 14時でお願いします。',
-    reply: { id: messageIdOf('demo-work', 'inbox', 1041), subject: '来週の打合せの候補日', from: tanaka, replyAll: false },
-    origin: 'screen',
+    body: '鈴木さん\n\n9/25(木) 11:00 でお願いします。',
+    reply: {
+      id: interview.id,
+      subject: interview.subject,
+      from: interview.from,
+      replyAll: true,
+      ...replyRecipients(interview, me.address, true),
+      inReplyTo: interview.messageId,
+      references: [interview.messageId],
+      quote: quotation({ date: interview.date, from: interview.from, text: DEMO_MAIL_BODIES.get(interview.id) ?? '' })
+    },
+    origin: 'agent',
     createdAt: ago(1),
     updatedAt: ago(1)
   }

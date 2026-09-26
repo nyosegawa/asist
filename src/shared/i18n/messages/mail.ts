@@ -1149,16 +1149,16 @@ export const mail = defineMessages({
     },
     replyTo: {
       'ja-JP': '{name} の「{subject}」への返信。元の本文を引用します',
-      'en-US': 'Reply to {name} about "{subject}". The original is quoted below.',
-      'fr-FR': "Réponse à « {subject} » de {name}. Le message d'origine est cité en dessous.",
-      'de-DE': 'Antwort an {name} auf „{subject}“. Die ursprüngliche E-Mail wird darunter zitiert',
+      'en-US': 'Reply to "{subject}" from {name}. The original is quoted below.',
+      'fr-FR': "Réponse à « {subject} » de {name}. Le message d'origine est cité en dessous.",
+      'de-DE': 'Antwort auf „{subject}“ von {name}. Die ursprüngliche E-Mail wird darunter zitiert',
       'hi-IN': '{name} की "{subject}" का जवाब। मूल मेल नीचे जुड़ी रहेगी।',
-      'id-ID': 'Balasan untuk {name} soal “{subject}”. Isi aslinya dikutip di bawah.',
-      'it-IT': 'Risposta a {name} su «{subject}». Il messaggio originale viene citato sotto.',
+      'id-ID': 'Balasan untuk “{subject}” dari {name}. Isi aslinya dikutip di bawah.',
+      'it-IT': 'Risposta a «{subject}» di {name}. Il messaggio originale viene citato sotto.',
       'ko-KR': '{name}의 “{subject}”에 대한 답장. 원본 본문을 인용합니다',
-      'pt-BR': 'Resposta para {name} sobre “{subject}”. A mensagem original vai citada abaixo.',
-      'es-419': 'Respuesta a {name} sobre «{subject}». Abajo se cita el mensaje original.',
-      'es-ES': 'Respuesta a {name} sobre “{subject}”. El original se cita debajo.'
+      'pt-BR': 'Resposta a “{subject}”, de {name}. A mensagem original vai citada abaixo.',
+      'es-419': 'Respuesta a «{subject}», de {name}. Abajo se cita el mensaje original.',
+      'es-ES': 'Respuesta a “{subject}”, de {name}. El original se cita debajo.'
     },
     replyToAll: {
       'ja-JP': '{name} の「{subject}」への全員返信。元の本文を引用します',
@@ -1839,6 +1839,19 @@ export const mail = defineMessages({
         'pt-BR': 'A mensagem está vazia.',
         'es-419': 'El cuerpo está vacío.',
         'es-ES': 'El cuerpo está vacío.'
+      },
+      sending: {
+        'ja-JP': 'この下書きは送信中です。',
+        'en-US': 'This draft is being sent.',
+        'fr-FR': "Ce brouillon est en cours d'envoi.",
+        'de-DE': 'Dieser Entwurf wird gerade gesendet.',
+        'hi-IN': 'यह ड्राफ़्ट अभी भेजा जा रहा है।',
+        'id-ID': 'Draf ini sedang dikirim.',
+        'it-IT': 'Questa bozza è in fase di invio.',
+        'ko-KR': '이 임시 저장 메일은 보내는 중입니다.',
+        'pt-BR': 'Este rascunho está sendo enviado.',
+        'es-419': 'Este borrador se está enviando.',
+        'es-ES': 'Este borrador se está enviando.'
       }
     },
     change: {
