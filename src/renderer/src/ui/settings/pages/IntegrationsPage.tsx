@@ -3,7 +3,7 @@ import { KeyRound } from 'lucide-react'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
 import type { MessageKey } from '@shared/i18n'
-import type { ApiKeyState } from '@shared/ipc'
+import { keyReadable, type ApiKeyState } from '@shared/ipc'
 import { useStatusStore, useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
 import { CalendarSettings } from '../CalendarSettings'
@@ -47,7 +47,7 @@ function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
       {LLM_PROVIDERS.map((provider) => {
         const info = LLM_PROVIDER_INFO[provider]
         const state = status?.llmKeys[provider] ?? 'missing'
-        const saved = state === 'saved' || state === 'verified'
+        const saved = keyReadable(state)
         const inUse =
           provider === settings.conversationModel.provider ||
           provider === settings.bridgeModel.provider ||

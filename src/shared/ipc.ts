@@ -605,6 +605,9 @@ export interface MemoryOverview {
  */
 export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
 
+/** Whether the state is of a key the app can read and send. A missing key and one this build cannot decrypt are not. */
+export const keyReadable = (state: ApiKeyState): boolean => state === 'saved' || state === 'verified'
+
 export interface AppStatus {
   /** Whether both the conversation model and the bridge phrase model could be fetched from the real API with their providers' keys. */
   llm: boolean
@@ -1019,7 +1022,10 @@ export interface RendererApi {
   confirmResolve(id: string, approved: boolean): Promise<void>
   getSettings(): Promise<AppSettings>
   saveSettings(patch: SettingsPatch): Promise<AppSettings>
-  /** Validates the provider's API key, saves it to the .env under userData, and returns the status afterwards. */
+  /**
+   * Validates the provider's API key, saves it encrypted with the Keychain key in userData/api-keys.json, and
+   * returns the status afterwards.
+   */
   saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>
   ttsTest(): Promise<SpeechSegment>

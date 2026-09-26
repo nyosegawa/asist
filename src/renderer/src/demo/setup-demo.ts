@@ -1,6 +1,6 @@
 import { ttsEngineLabel } from '@/ui/settings/context'
 import { translate } from '@/i18n'
-import type { ApiKeyState, RendererApi, SetupProgress } from '@shared/ipc'
+import { keyReadable, type ApiKeyState, type RendererApi, type SetupProgress } from '@shared/ipc'
 import { LLM_PROVIDERS, type LlmProvider } from '@shared/llm-catalog'
 import { voiceController } from '@/voice/VoiceController'
 
@@ -57,7 +57,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     return {
       ...setup,
       services: await api.getStatus(),
-      apiKeyConfigured: keys[(await api.getSettings()).conversationModel.provider] !== 'missing',
+      apiKeyConfigured: keyReadable(keys[(await api.getSettings()).conversationModel.provider]),
       asr: { ...setup.asr, runtimeInstalled: state.asrReady, modelInstalled: state.asrReady, ready: state.asrReady }
     }
   }

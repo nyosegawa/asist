@@ -307,9 +307,19 @@ describe('settings dialog', () => {
     expect(view.querySelector('input[aria-label="OPENAI_API_KEY"]')).not.toBeNull()
   })
 
-  it('shows a saved key this build cannot decrypt as such and asks for it again', async () => {
-    useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'unreadable' } } })
+  it('shows a saved key this build cannot decrypt as such wherever a key appears, and asks for it again', async () => {
+    useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'unreadable', cerebras: 'unreadable' } } })
+    useSettingsStore.setState({ settings: { ...settings, voiceEngine: 'gpt-live' } })
     const view = await render()
+    expect(nav(view, 'integrations').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.integrationsCalendarOff', { keys: 1, total: 4 }))
+    // The conversation model's row and the GPT-Live row both show the OpenAI key.
+    const keyRows = [...view.querySelectorAll('.st-row')].filter(
+      (row) => row.querySelector('.st-row-label')?.textContent === t('settingsConversation.models.apiKey', { provider: 'OpenAI' })
+    )
+    expect(keyRows.map((row) => [row.querySelector('.st-chip')?.textContent, row.querySelector('.st-row-hint')?.textContent])).toEqual([
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })],
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })]
+    ])
     await act(async () => nav(view, 'integrations').click())
     const row = view.querySelector('.st-key[data-provider="openai"]')!
     expect(row.querySelector('.st-chip')?.textContent).toBe(t('settingsIntegrations.apiKeys.unreadable'))
