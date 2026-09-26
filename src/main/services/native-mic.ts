@@ -10,21 +10,25 @@ import { childEnv } from './child-env'
 /**
  * The lifecycle of the asist-mic helper, which captures the microphone through macOS voice processing.
  *
- * The helper streams 48 kHz mono float32 to stdout continuously. When the audio device changes it exits
- * with code 2 rather than following the change itself, and it is respawned here. Any other abnormal exit
- * is retried for a short while and then reported through onDown, after which the renderer switches to
- * getUserMedia. Closing stdin is how the helper is told to stop.
+ * The helper streams 48 kHz mono float32 to stdout continuously. It follows a change of the device's
+ * format itself, but when the default device changes it exits with code 2 and is respawned here. Any
+ * other abnormal exit is retried for a short while and then reported through onDown, after which the
+ * renderer switches to getUserMedia. Closing stdin is how the helper is told to stop.
  */
 
 const SAMPLE_RATE = 48_000
-/** How long the first frame may take after the spawn; initializing the audio engine costs a few hundred ms. */
+/**
+ * How long the first frame may take after each spawn. Initializing the audio engine costs a few hundred
+ * ms, and opening a Bluetooth microphone about 2 s (logged on 2026-09-26), so a helper respawned after a
+ * device change gets the whole time again.
+ */
 const FIRST_FRAME_TIMEOUT_MS = 5_000
 /** How long to wait before respawning after a device change, which the helper reports as exit code 2. */
 const RECONFIGURE_DELAY_MS = 300
 /** How many unexpected exits are retried within CRASH_WINDOW_MS before giving up. */
 const CRASH_RETRY_LIMIT = 2
 const CRASH_WINDOW_MS = 10_000
-/** More configuration-change restarts than this inside CONFIG_WINDOW_MS mean VPIO itself is unstable, so capture is given up. */
+/** More device-change restarts than this inside CONFIG_WINDOW_MS mean VPIO itself is unstable, so capture is given up. */
 const CONFIG_RESTART_LIMIT = 3
 const CONFIG_WINDOW_MS = 30_000
 /** How long frames may stop arriving from a helper that is still alive before it is respawned, which is how a degraded VPIO stuck in silence is recovered. */
@@ -38,8 +42,13 @@ let child: ChildProcessWithoutNullStreams | null = null
 let generation = 0
 let onFrame: FrameHandler | null = null
 let onDown: DownHandler | null = null
-/** Present only while start() has not settled. A permanent failure before it settles is reported as ok:false rather than through onDown. */
-let settleStart: ((result: NativeMicStartResult) => void) | null = null
+/** A start() that has not settled. A permanent failure before it settles is reported as ok:false rather than through onDown. */
+interface PendingStart {
+  settle: (result: NativeMicStartResult) => void
+  /** Starts the first-frame deadline over for a helper that has just been spawned. */
+  armDeadline: () => void
+}
+let pendingStart: PendingStart | null = null
 let crashTimestamps: number[] = []
 let configRestartTimestamps: number[] = []
 let lastFrameAt = 0
@@ -65,14 +74,13 @@ function registerQuitHook(): void {
 /** Reports a permanent failure: ok:false when capture has not started, onDown once it is running, which makes the renderer switch to getUserMedia. */
 function giveUp(reason: string): void {
   console.warn(`native-mic: ${reason}; giving up`)
-  const settle = settleStart
+  const pending = pendingStart
   const notify = onDown
-  settleStart = null
   onFrame = null
   onDown = null
   stopWatchdog()
-  if (settle) {
-    settle({ ok: false, sampleRate: SAMPLE_RATE, reason })
+  if (pending) {
+    pending.settle({ ok: false, sampleRate: SAMPLE_RATE, reason })
     return
   }
   notify?.(reason)
@@ -101,6 +109,7 @@ function spawnHelper(myGeneration: number): void {
   const spawned = spawn(binaryPath(), [], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv() })
   child = spawned
   lastFrameAt = Date.now()
+  pendingStart?.armDeadline()
   const reader = new Float32StreamReader()
 
   spawned.stdout.on('data', (chunk: Buffer) => {
@@ -135,8 +144,8 @@ function spawnHelper(myGeneration: number): void {
   spawned.on('exit', (code, signal) => {
     if (generation !== myGeneration || child !== spawned) return
     if (code === 2) {
-      // A device change settles after a single restart. Repeating within a short window means voice
-      // processing itself has become unstable and entered its degraded mode, so capture moves to
+      // A new default device settles after a single restart. Repeating within a short window means
+      // voice processing itself has become unstable and entered its degraded mode, so capture moves to
       // getUserMedia instead.
       child = null
       const now = Date.now()
@@ -146,7 +155,7 @@ function spawnHelper(myGeneration: number): void {
         giveUp('audio configuration keeps changing')
         return
       }
-      console.log('native-mic: audio configuration changed; restarting helper')
+      console.log('native-mic: audio device changed; restarting helper')
       setTimeout(() => {
         if (generation === myGeneration && onFrame) spawnHelper(myGeneration)
       }, RECONFIGURE_DELAY_MS)
@@ -176,47 +185,50 @@ export function start(frameHandler: FrameHandler, downHandler: DownHandler): Pro
   startWatchdog()
 
   return new Promise((resolve) => {
-    let timer: NodeJS.Timeout | null = null
+    let deadline: NodeJS.Timeout | null = null
     let sawSilentFrames = false
-    let settled = false
-    const settle = (result: NativeMicStartResult): void => {
-      if (settled) return
-      settled = true
-      if (timer) clearTimeout(timer)
-      timer = null
-      if (settleStart === settle) settleStart = null
-      resolve(result)
+    const pending: PendingStart = {
+      settle: (result) => {
+        if (pendingStart !== pending) return
+        pendingStart = null
+        if (deadline) clearTimeout(deadline)
+        deadline = null
+        resolve(result)
+      },
+      armDeadline: () => {
+        if (deadline) clearTimeout(deadline)
+        deadline = setTimeout(() => {
+          if (pendingStart !== pending) return
+          pending.settle({
+            ok: false,
+            sampleRate: SAMPLE_RATE,
+            reason: sawSilentFrames
+              ? 'only silent frames arrived from the microphone'
+              : 'the native microphone capture did not start'
+          })
+          if (generation === myGeneration) stop()
+        }, FIRST_FRAME_TIMEOUT_MS)
+        deadline.unref?.()
+      }
     }
-    timer = setTimeout(() => {
-      if (settleStart !== settle) return
-      settle({
-        ok: false,
-        sampleRate: SAMPLE_RATE,
-        reason: sawSilentFrames
-          ? 'only silent frames arrived from the microphone'
-          : 'the native microphone capture did not start'
-      })
-      if (generation === myGeneration) stop()
-    }, FIRST_FRAME_TIMEOUT_MS)
-    timer.unref?.()
-    settleStart = settle
+    pendingStart = pending
 
     onFrame = (frame) => {
-      if (settleStart === settle) {
+      if (pendingStart === pending) {
         // Without microphone permission the frames are exactly zero-filled, so the start counts as
         // successful only once real audio arrives; a real microphone always has a non-zero noise floor.
         if (!frame.some((sample) => sample !== 0)) {
           sawSilentFrames = true
           return
         }
-        settle({ ok: true, sampleRate: SAMPLE_RATE })
+        pending.settle({ ok: true, sampleRate: SAMPLE_RATE })
       }
       frameHandler(frame)
     }
     try {
       spawnHelper(myGeneration)
     } catch (error) {
-      settle({ ok: false, sampleRate: SAMPLE_RATE, reason: error instanceof Error ? error.message : String(error) })
+      pending.settle({ ok: false, sampleRate: SAMPLE_RATE, reason: error instanceof Error ? error.message : String(error) })
       if (generation === myGeneration) stop()
     }
   })
@@ -226,9 +238,7 @@ export function stop(): void {
   generation++
   onFrame = null
   onDown = null
-  const settle = settleStart
-  settleStart = null
-  settle?.({ ok: false, sampleRate: SAMPLE_RATE, reason: 'the native microphone start was cancelled' })
+  pendingStart?.settle({ ok: false, sampleRate: SAMPLE_RATE, reason: 'the native microphone start was cancelled' })
   stopWatchdog()
   const stale = child
   child = null

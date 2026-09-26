@@ -66,3 +66,20 @@ it('settles the old start without stopping the replacement or forwarding old fra
   expect(currentFrame).toHaveBeenCalledOnce()
   expect(children[1].stdin.writableEnded).toBe(false)
 })
+
+it('gives a helper respawned after a device change the whole first-frame time again', async () => {
+  const native = await import('../src/main/services/native-mic')
+  vi.spyOn(console, 'log').mockImplementation(() => {})
+  let result: { ok: boolean } | undefined
+  void native.start(() => {}, () => {}).then(value => { result = value })
+  // Opening a Bluetooth microphone takes about two seconds before the helper reports the change.
+  await vi.advanceTimersByTimeAsync(2_500)
+  children[0].emit('exit', 2, null)
+  await vi.advanceTimersByTimeAsync(300)
+  expect(children).toHaveLength(2)
+  await vi.advanceTimersByTimeAsync(3_000)
+  expect(result).toBeUndefined()
+  children[1].stdout.write(Buffer.from(new Float32Array([0.1, 0.2]).buffer))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(result?.ok).toBe(true)
+})
