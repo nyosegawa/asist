@@ -83,3 +83,34 @@ it('gives a helper respawned after a device change the whole first-frame time ag
   await vi.advanceTimersByTimeAsync(0)
   expect(result?.ok).toBe(true)
 })
+
+it('ends a start that helpers keep delaying by exiting just before their own deadline', async () => {
+  const native = await import('../src/main/services/native-mic')
+  vi.spyOn(console, 'log').mockImplementation(() => {})
+  let result: { ok: boolean } | undefined
+  void native.start(() => {}, () => {}).then(value => { result = value })
+  let exits = 0
+  while (result === undefined && exits < 10) {
+    await vi.advanceTimersByTimeAsync(4_600)
+    if (result !== undefined) break
+    children.at(-1)!.emit('exit', 2, null)
+    exits++
+    await vi.advanceTimersByTimeAsync(300)
+  }
+  expect(result?.ok).toBe(false)
+  // A start waits through one respawn after a device change, not through every one the helpers report.
+  expect(exits).toBeLessThanOrEqual(2)
+})
+
+it('gives capture up at once when the helper reports that the configuration keeps changing', async () => {
+  const native = await import('../src/main/services/native-mic')
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const down = vi.fn()
+  const started = native.start(() => {}, down)
+  children[0].stdout.write(Buffer.from(new Float32Array([0.1, 0.2]).buffer))
+  expect((await started).ok).toBe(true)
+  children[0].emit('exit', 5, null)
+  await vi.advanceTimersByTimeAsync(1_000)
+  expect(down).toHaveBeenCalledOnce()
+  expect(children).toHaveLength(1)
+})

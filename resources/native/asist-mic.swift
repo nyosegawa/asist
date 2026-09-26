@@ -15,6 +15,10 @@ import Foundation
 //       configuration changed, and the parent restarts it
 //   3 = voice processing cannot be enabled
 //   4 = there is no input device, or the engine failed to start
+//   5 = the audio configuration keeps changing, and the parent gives voice processing up
+//
+// Arguments: how many changes of the configuration within how many seconds mean that it keeps changing,
+// the limit the parent also applies to changes of the device.
 //
 // Build it with scripts/build-native-mic.sh, which runs swiftc.
 
@@ -30,6 +34,17 @@ Thread.detachNewThread {
   while readLine(strippingNewline: false) != nil {}
   exit(0)
 }
+
+// A top-level guard would make every function after it a local function of the script, which the
+// configuration change handler cannot call from its concurrent closure.
+let (changeLimit, changeWindow): (Int, TimeInterval) = {
+  let arguments = CommandLine.arguments
+  guard arguments.count == 3, let limit = Int(arguments[1]), let window = TimeInterval(arguments[2]) else {
+    log("expected the limit of configuration changes and its window in seconds")
+    exit(4)
+  }
+  return (limit, window)
+}()
 
 let engine = AVAudioEngine()
 let input = engine.inputNode
@@ -52,8 +67,6 @@ func enableVoiceProcessing() {
   }
 }
 
-// A top-level guard would make every function after it a local function of the script, which the
-// configuration change handler cannot call from its concurrent closure.
 let outFormat: AVAudioFormat = {
   guard
     let format = AVAudioFormat(
@@ -178,13 +191,23 @@ let outputDevice = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice)
 // sample rate and the channels and posts a configuration change; 16 kHz with 3 channels was logged on
 // 2026-09-26. Exiting on it would release the microphone, the headset would switch back, and every new
 // helper would meet the same change. The same devices are therefore kept open and capture starts again on
-// the new format. Only another default device gets a new process, which opens it from scratch.
+// the new format. Only another default device gets a new process, which opens it from scratch. A headset
+// that keeps switching would otherwise restart capture forever, with a gap each time, so changes past the
+// limit end the helper and the parent moves to getUserMedia.
+var configurationChanges: [Date] = []
+
 func followConfigurationChange() {
   if defaultDevice(kAudioHardwarePropertyDefaultInputDevice) != inputDevice
     || defaultDevice(kAudioHardwarePropertyDefaultOutputDevice) != outputDevice
   {
     log("audio device changed")
     exit(2)
+  }
+  let now = Date()
+  configurationChanges = configurationChanges.filter { now.timeIntervalSince($0) < changeWindow } + [now]
+  if configurationChanges.count > changeLimit {
+    log("audio configuration keeps changing")
+    exit(5)
   }
   log("audio configuration changed; capturing again")
   engine.stop()

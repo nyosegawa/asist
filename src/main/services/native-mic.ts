@@ -11,9 +11,10 @@ import { childEnv } from './child-env'
  * The lifecycle of the asist-mic helper, which captures the microphone through macOS voice processing.
  *
  * The helper streams 48 kHz mono float32 to stdout continuously. It follows a change of the device's
- * format itself, but when the default device changes it exits with code 2 and is respawned here. Any
- * other abnormal exit is retried for a short while and then reported through onDown, after which the
- * renderer switches to getUserMedia. Closing stdin is how the helper is told to stop.
+ * format itself, but when the default device changes it exits with code 2 and is respawned here, and
+ * when the format keeps changing it exits with code 5 and capture is given up. Any other abnormal exit
+ * is retried for a short while and then reported through onDown, after which the renderer switches to
+ * getUserMedia. Closing stdin is how the helper is told to stop.
  */
 
 const SAMPLE_RATE = 48_000
@@ -25,10 +26,19 @@ const SAMPLE_RATE = 48_000
 const FIRST_FRAME_TIMEOUT_MS = 5_000
 /** How long to wait before respawning after a device change, which the helper reports as exit code 2. */
 const RECONFIGURE_DELAY_MS = 300
+/**
+ * How long a whole start may take: the first spawn and one respawn after a device change. Helpers that
+ * keep exiting just before their own deadline would otherwise leave the microphone starting for tens of
+ * seconds.
+ */
+const START_TIMEOUT_MS = 2 * FIRST_FRAME_TIMEOUT_MS + RECONFIGURE_DELAY_MS
 /** How many unexpected exits are retried within CRASH_WINDOW_MS before giving up. */
 const CRASH_RETRY_LIMIT = 2
 const CRASH_WINDOW_MS = 10_000
-/** More device-change restarts than this inside CONFIG_WINDOW_MS mean VPIO itself is unstable, so capture is given up. */
+/**
+ * More changes than this inside CONFIG_WINDOW_MS mean VPIO itself is unstable, so capture is given up. It
+ * counts the respawns after a device change here, and the helper counts the changes of format it follows.
+ */
 const CONFIG_RESTART_LIMIT = 3
 const CONFIG_WINDOW_MS = 30_000
 /** How long frames may stop arriving from a helper that is still alive before it is respawned, which is how a degraded VPIO stuck in silence is recovered. */
@@ -106,7 +116,10 @@ function startWatchdog(): void {
 }
 
 function spawnHelper(myGeneration: number): void {
-  const spawned = spawn(binaryPath(), [], { stdio: ['pipe', 'pipe', 'pipe'], env: childEnv() })
+  const spawned = spawn(binaryPath(), [String(CONFIG_RESTART_LIMIT), String(CONFIG_WINDOW_MS / 1000)], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: childEnv()
+  })
   child = spawned
   lastFrameAt = Date.now()
   pendingStart?.armDeadline()
@@ -143,6 +156,11 @@ function spawnHelper(myGeneration: number): void {
   spawned.on('error', (error) => fail(`helper error: ${error.message}`))
   spawned.on('exit', (code, signal) => {
     if (generation !== myGeneration || child !== spawned) return
+    if (code === 5) {
+      child = null
+      giveUp('audio configuration keeps changing')
+      return
+    }
     if (code === 2) {
       // A new default device settles after a single restart. Repeating within a short window means
       // voice processing itself has become unstable and entered its degraded mode, so capture moves to
@@ -187,27 +205,31 @@ export function start(frameHandler: FrameHandler, downHandler: DownHandler): Pro
   return new Promise((resolve) => {
     let deadline: NodeJS.Timeout | null = null
     let sawSilentFrames = false
+    const expire = (): void => {
+      if (pendingStart !== pending) return
+      pending.settle({
+        ok: false,
+        sampleRate: SAMPLE_RATE,
+        reason: sawSilentFrames
+          ? 'only silent frames arrived from the microphone'
+          : 'the native microphone capture did not start'
+      })
+      if (generation === myGeneration) stop()
+    }
+    const limit = setTimeout(expire, START_TIMEOUT_MS)
+    limit.unref?.()
     const pending: PendingStart = {
       settle: (result) => {
         if (pendingStart !== pending) return
         pendingStart = null
+        clearTimeout(limit)
         if (deadline) clearTimeout(deadline)
         deadline = null
         resolve(result)
       },
       armDeadline: () => {
         if (deadline) clearTimeout(deadline)
-        deadline = setTimeout(() => {
-          if (pendingStart !== pending) return
-          pending.settle({
-            ok: false,
-            sampleRate: SAMPLE_RATE,
-            reason: sawSilentFrames
-              ? 'only silent frames arrived from the microphone'
-              : 'the native microphone capture did not start'
-          })
-          if (generation === myGeneration) stop()
-        }, FIRST_FRAME_TIMEOUT_MS)
+        deadline = setTimeout(expire, FIRST_FRAME_TIMEOUT_MS)
         deadline.unref?.()
       }
     }
