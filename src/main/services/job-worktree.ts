@@ -19,16 +19,17 @@ function jobBase(worktree: Worktree, commit: string): string {
 
 /**
  * Settles the output after the process has ended. On failure the caller keeps the worktree. The commit holds
- * the worktree as the agent left it, and the submodules it touched are recorded: a job that touched any is
- * never merged by ASIST, and its worktree stays until the user discards it, since a commit made inside a
- * submodule of the worktree has no other copy.
+ * the worktree as the agent left it, and the submodules it touched or holds work in are recorded: a job with
+ * any is never merged by ASIST, and its worktree stays until the user discards it, since a commit made inside
+ * a submodule of the worktree has no other copy. The worktree is removed without asking only when neither the
+ * diff nor its submodules hold anything that could be lost.
  */
 export function captureWorktree(job: AgentJob): Pick<AgentJob, 'worktree' | 'mergeState'> {
   const worktree = job.worktree!
   git.commitAll(worktree.dir, `asist: ${job.title}`)
   const commit = git.headCommit(worktree.dir)
   const base = jobBase(worktree, commit)
-  const submodules = sortedUnique([...git.submoduleEntryChanges(worktree.repo, base, commit), ...git.submodulesWithChanges(worktree.dir)])
+  const submodules = sortedUnique([...git.submoduleEntryChanges(worktree.repo, base, commit), ...git.submodulesWithWork(worktree.dir)])
   const settled = { ...worktree, commit, submodules: submodules.length > 0 ? submodules : undefined }
   if (!git.hasChanges(worktree.repo, base, commit) && submodules.length === 0) {
     git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
@@ -76,12 +77,13 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
 
 /**
  * Refuses a merge that would apply more than the review counted from `base` showed, one of a job that
- * touched submodules, which the user merges or discards, and one with nothing to merge.
+ * touched submodules, which the user merges or discards, and one with nothing to merge. The submodules are
+ * looked into again, since the merge removes the worktree and whatever work appeared in them since it settled.
  */
 export function assertMergeable(job: AgentJob, commit: string, base: string): void {
   const worktree = job.worktree!
   if (mergeBase(worktree, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
-  const submodules = touchedSubmodules(worktree, base, commit)
+  const submodules = sortedUnique([...touchedSubmodules(worktree, base, commit), ...git.submodulesWithWork(worktree.dir)])
   if (submodules.length > 0) {
     throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch }))
   }

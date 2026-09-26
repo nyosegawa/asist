@@ -289,7 +289,7 @@ describe('git service with an isolated worktree', () => {
       const { wt } = withSubmodule()
       fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
       expect(git.commitAll(wt, 'asist: job')).toBe(false)
-      expect(git.submodulesWithChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.submodulesWithWork(wt)).toEqual(['vendor/sub'])
     })
 
     it.each(['all', 'dirty', 'untracked'])('finds changes inside a submodule whose ignore setting is %s', (mode) => {
@@ -309,7 +309,7 @@ describe('git service with an isolated worktree', () => {
         fs.writeFileSync(path.join(inside, 'new.txt'), 'new file\n')
       }
       git.commitAll(wt, 'asist: job')
-      expect(git.submodulesWithChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.submodulesWithWork(wt)).toEqual(['vendor/sub'])
     })
 
     it('finds a change inside a submodule that diff.ignoreSubmodules in the repository would hide', () => {
@@ -317,7 +317,7 @@ describe('git service with an isolated worktree', () => {
       run(repo, ['config', 'diff.ignoreSubmodules', 'all'])
       run(wt, [...FILE, 'submodule', 'update', '-q', '--init'])
       fs.writeFileSync(path.join(wt, 'vendor', 'sub', 'lib.txt'), 'edited, not committed\n')
-      expect(git.submodulesWithChanges(wt)).toEqual(['vendor/sub'])
+      expect(git.submodulesWithWork(wt)).toEqual(['vendor/sub'])
     })
 
     it('does not take a folder .gitmodules still names for a submodule once it holds ordinary files', () => {
@@ -330,7 +330,7 @@ describe('git service with an isolated worktree', () => {
       run(repo, ['add', 'lib'])
       run(repo, [...ID, 'commit', '-q', '-m', 'vendored, with .gitmodules left behind'])
       const { wt } = cut('asist/vendored')
-      expect(git.submodulesWithChanges(wt)).toEqual([])
+      expect(git.submodulesWithWork(wt)).toEqual([])
     })
   })
 
