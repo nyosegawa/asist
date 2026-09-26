@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { NoteSummary } from '@shared/notes'
 import { useNoteStore, useToastStore } from '@/state/stores'
-import { useMiniApp, useViewStore } from '@/state/view'
+import { useLeaveGuard, useMiniApp, useViewStore } from '@/state/view'
 import { askConfirm } from '@/state/confirm'
 import { MarkdownContent } from '@/panels/viewers/MarkdownViewer'
 import { relativeTime } from '@/panels/primitives/format'
@@ -95,6 +95,7 @@ export function NotesView({ open }: { open: boolean }): React.JSX.Element {
     update('notes', { noteId: creating ? beforeCreate.current : selected, editing: false })
     return true
   }
+  useLeaveGuard(dirty, leaveEditing)
 
   useEffect(() => {
     if (!open) return

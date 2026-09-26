@@ -6,6 +6,7 @@ import type { AppSettings, AppStatus, EmbeddingStatus, MemoryOverview, SetupProg
 import { defaultPersona } from '@shared/persona'
 import { CONVERSATION_LOCALES } from '@shared/conversation-locale'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { SETTINGS_PAGES } from '@shared/mini-apps'
 import { THEMES } from '@shared/themes'
 import { localDate, type UsageDay } from '@shared/api-usage'
@@ -390,6 +391,24 @@ describe('settings dialog while a model is prepared or memories are converted', 
     await act(async () => {})
     expect(statusRow().querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.waiting'))
     expect(statusRow().querySelector('.st-row-hint')?.textContent).toBe(t('settingsMemory.curation.pending'))
+  })
+
+  it('gives the reason on the memory page when main cannot read the curation state, instead of saying the curation has not run yet', async () => {
+    const details = 'jobs: Unrecognized key'
+    api.memoryOverview.mockRejectedValueOnce(
+      new Error(errorText('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details }))
+    )
+    const view = await render()
+    await act(async () => nav(view, 'memory').click())
+    await act(async () => {})
+    const statusRow = [...view.querySelectorAll('.st-row')].find(
+      (el) => el.querySelector('.st-row-label')?.textContent === t('settingsMemory.curation.status')
+    )!
+    expect(statusRow.querySelector('.st-chip')?.textContent).toBe(t('settingsMemory.curation.unavailable'))
+    expect(statusRow.querySelector('.st-chip')?.getAttribute('data-tone')).toBe('warn')
+    expect(statusRow.querySelector('.st-row-hint')?.textContent).toBe(
+      t('memory.errors.stateFileInvalid', { file: '/userData/memory-curation.json', details })
+    )
   })
 
   it('reads the conversion count again after semantic search is turned on, until the conversion ends', async () => {

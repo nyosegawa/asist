@@ -902,8 +902,12 @@ export interface RendererApi {
   memoryDocuments(): Promise<MemoryDocument[]>
   /** The document's markdown, or null when there is none. */
   memoryDocumentRead(file: string): Promise<string | null>
-  /** Replaces a document wholesale. It throws with the reason when the markdown breaks the writing rules, and a save becomes a commit. */
-  memoryDocumentWrite(file: string, markdown: string): Promise<MemoryDocument>
+  /**
+   * Replaces a document wholesale, and a save becomes a commit. `base` is the markdown the screen read
+   * before editing; the save throws when the document has changed since, and with the reason when the
+   * markdown breaks the writing rules.
+   */
+  memoryDocumentWrite(file: string, markdown: string, base: string): Promise<MemoryDocument>
   /** Creates a new page from the template. */
   memoryDocumentCreate(input: MemoryPageInput): Promise<MemoryDocument>
   /** Deletes a page or a journal entry. A page talked about on a day not curated yet can be written again by the next curation. */

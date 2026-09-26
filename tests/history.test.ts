@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationPart } from '@shared/conversation'
 import { estimateTokens } from '@shared/token-estimate'
+import { buildMemoryInjection, type InjectableMemory, type MemoryInjection } from '@shared/memory-injection'
 import { interruptedBeforeReply, interruptedWhileSpeaking } from '@shared/turn-recovery'
 
 const INTERRUPTED_BEFORE_REPLY = interruptedBeforeReply('ja-JP')
@@ -58,6 +59,16 @@ const message = (turnId: number, role: 'user' | 'assistant', parts: Conversation
   role,
   parts
 })
+
+/** A memory note a live engine sent to the model once the utterance of the turn was already recorded. */
+const memoryNote = (turnId: number, injection: MemoryInjection): ConversationRecord => ({
+  t: T0 + turnId * 1000 + 800,
+  kind: 'note',
+  turnId,
+  text: injection.text,
+  memoryIds: injection.ids
+})
+const CAFE: InjectableMemory = { id: 'm-cafe', kind: 'section', page: '行きつけ', heading: 'いつもの店', text: '中野のカフェ', date: '' }
 
 const text = (role: 'user' | 'assistant', value: string): ConversationMessage => ({ role, parts: [{ type: 'text', text: value }] })
 const textOf = (m: ConversationMessage): string => m.parts.map((part) => (part.type === 'text' ? part.text : '')).join('')
@@ -126,6 +137,41 @@ describe('ConversationHistory, derived from the conversation log', () => {
     await history.compact('daily')
     expect(history.toMessages().some((m) => textOf(m).includes('[記憶]'))).toBe(false)
     expect(history.shownMemoryIds().size).toBe(0)
+  })
+
+  it('keeps a memory note sent after an utterance on that utterance, even once the next one has started, so its memory is not injected again', () => {
+    const { history } = makeHistory()
+    const inject = (): MemoryInjection | null => buildMemoryInjection([CAFE], { locale: 'ja-JP', excludeIds: history.shownMemoryIds() })
+    const note = inject()!
+    history.apply(user(1, 'いつもの店'))
+    history.apply(assistant(1, '中野のカフェですね'))
+    // The search for the first utterance finishes after the second one was recorded.
+    history.apply(user(2, 'そこまでの道は'))
+    history.apply(memoryNote(1, note))
+    expect(inject()).toBeNull()
+    const messages = history.toMessages().map(textOf)
+    expect(messages[0]).toBe(`[2026/9/8(火) 16:48] いつもの店\n\n${note.text}`)
+    expect(messages[2]).not.toContain(note.text)
+    // The log replayed at startup gives the same history.
+    const { history: replayed } = makeHistory({ stored: [user(1, 'いつもの店'), user(2, 'そこまでの道は'), memoryNote(1, note)] })
+    replayed.ensureLoaded()
+    expect(buildMemoryInjection([CAFE], { locale: 'ja-JP', excludeIds: replayed.shownMemoryIds() })).toBeNull()
+  })
+
+  it('injects a memory again once the turn that showed it is folded into the summary, and drops a note that comes for such a turn', async () => {
+    const { history } = makeHistory({ recentTurns: 1 })
+    const note = buildMemoryInjection([CAFE], { locale: 'ja-JP' })!
+    history.apply(user(1, 'いつもの店'))
+    history.apply(memoryNote(1, note))
+    history.apply(assistant(1, '中野のカフェですね'))
+    turn(history, 2)
+    expect(history.shownMemoryIds()).toEqual(new Set(['m-cafe']))
+    history.noteContextTokens(1_000, history.revision)
+    await history.compact('limit')
+    expect(history.shownMemoryIds().size).toBe(0)
+    history.apply(memoryNote(1, note))
+    expect(history.shownMemoryIds().size).toBe(0)
+    expect(history.toMessages().some((m) => textOf(m).includes(note.text))).toBe(false)
   })
 
   it('ends with the user message while the assistant reply of the turn has not arrived', () => {

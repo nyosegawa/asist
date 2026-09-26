@@ -41,8 +41,9 @@ const samplesOf = (format: StoredFormat<unknown>): string[] => {
 }
 
 describe('the samples of the released versions of each stored file', () => {
-  it.each(FORMATS.map((format) => [format.name, format] as const))('has a sample of %s', (_name, format) => {
-    expect(samplesOf(format).length).toBeGreaterThan(0)
+  // Without a sample of the current version, a change to the form that does not raise the version goes unnoticed.
+  it.each(FORMATS.map((format) => [format.name, format] as const))('has a sample of the current version of %s', (_name, format) => {
+    expect(samplesOf(format)).toContain(`${path.basename(format.name, '.json')}.v${format.version}.json`)
   })
 
   const cases = FORMATS.flatMap((format) => samplesOf(format).map((file) => [file, format] as const))

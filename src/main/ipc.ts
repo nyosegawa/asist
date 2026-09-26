@@ -359,8 +359,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
 
   handle(IpcChannel.MemoryDocuments, () => memory.documents())
   handle(IpcChannel.MemoryDocumentRead, (_e, file: string) => memory.documentRead(String(file)))
-  handle(IpcChannel.MemoryDocumentWrite, (_e, file: string, markdown: string) =>
-    withConfigurationMutation(() => memory.documentWrite(String(file), String(markdown)))
+  handle(IpcChannel.MemoryDocumentWrite, (_e, file: string, markdown: string, base: string) =>
+    withConfigurationMutation(() => memory.documentWrite(String(file), String(markdown), String(base)))
   )
   handle(IpcChannel.MemoryDocumentCreate, (_e, input: unknown) => withConfigurationMutation(() => memory.documentCreate(input)))
   handle(IpcChannel.MemoryDocumentDelete, (_e, file: string) => withConfigurationMutation(() => memory.documentDelete(String(file))))
