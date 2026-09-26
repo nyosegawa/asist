@@ -63,12 +63,18 @@ export interface GptLiveDeps extends LiveEngineDeps {
 
 /** How long session.started may take before opening fails. */
 const OPEN_TIMEOUT_MS = 15_000
-/**
- * How long the input transcript stays quiet before a delegation takes it, and how long a delegation
- * waits at most, because the transcript can arrive after it.
- */
+/** How long the input transcript stays quiet before a delegation takes it. */
 const DELEGATION_QUIET_MS = 400
-const DELEGATION_MAX_WAIT_MS = 2000
+/**
+ * How long a delegation waits for the input transcript to begin, which can be after the delegation.
+ * Past it brain is told that no transcript arrived.
+ */
+const DELEGATION_START_WAIT_MS = 2000
+/**
+ * How long a delegation waits at most for a transcript that has begun and keeps arriving, so that a
+ * transcript that never goes quiet cannot hold the turn back for good.
+ */
+const DELEGATION_MAX_WAIT_MS = 10_000
 /** What brain is told when the voice delegated a turn whose transcript never arrived. */
 const NO_TRANSCRIPT: PromptText = {
   ja: `[声の担当からの依頼。直前の発話の転写が届いていない。文脈から推測して短く応じ、分からなければ聞き返す]`,
@@ -250,10 +256,7 @@ export class GptLiveEngine extends LiveEngineBase {
   private async delegate(delegationId: string): Promise<void> {
     this.claimUserUtterance()
     const startedAt = this.now()
-    // A transcript that has only just begun is a fragment of the utterance, so the wait ends once it
-    // has begun and gone quiet, whether it began before the delegation or after it.
-    const settled = (): boolean => this.transcripts.pending('user') !== '' && this.now() - this.lastInputDeltaAt >= DELEGATION_QUIET_MS
-    while (!settled() && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
+    while (!this.delegationSettled(startedAt)) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
     // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
@@ -264,6 +267,17 @@ export class GptLiveEngine extends LiveEngineBase {
     if (!handle) return
     this.adoptTurn(handle.turnId)
     this.touch()
+  }
+
+  /**
+   * Whether a delegation can take the utterance. A transcript that has begun is taken only once it has
+   * gone quiet, whether it began before the delegation or after it, since a transcript still arriving
+   * is a fragment of the utterance.
+   */
+  private delegationSettled(startedAt: number): boolean {
+    const waited = this.now() - startedAt
+    if (this.transcripts.pending('user') === '') return waited >= DELEGATION_START_WAIT_MS
+    return this.now() - this.lastInputDeltaAt >= DELEGATION_QUIET_MS || waited >= DELEGATION_MAX_WAIT_MS
   }
 
   /** A job report or an interrupting utterance, read by the voice model outside any delegation. */

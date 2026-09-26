@@ -375,6 +375,49 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('waits for a transcript that begins just before the start limit until it goes quiet, rather than handing brain the part heard by then', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(1800)
+    for (const [i, delta] of ['明日の', '天気を', '教えて', 'ほしい'].entries()) {
+      socket.emit({ type: 'session.input_transcript.delta', delta, event_id: `t${i}`, start_ms: 2, end_ms: 3 })
+      await vi.advanceTimersByTimeAsync(300)
+    }
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['明日の天気を教えてほしい'])
+    await engine.stop()
+  })
+
+  it('tells brain that no transcript arrived when none begins in time, and takes one that never goes quiet at the longest wait', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd1', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(1900)
+    expect(beginTurn).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(beginTurn).toHaveBeenCalledOnce()
+    socket.emit({ type: 'session.delegation.created', event_id: 'd2', offset_ms: 2, delegation: { id: 'dlg2', type: 'delegation', target: 'client' } })
+    let waited = 0
+    while (beginTurn.mock.calls.length === 1 && waited < 60_000) {
+      socket.emit({ type: 'session.input_transcript.delta', delta: 'あ', event_id: `t${waited}`, start_ms: 2, end_ms: 3 })
+      await vi.advanceTimersByTimeAsync(200)
+      waited += 200
+    }
+    expect(beginTurn).toHaveBeenCalledTimes(2)
+    expect(waited).toBeGreaterThanOrEqual(10_000)
+    expect(waited).toBeLessThanOrEqual(10_200)
+    await engine.stop()
+  })
+
   it('ends a delegation still waiting for its transcript when the engine stops, and carries nothing of it into the next start', async () => {
     const { engine, sockets, beginTurn } = await setup()
     engine.activity(true)
