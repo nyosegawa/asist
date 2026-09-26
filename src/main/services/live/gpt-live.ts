@@ -31,14 +31,23 @@ import { LiveEngineBase, type LiveEngineDeps } from './engine'
  * the initial context every time it opens.
  */
 
-/** Where events sent to GPT-Live go. Tests substitute a fake. */
+/** Where events sent to GPT-Live go, the part of the SDK's LiveWS that is used. Tests substitute a fake. */
 export interface LiveSocket {
   send(event: LiveAPI.ClientEvent): void
   close(): void
   on(event: 'event', listener: (event: LiveAPI.ServerEvent) => void): unknown
-  on(event: 'error', listener: (error: Error) => void): unknown
+  /** `error` is set when the error is a server's error event, which LiveWS also emits as an 'event'. */
+  on(event: 'error', listener: (error: Error & { error?: LiveAPI.ErrorEvent }) => void): unknown
   on(event: 'close', listener: (code: number, reason: string) => void): unknown
+  /** The WebSocket underneath, whose readyState follows RFC 6455. */
+  readonly socket: { readonly readyState: number }
 }
+
+/**
+ * The readyState of an open WebSocket. LiveWS queues what is sent before it, and after it, once the
+ * server has begun to close the socket, reports each send as an 'error' instead of throwing.
+ */
+const OPEN = 1
 
 export interface GptLiveDeps extends LiveEngineDeps {
   client: () => OpenAI | null
@@ -54,7 +63,10 @@ export interface GptLiveDeps extends LiveEngineDeps {
 
 /** How long session.started may take before opening fails. */
 const OPEN_TIMEOUT_MS = 15_000
-/** How long a delegation waits for the input transcript to settle, because the transcript can arrive after it. */
+/**
+ * How long the input transcript stays quiet before a delegation takes it, and how long a delegation
+ * waits at most, because the transcript can arrive after it.
+ */
 const DELEGATION_QUIET_MS = 400
 const DELEGATION_MAX_WAIT_MS = 2000
 /** What brain is told when the voice delegated a turn whose transcript never arrived. */
@@ -123,28 +135,41 @@ export class GptLiveEngine extends LiveEngineBase {
     const socket = this.deps.connect(client)
     this.socket = socket
     this.currentSeconds = 0
-    const started = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+    let started = false
+    const ready = new Promise<void>((resolve, reject) => {
+      const fail = (error: Error): void => {
+        clearTimeout(timer)
+        reject(error)
+      }
+      const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
       socket.on('event', (event) => {
+        if (this.socket !== socket) return
         if (event.type === 'session.started') {
+          started = true
           clearTimeout(timer)
           resolve()
+        } else if (event.type === 'error' && !started) {
+          // An error before the start is why the session did not start, and the failure to connect reports it.
+          fail(new Error(event.error.message))
+          return
         }
         this.onServerEvent(event)
       })
       socket.on('error', (error) => {
-        clearTimeout(timer)
+        // A server's error event arrives here as well, with the event's JSON as its message; the 'event'
+        // listener reports it.
+        if (this.socket !== socket || error.error) return
         console.error('gpt-live socket error:', errMessage(error))
-        this.events.emit('event', { type: 'error', message: errMessage(error) })
-        reject(error)
+        if (started) this.events.emit('event', { type: 'error', message: errMessage(error) })
+        else fail(error)
       })
       socket.on('close', (code, reason) => {
-        clearTimeout(timer)
-        if (this.socket === socket) this.onSocketClosed(code, reason)
-        reject(new Error(errorText('voice.live.closed', { engine: this.info.label, reason: `${code} ${reason}` })))
+        if (this.socket !== socket) return
+        if (started) this.onSocketClosed(code, reason)
+        else fail(new Error(errorText('voice.live.closed', { engine: this.info.label, reason: `${code} ${reason}` })))
       })
     })
-    socket.send({
+    this.send({
       type: 'session.start',
       session: {
         model: settings.model,
@@ -154,36 +179,35 @@ export class GptLiveEngine extends LiveEngineBase {
         input: initialItems(this.deps.history())
       }
     })
-    await started
+    await ready
   }
 
   protected async closeSession(): Promise<void> {
     const socket = this.socket
     this.socket = null
     if (!socket) return
-    try {
-      socket.send({ type: 'session.close' })
-    } catch {
-      // The socket is already closed.
-    }
+    if (socket.socket.readyState === OPEN) socket.send({ type: 'session.close' })
     socket.close()
     this.secondsBefore += this.currentSeconds
     this.currentSeconds = 0
   }
 
+  /** Sends to the socket the engine owns, unless the server has begun to close it; its close then ends the session. */
+  private send(event: LiveAPI.ClientEvent): void {
+    const socket = this.socket
+    if (socket && socket.socket.readyState <= OPEN) socket.send(event)
+  }
+
   protected transmitAudio(base64: string): void {
-    this.socket?.send({ type: 'session.input_audio.append', audio: base64 })
+    this.send({ type: 'session.input_audio.append', audio: base64 })
   }
 
   private onSocketClosed(code: number, reason: string): void {
     this.socket = null
     this.secondsBefore += this.currentSeconds
     this.currentSeconds = 0
-    this.policy.closed()
-    if (this.enabled) {
-      console.warn(`gpt-live: connection closed (${code} ${reason})`)
-      this.setConnection('idle')
-    }
+    if (this.enabled) console.warn(`gpt-live: connection closed (${code} ${reason})`)
+    this.sessionEnded()
   }
 
   private onServerEvent(event: LiveAPI.ServerEvent): void {
@@ -223,17 +247,17 @@ export class GptLiveEngine extends LiveEngineBase {
    * transcript arrived at all, brain is told so instead of the voice model saying it could not hear.
    */
   private async delegate(delegationId: string): Promise<void> {
+    this.claimUserUtterance()
     const startedAt = this.now()
-    while (this.now() - this.lastInputDeltaAt < DELEGATION_QUIET_MS && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
+    // A transcript that has only just begun is a fragment of the utterance, so the wait ends once it
+    // has begun and gone quiet, whether it began before the delegation or after it.
+    const settled = (): boolean => this.transcripts.pending('user') !== '' && this.now() - this.lastInputDeltaAt >= DELEGATION_QUIET_MS
+    while (!settled() && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    if (!this.transcripts.pending('user')) {
-      const waitUntil = startedAt + DELEGATION_MAX_WAIT_MS
-      while (!this.transcripts.pending('user') && this.now() < waitUntil) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
-    }
-    const text = this.transcripts.take('user') || promptText(conversationLocale(), NO_TRANSCRIPT)
+    // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
+    if (!this.enabled) return
+    const text = this.takeUserUtterance() || promptText(conversationLocale(), NO_TRANSCRIPT)
     this.transcripts.flush('assistant')
     const handle = this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     if (!handle) return
@@ -249,14 +273,14 @@ export class GptLiveEngine extends LiveEngineBase {
   /** Hands one of brain's sentences to the voice model, opening the session first if it is closed. */
   private async say(sentence: string, delegationId: string | null, signal?: AbortSignal): Promise<void> {
     await this.ensureOpen()
-    if (signal?.aborted || !this.socket) return
-    this.socket.send({ type: 'session.commentary.append', delegation_id: delegationId, content: sentence })
+    if (signal?.aborted) return
+    this.send({ type: 'session.commentary.append', delegation_id: delegationId, content: sentence })
     this.touch()
   }
 
   /** Gives the voice model context it does not read aloud, such as typed input or an opened panel. */
   private think(content: string, delegationId: string | null = null): void {
-    this.socket?.send({ type: 'session.thinking.append', delegation_id: delegationId, content })
+    this.send({ type: 'session.thinking.append', delegation_id: delegationId, content })
   }
 
   async sendText(text: string): Promise<void> {

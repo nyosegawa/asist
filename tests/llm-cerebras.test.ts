@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, ToolCallPart } from '@shared/conversation'
+import { isTransientApiError } from '@shared/api-errors'
 
 /** The Cerebras adapter. These tests run fake chat completion chunks and check the conversion to the ASIST types. */
 
 const mocks = vi.hoisted(() => ({
   chunks: [] as unknown[],
+  /** Runs once every chunk has been read, before the stream ends. */
+  atEnd: null as (() => void) | null,
   params: [] as Array<Record<string, unknown>>,
   clients: [] as Array<{ baseURL?: string }>
 }))
@@ -16,10 +19,15 @@ vi.mock('openai', () => ({
     }
     chat = {
       completions: {
-        create: async (params: Record<string, unknown>) => {
+        create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
           mocks.params.push(params)
           return (async function* () {
-            for (const chunk of mocks.chunks) yield chunk
+            for (const chunk of mocks.chunks) {
+              // The openai package ends a stream quietly once its request is aborted.
+              if (options.signal.aborted) return
+              yield chunk
+            }
+            mocks.atEnd?.()
           })()
         }
       }
@@ -56,6 +64,7 @@ async function open(over: Partial<ConversationRequest> = {}) {
 beforeEach(() => {
   vi.resetModules()
   mocks.chunks = []
+  mocks.atEnd = null
   mocks.params.length = 0
   mocks.clients.length = 0
 })
@@ -122,5 +131,29 @@ describe('the Cerebras stream', () => {
     expect((await (await open()).stream.final()).stop).toBe('max_tokens')
     await expect((await open({ webSearch: true })).stream.final()).rejects.toThrow('no built-in web search')
     expect(mocks.params).toHaveLength(1)
+  })
+
+  it('fails as a transient error when the timeout of the round cuts the response off, instead of finishing it with what arrived', async () => {
+    mocks.chunks = [delta({ content: '要約は' }), delta({ content: 'ここまで。' }, 'stop'), { choices: [], usage: { prompt_tokens: 100, completion_tokens: 5 } }]
+    const controller = new AbortController()
+    const { stream } = await open({ signal: controller.signal })
+    stream.on('text', () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')))
+    const error = await stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
+  it('fails as a transient error on a stream the server ended without a finish reason, as when a connection drops', async () => {
+    mocks.chunks = [delta({ content: '要約は' })]
+    const error = await (await open()).stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
+  it('keeps an answer whose finish reason arrived before the timeout of the round fired', async () => {
+    mocks.chunks = [delta({ content: '要約です。' }, 'stop'), { choices: [], usage: { prompt_tokens: 100, completion_tokens: 5 } }]
+    const controller = new AbortController()
+    mocks.atEnd = () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    const result = await (await open({ signal: controller.signal })).stream.final()
+    expect(result.stop).toBe('end')
+    expect(result.message.parts).toEqual([{ type: 'text', text: '要約です。' }])
   })
 })

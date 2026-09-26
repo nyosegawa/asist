@@ -40,6 +40,8 @@ const SPEAKER: Record<'user' | 'assistant' | 'notice' | 'tool', PromptText> = {
 /**
  * Renders one day of the conversation log as lines of the form `[HH:MM #turnId] speaker: text`. A tool
  * contributes only its name, and an app notice is marked so that it is not read as the user speaking.
+ * The notes sent to the model with an utterance, on the user record or as a note record, are left
+ * out: the memories they show come from the memory this transcript is curated into.
  */
 export function renderTranscript(records: readonly TranscriptRecord[], locale: ConversationLocale): string {
   const label = (of: keyof typeof SPEAKER): string => promptText(locale, SPEAKER[of])

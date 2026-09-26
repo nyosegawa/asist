@@ -9,6 +9,7 @@ import { conversationLocale } from '../conversation-locale'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { ToolCallOrder } from '@shared/tool-call-order'
+import type { MemoryInjection } from '@shared/memory-injection'
 import type { ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -88,8 +89,10 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   /** Whether the registry lets the tool run at the same time as other calls, which a writing tool does not. */
   isParallel: (name: string) => boolean
   recordTool: (turnId: number, name: string, input: Record<string, unknown>, execution: ToolExecution) => void
-  /** Looks for memories related to the user's utterance and returns a note about them, or null. */
-  memoryInjection: (text: string) => Promise<string | null>
+  /** Looks for memories related to the user's utterance and returns a note about them with their ids, or null. */
+  memoryInjection: (text: string) => Promise<Pick<MemoryInjection, 'text' | 'ids'> | null>
+  /** Records a note sent to the model after the utterance of the turn, with the ids of the memories it shows. */
+  recordNote: (turnId: number, text: string, memoryIds: string[]) => void
   /** Records typed input in the conversation log. A spoken user line is written when its transcript is final. */
   recordUser: (turnId: number, text: string) => void
   history: () => HistoryMessage[]
@@ -115,7 +118,13 @@ function failedExecution(err: unknown): ToolExecution {
 }
 
 export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwner {
-  private session: GeminiSession | null = null
+  /**
+   * The session the engine owns, from the call that creates it until it is closed. Connecting resolves
+   * only once the socket is open, so the session itself is filled in then, and closing reaches it from
+   * that moment. Anything else is sent only once it is `ready`: its setup has completed and, when it
+   * opened blank, it has had the history as its context.
+   */
+  private owned: { session: GeminiSession | null; ready: boolean } | null = null
   private resumption: { handle: string; at: number } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
@@ -142,56 +151,68 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     }
     const settings = this.settings().geminiLive
     const resume = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption.handle : null
-    let session: GeminiSession | null = null
+    const owned: { session: GeminiSession | null; ready: boolean } = { session: null, ready: false }
+    this.owned = owned
+    let connected!: Promise<GeminiSession>
     const setup = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
-      this.deps
-        .connect({
-          model: settings.model,
-          voice: settings.voice,
-          systemInstruction: this.deps.systemInstruction(new Date(this.now())),
-          functionDeclarations: this.deps.functionDeclarations(),
-          resumptionHandle: resume,
-          callbacks: {
-            onmessage: (message) => {
-              if (message.setupComplete !== undefined) {
-                clearTimeout(timer)
-                resolve()
-              }
-              this.onMessage(message)
-            },
-            onerror: (error) => {
+      const fail = (error: Error): void => {
+        clearTimeout(timer)
+        reject(error)
+      }
+      const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+      connected = this.deps.connect({
+        model: settings.model,
+        voice: settings.voice,
+        systemInstruction: this.deps.systemInstruction(new Date(this.now())),
+        functionDeclarations: this.deps.functionDeclarations(),
+        resumptionHandle: resume,
+        callbacks: {
+          onmessage: (message) => {
+            if (this.owned !== owned) return
+            if (message.setupComplete !== undefined) {
               clearTimeout(timer)
-              console.error('gemini-live error:', errMessage(error))
-              this.events.emit('event', { type: 'error', message: errMessage(error) })
-              reject(error)
-            },
-            onclose: (reason) => {
-              clearTimeout(timer)
-              if (this.session === session) this.onClosed(reason)
-              reject(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
+              resolve()
             }
+            this.onMessage(message)
+          },
+          onerror: (error) => {
+            if (this.owned !== owned) return
+            console.error('gemini-live error:', errMessage(error))
+            // While the session is still opening, the error is why it did not open, and the failure to connect reports it.
+            if (owned.ready) this.events.emit('event', { type: 'error', message: errMessage(error) })
+            else fail(error)
+          },
+          onclose: (reason) => {
+            if (this.owned !== owned) return
+            if (owned.ready) this.onClosed(reason)
+            else fail(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
           }
-        })
-        .then((opened) => {
-          session = opened
-          this.session = opened
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timer)
-          reject(error instanceof Error ? error : new Error(String(error)))
-        })
+        }
+      })
+      connected.then(
+        (session) => {
+          owned.session = session
+          // The opening failed and was let go before the session arrived.
+          if (this.owned !== owned) session.close()
+        },
+        (error: unknown) => fail(error instanceof Error ? error : new Error(String(error)))
+      )
     })
     await setup
+    const session = await connected
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
-    if (!resume) this.seedHistory()
+    if (!resume) this.seedHistory(session)
+    owned.ready = true
+  }
+
+  /** The session anything but closing is sent to, which is none while one is still opening. */
+  private get session(): GeminiSession | null {
+    return this.owned?.ready ? this.owned.session : null
   }
 
   protected async closeSession(): Promise<void> {
-    const session = this.session
-    this.session = null
-    for (const controller of this.running.values()) controller.abort()
-    this.running.clear()
+    const session = this.owned?.session ?? null
+    this.disown()
     if (!session) return
     try {
       session.sendRealtimeInput({ audioStreamEnd: true })
@@ -208,18 +229,26 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   }
 
   private onClosed(reason: string): void {
-    this.session = null
-    this.policy.closed()
-    if (this.enabled) {
-      console.warn(`gemini-live: connection closed (${reason})`)
-      this.setConnection('idle')
-    }
+    this.disown()
+    if (this.enabled) console.warn(`gemini-live: connection closed (${reason})`)
+    this.sessionEnded()
   }
 
-  private seedHistory(): void {
+  /**
+   * Lets go of the session, whether the engine or the provider closed it. The calls that still owe it a
+   * result are aborted: Gemini offers no resumption handle while a call runs, so no later session knows
+   * their ids.
+   */
+  private disown(): void {
+    this.owned = null
+    for (const controller of this.running.values()) controller.abort()
+    this.running.clear()
+  }
+
+  private seedHistory(session: GeminiSession): void {
     const messages = this.deps.history().slice(-30)
-    if (messages.length === 0 || !this.session) return
-    this.session.sendClientContent({
+    if (messages.length === 0) return
+    session.sendClientContent({
       turns: messages.map((message) => ({ role: message.role === 'user' ? 'user' : 'model', parts: [{ text: message.content }] })),
       turnComplete: false
     })
@@ -343,13 +372,18 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.sendUserText(fillPrompt(promptText(locale, READ_ALOUD), { systemNotice: marker(locale, 'systemNotice'), text }))
   }
 
-  /** A user utterance is final. Any related memory is added to the context silently, without asking for a reply. */
-  protected override onUserUtterance(_turnId: number, text: string): void {
+  /**
+   * A user utterance is final. Any related memory is added to the context silently, without asking for
+   * a reply, and is recorded on the utterance's turn only once a session has it.
+   */
+  protected override onUserUtterance(turnId: number, text: string): void {
     void this.deps
       .memoryInjection(text)
       .then((injection) => {
-        if (!injection || !this.session) return
-        this.session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection }] }], turnComplete: false })
+        const session = this.session
+        if (!injection || !session) return
+        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection.text }] }], turnComplete: false })
+        this.deps.recordNote(turnId, injection.text, injection.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
   }
