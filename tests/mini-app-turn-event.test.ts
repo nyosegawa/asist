@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useViewStore } from '../src/renderer/src/state/view'
 
 const turn = vi.hoisted(() => ({ activeTurnId: 7, setRouterNote: vi.fn() }))
@@ -18,9 +18,28 @@ vi.mock('@/state/stores', () => ({
   useToastStore: { getState: () => ({ push: vi.fn() }) }
 }))
 
+const api = vi.hoisted(() => ({ reportMiniAppView: vi.fn(async () => {}) }))
+
 describe('the app turn event', () => {
   beforeEach(() => {
-    useViewStore.getState().closeApp()
+    vi.stubGlobal('window', { api })
+    api.reportMiniAppView.mockClear()
+    useViewStore.setState({ leaveGuard: null })
+    void useViewStore.getState().closeApp()
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reports what the screen shows once the request is settled, also when the user keeps a draft and nothing changes', async () => {
+    const { handleTurnEvent } = await import('../src/renderer/src/conversation')
+    handleTurnEvent({ type: 'app', turnId: 7, open: { app: 'memory', file: 'me.md' } })
+    await vi.waitFor(() => expect(api.reportMiniAppView).toHaveBeenLastCalledWith({ app: 'memory', file: 'me.md' }))
+    api.reportMiniAppView.mockClear()
+    useViewStore.setState({ leaveGuard: async () => false })
+    handleTurnEvent({ type: 'app', turnId: 7, open: { app: 'tasks' } })
+    await vi.waitFor(() => expect(api.reportMiniAppView).toHaveBeenCalledWith({ app: 'memory', file: 'me.md' }))
+    expect(useViewStore.getState().open).toEqual({ app: 'memory', file: 'me.md' })
   })
 
   it('opens the mini app at the target, and a null target closes the open one', async () => {

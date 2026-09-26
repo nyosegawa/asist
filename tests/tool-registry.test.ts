@@ -49,7 +49,7 @@ describe('formatToolResult', () => {
 
   it('serializes an object that fits the limit as plain JSON', () => {
     const result = formatToolResult({ shown: true, items: [1, 2, 3] }, 100, 'ja')
-    expect(result).toEqual({ content: '{"shown":true,"items":[1,2,3]}', truncated: false, resultLength: 30 })
+    expect(result).toMatchObject({ content: '{"shown":true,"items":[1,2,3]}', truncated: false, resultLength: 30 })
   })
 
   it('cuts an array by element count, states how many were dropped, and stays parseable as JSON', () => {

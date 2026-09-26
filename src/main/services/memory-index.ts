@@ -158,6 +158,9 @@ export class MemoryIndex {
       )
       const insertFts = this.db.prepare('INSERT INTO units_fts (id, tokens) VALUES (?, ?)')
       const removeChangedVector = this.db.prepare('DELETE FROM vectors WHERE id = ? AND fingerprint <> ?')
+      // A heading repeated in one file gives two units the same id. The rules refuse such a file on a save
+      // and at a merge, and one written by hand is reported by the reindex; until it is fixed, the first
+      // of the two is indexed.
       const seen = new Set<string>()
       for (const unit of units) {
         if (seen.has(unit.id)) continue

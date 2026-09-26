@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import type { ConversationLocale } from '@shared/conversation-locale'
-import { CURATION_SKILL, SKILL_DIRS, curationSkillSource, worktreeAgentsMd } from '@shared/memory-curation'
+import { CURATION_SKILL, FORMAT_MODULE, SKILL_DIRS, curationSkillSource, worktreeAgentsMd } from '@shared/memory-curation'
 import { conversationLocale } from './conversation-locale'
 
 /** The skill written in the prompt language of the conversation, read on every call so a change applies at once. */
@@ -14,8 +14,9 @@ export function skillSourceDir(locale: ConversationLocale = conversationLocale()
 }
 
 /**
- * Installs the skill into every directory an agent looks in, one for claude and one for codex, and writes
- * AGENTS.md. Both locations are listed in .gitignore, so the worktree stays clean.
+ * Installs the skill into every directory an agent looks in, one for claude and one for codex, with the
+ * rules its validate.mjs imports beside it, and writes AGENTS.md. Both locations are listed in .gitignore,
+ * so the worktree stays clean.
  */
 export function installSkill(worktreeDir: string, source = skillSourceDir()): void {
   if (!fs.existsSync(path.join(source, 'SKILL.md'))) throw new Error(`the memory curation skill is missing: ${source}`)
@@ -24,6 +25,7 @@ export function installSkill(worktreeDir: string, source = skillSourceDir()): vo
     fs.rmSync(target, { recursive: true, force: true })
     fs.mkdirSync(path.dirname(target), { recursive: true })
     fs.cpSync(source, target, { recursive: true })
+    fs.cpSync(path.join(path.dirname(source), FORMAT_MODULE), path.join(worktreeDir, dir, FORMAT_MODULE))
   }
   fs.writeFileSync(path.join(worktreeDir, 'AGENTS.md'), worktreeAgentsMd(conversationLocale()), { mode: 0o600 })
 }

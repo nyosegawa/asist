@@ -119,6 +119,11 @@ export const curationSkillSource = (locale: ConversationLocale): string =>
 /** Where the skill goes inside the worktree: claude reads .claude/skills and codex reads .agents/skills. */
 export const SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const
 /**
+ * The rules of the memory's markdown, which both skills' validate.mjs import from two folders above their
+ * scripts/: resources/skills in the app, and each of SKILL_DIRS in the worktree.
+ */
+export const FORMAT_MODULE = 'memory-format.mjs'
+/**
  * The .gitignore of the memory repository. The app copies the skill and AGENTS.md in on every run, so
  * they stay out of the memory commits.
  */
