@@ -25,7 +25,7 @@ import { events as brainEvents, emit as emitTurn, history, record, setConversati
 import { PERSONA_HEADING, buildLiveSystemInstruction } from '../brain/prompt'
 import { liveRoute } from '../brain/speech-route'
 import { summarizeToolInput, summarizeToolResult } from '../brain/conversation-log'
-import { executeClientTool, toolGuide, tools } from '../brain/tools'
+import { executeClientTool, toolGuide, toolRegistry, tools } from '../brain/tools'
 import { memoryIdsInToolResult } from '@shared/memory-injection'
 import type { LiveEngineBase, LiveEngineEvents } from './engine'
 import { GptLiveEngine } from './gpt-live'
@@ -145,6 +145,7 @@ function createEngine(): LiveEngineBase {
     systemInstruction: geminiSystemInstruction,
     functionDeclarations: () => toGeminiFunctionDeclarations(tools()),
     executeTool: (name, input, ctx) => executeClientTool(name, input, ctx),
+    isParallel: (name) => toolRegistry().find(name)?.parallel ?? false,
     recordUser: (turnId, text) => {
       record({ kind: 'user', turnId, text })
     },

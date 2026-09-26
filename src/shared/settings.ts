@@ -94,7 +94,14 @@ export const appSettingsSchema = z.strictObject({
 })
 
 export type AppSettings = z.infer<typeof appSettingsSchema>
-const patchSchema = z.strictObject(fields).partial()
+/**
+ * A patch names only the fields it changes, and the same holds inside the mail group: main changes its
+ * accounts while the settings screen is open, so a page sending the whole group as it drew it would write
+ * back the accounts of that moment, and an account added in the meantime would vanish while its password
+ * stays stored.
+ */
+const patchSchema = z.strictObject({ ...fields, mail: z.strictObject(mailSettingsSchema.shape).partial() }).partial()
+export type SettingsPatch = z.infer<typeof patchSchema>
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value)
@@ -106,7 +113,10 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 export const parseAppSettings = (value: unknown): AppSettings => parse(appSettingsSchema, value)
-export const parseSettingsPatch = (value: unknown): Partial<AppSettings> => parse(patchSchema, value)
+export const parseSettingsPatch = (value: unknown): SettingsPatch => parse(patchSchema, value)
+
+/** The settings with the patch applied. Whoever stores the result checks it as a whole. */
+export const mergeSettings = (current: AppSettings, patch: SettingsPatch): AppSettings => ({ ...current, ...patch, mail: { ...current.mail, ...patch.mail } })
 
 /**
  * Whether the risks have to be shown in a dialog of their own: the setup is finished, but the box under

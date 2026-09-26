@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LiveEvent, TurnEvent } from '@shared/ipc'
+import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 import { marker } from '@shared/conversation-markers'
 import type { GeminiConnectParams, GeminiServerMessage, GeminiSession } from '../src/main/services/live/gemini-live'
@@ -41,7 +42,14 @@ class FakeSession implements GeminiSession {
   }
 }
 
-async function setup(): Promise<{
+type ExecuteTool = (name: string, input: Record<string, unknown>, ctx: { signal: AbortSignal }) => ToolExecutionTask
+
+const result = (content: string): ToolExecution => ({ content, isError: false, durationMs: 1, resultLength: content.length, truncated: false })
+
+/** A tool call whose answer and work have both ended. */
+const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve() })
+
+async function setup(execute?: ExecuteTool): Promise<{
   engine: import('../src/main/services/live/gemini-live').GeminiLiveEngine
   sessions: FakeSession[]
   events: LiveEvent[]
@@ -53,7 +61,7 @@ async function setup(): Promise<{
   const sessions: FakeSession[] = []
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
-  const executeTool = vi.fn(async (name: string) => ({ content: `{"shown":true,"panel":"${name}"}`, isError: false, durationMs: 5, resultLength: 10, truncated: false }))
+  const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
   const memoryInjection = vi.fn(async (text: string) => (text.includes('いつもの') ? '[記憶] いつもの店は中野のカフェ' : null))
   const engine = new GeminiLiveEngine(LIVE_ENGINE_INFO['gemini-live'], {
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
@@ -65,7 +73,9 @@ async function setup(): Promise<{
     },
     systemInstruction: () => 'SYSTEM',
     functionDeclarations: () => [{ name: 'show_weather', parametersJsonSchema: { type: 'object' }, behavior: 'NON_BLOCKING' }],
-    executeTool,
+    executeTool: executeTool as never,
+    // The show_ tools only read, as in the registry; every other name stands for a tool that writes.
+    isParallel: (name) => name.startsWith('show_'),
     recordTool: vi.fn(),
     memoryInjection,
     recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
@@ -76,6 +86,18 @@ async function setup(): Promise<{
   await engine.start()
   return { engine, sessions, events, turnEvents, executeTool, memoryInjection }
 }
+
+/** A tool call that runs until the test ends it, as one waiting for approval does. `finish` ends its work as well. */
+function held(): { task: ToolExecutionTask; answer: (content: string) => void; finish: () => void } {
+  let answer!: (content: string) => void
+  let finish!: () => void
+  const response = new Promise<ToolExecution>((resolve) => (answer = (content) => resolve(result(content))))
+  const completion = new Promise<void>((resolve) => (finish = resolve))
+  return { task: Object.assign(response, { completion }), answer, finish }
+}
+
+const responseIds = (session: FakeSession): string[] =>
+  session.toolResponses.map((response) => (response as { functionResponses: Array<{ id: string }> }).functionResponses[0].id)
 
 async function open(engine: { activity: (a: boolean) => void }, sessions: FakeSession[]): Promise<FakeSession> {
   engine.activity(true)
@@ -204,4 +226,79 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('answers a timed-out write at once, and holds a write from a later message until the earlier one has stopped working', async () => {
+    const first = held()
+    const { engine, sessions, executeTool } = await setup((name) => (name === 'run_agent_task' ? first.task : finished('archived')))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    first.answer('run_agent_task timed out')
+    // A NON_BLOCKING call can arrive while an earlier write is still working.
+    session.message({ toolCall: { functionCalls: [{ id: 'b', name: 'change_mail', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['a'])
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    first.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executeTool).toHaveBeenLastCalledWith('change_mail', {}, expect.anything())
+    expect(responseIds(session)).toEqual(['a', 'b'])
+    await engine.stop()
+  })
+
+  it('answers the model with an error and marks the tool failed when the tool throws before it returns its task', async () => {
+    const { engine, sessions, turnEvents } = await setup(() => {
+      throw new Error('settings unreadable')
+    })
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.toolResponses).toEqual([
+      { functionResponses: [{ id: 'a', name: 'run_agent_task', response: { error: 'settings unreadable' }, scheduling: 'WHEN_IDLE' }] }
+    ])
+    expect(turnEvents.filter((event) => event.type === 'tool').map((event) => event.type === 'tool' && event.status)).toEqual(['start', 'error'])
+    await engine.stop()
+  })
+
+  it('does not run a call that Gemini cancels while it waits for its turn', async () => {
+    const first = held()
+    const { engine, sessions, executeTool } = await setup(() => first.task)
+    const session = await open(engine, sessions)
+    session.message({
+      toolCall: {
+        functionCalls: [
+          { id: 'a', name: 'run_agent_task', args: {} },
+          { id: 'b', name: 'change_mail', args: {} }
+        ]
+      }
+    })
+    session.message({ toolCallCancellation: { ids: ['b'] } })
+    first.answer('started')
+    first.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(responseIds(session)).toEqual(['a'])
+    await engine.stop()
+  })
+
+  it('keeps the session open while a function call waits for approval, and closes it once the result is back and the conversation is quiet', async () => {
+    const call = held()
+    let signal: AbortSignal | null = null
+    const { engine, sessions } = await setup((_name, _input, ctx) => {
+      signal = ctx.signal
+      return call.task
+    })
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    // The idle close is 30 seconds in this setup, and a confirmation may wait for five minutes.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(session.closed).toBe(false)
+    expect(signal!.aborted).toBe(false)
+    call.answer('approved')
+    call.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['a'])
+    await vi.advanceTimersByTimeAsync(31_000)
+    expect(session.closed).toBe(true)
+    await engine.stop()
+  })
 })

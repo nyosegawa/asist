@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { messageIdOf, type MailAccount, type MailEvent, type MailSettings } from '@shared/mail'
+import { messageIdOf, threadIdOf, type MailAccount, type MailEvent, type MailSettings } from '@shared/mail'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import fs from 'node:fs'
@@ -94,6 +94,11 @@ async function setup(options: { provider?: MailAccount['provider']; enabled?: bo
   const signal = new AbortController()
   const outgoing = (): OutgoingMail => smtp.send.mock.calls[0][2] as OutgoingMail
   return { imap, cache, drafts, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
+}
+
+/** What the reader's reply form does: main settles the reply the form shows, and the same reply is sent. */
+async function replyFromReader(f: Awaited<ReturnType<typeof setup>>, id: string, body: string, replyAll = false) {
+  return f.service.replySend({ reply: await f.service.replySettle(id, replyAll), body }, f.signal.signal)
 }
 
 beforeEach(() => {
@@ -249,7 +254,7 @@ describe('sending and replying', () => {
 
   it('replies to the sender with Re:, quotes the original body, carries the thread headers, and flags the original as answered', async () => {
     const f = await setup()
-    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'screen')
+    const result = await replyFromReader(f, f.ids.question, '了解です。')
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.outgoing()).toMatchObject({
       to: [{ name: '田中', address: 't@example.com' }],
@@ -267,11 +272,58 @@ describe('sending and replying', () => {
 
   it('adds the original recipients and Cc to a reply-all, leaving out the account address itself', async () => {
     const f = await setup()
-    await f.service.change({ operation: 'reply', id: f.ids.question, body: 'ok', replyAll: true }, f.signal.signal, 'screen')
+    await replyFromReader(f, f.ids.question, 'ok', true)
     expect(f.outgoing()).toMatchObject({
       to: [{ name: '田中', address: 't@example.com' }],
       cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }]
     })
+    await f.service.stop()
+  })
+
+  it('sends a reply from the reader to exactly the To and Cc it settled for the form, which follow Reply-To rather than the sender', async () => {
+    const f = await setup()
+    const elsewhere = { name: '上司', address: 'attacker@evil.example' }
+    const phishing = f.imap.put('INBOX', { subject: '請求書の件', from: [{ name: '上司', address: 'boss@company.example' }], replyTo: [elsewhere], to: [...me, ...suzuki], date: new Date(NOW - HOUR), text: '至急返信して', messageId: '<m1@x>' })
+    await f.service.syncNow()
+    const reply = await f.service.replySettle(messageIdOf('a1', 'inbox', phishing.uid), true)
+    expect({ to: reply.to, cc: reply.cc }).toEqual({ to: [elsewhere], cc: suzuki })
+    await f.service.replySend({ reply, body: '確認します' }, f.signal.signal)
+    expect({ to: f.outgoing().to, cc: f.outgoing().cc }).toEqual({ to: reply.to, cc: reply.cc })
+    await f.service.stop()
+  })
+
+  it('refuses a reply from the screen that was not settled first, and fails to settle one without a connection to the account', async () => {
+    const f = await setup()
+    await expect(f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'screen')).rejects.toThrow()
+    await expect(f.service.replySend({ reply: { id: f.ids.question }, body: '了解です。' }, f.signal.signal)).rejects.toThrow()
+    await f.service.stop()
+    await expect(f.service.replySettle(f.ids.question, false)).rejects.toThrow(errorText('mail.errors.account.off'))
+    expect(f.smtp.send).not.toHaveBeenCalled()
+  })
+
+  it('carries the parent References followed by its Message-ID, so that a reply to a later message joins the same thread', async () => {
+    const f = await setup({ provider: 'icloud' })
+    const second = f.imap.put('INBOX', { subject: 'Re: 打合せ', from: tanaka, to: me, date: new Date(NOW - HOUR), text: '二通目', messageId: '<p2@x>', inReplyTo: '<p1@x>', references: '<root@x> <p1@x>' })
+    await f.service.syncNow()
+    const id = messageIdOf('a1', 'inbox', second.uid)
+    await replyFromReader(f, id, '了解です。')
+    expect(f.outgoing()).toMatchObject({ inReplyTo: '<p2@x>', references: ['<root@x>', '<p1@x>', '<p2@x>'] })
+    // The thread the sync puts the sent copy in, from the headers the reply carries.
+    const replyThread = threadIdOf({ messageId: '<sent-1@me>', inReplyTo: f.outgoing().inReplyTo ?? '', references: f.outgoing().references ?? [], fallback: 'x' })
+    expect(replyThread).toBe(f.cache.get(id)?.threadId)
+    await f.service.stop()
+  })
+
+  it('does not mark the original answered, and says so, when the server refuses the flag', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, f.signal.signal, 'agent')
+    const draftId = (result as { draftId: string }).draftId
+    // The message has gone from the server while the cache still lists it, so the STORE matches nothing.
+    f.imap.folders.get('INBOX')!.messages.delete(f.question.uid)
+    const sent = await f.service.draftSend(draftId, f.signal.signal)
+    expect(sent).toMatchObject({ saved: true, operation: 'reply' })
+    expect((sent as { summary: string }).summary).toContain(t('mail.result.answeredFailed', { reason: t('mail.errors.change.rejected') }))
+    expect(f.cache.get(f.ids.question)?.answered).toBe(false)
     await f.service.stop()
   })
 
@@ -316,16 +368,85 @@ describe('drafts', () => {
     await f.service.stop()
   })
 
-  it('copies the original subject and sender onto an agent reply draft, and resolves recipients and quotation when it is sent', async () => {
+  it('settles an agent reply draft from the original, keeps its recipients and subject through an edit, and sends it with the quotation', async () => {
     const f = await setup()
     const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。', replyAll: true }, f.signal.signal, 'agent')
     const draftId = (result as { draftId: string }).draftId
-    expect(f.drafts.get(draftId)).toMatchObject({ reply: { id: f.ids.question, subject: '見積もりの相談', from: { name: '田中', address: 't@example.com' }, replyAll: true }, to: [], subject: '' })
+    expect(f.drafts.get(draftId)).toMatchObject({
+      reply: {
+        id: f.ids.question,
+        subject: '見積もりの相談',
+        from: { name: '田中', address: 't@example.com' },
+        replyAll: true,
+        to: [{ name: '田中', address: 't@example.com' }],
+        cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }],
+        inReplyTo: '<q@x>'
+      },
+      to: [],
+      subject: ''
+    })
     expect(f.service.draftUpdate(draftId, { to: ['x@example.com'], subject: 'x', body: 'では。' })).toMatchObject({ to: [], subject: '', body: 'では。' })
     await f.service.draftSend(draftId, f.signal.signal)
-    expect(f.outgoing()).toMatchObject({ subject: 'Re: 見積もりの相談', to: [{ name: '田中', address: 't@example.com' }], cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }] })
+    expect(f.outgoing()).toMatchObject({ subject: 'Re: 見積もりの相談', inReplyTo: '<q@x>', references: ['<q@x>'] })
     expect(f.outgoing().text).toMatch(/^では。\n\n.*> 一行目/s)
     expect(f.cache.get(f.ids.question)?.answered).toBe(true)
+    await f.service.stop()
+  })
+
+  it('sends a reply draft to exactly the addresses the draft shows, which follow Reply-To rather than the sender', async () => {
+    const f = await setup()
+    const boss = { name: '上司', address: 'boss@company.example' }
+    const elsewhere = { name: '上司', address: 'attacker@evil.example' }
+    const phishing = f.imap.put('INBOX', { subject: '請求書の件', from: [boss], replyTo: [elsewhere], to: [...me, ...suzuki], date: new Date(NOW - HOUR), text: '至急返信して', messageId: '<m1@x>' })
+    await f.service.syncNow()
+    const result = await f.service.change({ operation: 'reply', id: messageIdOf('a1', 'inbox', phishing.uid), body: '確認します', replyAll: true }, f.signal.signal, 'agent')
+    const draft = f.drafts.get((result as { draftId: string }).draftId)!
+    // The card and the composer show these addresses in full; the sender's name alone would hide where the reply goes.
+    expect(draft.reply).toMatchObject({ from: boss, to: [elsewhere], cc: suzuki })
+    expect((result as { summary: string }).summary).toContain(elsewhere.address)
+    await f.service.draftSend(draft.id, f.signal.signal)
+    expect({ to: f.outgoing().to, cc: f.outgoing().cc }).toEqual({ to: draft.reply!.to, cc: draft.reply!.cc })
+    await f.service.stop()
+  })
+
+  it('still sends an agent reply draft after the message it answers has been archived', async () => {
+    const f = await setup()
+    const result = await f.service.change({ operation: 'reply', id: f.ids.question, body: '明日お送りします' }, f.signal.signal, 'agent')
+    const draftId = (result as { draftId: string }).draftId
+    await f.service.change({ operation: 'archive', id: f.ids.question }, f.signal.signal, 'screen')
+    await f.service.syncNow()
+    expect(f.cache.get(f.ids.question)).toBeNull()
+    await expect(f.service.draftSend(draftId, f.signal.signal)).resolves.toMatchObject({ saved: true, operation: 'reply' })
+    expect(f.outgoing()).toMatchObject({ to: [{ name: '田中', address: 't@example.com' }], subject: 'Re: 見積もりの相談', inReplyTo: '<q@x>' })
+    expect(f.outgoing().text).toMatch(/^明日お送りします\n\n.*> 一行目\n> 二行目\n$/s)
+    expect(f.drafts.get(draftId)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('refuses a second send, an edit and a discard of a draft while its send is under way, and sends it once', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
+    let release!: (value: { messageId: string; raw: Buffer }) => void
+    f.smtp.send.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+    const first = f.service.draftSend(draft.id, f.signal.signal)
+    await vi.waitFor(() => expect(f.smtp.send).toHaveBeenCalled())
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sending'))
+    expect(() => f.service.draftUpdate(draft.id, { body: 'z' })).toThrow(errorText('mail.errors.draft.sending'))
+    expect(() => f.service.draftRemove(draft.id)).toThrow(errorText('mail.errors.draft.sending'))
+    release({ messageId: '<sent-1@me>', raw: Buffer.from('raw') })
+    await expect(first).resolves.toMatchObject({ saved: true, operation: 'send' })
+    expect(f.smtp.send).toHaveBeenCalledOnce()
+    expect(f.outgoing().text).toBe('y')
+    expect(f.drafts.get(draft.id)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('checks an edit before storing it, so that a recipient it cannot read leaves the stored draft as it was', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['Tanaka, Taro <taro@example.com>'], subject: '明日の件', body: 'よろしくお願いします。' }, 'agent')
+    expect(() => f.service.draftUpdate(draft.id, { to: ['Tanaka', 'Taro <taro@example.com>'], body: '本文を直した' })).toThrow(errorText('mail.errors.form.badAddress', { text: 'Tanaka' }))
+    expect(f.drafts.get(draft.id)).toEqual(draft)
+    expect(f.service.draftUpdate(draft.id, { to: ['Tanaka, Taro <taro@example.com>'], body: '本文を直した' })).toMatchObject({ to: ['Tanaka, Taro <taro@example.com>'], body: '本文を直した' })
     await f.service.stop()
   })
 
@@ -411,6 +532,24 @@ describe('accounts', () => {
     expect(updated.label).toBe('会社')
     expect(f.secrets.data.get('a1')).toBe('new-password')
     expect(f.settings().accounts[0].label).toBe('会社')
+    await f.service.stop()
+  })
+
+  it('lists and trashes the messages of the newly chosen Sent folder once the setting points at another mailbox with the same UIDVALIDITY', async () => {
+    const f = await setup()
+    await vi.advanceTimersByTimeAsync(500)
+    // Both mailboxes were created together, and Dovecot, for one, derives UIDVALIDITY from the creation time.
+    f.imap.addFolder('Sent Messages', { uidValidity: f.imap.folders.get('Sent')!.uidValidity })
+    const other = f.imap.put('Sent Messages', { uid: 1, subject: '別の送信済み', from: me, to: suzuki, date: new Date(NOW - 4 * HOUR), text: '別の本文', flags: ['\\Seen'] })
+    expect(f.service.list({ view: 'sent' }).messages.map((m) => m.uid)).toEqual([other.uid])
+    await f.service.updateAccount('a1', { folders: { sent: 'Sent Messages', archive: 'Archive', trash: 'Trash' } })
+    await f.service.syncNow()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(f.service.list({ view: 'sent' }).messages.map((m) => m.subject)).toEqual(['別の送信済み'])
+    await expect(f.service.read(f.ids.sent)).resolves.toMatchObject({ text: '別の本文' })
+    await f.service.change({ operation: 'trash', id: f.ids.sent }, f.signal.signal, 'screen')
+    expect(f.imap.folders.get('Sent')!.messages.size).toBe(1)
+    expect([...f.imap.folders.get('Trash')!.messages.values()].map((m) => m.subject)).toEqual(['別の送信済み'])
     await f.service.stop()
   })
 })

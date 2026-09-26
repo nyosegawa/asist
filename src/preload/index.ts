@@ -134,6 +134,8 @@ const api: RendererApi = {
   mailThread: (accountId, threadId) => ipcRenderer.invoke(IpcChannel.MailThread, accountId, threadId),
   mailRead: (id) => ipcRenderer.invoke(IpcChannel.MailRead, id),
   mailChange: (change) => ipcRenderer.invoke(IpcChannel.MailChange, change),
+  mailReplySettle: (id, replyAll) => ipcRenderer.invoke(IpcChannel.MailReplySettle, id, replyAll),
+  mailReplySend: (input) => ipcRenderer.invoke(IpcChannel.MailReplySend, input),
   mailSyncNow: () => ipcRenderer.invoke(IpcChannel.MailSyncNow),
   mailOpenGuide: () => ipcRenderer.invoke(IpcChannel.MailOpenGuide),
   onMailEvent: subscribe<MailEvent>(IpcChannel.MailEvent),

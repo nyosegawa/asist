@@ -435,9 +435,12 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.MailList, (_e, query: unknown) => getMailService().list(query))
   handle(IpcChannel.MailThread, (_e, accountId: string, threadId: string) => getMailService().thread(String(accountId), String(threadId)))
   handle(IpcChannel.MailRead, (_e, id: string) => getMailService().read(String(id)))
-  // Sending, replying and trashing from the screen go through the same confirmation as the conversation
-  // does, while marking as read, starring and archiving are applied directly.
+  // Trashing from the screen goes through the same confirmation as the conversation does. Sending,
+  // marking as read, starring and archiving are applied directly, since the press on screen is the approval.
   handle(IpcChannel.MailChange, (_e, change: unknown) => getMailService().change(change, new AbortController().signal, 'screen'))
+  handle(IpcChannel.MailReplySettle, (_e, id: string, replyAll: boolean) => getMailService().replySettle(String(id), replyAll === true))
+  // Pressing send under a reply whose recipients are shown is itself the approval, so no confirmation appears.
+  handle(IpcChannel.MailReplySend, (_e, input: unknown) => getMailService().replySend(input, new AbortController().signal))
   handle(IpcChannel.MailSyncNow, () => getMailService().syncNow())
   handle(IpcChannel.MailOpenGuide, () => openMailGuide())
   handle(IpcChannel.MailDraftList, () => getMailService().draftList())

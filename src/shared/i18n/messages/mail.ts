@@ -712,19 +712,6 @@ export const mail = defineMessages({
       'es-419': { one: 'Cargar {count} mensaje más', other: 'Cargar {count} mensajes más' },
       'es-ES': { one: 'Cargar {count} mensaje más', other: 'Cargar {count} mensajes más' }
     },
-    loadMoreFailed: {
-      'ja-JP': '続きを読み込めませんでした',
-      'en-US': "Couldn't load the rest",
-      'fr-FR': 'Impossible de charger la suite',
-      'de-DE': 'Der Rest konnte nicht geladen werden',
-      'hi-IN': 'बाकी मेल लोड नहीं हो सकीं',
-      'id-ID': 'Tidak bisa memuat sisanya',
-      'it-IT': 'Impossibile caricare il resto',
-      'ko-KR': '나머지를 불러오지 못했습니다',
-      'pt-BR': 'Não foi possível carregar o resto',
-      'es-419': 'No se pudo cargar el resto',
-      'es-ES': 'No se ha podido cargar el resto'
-    },
     markAllRead: {
       'ja-JP': { other: '未読 {count} 件を既読にする' },
       'en-US': { one: 'Mark {count} as read', other: 'Mark {count} as read' },
@@ -910,19 +897,6 @@ export const mail = defineMessages({
       'pt-BR': 'Ações da mensagem',
       'es-419': 'Acciones del mensaje',
       'es-ES': 'Acciones del mensaje'
-    },
-    replyTo: {
-      'ja-JP': '{name} へ返信',
-      'en-US': 'Reply to {name}',
-      'fr-FR': 'Répondre à {name}',
-      'de-DE': 'An {name} antworten',
-      'hi-IN': '{name} को जवाब',
-      'id-ID': 'Balas ke {name}',
-      'it-IT': 'Rispondi a {name}',
-      'ko-KR': '{name}에게 답장',
-      'pt-BR': 'Responder a {name}',
-      'es-419': 'Responder a {name}',
-      'es-ES': 'Responder a {name}'
     },
     replyBody: {
       'ja-JP': '返信の本文',
@@ -1149,16 +1123,16 @@ export const mail = defineMessages({
     },
     replyTo: {
       'ja-JP': '{name} の「{subject}」への返信。元の本文を引用します',
-      'en-US': 'Reply to {name} about "{subject}". The original is quoted below.',
-      'fr-FR': "Réponse à « {subject} » de {name}. Le message d'origine est cité en dessous.",
-      'de-DE': 'Antwort an {name} auf „{subject}“. Die ursprüngliche E-Mail wird darunter zitiert',
+      'en-US': 'Reply to "{subject}" from {name}. The original is quoted below.',
+      'fr-FR': "Réponse à « {subject} » de {name}. Le message d'origine est cité en dessous.",
+      'de-DE': 'Antwort auf „{subject}“ von {name}. Die ursprüngliche E-Mail wird darunter zitiert',
       'hi-IN': '{name} की "{subject}" का जवाब। मूल मेल नीचे जुड़ी रहेगी।',
-      'id-ID': 'Balasan untuk {name} soal “{subject}”. Isi aslinya dikutip di bawah.',
-      'it-IT': 'Risposta a {name} su «{subject}». Il messaggio originale viene citato sotto.',
+      'id-ID': 'Balasan untuk “{subject}” dari {name}. Isi aslinya dikutip di bawah.',
+      'it-IT': 'Risposta a «{subject}» di {name}. Il messaggio originale viene citato sotto.',
       'ko-KR': '{name}의 “{subject}”에 대한 답장. 원본 본문을 인용합니다',
-      'pt-BR': 'Resposta para {name} sobre “{subject}”. A mensagem original vai citada abaixo.',
-      'es-419': 'Respuesta a {name} sobre «{subject}». Abajo se cita el mensaje original.',
-      'es-ES': 'Respuesta a {name} sobre “{subject}”. El original se cita debajo.'
+      'pt-BR': 'Resposta a “{subject}”, de {name}. A mensagem original vai citada abaixo.',
+      'es-419': 'Respuesta a «{subject}», de {name}. Abajo se cita el mensaje original.',
+      'es-ES': 'Respuesta a “{subject}”, de {name}. El original se cita debajo.'
     },
     replyToAll: {
       'ja-JP': '{name} の「{subject}」への全員返信。元の本文を引用します',
@@ -1839,6 +1813,19 @@ export const mail = defineMessages({
         'pt-BR': 'A mensagem está vazia.',
         'es-419': 'El cuerpo está vacío.',
         'es-ES': 'El cuerpo está vacío.'
+      },
+      sending: {
+        'ja-JP': 'この下書きは送信中です。',
+        'en-US': 'This draft is being sent.',
+        'fr-FR': "Ce brouillon est en cours d'envoi.",
+        'de-DE': 'Dieser Entwurf wird gerade gesendet.',
+        'hi-IN': 'यह ड्राफ़्ट अभी भेजा जा रहा है।',
+        'id-ID': 'Draf ini sedang dikirim.',
+        'it-IT': 'Questa bozza è in fase di invio.',
+        'ko-KR': '이 임시 저장 메일은 보내는 중입니다.',
+        'pt-BR': 'Este rascunho está sendo enviado.',
+        'es-419': 'Este borrador se está enviando.',
+        'es-ES': 'Este borrador se está enviando.'
       }
     },
     change: {
@@ -1988,6 +1975,19 @@ export const mail = defineMessages({
         'pt-BR': 'Não foi possível receber {box} ({reason})',
         'es-419': 'No se pudo recibir {box} ({reason})',
         'es-ES': 'No se ha podido recibir {box} ({reason})'
+      },
+      noMessageList: {
+        'ja-JP': 'サーバーがメールの一覧を返しませんでした',
+        'en-US': 'The server did not return the list of messages',
+        'fr-FR': "Le serveur n'a pas renvoyé la liste des messages",
+        'de-DE': 'Der Server hat die Liste der E-Mails nicht geliefert',
+        'hi-IN': 'सर्वर ने मेल की सूची नहीं भेजी',
+        'id-ID': 'Server tidak mengirimkan daftar email',
+        'it-IT': "Il server non ha restituito l'elenco dei messaggi",
+        'ko-KR': '서버가 메일 목록을 보내지 않았습니다',
+        'pt-BR': 'O servidor não enviou a lista de e-mails',
+        'es-419': 'El servidor no envió la lista de correos',
+        'es-ES': 'El servidor no ha enviado la lista de correos'
       }
     }
   },
@@ -2031,19 +2031,6 @@ export const mail = defineMessages({
         'pt-BR': 'Enviar e-mail',
         'es-419': 'Enviar correo',
         'es-ES': 'Enviar el mensaje'
-      },
-      reply: {
-        'ja-JP': '返信を送信',
-        'en-US': 'Send reply',
-        'fr-FR': 'Envoyer la réponse',
-        'de-DE': 'Antwort senden',
-        'hi-IN': 'जवाब भेजें',
-        'id-ID': 'Kirim balasan',
-        'it-IT': 'Invia la risposta',
-        'ko-KR': '답장 보내기',
-        'pt-BR': 'Enviar resposta',
-        'es-419': 'Enviar respuesta',
-        'es-ES': 'Enviar la respuesta'
       },
       archive: {
         'ja-JP': 'アーカイブする',
@@ -2137,19 +2124,6 @@ export const mail = defineMessages({
       'es-419': 'Envía un correo desde {label} ({email}).',
       'es-ES': 'Envía un mensaje desde {label} ({email}).'
     },
-    reply: {
-      'ja-JP': '{label}({email})から「{subject}」({name}、{date})に返信します。',
-      'en-US': 'Sends a reply from {label} ({email}) to "{subject}" ({name}, {date}).',
-      'fr-FR': 'Envoie une réponse depuis {label} ({email}) à « {subject} » ({name}, {date}).',
-      'de-DE': 'Sendet eine Antwort von {label} ({email}) auf „{subject}“ ({name}, {date}).',
-      'hi-IN': '{label} ({email}) से "{subject}" ({name}, {date}) का जवाब भेजा जाएगा।',
-      'id-ID': 'Mengirim balasan dari {label} ({email}) untuk “{subject}” ({name}, {date}).',
-      'it-IT': 'Invia una risposta da {label} ({email}) a «{subject}» ({name}, {date}).',
-      'ko-KR': '{label}({email})에서 “{subject}”({name}, {date}) 메일에 답장합니다.',
-      'pt-BR': 'Envia uma resposta de {label} ({email}) para “{subject}” ({name}, {date}).',
-      'es-419': 'Envía una respuesta desde {label} ({email}) a «{subject}» ({name}, {date}).',
-      'es-ES': 'Envía una respuesta desde {label} ({email}) a “{subject}” ({name}, {date}).'
-    },
     to: {
       'ja-JP': '宛先: {addresses}',
       'en-US': 'To: {addresses}',
@@ -2201,19 +2175,6 @@ export const mail = defineMessages({
       'pt-BR': "Mensagem:\n{body}",
       'es-419': "Cuerpo:\n{body}",
       'es-ES': "Cuerpo:\n{body}"
-    },
-    bodyQuoted: {
-      'ja-JP': '本文:\n{body}\n(この下に元のメールを引用します)',
-      'en-US': 'Body:\n{body}\n(The original is quoted below.)',
-      'fr-FR': "Corps du message :\n{body}\n(Le message d'origine est cité en dessous.)",
-      'de-DE': "Text:\n{body}\n(Darunter wird die ursprüngliche E-Mail zitiert.)",
-      'hi-IN': "टेक्स्ट:\n{body}\n(इसके नीचे मूल मेल जुड़ी रहेगी।)",
-      'id-ID': "Isi:\n{body}\n(Email aslinya dikutip di bawah.)",
-      'it-IT': "Testo:\n{body}\n(Sotto viene citato il messaggio originale.)",
-      'ko-KR': "본문:\n{body}\n(이 아래에 원본 메일을 인용합니다)",
-      'pt-BR': "Mensagem:\n{body}\n(A mensagem original vai citada abaixo.)",
-      'es-419': "Cuerpo:\n{body}\n(Abajo se cita el mensaje original.)",
-      'es-ES': "Cuerpo:\n{body}\n(El mensaje original se cita debajo.)"
     },
     clipped: {
       'ja-JP': { other: '(ほか {count} 文字)' },

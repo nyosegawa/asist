@@ -14,12 +14,21 @@ describe('LiveSessionPolicy', () => {
   it('closes after idleMs without activity and pushes the deadline back on speech or model activity', () => {
     const p = policy()
     p.opened(0)
-    expect(p.tick(4999)).toBe('keep')
+    expect(p.tick(4999, false)).toBe('keep')
     p.activity(4000)
-    expect(p.tick(8999)).toBe('keep')
-    expect(p.tick(9000)).toBe('close')
+    expect(p.tick(8999, false)).toBe('keep')
+    expect(p.tick(9000, false)).toBe('close')
     p.closed()
-    expect(p.tick(20000)).toBe('keep')
+    expect(p.tick(20000, false)).toBe('keep')
+  })
+
+  it('does not close while work is still running, and counts the quiet time from when it ended', () => {
+    const p = policy()
+    p.opened(0)
+    expect(p.tick(60_000, true)).toBe('keep')
+    expect(p.tick(61_000, true)).toBe('keep')
+    expect(p.tick(65_999, false)).toBe('keep')
+    expect(p.tick(66_000, false)).toBe('close')
   })
 
   it('keeps preRollMs of audio while closed and hands it back in order once the session opens', () => {
