@@ -470,6 +470,37 @@ describe('drafts', () => {
     await restarted.service.stop()
   })
 
+  it('counts a message SMTP accepted as sent whatever fails afterwards, says what failed, and never sends the draft again', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
+    const counts = vi.spyOn(f.cache, 'counts')
+    f.smtp.send.mockImplementationOnce(async () => {
+      // The SQLite read behind the status that follows a send fails once the message has gone out.
+      counts.mockImplementationOnce(() => {
+        throw new Error('disk I/O error')
+      })
+      return { messageId: '<sent-1@me>', raw: Buffer.from('raw') }
+    })
+    const sent = await f.service.draftSend(draft.id, f.signal.signal)
+    expect(sent).toMatchObject({ saved: true, operation: 'send' })
+    expect((sent as { summary: string }).summary).toContain(t('mail.result.afterSendFailed', { reason: 'disk I/O error' }))
+    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.gone'))
+    expect(f.smtp.send).toHaveBeenCalledOnce()
+    await f.service.stop()
+  })
+
+  it('refuses to edit a draft whose send started, so that it keeps showing where the mail may have gone', async () => {
+    const f = await setup()
+    const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'agent')
+    // What the app finds after it stopped in the middle of sending this draft.
+    f.drafts.setSendStartedAt(draft.id, Date.now())
+    expect(() => f.service.draftUpdate(draft.id, { body: 'rewritten', to: ['other@example.com'] })).toThrow(errorText('mail.errors.draft.sendStarted'))
+    expect(f.drafts.get(draft.id)).toMatchObject({ to: ['t@example.com'], body: 'y' })
+    f.service.draftRemove(draft.id)
+    expect(f.service.draftList()).toEqual([])
+    await f.service.stop()
+  })
+
   it('lets a draft be sent again after a send that failed before sending or whose outcome is unknown', async () => {
     const f = await setup()
     const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')

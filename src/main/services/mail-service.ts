@@ -397,6 +397,7 @@ export class MailService {
   /** Checks the recipients and the account an edit brings before anything is stored. */
   draftUpdate(id: string, value: unknown): MailDraft {
     this.requireIdle(id)
+    requireUnsent(this.deps.drafts.require(id))
     const patch = parseMailInput(mailDraftPatchSchema, value)
     for (const recipient of [...(patch.to ?? []), ...(patch.cc ?? [])]) parseAddress(recipient)
     if (patch.accountId) this.accountOf(patch.accountId)
@@ -427,7 +428,7 @@ export class MailService {
     this.sendingDrafts.add(id)
     try {
       const draft = this.deps.drafts.require(id)
-      if (draft.sendStartedAt !== null) throw new Error(errorText('mail.errors.draft.sendStarted'))
+      requireUnsent(draft)
       signal.throwIfAborted()
       if (!this.deps.settings().enabled) throw new Error(errorText('mail.errors.disabled'))
       if (!draft.body.trim()) throw new Error(errorText('mail.errors.draft.emptyBody'))
@@ -441,8 +442,8 @@ export class MailService {
       try {
         result = await send()
       } catch (error) {
-        // The message provably did not leave, or the error asks the user to look in the Sent folder before
-        // sending again, so the draft can be sent again.
+        // send rejects only when the hand-off failed: the message provably did not leave, or the error asks the
+        // user to look in the Sent folder before sending again. Either way the user decides whether to send it again.
         try {
           this.deps.drafts.setSendStartedAt(id, null)
         } catch (release) {
@@ -674,8 +675,9 @@ export class MailService {
 
   /**
    * Sends. Once the message has been handed to SMTP it is never sent again, even when the outcome is
-   * unknown. Outside Gmail the same bytes are appended to the Sent folder, and a reply also puts the
-   * \Answered flag on the message it answers, `answered`, while that message is still in the cache.
+   * unknown. It rejects only when the hand-off fails, so a rejection always means that the message provably
+   * did not leave or that its outcome is unknown. Whatever fails after SMTP accepted the message becomes a
+   * note on the result, since an error would read as "not sent" and invite a second send to the same people.
    */
   private async send(account: MailAccount, outgoing: OutgoingMail, answered: { id: string; messageId: string } | null): Promise<MailChangeResult> {
     const password = this.passwordOf(account.id)
@@ -689,11 +691,31 @@ export class MailService {
       throw new Error(errorText(replying ? 'mail.errors.send.replyUnknown' : 'mail.errors.send.sendUnknown', { reason }))
     }
     const notes: string[] = []
+    try {
+      await this.afterSent(account, sent.raw, answered, notes)
+    } catch (error) {
+      notes.push(t('mail.result.afterSendFailed', { reason: errorMessage(error) }))
+    }
+    const recipients = outgoing.to.map(displayName).join(', ')
+    return {
+      saved: true,
+      operation: replying ? 'reply' : 'send',
+      id: sent.messageId,
+      summary: [t(replying ? 'mail.result.reply' : 'mail.result.send', { recipients }), ...notes].join('\n')
+    }
+  }
+
+  /**
+   * What follows a message SMTP accepted. Outside Gmail the same bytes are appended to the Sent folder, and a
+   * reply puts the \Answered flag on the message it answers, `answered`, while that message is still in the
+   * cache. A step that fails adds its note to `notes`.
+   */
+  private async afterSent(account: MailAccount, raw: Buffer, answered: { id: string; messageId: string } | null, notes: string[]): Promise<void> {
     const sync = this.syncs.get(account.id)
     if (sync && account.provider !== 'gmail' && account.folders.sent) {
       const sentFolder = account.folders.sent
       try {
-        await sync.run((client) => client.append(sentFolder, sent.raw, ['\\Seen'], new Date(this.now())))
+        await sync.run((client) => client.append(sentFolder, raw, ['\\Seen'], new Date(this.now())))
       } catch (error) {
         notes.push(t('mail.result.sentFolderFailed', { reason: errorMessage(error) }))
       }
@@ -711,14 +733,15 @@ export class MailService {
     }
     if (sync) void sync.syncNow().catch(() => undefined)
     this.afterChange(account.id)
-    const recipients = outgoing.to.map(displayName).join(', ')
-    return {
-      saved: true,
-      operation: replying ? 'reply' : 'send',
-      id: sent.messageId,
-      summary: [t(replying ? 'mail.result.reply' : 'mail.result.send', { recipients }), ...notes].join('\n')
-    }
   }
+}
+
+/**
+ * A draft whose send started may already have gone out. It is neither sent again nor edited, so that it keeps
+ * showing where the mail may have gone, and it can only be discarded.
+ */
+function requireUnsent(draft: MailDraft): void {
+  if (draft.sendStartedAt !== null) throw new Error(errorText('mail.errors.draft.sendStarted'))
 }
 
 /** The values that name a message in the confirmation: its subject, its sender and when it was sent. */

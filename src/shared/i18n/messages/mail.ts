@@ -1841,17 +1841,17 @@ export const mail = defineMessages({
         'es-ES': 'Este borrador se está enviando.'
       },
       sendStarted: {
-        'ja-JP': 'この下書きは一度送信を始めたので、もう送れません。送信済みフォルダを確かめてから、下書きを捨ててください。',
-        'en-US': "A send of this draft has already started, so it can't be sent again. Check the Sent folder, then discard the draft.",
-        'fr-FR': "L'envoi de ce brouillon a déjà commencé, il ne peut donc plus être envoyé. Vérifiez le dossier Envoyés, puis abandonnez le brouillon.",
-        'de-DE': 'Das Senden dieses Entwurfs wurde bereits begonnen, deshalb kann er nicht erneut gesendet werden. Sehen Sie im Ordner „Gesendet“ nach und verwerfen Sie dann den Entwurf.',
-        'hi-IN': 'इस ड्राफ़्ट को भेजना पहले ही शुरू हो चुका है, इसलिए इसे दोबारा नहीं भेजा जा सकता। "भेजी गई" फ़ोल्डर देखें, फिर ड्राफ़्ट छोड़ दें।',
-        'id-ID': 'Pengiriman draf ini sudah dimulai, jadi draf ini tidak bisa dikirim lagi. Periksa folder Terkirim, lalu buang drafnya.',
-        'it-IT': "L'invio di questa bozza è già iniziato, quindi non può essere inviata di nuovo. Controlla la cartella «Inviate», poi scarta la bozza.",
-        'ko-KR': '이 임시 저장 메일은 이미 보내기를 시작했으므로 다시 보낼 수 없습니다. 보낸 편지함을 확인한 뒤 임시 저장 메일을 버리십시오.',
-        'pt-BR': 'O envio deste rascunho já começou, então ele não pode ser enviado de novo. Verifique a pasta Enviados e depois descarte o rascunho.',
-        'es-419': 'El envío de este borrador ya comenzó, así que no se puede volver a enviar. Revisa la carpeta Enviados y luego descarta el borrador.',
-        'es-ES': 'El envío de este borrador ya ha empezado, así que no se puede volver a enviar. Comprueba la carpeta Enviados y después descarta el borrador.'
+        'ja-JP': 'この下書きは一度送信を始めたので、もう送ることも書き換えることもできません。送信済みフォルダを確かめてから、下書きを捨ててください。',
+        'en-US': 'A send of this draft has already started, so it can no longer be sent or changed. Check the Sent folder, then discard the draft.',
+        'fr-FR': "L'envoi de ce brouillon a déjà commencé, il ne peut donc plus être envoyé ni modifié. Vérifiez le dossier Envoyés, puis abandonnez le brouillon.",
+        'de-DE': 'Das Senden dieses Entwurfs wurde bereits begonnen, deshalb kann er weder erneut gesendet noch geändert werden. Sehen Sie im Ordner „Gesendet“ nach und verwerfen Sie dann den Entwurf.',
+        'hi-IN': 'इस ड्राफ़्ट को भेजना पहले ही शुरू हो चुका है, इसलिए इसे अब न भेजा जा सकता है, न बदला जा सकता है। "भेजी गई" फ़ोल्डर देखें, फिर ड्राफ़्ट छोड़ दें।',
+        'id-ID': 'Pengiriman draf ini sudah dimulai, jadi draf ini tidak bisa dikirim lagi atau diubah. Periksa folder Terkirim, lalu buang drafnya.',
+        'it-IT': "L'invio di questa bozza è già iniziato, quindi non può più essere inviata né modificata. Controlla la cartella «Inviate», poi scarta la bozza.",
+        'ko-KR': '이 임시 저장 메일은 이미 보내기를 시작했으므로 더 이상 보내거나 고칠 수 없습니다. 보낸 편지함을 확인한 뒤 임시 저장 메일을 버리십시오.',
+        'pt-BR': 'O envio deste rascunho já começou, então ele não pode mais ser enviado nem alterado. Verifique a pasta Enviados e depois descarte o rascunho.',
+        'es-419': 'El envío de este borrador ya comenzó, así que ya no se puede enviar ni cambiar. Revisa la carpeta Enviados y luego descarta el borrador.',
+        'es-ES': 'El envío de este borrador ya ha empezado, así que ya no se puede enviar ni cambiar. Comprueba la carpeta Enviados y después descarta el borrador.'
       },
       lockedAfterFailure: {
         'ja-JP': '{error}。また、下書きを送れる状態に戻せなかったため、この下書きはもう送れません({reason})',
@@ -2515,6 +2515,19 @@ export const mail = defineMessages({
       'pt-BR': 'Não foi possível remover o rascunho. Ele não pode ser enviado de novo, então descarte-o ({reason})',
       'es-419': 'No se pudo quitar el borrador. No se puede volver a enviar, así que descártalo ({reason})',
       'es-ES': 'No se ha podido quitar el borrador. No se puede volver a enviar, así que descártalo ({reason})'
+    },
+    afterSendFailed: {
+      'ja-JP': '送ったあとの処理に失敗しました({reason})',
+      'en-US': 'Something failed after the message went out ({reason})',
+      'fr-FR': 'Une étape a échoué après le départ du message ({reason})',
+      'de-DE': 'Nach dem Senden ist ein Schritt fehlgeschlagen ({reason})',
+      'hi-IN': 'मेल जाने के बाद का एक चरण पूरा नहीं हो सका ({reason})',
+      'id-ID': 'Ada langkah yang gagal setelah pesan terkirim ({reason})',
+      'it-IT': 'Un passaggio non è riuscito dopo la partenza del messaggio ({reason})',
+      'ko-KR': '메일을 보낸 뒤의 처리에 실패했습니다({reason})',
+      'pt-BR': 'Uma etapa falhou depois que a mensagem saiu ({reason})',
+      'es-419': 'Falló un paso después de que el mensaje salió ({reason})',
+      'es-ES': 'Ha fallado un paso después de que saliera el mensaje ({reason})'
     }
   },
   notify: {
