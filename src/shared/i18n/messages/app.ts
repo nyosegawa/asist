@@ -237,6 +237,19 @@ export const app = defineMessages({
       'pt-BR': 'Só é possível abrir links de páginas da web e de endereços de e-mail: {url}',
       'es-419': 'Solo se pueden abrir enlaces a páginas web y direcciones de correo: {url}',
       'es-ES': 'Solo se pueden abrir enlaces a páginas web y direcciones de correo: {url}'
+    },
+    openFailed: {
+      'ja-JP': 'リンクを開けませんでした',
+      'en-US': "Couldn't open the link",
+      'fr-FR': "Impossible d'ouvrir le lien",
+      'de-DE': 'Der Link ließ sich nicht öffnen',
+      'hi-IN': 'लिंक खोला नहीं जा सका',
+      'id-ID': 'Tidak bisa membuka tautan',
+      'it-IT': 'Impossibile aprire il link',
+      'ko-KR': '링크를 열지 못했습니다',
+      'pt-BR': 'Não foi possível abrir o link',
+      'es-419': 'No se pudo abrir el enlace',
+      'es-ES': 'No se ha podido abrir el enlace'
     }
   }
 })

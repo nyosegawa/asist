@@ -265,7 +265,7 @@ describe('Office viewer rendering with the demo files', () => {
     await act(async () => anchor('Write to us').click())
     expect(openExternal).toHaveBeenCalledWith('mailto:team@example.com')
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
-      kind: 'error', title: t('files.viewer.linkFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' })
+      kind: 'error', title: t('app.links.openFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' })
     })
   })
 

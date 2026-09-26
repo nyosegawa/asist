@@ -3,8 +3,8 @@ import { isExternalLink } from '@shared/external-link'
 import { Frame } from './Frame'
 import type { Viewer } from './types'
 import { useParsedBytes } from './use-parsed-bytes'
-import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
+import { openLink } from '@/open-link'
 import { useToastStore } from '@/state/stores'
 
 /**
@@ -118,10 +118,7 @@ export const DocxViewer: Viewer = ({ item, mode, size }) => {
   const toast = useToastStore((s) => s.push)
   const parsed = useParsedBytes(item, parseDocx)
   const follow = (container: HTMLElement, href: string): void => {
-    if (!href.startsWith('#')) {
-      void window.api.openExternal(href).catch((err: unknown) => toast({ kind: 'error', title: t('files.viewer.linkFailed'), body: displayError(err) }))
-      return
-    }
+    if (!href.startsWith('#')) return openLink(href)
     const target = container.querySelector<HTMLElement>(`#${CSS.escape(href.slice(1))}`)
     if (!target) {
       toast({ kind: 'error', title: t('files.viewer.anchorMissing') })
