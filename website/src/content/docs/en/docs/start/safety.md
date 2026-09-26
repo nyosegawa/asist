@@ -32,7 +32,7 @@ Actions you can easily fix on the screen afterwards, such as adding or changing 
 
 The confirmation screen shows what ASIST will actually do. Read the date and time, the recipients, the text and the instructions for the agent, and check that they match what you asked for before you approve. If you don't remember asking for it, cancel instead of approving.
 
-You answer a confirmation screen with its buttons. Speaking while it is open neither approves nor cancels it, and ASIST replies to what you said after you answer. With Gemini Live as the voice engine, Gemini replies right away, and the confirmation screen closes if Gemini withdraws the operation.
+You answer a confirmation screen with its buttons. Speaking while it is open neither approves nor cancels it, and ASIST replies to what you said after you answer. If you only cut into the speech and said nothing, ASIST tells you what came of the operation after you answer. With Gemini Live as the voice engine, Gemini replies right away, and the confirmation screen closes if Gemini withdraws the operation.
 
 ## An agent changes files with your permissions
 

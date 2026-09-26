@@ -1031,6 +1031,30 @@ describe('brain turn', () => {
     expect(textOf(sent.at(-1)!)).toContain('はい')
   })
 
+  it('replies with what came of the answer when a barge-in with no words came while the confirmation waited', async () => {
+    mocks.rounds.push(async (round) => {
+      round.text('確認画面で承認してください。')
+      round.toolUse('t1', 'run_agent_task', { prompt: '調べて', title: '調べもの' })
+      return { stop: 'tool_calls' }
+    })
+    mocks.rounds.push(async (round) => { round.text('始めました。'); return {} })
+    const { brain, events } = await loadBrain()
+    const { confirmEvents, resolveConfirm } = await import('../src/main/services/confirm')
+    const agent = await import('../src/main/services/agent')
+    vi.mocked(agent.start).mockReturnValueOnce({ id: 'j1', title: '調べもの', cwd: '/work/asist-jobs/j1' } as never)
+    const confirmations: ConfirmEvent[] = []
+    confirmEvents.on('event', (event) => confirmations.push(event))
+    const asking = brain.beginTurn({ text: '調べておいて' }, {}, 'user', false)!
+    await vi.waitFor(() => expect(confirmations).toHaveLength(1))
+    // The renderer aborts the turn it was playing on a barge-in, and no words follow it.
+    brain.abortTurn(asking.turnId)
+    resolveConfirm((confirmations[0] as Extract<ConfirmEvent, { type: 'open' }>).request.id, true)
+    await asking.completion
+    expect(asking.signal.aborted).toBe(false)
+    expect(mocks.requests).toHaveLength(2)
+    expect(events.at(-1)).toMatchObject({ type: 'done', turnId: asking.turnId, fullText: expect.stringContaining('始めました。') })
+  })
+
   it('keeps every utterance said while a confirmation waits, in order, and answers the last one', async () => {
     mocks.rounds.push(async (round) => {
       round.text('確認画面で承認してください。')

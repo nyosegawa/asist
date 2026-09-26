@@ -146,6 +146,23 @@ describe('LatestTurnScheduler', () => {
     expect(order).toEqual(['answered, aborted: false', 'released, aborted: true', 'second'])
   })
 
+  it('lets a held turn run on past its release when only an abort came meanwhile, since no newer words replaced it', async () => {
+    const scheduler = new LatestTurnScheduler()
+    const held = deferred()
+    const answered = deferred()
+    const handle = scheduler.start(async ({ hold }) => {
+      const release = hold()
+      held.resolve()
+      await answered.promise
+      release()
+    })
+    await held.promise
+    scheduler.abort(handle.turnId)
+    answered.resolve()
+    await handle.completion
+    expect(handle.signal.aborted).toBe(false)
+  })
+
   it('leaves a turn running when its hold is released with no abort asked for, and aborts it at once afterwards', async () => {
     const scheduler = new LatestTurnScheduler()
     const released = deferred()

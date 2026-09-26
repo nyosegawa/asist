@@ -369,8 +369,13 @@ async function initializeConversation(): Promise<void> {
   // already waits, after a reload or a crash of the renderer, missed their open events, so it asks for
   // them once it listens; a request that opens in between arrives both ways and is queued once.
   window.api.onConfirmEvent((event) => {
-    if (event.type === 'open') useConfirmStore.getState().open(event.request)
-    else useConfirmStore.getState().close(event.id)
+    if (event.type === 'open') {
+      useConfirmStore.getState().open(event.request)
+      return
+    }
+    const held = useConfirmStore.getState().queue.some((request) => request.id === event.id && request.holdsConversation)
+    useConfirmStore.getState().close(event.id)
+    if (held) resumeHeldTurn()
   })
   for (const request of await window.api.confirmPending()) useConfirmStore.getState().open(request)
 
@@ -547,6 +552,18 @@ function applySettings(): void {
   voiceController.noiseSuppression = s.noiseSuppression
   voiceController.vapEnabled = s.vapEnabled
   voiceController.setHangover(s.hangoverMs)
+}
+
+/**
+ * Lets the turn that waited for the answer to a confirmation be heard again once the answer is in. A
+ * barge-in with no words after it stopped the speech that asked for the answer and dropped the turn from
+ * the player, but main does not end a turn that waits for an answer on a barge-in alone, and the turn goes
+ * on to say what came of it. Words on their way start a newer turn instead, and main ends the waiting
+ * turn for that one.
+ */
+function resumeHeldTurn(): void {
+  const active = useTurnStore.getState().activeTurnId
+  if (active >= 0 && pendingRequestId === null) speechPlayer.beginTurn(active, true)
 }
 
 function beginUserTurnRequest(

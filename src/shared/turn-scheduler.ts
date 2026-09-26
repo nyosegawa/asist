@@ -1,17 +1,18 @@
 /**
  * Runs conversation turns strictly one at a time and aborts the running turn when a new one arrives.
- * A turn that is waiting for the user's answer holds the abort off until it lets go. Every turn runs,
- * in the order it started: one that a newer turn replaced while it waited runs with its signal already
- * aborted and closes at once, so that what the user said in it is still recorded.
+ * A turn that is waiting for the user's answer holds a newer turn's abort off until it lets go. Every turn
+ * runs, in the order it started: one that a newer turn replaced while it waited runs with its signal
+ * already aborted and closes at once, so that what the user said in it is still recorded.
  */
 
 export interface TurnRunContext {
   turnId: number
   signal: AbortSignal
   /**
-   * Keeps the turn from being aborted until the returned release is called. An abort asked for
-   * meanwhile, by abort() or by a newer turn, takes effect at the release, and the newer turn still
-   * waits for this one to end.
+   * Keeps the turn from being aborted until the returned release is called. A newer turn started
+   * meanwhile aborts it at the release and still waits for it to end. An abort() alone meanwhile is
+   * dropped: it is a barge-in with no words after it, which has stopped the speech already, and the turn
+   * goes on to reply with the result of what the user answers, which the user has not heard yet.
    */
   hold: () => () => void
 }
@@ -35,7 +36,7 @@ export class LatestTurnScheduler {
   private tail: Promise<void> = Promise.resolve()
 
   start(run: (ctx: TurnRunContext) => Promise<void>): TurnHandle {
-    if (this.current) this.stop(this.current)
+    if (this.current) this.replace(this.current)
 
     const turn: ScheduledTurn = { turnId: this.nextTurnId++, controller: new AbortController(), holds: 0, abortAtRelease: false }
     const { turnId, controller } = turn
@@ -58,11 +59,12 @@ export class LatestTurnScheduler {
     return this.start(run)
   }
 
+  /** Aborts the turn at once, unless it holds for the user's answer (see TurnRunContext.hold). */
   abort(turnId: number): void {
-    if (this.current?.turnId === turnId) this.stop(this.current)
+    if (this.current?.turnId === turnId && this.current.holds === 0) this.current.controller.abort()
   }
 
-  private stop(turn: ScheduledTurn): void {
+  private replace(turn: ScheduledTurn): void {
     if (turn.holds > 0) turn.abortAtRelease = true
     else turn.controller.abort()
   }

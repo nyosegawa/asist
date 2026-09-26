@@ -115,7 +115,15 @@ vi.mock('@/voice/aizuchi-bank', () => ({
 }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 vi.mock('@/state/confirm', () => ({
-  useConfirmStore: { getState: () => ({ open: (request: unknown) => mocks.confirmOpened.push(request), close: () => {} }) }
+  useConfirmStore: {
+    getState: () => ({
+      queue: mocks.confirmOpened,
+      open: (request: unknown) => mocks.confirmOpened.push(request),
+      close: (id: string) => {
+        mocks.confirmOpened = mocks.confirmOpened.filter((request) => (request as { id: string }).id !== id)
+      }
+    })
+  }
 }))
 vi.mock('@/state/view', () => ({
   startMiniAppReports: () => {},
@@ -362,6 +370,51 @@ describe('a barge-in', () => {
 
     const payloads = metricsLog.mock.calls.map((call) => call[0])
     expect(payloads.at(-1)).toMatchObject({ bargeIns: 1 })
+  })
+})
+
+describe('a barge-in while a confirmation holds the conversation', () => {
+  const request = { id: 'c1', title: 't', message: 'm', detail: 'd', confirmLabel: 'ok', destructive: false, holdsConversation: true }
+
+  it('lets the waiting turn be heard again once the user answers, when no words followed the barge-in', async () => {
+    let confirmEvent!: (event: unknown) => void
+    await start({
+      turnStart: vi.fn(async () => 42),
+      onConfirmEvent: (listener: (event: unknown) => void) => {
+        confirmEvent = listener
+        return () => {}
+      }
+    })
+    speak('調べておいて')
+    await flush()
+    confirmEvent({ type: 'open', request })
+    voice().events.emit('bargein', undefined)
+    player().beginTurn.mockClear()
+    confirmEvent({ type: 'close', id: 'c1' })
+    expect(player().beginTurn).toHaveBeenCalledWith(42, true)
+  })
+
+  it('leaves the player to the words that followed the barge-in', async () => {
+    let confirmEvent!: (event: unknown) => void
+    let answer!: (turnId: number) => void
+    const turnStart = vi.fn().mockResolvedValueOnce(42).mockImplementationOnce(() => new Promise<number>((resolve) => (answer = resolve)))
+    await start({
+      turnStart,
+      onConfirmEvent: (listener: (event: unknown) => void) => {
+        confirmEvent = listener
+        return () => {}
+      }
+    })
+    speak('調べておいて')
+    await flush()
+    confirmEvent({ type: 'open', request })
+    voice().events.emit('bargein', undefined)
+    speak('はい')
+    await flush()
+    player().beginTurn.mockClear()
+    confirmEvent({ type: 'close', id: 'c1' })
+    expect(player().beginTurn).not.toHaveBeenCalled()
+    answer(43)
   })
 })
 
