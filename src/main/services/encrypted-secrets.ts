@@ -52,8 +52,11 @@ export interface EncryptedSecretStoreOptions<Id extends string = string> extends
   errors: SecretStoreErrors<Id>
 }
 
+/** A stored secret this process cannot decrypt, because another build or another Keychain encrypted it. */
+export class SecretUnreadableError extends Error {}
+
 export interface EncryptedSecretStore<Id extends string = string> {
-  /** Returns null when no secret is stored, and throws when a stored secret cannot be decrypted. */
+  /** Returns null when no secret is stored, and throws SecretUnreadableError when a stored secret cannot be decrypted. */
   get(id: Id): string | null
   set(id: Id, secret: string): void
   remove(id: Id): void
@@ -107,7 +110,7 @@ export function createEncryptedSecretStore<Id extends string = string>(options: 
       try {
         return options.decrypt(Buffer.from(encoded, 'base64'))
       } catch (error) {
-        throw new Error(errors.secretUnreadable(id), { cause: error })
+        throw new SecretUnreadableError(errors.secretUnreadable(id), { cause: error })
       }
     },
     set: (id, secret) => {

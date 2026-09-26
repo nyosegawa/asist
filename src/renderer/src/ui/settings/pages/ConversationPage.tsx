@@ -17,14 +17,23 @@ import {
 } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, VOICE_ENGINES, isLiveEngine, voiceEngineLabel, type LiveEngine, type VoiceEngine } from '@shared/voice-engine'
 import { CONVERSATION_LOCALES, REGIONS, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
-import { UI_LOCALE_NAMES, type Translate } from '@shared/i18n'
+import { UI_LOCALE_NAMES, type MessageKey, type Translate } from '@shared/i18n'
+import { keyReadable, type ApiKeyState } from '@shared/ipc'
 import { useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
 import { useFieldDraft } from '../field-draft'
-import { Btn, Chip, Group, Link, Page, Row } from '../primitives'
+import { Btn, Chip, Group, Link, Page, Row, type ChipTone } from '../primitives'
 import { displayError } from '@/display-error'
 import { useT, useUiLocale } from '@/i18n'
 import { personaStateKey } from '../persona-state'
+
+/** A key this build cannot decrypt is named as on the integrations page, where it is entered again. */
+const KEY_STATE_CHIP = {
+  verified: { tone: 'ok', label: 'settingsConversation.models.verified' },
+  saved: { tone: 'cyan', label: 'settingsConversation.models.saved' },
+  unreadable: { tone: 'warn', label: 'settingsIntegrations.apiKeys.unreadable' },
+  missing: { tone: 'warn', label: 'settingsConversation.models.notSet' }
+} as const satisfies Record<ApiKeyState, { tone: ChipTone; label: MessageKey }>
 
 /** The conversation page: the voice engine, the conversation and bridge phrase models, a link to the persona, and the conversation log. */
 export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
@@ -128,18 +137,14 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
               hint={
                 state === 'verified'
                   ? t('settingsConversation.models.keyVerified', { envKey: info.envKey })
-                  : state === 'missing'
-                    ? t('settingsConversation.models.keyMissing', { envKey: info.envKey })
-                    : t('settingsConversation.models.keySaved', { envKey: info.envKey })
+                  : state === 'saved'
+                    ? t('settingsConversation.models.keySaved', { envKey: info.envKey })
+                    : state === 'unreadable'
+                      ? t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: info.label })
+                      : t('settingsConversation.models.keyMissing', { envKey: info.envKey })
               }
             >
-              <Chip tone={state === 'verified' ? 'ok' : state === 'missing' ? 'warn' : 'cyan'}>
-                {state === 'verified'
-                  ? t('settingsConversation.models.verified')
-                  : state === 'missing'
-                    ? t('settingsConversation.models.notSet')
-                    : t('settingsConversation.models.saved')}
-              </Chip>
+              <Chip tone={KEY_STATE_CHIP[state].tone}>{t(KEY_STATE_CHIP[state].label)}</Chip>
               <Link onClick={() => go('integrations')}>{t('settingsConversation.models.openIntegrations')}</Link>
             </Row>
           )
@@ -282,7 +287,8 @@ function LiveEngineRows({ engine, ctx, disabled }: { engine: LiveEngine; ctx: Se
   const info = LIVE_ENGINE_INFO[engine]
   const field = engine === 'gpt-live' ? 'gptLive' : 'geminiLive'
   const current = settings[field]
-  const saved = status !== null && status.llmKeys[info.provider] !== 'missing'
+  const keyState = status?.llmKeys[info.provider] ?? 'missing'
+  const saved = keyReadable(keyState)
   const model = info.models.find((candidate) => candidate.id === current.model)
   const listedVoice = info.voices.some((voice) => voice.id === current.voice)
   return (
@@ -351,10 +357,12 @@ function LiveEngineRows({ engine, ctx, disabled }: { engine: LiveEngine; ctx: Se
         hint={
           saved
             ? t('settingsConversation.models.keySaved', { envKey: LLM_PROVIDER_INFO[info.provider].envKey })
-            : t('settingsConversation.live.keyMissing', { envKey: LLM_PROVIDER_INFO[info.provider].envKey })
+            : keyState === 'unreadable'
+              ? t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: LLM_PROVIDER_INFO[info.provider].label })
+              : t('settingsConversation.live.keyMissing', { envKey: LLM_PROVIDER_INFO[info.provider].envKey })
         }
       >
-        <Chip tone={saved ? 'ok' : 'warn'}>{saved ? t('settingsConversation.models.saved') : t('settingsConversation.models.notSet')}</Chip>
+        <Chip tone={saved ? 'ok' : 'warn'}>{t(saved ? 'settingsConversation.models.saved' : KEY_STATE_CHIP[keyState].label)}</Chip>
         <Link onClick={() => go('integrations')}>{t('settingsConversation.models.openIntegrations')}</Link>
       </Row>
     </>

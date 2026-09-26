@@ -1,14 +1,17 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { isExternalLink } from '@shared/external-link'
 import { Frame } from './Frame'
 import type { Viewer } from './types'
 import { useT } from '@/i18n'
+import { openLink } from '@/open-link'
 
 /**
  * Markdown drawn as a document. GFM (tables, task lists, strikethrough, autolinks) is understood and raw HTML
- * is not passed through. Links open in the browser. An image given by a relative path shows only its alt
- * text, because a reference relative to the file is not resolved. A notebook's markdown cells use this same
- * MarkdownContent.
+ * is not passed through. A link to a web page or a mail address opens outside the app, and any other link,
+ * such as one relative to the file, keeps its text but is not drawn as a link. An image given by a relative
+ * path shows only its alt text, because a reference relative to the file is not resolved. A notebook's
+ * markdown cells and the notes use this same MarkdownContent.
  */
 export function MarkdownContent({ text }: { text: string }): React.JSX.Element {
   const t = useT()
@@ -17,17 +20,20 @@ export function MarkdownContent({ text }: { text: string }): React.JSX.Element {
       remarkPlugins={[remarkGfm]}
       skipHtml
       components={{
-        a: ({ href, children }) => (
-          <a
-            href={href}
-            onClick={(event) => {
-              event.preventDefault()
-              if (href && /^https?:\/\//.test(href)) void window.api.openExternal(href)
-            }}
-          >
-            {children}
-          </a>
-        ),
+        a: ({ href, children }) =>
+          href && isExternalLink(href) ? (
+            <a
+              href={href}
+              onClick={(event) => {
+                event.preventDefault()
+                openLink(href)
+              }}
+            >
+              {children}
+            </a>
+          ) : (
+            <>{children}</>
+          ),
         img: ({ src, alt }) =>
           typeof src === 'string' && /^(https?:|data:|asist-file:)/.test(src) ? (
             <img src={src} alt={alt ?? ''} />

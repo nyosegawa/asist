@@ -18,6 +18,7 @@ import type {
 } from '@shared/ipc'
 import { catalogByType } from '@shared/panel-catalog'
 import { displayError } from '@/display-error'
+import { translate } from '@/i18n'
 
 interface StatusState {
   status: AppStatus | null
@@ -30,8 +31,8 @@ export const useStatusStore = create<StatusState>((set) => ({
   refresh: async () => {
     try {
       set({ status: await window.api.getStatus() })
-    } catch {
-      // Main is not connected in the browser demo.
+    } catch (error) {
+      useToastStore.getState().push({ kind: 'error', title: translate('app.status.checkFailed'), body: displayError(error) })
     }
   },
   apply: (status) => set({ status })

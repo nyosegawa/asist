@@ -316,6 +316,31 @@ describe('settings dialog', () => {
     await act(async () => view.querySelector<HTMLButtonElement>('.st-key[data-provider="openai"] .st-btn')!.click())
     expect(view.querySelector('input[aria-label="OPENAI_API_KEY"]')).not.toBeNull()
   })
+
+  it('shows a saved key this build cannot decrypt as such wherever a key appears, and asks for it again', async () => {
+    useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'unreadable', cerebras: 'unreadable' } } })
+    useSettingsStore.setState({ settings: { ...settings, voiceEngine: 'gpt-live' } })
+    const view = await render()
+    expect(nav(view, 'integrations').querySelector('.st-nav-sub')?.textContent).toBe(t('settings.summary.integrationsCalendarOff', { keys: 1, total: 4 }))
+    // The conversation model's row and the GPT-Live row both show the OpenAI key.
+    const keyRows = [...view.querySelectorAll('.st-row')].filter(
+      (row) => row.querySelector('.st-row-label')?.textContent === t('settingsConversation.models.apiKey', { provider: 'OpenAI' })
+    )
+    expect(keyRows.map((row) => [row.querySelector('.st-chip')?.textContent, row.querySelector('.st-row-hint')?.textContent])).toEqual([
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })],
+      [t('settingsIntegrations.apiKeys.unreadable'), t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'OpenAI' })]
+    ])
+    await act(async () => nav(view, 'integrations').click())
+    const row = view.querySelector('.st-key[data-provider="openai"]')!
+    expect(row.querySelector('.st-chip')?.textContent).toBe(t('settingsIntegrations.apiKeys.unreadable'))
+    expect(row.querySelector('.st-btn')?.textContent).toBe(t('settingsIntegrations.apiKeys.register'))
+  })
+
+  it('reports a status check that fails instead of keeping the last status without a word', async () => {
+    api.getStatus.mockRejectedValueOnce(new Error('api-keys.json is damaged'))
+    await useStatusStore.getState().refresh()
+    expect(useToastStore.getState().toasts).toMatchObject([{ kind: 'error', title: t('app.status.checkFailed'), body: 'api-keys.json is damaged' }])
+  })
 })
 
 describe('settings fields that are saved once the user leaves them', () => {

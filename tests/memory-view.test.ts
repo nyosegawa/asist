@@ -3,13 +3,14 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { documentOf } from '@shared/memory-page'
+import { errorText } from '@shared/i18n/error-text'
+import { Markdown } from '../src/renderer/src/ui/memory/Markdown'
 import { MemoryView } from '../src/renderer/src/ui/memory/MemoryView'
 import { useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { answerConfirm } from './helpers/confirm'
 import { createTranslator } from '@shared/i18n'
-import { errorText } from '@shared/i18n/error-text'
 
 const t = createTranslator('ja-JP')
 
@@ -93,6 +94,24 @@ const setValue = (input: HTMLTextAreaElement | HTMLInputElement, value: string):
   Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(input, value)
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
+
+describe('links in a memory page', () => {
+  it('opens a web or mail link outside the app, says so when it cannot, and keeps any other link as its text', async () => {
+    const text = 'See [the site](https://example.com/a), [mail](mailto:team@example.com) and [a note](pages/other.md).'
+    await act(async () => root.render(React.createElement(Markdown, { text })))
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('.my-link')]
+    expect(buttons.map((button) => button.textContent)).toEqual(['the site', 'mail'])
+    expect(container.textContent).toContain('and a note.')
+
+    api.openExternal.mockRejectedValueOnce(new Error(errorText('app.links.refused', { url: 'mailto:team@example.com' })))
+    await act(async () => buttons[1].click())
+    await act(async () => {})
+    expect(api.openExternal).toHaveBeenCalledWith('mailto:team@example.com')
+    expect(useToastStore.getState().toasts).toMatchObject([
+      { kind: 'error', title: t('app.links.openFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' }) }
+    ])
+  })
+})
 
 describe('the memory screen', () => {
   it('groups the list into self and user, the journal by month with the newest day first, and the pages in the order main lists them, and opens the latest entry', async () => {

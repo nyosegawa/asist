@@ -132,7 +132,7 @@ describe('a conversation model from another provider', () => {
     mocks.settings.conversationModel = { provider: 'openai', id: 'gpt-x' }
     const llm = await import('../src/main/services/llm')
 
-    await expect(llm.validateConfiguration(llm.providerKeys())).rejects.toThrow('OPENAI_API_KEY')
+    await expect(llm.validateConfiguration()).rejects.toThrow('OPENAI_API_KEY')
     await expect(llm.configuredApiKeyAvailable()).resolves.toBe(false)
     expect(mocks.compatibleRetrieve).not.toHaveBeenCalled()
     expect(mocks.retrieve).not.toHaveBeenCalled()

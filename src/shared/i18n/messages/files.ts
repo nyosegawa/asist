@@ -1140,6 +1140,19 @@ export const files = defineMessages({
       'pt-BR': { one: 'mais {count} coluna', other: 'mais {count} colunas' },
       'es-419': { one: '{count} columna más', other: '{count} columnas más' },
       'es-ES': { one: '{count} columna más', other: '{count} columnas más' }
+    },
+    anchorMissing: {
+      'ja-JP': 'リンク先がこの文書にありません',
+      'en-US': "Link target isn't in the document",
+      'fr-FR': 'Cible du lien introuvable',
+      'de-DE': 'Linkziel nicht im Dokument',
+      'hi-IN': 'लिंक की जगह दस्तावेज़ में नहीं मिली',
+      'id-ID': 'Tujuan tautan tidak ditemukan',
+      'it-IT': 'Destinazione del link non trovata',
+      'ko-KR': '링크 대상이 문서에 없습니다',
+      'pt-BR': 'Destino do link não encontrado',
+      'es-419': 'Destino del enlace no encontrado',
+      'es-ES': 'Destino del enlace no encontrado'
     }
   },
   source: {
