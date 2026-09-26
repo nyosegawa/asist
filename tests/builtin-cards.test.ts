@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import type { AppTimer, PanelSpec } from '@shared/ipc'
 import { dayKeyOf, type Task, type TaskStatus } from '@shared/tasks'
 import { usePanelStore, useJobStore, useMailStore, useNoteStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
@@ -318,6 +319,19 @@ describe('todo and notes cards', () => {
     expect(api.taskUpdate).toHaveBeenCalledWith('t0', { status: 'done' })
     await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent?.includes(t('tasks.card.openWorkspace')))!.click())
     expect(useViewStore.getState().open?.app).toBe('tasks')
+  })
+
+  it('says the tasks could not be read rather than that there are none, and reads them again on retry', async () => {
+    useTaskStore.setState({ tasks: [], loaded: false, error: '' })
+    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeListBroken')))
+    const card = await renderAt(spec('todo', {}), L)
+    await act(async () => {})
+    expect(card.textContent).not.toContain(t('tasks.card.empty'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.card.loadFailed'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.errors.storeListBroken'))
+    api.tasksList.mockResolvedValueOnce([taskOf('a', '牛乳を買う', 'todo', 0)])
+    await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
+    expect([...card.querySelectorAll('.card-row-title')].map((el) => el.textContent)).toEqual(['牛乳を買う'])
   })
 
   it('redraws when main delivers the full list it has saved', async () => {

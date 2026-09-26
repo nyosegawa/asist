@@ -20,6 +20,7 @@ function TodoBody({ spec, size }: CardContext): React.JSX.Element {
   const t = useT()
   const tasks = useTaskStore((s) => s.tasks)
   const loaded = useTaskStore((s) => s.loaded)
+  const loadError = useTaskStore((s) => s.error)
   const load = useTaskStore((s) => s.load)
   const setFocused = usePanelStore((s) => s.setFocused)
   const openApp = useViewStore((s) => s.openApp)
@@ -29,6 +30,22 @@ function TodoBody({ spec, size }: CardContext): React.JSX.Element {
   useEffect(() => {
     if (!loaded) void load()
   }, [loaded, load, spec.updatedAt])
+
+  // Until the tasks have been read the card knows nothing about them, so it neither counts them nor
+  // takes a new one.
+  if (!loaded)
+    return (
+      <div className="card td" data-size={size}>
+        <div className="card-hero">
+          <h3>{t('tasks.card.title')}</h3>
+        </div>
+        <Empty note={loadError || undefined}>{loadError ? t('tasks.card.loadFailed') : t('common.loading')}</Empty>
+        <Actions>
+          {loadError && <Action onClick={() => void load()}>{t('common.retry')}</Action>}
+          <Action leadsTo="screen" onClick={() => openApp({ app: 'tasks' })}>{t('tasks.card.openWorkspace')}</Action>
+        </Actions>
+      </div>
+    )
 
   const run = (operation: () => Promise<unknown>, after?: () => void): void => {
     if (busy) return
