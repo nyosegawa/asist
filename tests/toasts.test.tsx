@@ -68,6 +68,21 @@ describe('a toast', () => {
     expect(toast()?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('stays up with its whole message while the keyboard is on it, when the pointer passes over it and leaves', async () => {
+    await act(async () => root.render(<Toasts />))
+    await act(async () => useToastStore.getState().push({ kind: 'error', title: 'Could not check the services', body }))
+    await act(async () => toast()!.focus())
+    await act(async () => void toast()!.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })))
+    await act(async () => void toast()!.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })))
+    expect(toast()?.getAttribute('aria-expanded')).toBe('true')
+    await act(async () => vi.advanceTimersByTime(TOAST_MS * 2))
+    expect(useToastStore.getState().toasts).toHaveLength(1)
+
+    await act(async () => toast()!.blur())
+    await act(async () => vi.advanceTimersByTime(TOAST_MS))
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
   it('goes away by itself when no one rests on it', async () => {
     await act(async () => root.render(<Toasts />))
     await act(async () => useToastStore.getState().push({ kind: 'ok', title: 'Saved' }))

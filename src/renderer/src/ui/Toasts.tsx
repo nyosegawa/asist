@@ -20,15 +20,21 @@ const KIND_STYLE: Record<string, string> = {
 export function Toasts(): React.JSX.Element {
   const toasts = useToastStore((s) => s.toasts)
   const { remove, hold, release } = useToastStore.getState()
-  const [reading, setReading] = useState<number | null>(null)
-  const read = (id: number): void => {
+  // The pointer and the keyboard each hold a toast; it goes on showing the whole and staying up until neither does.
+  const [pointerOn, setPointerOn] = useState<number | null>(null)
+  const [focusOn, setFocusOn] = useState<number | null>(null)
+  const read = (id: number, by: 'pointer' | 'focus'): void => {
     hold(id)
-    setReading(id)
+    if (by === 'pointer') setPointerOn(id)
+    else setFocusOn(id)
   }
-  const leave = (id: number): void => {
-    release(id)
-    setReading((current) => (current === id ? null : current))
+  const leave = (id: number, by: 'pointer' | 'focus'): void => {
+    const other = by === 'pointer' ? focusOn : pointerOn
+    if (by === 'pointer') setPointerOn(null)
+    else setFocusOn(null)
+    if (other !== id) release(id)
   }
+  const reading = (id: number): boolean => pointerOn === id || focusOn === id
   return (
     <div className="pointer-events-none fixed top-14 right-4 z-50 flex w-96 flex-col gap-2">
       <AnimatePresence>
@@ -39,17 +45,17 @@ export function Toasts(): React.JSX.Element {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 30 }}
             onClick={() => remove(toast.id)}
-            onPointerEnter={() => read(toast.id)}
-            onPointerLeave={() => leave(toast.id)}
-            onFocus={() => read(toast.id)}
-            onBlur={() => leave(toast.id)}
-            aria-expanded={toast.body ? reading === toast.id : undefined}
+            onPointerEnter={() => read(toast.id, 'pointer')}
+            onPointerLeave={() => leave(toast.id, 'pointer')}
+            onFocus={() => read(toast.id, 'focus')}
+            onBlur={() => leave(toast.id, 'focus')}
+            aria-expanded={toast.body ? reading(toast.id) : undefined}
             className={`glass pointer-events-auto cursor-pointer rounded-xl border px-4 py-2.5 text-left ${KIND_STYLE[toast.kind]}`}
           >
             <div className="font-mono text-[10px] font-semibold tracking-[0.04em]">{toast.title}</div>
             {toast.body && (
               <div
-                className={`mt-0.5 text-[11px] whitespace-pre-line text-holo-muted ${reading === toast.id ? 'max-h-[60vh] overflow-y-auto' : 'line-clamp-2'}`}
+                className={`mt-0.5 text-[11px] whitespace-pre-line text-holo-muted ${reading(toast.id) ? 'max-h-[60vh] overflow-y-auto' : 'line-clamp-2'}`}
               >
                 {toast.body}
               </div>
