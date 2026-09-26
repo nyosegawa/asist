@@ -138,7 +138,7 @@ const MODELS: Record<'vap' | 'bcDet' | 'mimiOnnx' | 'mimiMeta' | 'bc' | 'nod' | 
 
 let child: ChildProcessWithoutNullStreams | null = null
 let workerReady = false
-let ensureInFlight: Promise<boolean> | null = null
+let startInFlight: Promise<boolean> | null = null
 let prepareInFlight: Promise<{ ok: boolean; message: string }> | null = null
 let prepareController: AbortController | null = null
 let onState: ((state: VapState) => void) | null = null
@@ -275,10 +275,27 @@ async function startWorker(): Promise<boolean> {
   }
   spawned.on('error', detach)
   spawned.on('exit', detach)
+  // A write between the worker's death and its exit event, or after it closed its input, fails with
+  // EPIPE, which becomes an uncaught exception unless the stream has a listener.
+  spawned.stdin.on('error', (error) => {
+    console.warn(`vap: worker input failed: ${error.message}`)
+    if (child === spawned) stop()
+  })
 
   const ready = await waitUntilReady(spawned)
   if (!ready && child === spawned) stop()
   return ready
+}
+
+/** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
+function start(): Promise<boolean> {
+  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
+  if (startInFlight) return startInFlight
+  const operation = startWorker().finally(() => {
+    if (startInFlight === operation) startInFlight = null
+  })
+  startInFlight = operation
+  return operation
 }
 
 /**
@@ -289,13 +306,7 @@ async function startWorker(): Promise<boolean> {
  */
 export function ensureStarted(stateHandler: (state: VapState) => void): Promise<boolean> {
   onState = stateHandler
-  if (child && workerReady && child.exitCode === null) return Promise.resolve(true)
-  if (ensureInFlight) return ensureInFlight
-  const operation = startWorker().finally(() => {
-    if (ensureInFlight === operation) ensureInFlight = null
-  })
-  ensureInFlight = operation
-  return operation
+  return start()
 }
 
 /** Takes the two 16 kHz channels and writes them interleaved to the worker. Audio is dropped while the worker is not running. */
@@ -388,7 +399,7 @@ async function prepareOnce(
       }
     }
     progress(t('settingsModels.preparation.loading', { model: MAAI }))
-    const ready = await startWorker()
+    const ready = await start()
     if (!ready) throw new Error(errorText('settingsModels.preparation.startFailed', { model: MAAI }))
     onProgress({ status: 'done', pct: 100, downloadedMb: 0, totalMb: 0 })
     return { ok: true, message: t('settingsModels.preparation.ready', { feature: t('settingsModels.features.turnTaking'), model: MAAI }) }

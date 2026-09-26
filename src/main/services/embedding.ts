@@ -175,6 +175,12 @@ async function startWorker(): Promise<boolean> {
   }
   spawned.on('error', (error) => detach(`embedding worker error: ${error.message}`))
   spawned.on('exit', (code) => detach(`embedding worker exited (${code ?? 'signal'})`))
+  // A write between the worker's death and its exit event fails with EPIPE, which becomes an uncaught
+  // exception unless the stream has a listener. The request that wrote gets the error through its callback.
+  spawned.stdin.on('error', (error) => {
+    console.warn(`embedding: worker input failed: ${error.message}`)
+    if (child === spawned) stop()
+  })
 
   const ready = await waitUntilReady(spawned)
   if (!ready && child === spawned) stop()
@@ -283,7 +289,7 @@ async function prepareOnce(
         })
     )
     progress(t('settingsModels.preparation.loading', { model: EMBEDDING_MODEL.label }))
-    const ready = await startWorker()
+    const ready = await ensureStarted()
     if (!ready) throw new Error(errorText('settingsModels.preparation.startFailed', { model: EMBEDDING_MODEL.label }))
     onProgress({ status: 'done', pct: 100, downloadedMb: 0, totalMb: 0 })
     return {

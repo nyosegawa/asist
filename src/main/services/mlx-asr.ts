@@ -171,7 +171,7 @@ export function prepare(
     feature: t('settingsModels.features.mlxAsr'),
     signal: controller.signal,
     onProgress,
-    start: () => startWorker(model)
+    start: () => ensureServer(model)
   }).finally(() => {
     if (prepareInFlight === operation) prepareInFlight = null
     prepareController = null

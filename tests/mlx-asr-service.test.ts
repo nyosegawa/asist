@@ -228,4 +228,49 @@ describe('MLX transcription lifecycle', () => {
     child.stdout.write('ASIST_JSON:{"type":"result","id":"in-use","text":"残っています"}\n')
     expect((await response).text).toBe('残っています')
   })
+
+  it('fails the requests of a worker whose input pipe breaks, and stops it without an uncaught error', async () => {
+    const child = await ready()
+    const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'broken-pipe'))
+    await vi.waitFor(() => expect(child.input).toHaveLength(1))
+    const uncaught: Error[] = []
+    const onUncaught = (error: Error): void => { uncaught.push(error) }
+    process.prependListener('uncaughtException', onUncaught)
+    try {
+      child.stdin.destroy(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))
+      expect((await response).error?.message).toBe('write EPIPE')
+    } finally {
+      process.removeListener('uncaughtException', onUncaught)
+    }
+    expect(uncaught).toEqual([])
+    expect(child.kill).toHaveBeenCalled()
+    expect(await mlx.available(MODEL)).toBe(false)
+  })
+})
+
+describe('starting the MLX worker from a preparation and from elsewhere at once', () => {
+  it('lets a start from the watchdog wait for the worker a preparation is loading', async () => {
+    const preparing = mlx.prepare(MODEL, () => {})
+    await vi.waitFor(() => expect(children).toHaveLength(1))
+    const revived = mlx.ensureServer(MODEL)
+    children[0].stdout.write('ASIST_JSON:{"type":"ready"}\n')
+    expect(await revived).toBe(true)
+    expect((await preparing).ok).toBe(true)
+    expect(children).toHaveLength(1)
+    expect(children[0].kill).not.toHaveBeenCalled()
+  })
+
+  it('lets a preparation wait for the worker a transcription is already loading', async () => {
+    const response = observe(mlx.transcribe(MODEL, new Float32Array([0.2]), 'while-loading'))
+    expect(children).toHaveLength(1)
+    const preparing = mlx.prepare(MODEL, () => {})
+    await vi.advanceTimersByTimeAsync(10)
+    children[0].stdout.write('ASIST_JSON:{"type":"ready"}\n')
+    expect((await preparing).ok).toBe(true)
+    await vi.waitFor(() => expect(children[0].input).toHaveLength(1))
+    children[0].stdout.write('ASIST_JSON:{"type":"result","id":"while-loading","text":"聞こえました"}\n')
+    expect((await response).text).toBe('聞こえました')
+    expect(children).toHaveLength(1)
+    expect(children[0].kill).not.toHaveBeenCalled()
+  })
 })

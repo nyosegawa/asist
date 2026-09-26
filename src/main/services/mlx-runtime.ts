@@ -114,6 +114,9 @@ export class MlxWorker {
     })
     child.on('error', (error) => this.fail(error))
     child.on('exit', (code) => this.fail(new Error(`${options.logName} worker exited (${code ?? 'signal'})`)))
+    // A write between the worker's death and its exit event fails with EPIPE, which becomes an uncaught
+    // exception unless the stream has a listener.
+    child.stdin.on('error', (error) => this.fail(error))
   }
 
   get alive(): boolean {
