@@ -115,6 +115,34 @@ describe('TimerManager', () => {
     expect(restarted.list()[0].status).toBe('finished')
   })
 
+  it('on waking, finishes a timer that ended during the sleep and gives one still running the time the wall clock leaves it', () => {
+    // Node's timers stop while the Mac sleeps, so the schedules here fire only when the test calls them.
+    let wall = 1_000_000
+    let saved: TimerPersistenceData = { timers: [] }
+    const scheduled: number[] = []
+    const notify = vi.fn()
+    const manager = new TimerManager({
+      load: () => saved,
+      save: (next) => (saved = next),
+      defaultLabel,
+      notify,
+      now: () => wall,
+      schedule: (_callback, delay) => scheduled.push(delay),
+      cancelSchedule: () => undefined
+    })
+    manager.create({ id: 'timer:tea', seconds: 600 })
+    manager.create({ id: 'timer:bread', seconds: 7200 })
+    // Two minutes pass awake, then the Mac sleeps for an hour.
+    wall += 62 * 60_000
+    manager.resync()
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(manager.list().map((timer) => [timer.id, timer.status])).toEqual([
+      ['timer:bread', 'active'],
+      ['timer:tea', 'finished']
+    ])
+    expect(scheduled.at(-1)).toBe((7200 - 62 * 60) * 1000)
+  })
+
   it('notifies once at the next start for a timer that expired while the app was down, and not again after that', () => {
     const h = harness()
     h.manager.create({ id: 'timer:1', seconds: 1 })

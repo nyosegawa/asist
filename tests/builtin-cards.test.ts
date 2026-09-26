@@ -3,6 +3,7 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import type { AppTimer, PanelSpec } from '@shared/ipc'
 import { dayKeyOf, type Task, type TaskStatus } from '@shared/tasks'
 import { usePanelStore, useJobStore, useMailStore, useNoteStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
@@ -17,7 +18,7 @@ import { tableAmounts } from '@/panels/builtin/fx'
 import { diffLabel, offsetMinutes, phaseOf, zoned } from '@/panels/builtin/clock'
 import { remainingText } from '@/panels/builtin/timer'
 import { elapsedLabel } from '@/panels/builtin/agent-job'
-import { relativeTime } from '@/panels/primitives/format'
+import { relativeDayLabel, relativeTime } from '@/panels/primitives/format'
 import { DEMO_CALENDAR_CARD } from '@/demo/fixtures/calendar'
 import { DEMO_FX } from '@/demo/fixtures/finance'
 import { DEMO_JOB, DEMO_JOB_LOG, DEMO_JOBS } from '@/demo/fixtures/jobs'
@@ -253,6 +254,19 @@ describe('calendar card', () => {
     expect(behind.querySelector<HTMLElement>('.ca-event')?.dataset.past).toBeUndefined()
   })
 
+  it('shows a range of one day as that day when daylight saving time makes the day 25 hours long', async () => {
+    const zone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const fromMs = new Date(2026, 10, 1).getTime()
+      const card = await renderAt(spec('calendar', { range: 'custom', fromMs, untilMs: new Date(2026, 10, 2).getTime(), events: [] }), L)
+      expect(card.querySelector('.card-hero p')?.textContent).toBe(relativeDayLabel(fromMs))
+    } finally {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    }
+  })
+
   it('shows the empty state when there is no event, and gives the week list one heading per day', async () => {
     const empty = await renderAt(spec('calendar', { range: 'today', events: [] }), L)
     expect(empty.querySelector('.card-empty')?.textContent).toContain(t('calendar.card.empty'))
@@ -305,6 +319,19 @@ describe('todo and notes cards', () => {
     expect(api.taskUpdate).toHaveBeenCalledWith('t0', { status: 'done' })
     await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent?.includes(t('tasks.card.openWorkspace')))!.click())
     expect(useViewStore.getState().open?.app).toBe('tasks')
+  })
+
+  it('says the tasks could not be read rather than that there are none, and reads them again on retry', async () => {
+    useTaskStore.setState({ tasks: [], loaded: false, error: '' })
+    api.tasksList.mockRejectedValueOnce(new Error(errorText('tasks.errors.storeListBroken')))
+    const card = await renderAt(spec('todo', {}), L)
+    await act(async () => {})
+    expect(card.textContent).not.toContain(t('tasks.card.empty'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.card.loadFailed'))
+    expect(card.querySelector('.card-empty')?.textContent).toContain(t('tasks.errors.storeListBroken'))
+    api.tasksList.mockResolvedValueOnce([taskOf('a', '牛乳を買う', 'todo', 0)])
+    await act(async () => [...card.querySelectorAll<HTMLButtonElement>('.card-action')].find((b) => b.textContent === t('common.retry'))!.click())
+    expect([...card.querySelectorAll('.card-row-title')].map((el) => el.textContent)).toEqual(['牛乳を買う'])
   })
 
   it('redraws when main delivers the full list it has saved', async () => {
