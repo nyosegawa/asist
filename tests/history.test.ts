@@ -224,7 +224,7 @@ describe('ConversationHistory, derived from the conversation log', () => {
   it('keeps the tool round trip of a turn whose spoken reply was recorded while its tool still ran', () => {
     const { history } = makeHistory()
     history.apply(user(5, '東京の天気は'))
-    // A voice model records its filler once the transcript goes quiet, which can be before the tool round is recorded.
+    // Gemini Live records what it said once the transcript goes quiet, which can be before the turn's later records.
     history.apply(assistant(5, 'ちょっと見てみますね。'))
     history.apply(message(5, 'assistant', [{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '東京都' } }]))
     history.apply(message(5, 'user', [{ type: 'tool_result', callId: 't1', name: 'show_weather', content: '{"id":"card-42"}' }]))
@@ -322,7 +322,7 @@ describe('context length and the trigger for compaction', () => {
 
   /**
    * A turn can be left without a reply for good: under Gemini Live the notice of a finished job and the
-   * report spoken for it carry different turn ids, a voice model records nothing for a turn cut off
+   * report spoken for it carry different turn ids, Gemini Live records nothing for a turn cut off
    * before it spoke, and quitting or a crash can end a turn half way.
    */
   it.each([

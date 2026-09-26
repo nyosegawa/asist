@@ -129,7 +129,6 @@ function createEngine(): LiveEngineBase {
         brainEvents.on('event', listener)
         return () => brainEvents.off('event', listener)
       },
-      emitTurn,
       instructions: gptLiveInstructions,
       history: () => {
         history.ensureLoaded()

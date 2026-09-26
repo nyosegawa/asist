@@ -376,8 +376,10 @@ export interface LiveUsage {
 
 /**
  * What the live engine in main reports to the renderer. The audio itself arrives separately through
- * onLiveAudio. A transcript arrives while it is still forming, and `final` settles one utterance,
- * which is when it goes into the conversation log.
+ * onLiveAudio. A transcript arrives while it is still forming, and `final` settles one utterance. Under
+ * Gemini Live that is when it goes into the conversation log, and `turnId` is the turn it belongs to.
+ * GPT-Live sends only the user's transcript, whose `turnId` names its line on screen; brain records the
+ * utterance with the turn it is handed to.
  */
 export type LiveEvent =
   | { type: 'connection'; state: LiveConnection; detail?: string }

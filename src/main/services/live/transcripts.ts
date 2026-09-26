@@ -3,8 +3,8 @@
  *
  * Both GPT-Live and Gemini stream a transcript in fragments, and GPT-Live gives no signal for the end of
  * an utterance. Fragments are collected and become one final utterance once nothing follows for quietMs.
- * Where there is a signal, as in Gemini, flush finalizes them at once. The final text is what the
- * conversation log keeps.
+ * Where there is a signal, as in Gemini, flush finalizes them at once. Gemini Live keeps the final text
+ * in the conversation log, while GPT-Live hands the user's to brain with its next turn.
  */
 
 export type TranscriptRole = 'user' | 'assistant'

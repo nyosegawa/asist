@@ -10,11 +10,12 @@ import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { ToolCallOrder } from '@shared/tool-call-order'
 import { buildMemoryInjection, memoryIdsInToolResult, type InjectableMemory } from '@shared/memory-injection'
-import type { ConversationOwner } from '../brain/session'
+import { record, turnScheduler, type ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
 import { decodeOutput } from './audio'
 import type { GeminiFunctionDeclaration } from './gemini-tools'
+import type { TranscriptRole } from './transcripts'
 
 /**
  * Gemini Live. One model listens, thinks, calls functions and speaks. It does not use brain's runTurn and
@@ -26,6 +27,10 @@ import type { GeminiFunctionDeclaration } from './gemini-tools'
  * process, so the approval gate for writes keeps working. A session drops after about ten minutes and is
  * continued with a resumption handle, which is valid for two hours; without one, the history seed is sent
  * instead.
+ *
+ * The user and assistant lines of the conversation log are written from the input and output transcripts,
+ * that is from what was actually heard, since no other text of the conversation exists. A turn id is
+ * allocated per exchange, which closes on the first final assistant transcript.
  */
 
 /** The part of the SDK's Session that is used. Tests substitute a fake. */
@@ -164,6 +169,9 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * whatever earlier sessions were shown. A resumed session holds those its handle held.
    */
   private sessionMemories = new Map<string, number>()
+  private exchangeTurnId: number | null = null
+  /** Whether the renderer has been told of the exchange's turn, which only a function call needs. */
+  private exchangeStarted = false
 
   constructor(
     info: LiveEngineInfo,
@@ -327,7 +335,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     const id = call.id ?? ''
     const name = call.name ?? ''
     const emit = (event: TurnEvent): void => this.deps.emitTurn(event)
-    const turnId = this.ensureTurnStarted(emit)
+    const turnId = this.ensureTurnStarted()
     const controller = new AbortController()
     this.running.set(id, controller)
     this.touch()
@@ -427,13 +435,59 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.sendUserText(fillPrompt(promptText(locale, READ_ALOUD), { systemNotice: marker(locale, 'systemNotice'), text }))
   }
 
+  /** The turn id of the current exchange, taken on first use. */
+  private exchange(): number {
+    this.exchangeTurnId ??= turnScheduler.allocateTurnId()
+    return this.exchangeTurnId
+  }
+
+  /** Tells the renderer about this exchange's turn before any tool or panel appears. */
+  private ensureTurnStarted(): number {
+    const turnId = this.exchange()
+    if (!this.exchangeStarted) {
+      this.exchangeStarted = true
+      this.deps.emitTurn({ type: 'started', turnId, origin: 'live' })
+    }
+    return turnId
+  }
+
+  /** Ends the exchange, emitting done only for a turn the renderer was told of. */
+  private finishExchange(fullText: string): void {
+    if (this.exchangeTurnId !== null && this.exchangeStarted) {
+      this.deps.emitTurn({ type: 'done', turnId: this.exchangeTurnId, fullText })
+    }
+    this.exchangeTurnId = null
+    this.exchangeStarted = false
+  }
+
+  protected onTranscriptDelta(role: TranscriptRole, text: string): void {
+    const turnId = this.exchange()
+    this.events.emit('event', role === 'user' ? { type: 'userTranscript', turnId, text, final: false } : { type: 'assistantTranscript', turnId, text, final: false })
+  }
+
+  protected onTranscriptFinal(role: TranscriptRole, text: string): void {
+    // The input transcript can arrive after the model's reply. A pending user utterance is finalized
+    // before the reply is recorded, so that the conversation log keeps the order user then assistant.
+    if (role === 'assistant' && this.transcripts.pending('user')) this.transcripts.flush('user')
+    const turnId = this.exchange()
+    if (role === 'user') {
+      record({ kind: 'user', turnId, text })
+      this.events.emit('event', { type: 'userTranscript', turnId, text, final: true })
+      this.injectMemories(turnId, text)
+      return
+    }
+    record({ kind: 'assistant', turnId, text })
+    this.events.emit('event', { type: 'assistantTranscript', turnId, text, final: true })
+    this.finishExchange(text)
+  }
+
   /**
-   * A user utterance is final. Any related memory the session does not hold yet is added to its context
-   * silently, without asking for a reply, and is recorded on the utterance's turn only once a session
-   * has it. The note is written when it is sent rather than when the search starts, so that two
+   * Any memory related to the user's utterance that the session does not hold yet is added to its
+   * context silently, without asking for a reply, and is recorded on the utterance's turn only once a
+   * session has it. The note is written when it is sent rather than when the search starts, so that two
    * searches that end together do not both show the same memory.
    */
-  protected override onUserUtterance(turnId: number, text: string): void {
+  private injectMemories(turnId: number, text: string): void {
     void this.deps
       .findMemories(text)
       .then((memories) => {
@@ -450,9 +504,5 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         this.deps.recordNote(turnId, note.text, note.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
-  }
-
-  protected emitTurn(event: TurnEvent): void {
-    this.deps.emitTurn(event)
   }
 }

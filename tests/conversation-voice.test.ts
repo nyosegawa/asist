@@ -24,9 +24,20 @@ const mocks = vi.hoisted(() => {
     setMic: () => {}
   }
   const settings: Record<string, unknown> = {}
+  const lines: Array<{ id: number; role: string; text: string; turnId?: number; streaming?: boolean }> = []
+  const feed = {
+    lines,
+    append: (line: Omit<(typeof lines)[number], 'id'>) => lines.push({ ...line, id: lines.length + 1 }),
+    insertBefore: (_before: number, line: Omit<(typeof lines)[number], 'id'>) => feed.append(line),
+    update: (id: number, patch: Partial<(typeof lines)[number]>) => Object.assign(lines.find((line) => line.id === id)!, patch),
+    appendToText: (id: number, delta: string) => {
+      lines.find((line) => line.id === id)!.text += delta
+    }
+  }
   return {
     turn,
     settings,
+    feed,
     playing: false,
     readingTurn: -1,
     settingsListener: null as ((state: { settings: unknown }, before: { settings: unknown }) => void) | null,
@@ -147,7 +158,7 @@ vi.mock('@/state/stores', () => {
   })
   return {
     useTurnStore: { getState: () => mocks.turn },
-    useFeedStore: plain({ append: () => 1, update: () => {}, appendToText: () => {}, lines: [] }),
+    useFeedStore: { getState: () => mocks.feed },
     useJobStore: plain(),
     useLiveStore: plain(),
     usePanelStore: plain(),
@@ -229,6 +240,7 @@ beforeEach(() => {
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
   mocks.confirmOpened = []
+  mocks.feed.lines.length = 0
   for (const key of Object.keys(mocks.settings)) delete mocks.settings[key]
   Object.assign(mocks.settings, structuredClone(baseSettings))
   // The mocked modules survive resetModules, so the listeners of the previous test's conversation go.
@@ -534,6 +546,30 @@ describe('a change of how long a quiet live session stays open', () => {
 
     expect(live.disable).toHaveBeenCalled()
     live.current = 'off'
+  })
+})
+
+describe('the feed under GPT-Live', () => {
+  it('shows what the user says and brain’s text for the turn the voice handed over, and closes both lines', async () => {
+    Object.assign(mocks.settings, { voiceEngine: 'gpt-live' })
+    let onLiveEvent!: (event: unknown) => void
+    const conversation = await start({
+      onLiveEvent: (listener: (event: unknown) => void) => {
+        onLiveEvent = listener
+        return () => {}
+      }
+    })
+    onLiveEvent({ type: 'userTranscript', turnId: 100, text: '明日の', final: false })
+    onLiveEvent({ type: 'userTranscript', turnId: 100, text: '明日の天気は', final: true })
+    conversation.handleTurnEvent({ type: 'started', turnId: 42, origin: 'live' })
+    conversation.handleTurnEvent({ type: 'delta', turnId: 42, text: '明日は晴れです。' })
+    conversation.handleTurnEvent({ type: 'delta', turnId: 42, text: '傘はいりません。' })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '明日は晴れです。傘はいりません。' })
+
+    expect(mocks.feed.lines.filter((line) => line.role !== 'sys').map(({ role, text, streaming }) => [role, text, streaming])).toEqual([
+      ['user', '明日の天気は', false],
+      ['ai', '明日は晴れです。傘はいりません。', false]
+    ])
   })
 })
 

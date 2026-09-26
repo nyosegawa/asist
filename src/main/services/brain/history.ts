@@ -18,7 +18,7 @@ import { stampUserMessage } from './prompt'
  *
  * Turns run one after another, so only the newest turn that has an input, an utterance or a notice,
  * can still be in progress, and the records that follow an input belong to it. A turn before it that
- * never got a reply will never get one: a voice model records what it said under an exchange of its
+ * never got a reply will never get one: Gemini Live records what it said under an exchange of its
  * own, and a turn cut off by quitting or a crash is not resumed.
  *
  * Compaction is decided in tokens. The context length is the server's usage plus an estimate of what
@@ -44,7 +44,11 @@ export interface HistoryTurn {
   /** What the user said or the text of a system notice. It is absent on a turn that only speaks a prepared sentence. */
   user?: string
   notice?: boolean
-  /** What was actually spoken, from the assistant record of the log. It is what the display and the summary use for turns that have no messages. */
+  /**
+   * The reply in the assistant record of the log: brain's text, which GPT-Live rewords as it reads it,
+   * or under Gemini Live the transcript of what was spoken. It is what the display and the summary use
+   * for turns that have no messages.
+   */
   assistant?: string
   interrupted?: 'before-reply' | 'while-speaking'
   failed?: boolean
@@ -228,8 +232,8 @@ export class ConversationHistory {
     }
     const current = this.currentIndex()
     const own = current >= 0 && this.turns[current].turnId === record.turnId ? this.turns[current] : undefined
-    // A voice model records what it said as soon as its transcript settles, which can be while the
-    // turn's tools are still running, so the tool round trip recorded after that still belongs to the turn.
+    // Gemini Live records what it said as soon as its transcript settles, which can be while the turn's
+    // tools are still running, so the tool round trip recorded after that still belongs to the turn.
     if (record.kind === 'tool') {
       if (own) {
         if (record.memoryIds) own.memoryIds.push(...record.memoryIds)
@@ -315,7 +319,7 @@ export class ConversationHistory {
     return out
   }
 
-  /** A text-only history of what the user said and what was spoken back, used as the initial context of a live engine. */
+  /** A text-only history of what the user said and the replies, used as the initial context of a live engine. */
   toTranscript(): HistoryMessage[] {
     const locale = this.options.locale()
     const out: HistoryMessage[] = []

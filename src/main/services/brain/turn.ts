@@ -40,7 +40,8 @@ import {
 /**
  * Turn execution for the conversation engine. It drives the stream of the configured conversation
  * model and the tool round trips, and hands each finished sentence to the speech route: the classic
- * setup synthesizes it and emits a segment, while GPT-Live passes it to the voice model. Differences
+ * setup synthesizes it and emits a segment, while GPT-Live passes it to the voice model. On every route
+ * the text of the reply is what reaches the screen and the conversation log. Differences
  * between providers are absorbed by the adapters in llm/. The pieces around it are prompt for the
  * system prompt, tools for the definitions and their execution, session for the events, history and
  * conversation log, and speech-route. Interjections live in interject and the reports of finished
@@ -166,14 +167,13 @@ async function runTurn(
   // The conversation language is read once at the start of the turn, so that every note, the system
   // prompt and the tool results of this turn speak the same language even if the setting changes.
   const locale: ConversationLocale = conversationLocale()
-  // When the sentences go to a voice model, the live engine records the output transcript of what was
-  // actually spoken as the assistant utterance, and its wording differs from the brain's. Recording it
-  // here as well would store it twice.
+  // When the sentences go to a voice model, this is brain's text rather than the voice's rewording of it.
+  // The voice reports no playback position, so a reply the user cuts into while it is being read is
+  // recorded whole: only an abort of the turn itself marks it interrupted.
   const recordAssistant = (
     text: string,
     outcome: { interrupted?: 'before-reply' | 'while-speaking'; failed?: boolean } = {}
   ): void => {
-    if (route.kind === 'live') return
     record({
       kind: 'assistant',
       turnId,
