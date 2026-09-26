@@ -11,7 +11,6 @@ import { useViewStore } from '../src/renderer/src/state/view'
 import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { answerConfirm } from './helpers/confirm'
 import { createTranslator } from '@shared/i18n'
-import { errorText } from '@shared/i18n/error-text'
 
 const t = createTranslator('ja-JP')
 
