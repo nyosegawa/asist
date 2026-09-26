@@ -49,12 +49,6 @@ describe('isTransientApiError', () => {
     expect(isTransientApiError(new GoogleApiError({ status: 503, message: 'The model is overloaded.' }))).toBe(true)
     expect(isTransientApiError(new GoogleApiError({ status: 400, message: 'invalid argument' }))).toBe(false)
   })
-  it('does not treat a spent quota or credit balance as transient, though OpenAI answers it with the status of a rate limit', () => {
-    const quota = { code: 'insufficient_quota', type: 'insufficient_quota', message: 'You exceeded your current quota, please check your plan and billing details.' }
-    expect(isTransientApiError(new OpenAI.RateLimitError(429, quota, undefined, new Headers()))).toBe(false)
-    expect(isTransientApiError(apiError(400, 'Your credit balance is too low to access the Anthropic API.'))).toBe(false)
-    expect(isTransientApiError(new OpenAI.RateLimitError(429, { code: 'rate_limit_exceeded', message: 'Rate limit reached' }, undefined, new Headers()))).toBe(true)
-  })
   it('does not treat authentication and validation errors as transient', () => {
     expect(isTransientApiError(apiError(401, 'invalid x-api-key', 'authentication_error'))).toBe(false)
     expect(isTransientApiError(apiError(400, 'max_tokens required'))).toBe(false)

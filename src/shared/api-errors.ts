@@ -33,21 +33,11 @@ const isConnectionError = (err: unknown): boolean =>
   err instanceof Error && /^APIConnection(Timeout)?Error$/.test(err.constructor.name)
 
 /**
- * A spent balance or quota, which no wait fixes. OpenAI answers it with 429, the status of a rate
- * limit, and the code insufficient_quota; Anthropic with a 400 whose message names the credit balance.
- */
-const isOutOfCredit = (err: unknown): boolean =>
-  httpStatus(err) === 402 ||
-  (err !== null && typeof err === 'object' && 'code' in err && err.code === 'insufficient_quota') ||
-  /credit balance/i.test(errMessageChain(err))
-
-/**
  * Whether the error is transient and worth a retry: overload, rate limit, 5xx, or a failed or dropped
  * connection. An error event that arrives over SSE after the stream is established has no status, so
  * the message text is checked as well.
  */
 export function isTransientApiError(err: unknown): boolean {
-  if (isOutOfCredit(err)) return false
   if (isConnectionError(err)) return true
   const status = httpStatus(err) ?? 0
   if (status === 408 || status === 409 || status === 429 || status >= 500) return true

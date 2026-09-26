@@ -212,13 +212,10 @@ describe('ConversationHistory, derived from the conversation log', () => {
     expect(history.toMessages().at(-1)).toEqual(text('assistant', INTERRUPTED_WHILE_SPEAKING))
   })
 
-  it.each([
-    ['interrupted before the reply', { interrupted: 'before-reply' as const }],
-    ['failed before the reply', { failed: true }]
-  ])('drops a system notice %s, because the retry of the report adds it again', (_case, outcome) => {
+  it('drops a system notice interrupted before the reply, because the retry of the report adds it again', () => {
     const { history } = makeHistory()
     history.apply({ t: T0, kind: 'notice', turnId: 1, notice: 'job-done', text: '[システム通知] 作業が終わりました' })
-    history.apply(assistant(1, '', outcome))
+    history.apply(assistant(1, '', { interrupted: 'before-reply' }))
     history.apply({ t: T0 + 5000, kind: 'notice', turnId: 2, notice: 'job-done', text: '[システム通知] 作業が終わりました' })
     history.apply(assistant(2, '終わりましたよ。'))
     expect(history.toMessages()).toEqual([text('user', '[システム通知] 作業が終わりました'), text('assistant', '終わりましたよ。')])

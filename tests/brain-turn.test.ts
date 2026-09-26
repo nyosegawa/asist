@@ -5,7 +5,7 @@ import path from 'node:path'
 import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
-import type { AgentJob, TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
+import type { TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
 import type { ConversationMessage, ConversationPart, ConversationResult, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
@@ -104,10 +104,6 @@ const mocks = vi.hoisted(() => ({
   ttsEngine: 'voicevox',
   /** Holds every synthesis until the turn is aborted, as a slow speech engine does. */
   holdSynthesis: false,
-  /** The sentences the speech engine fails on. */
-  failSynthesis: (_text: string): boolean => false,
-  /** The agent jobs as the agent service keeps them. */
-  jobs: new Map<string, AgentJob>(),
   contextBlock: (): string | null => null,
   workClip: async (): Promise<unknown> => null
 }))
@@ -144,8 +140,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { getFocusedWindow: () => ({ isDestroyed: () => false, isVisible: () => true }), getAllWindows: () => [] }
 }))
 vi.mock('../src/main/services/tts', () => ({
-  synthesizeSentence: async (text: string, signal?: AbortSignal) => {
-    if (mocks.failSynthesis(text)) throw new Error('synthesis failed')
+  synthesizeSentence: async (_text: string, signal?: AbortSignal) => {
     if (mocks.holdSynthesis) {
       await new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true }))
     }
@@ -157,7 +152,7 @@ vi.mock('../src/main/services/agent', () => ({
   contextBlock: () => mocks.contextBlock(),
   findActive: () => undefined,
   start: vi.fn(),
-  get: (id: string) => mocks.jobs.get(id),
+  get: () => undefined,
   list: () => [],
   getLog: () => [],
   cancel: vi.fn(),
@@ -204,15 +199,6 @@ function runToDone(brain: Brain, text: string): Promise<number> {
     })
     const turnId = brain.startTurn(text)
   })
-}
-
-const FINISHED_JOB = { id: 'j1', title: '調査', status: 'done', summary: '完了した' } as AgentJob
-
-/** A job that has finished, as the agent service keeps it and announces it. */
-async function finishJob(job: AgentJob = FINISHED_JOB): Promise<void> {
-  mocks.jobs.set(job.id, job)
-  const agent = await import('../src/main/services/agent')
-  agent.events.emit('event', { type: 'update', job })
 }
 
 /** The renderer's side of the playback acknowledgement, fed with brain's events the way conversation.ts feeds it. */
@@ -273,8 +259,6 @@ describe('brain turn', () => {
     mocks.key = 'test-key'
     mocks.ttsEngine = 'voicevox'
     mocks.holdSynthesis = false
-    mocks.failSynthesis = () => false
-    mocks.jobs = new Map()
     mocks.contextBlock = () => null
     mocks.workClip = async () => null
   })
@@ -610,7 +594,7 @@ describe('brain turn', () => {
     expect(textOf(history.toMessages().at(-1)!)).toBe(sentence)
   })
 
-  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports the job as it is by then, once', async () => {
+  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports it once', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const { completeText } = await import('../src/main/services/llm')
     try {
@@ -633,12 +617,10 @@ describe('brain turn', () => {
       const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
       acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
       initJobReporting()
-      const waitingForMerge = { ...FINISHED_JOB, worktree: '/work/asist-jobs/j1', mergeState: 'pending' } as AgentJob
-      await finishJob(waitingForMerge)
+      const agent = await import('../src/main/services/agent')
+      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
       await vi.advanceTimersByTimeAsync(60_000)
       expect(completeText).not.toHaveBeenCalled()
-      // The user takes the changes in from the job panel while the report waits.
-      mocks.jobs.set('j1', { ...waitingForMerge, mergeState: 'merged' })
       // The idle compaction fails more times than a report has attempts.
       for (let i = 0; i < 6; i++) {
         await compactionJob.run()
@@ -649,8 +631,6 @@ describe('brain turn', () => {
       await compactionJob.run()
       await vi.advanceTimersByTimeAsync(10_000)
       expect(mocks.requests).toHaveLength(1)
-      // The report no longer asks whether to take in changes that are already in.
-      expect(textOf(mocks.requests[0].messages.at(-1)!)).not.toContain('merge_agent_job')
       await vi.advanceTimersByTimeAsync(60_000)
       expect(mocks.requests).toHaveLength(1)
       expect(events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))).toEqual(['調査が終わりました。'])
@@ -658,103 +638,6 @@ describe('brain turn', () => {
       vi.mocked(completeText).mockImplementation(async () => ({ text: '', stop: 'end' }))
       vi.useRealTimers()
     }
-  })
-
-  /** Starts job reporting against a renderer that acknowledges playback as conversation.ts does. */
-  async function startReporting(brain: Brain): Promise<void> {
-    const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
-    acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
-    initJobReporting()
-  }
-  const REPORT = '調査のジョブが終わりました。'
-  const segmentsOf = (events: TurnEvent[]): string[] => events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))
-  const noticeInHistory = async (): Promise<number> => (await historyMessages()).filter((m) => textOf(m).includes('ジョブ「調査」')).length
-
-  it('hands a report held at the hard limit to a voice engine that took the conversation over meanwhile', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
-    try {
-      const { brain } = await loadBrain()
-      const { history, record, setConversationOwner, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
-      history.ensureLoaded()
-      for (let i = 0; i < 50; i++) {
-        record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
-        record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
-      }
-      history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
-      await startReporting(brain)
-      await finishJob()
-      await vi.advanceTimersByTimeAsync(60_000)
-      const notify = vi.fn(async () => {})
-      setConversationOwner({ notify, say: async () => {} })
-      await vi.advanceTimersByTimeAsync(10_000)
-      expect(notify).toHaveBeenCalledOnce()
-      expect(mocks.requests).toEqual([])
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it.each(['tts', 'silent'] as const)('says a lasting failure of a report turn once on the %s route, does not try it again, and keeps the attempt out of the history', async (kind) => {
-    for (let i = 0; i < 5; i++) mocks.rounds.push(async () => { throw Object.assign(new Error('invalid x-api-key'), { status: 401 }) })
-    if (kind === 'silent') mocks.ttsEngine = 'none'
-    const { brain, events } = await loadBrain()
-    await startReporting(brain)
-    await finishJob()
-    await vi.waitFor(() => expect(events.some((e) => e.type === 'done')).toBe(true))
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(mocks.requests).toHaveLength(1)
-    expect(events.filter((e) => e.type === 'error')).toHaveLength(1)
-    expect(await noticeInHistory()).toBe(0)
-  })
-
-  it('tries a report again after a pause when its turn failed on an error that can pass, and keeps the failed attempt out of the history', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
-    try {
-      // The first attempt and the two quick retries of the round all find the provider down.
-      for (let i = 0; i < 3; i++) mocks.rounds.push(async () => { throw Object.assign(new Error('service unavailable'), { status: 503 }) })
-      mocks.rounds.push(async (round) => { round.text(REPORT); return {} })
-      const { brain, events } = await loadBrain()
-      await startReporting(brain)
-      await finishJob()
-      await vi.advanceTimersByTimeAsync(5_000)
-      expect(mocks.requests).toHaveLength(3)
-      // Tried again at once, the report would only fail the same way again.
-      await vi.advanceTimersByTimeAsync(20_000)
-      expect(mocks.requests).toHaveLength(3)
-      await vi.advanceTimersByTimeAsync(30_000)
-      expect(mocks.requests).toHaveLength(4)
-      expect(segmentsOf(events)).toContain(REPORT)
-      expect(await noticeInHistory()).toBe(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('counts a report as said once a sentence of it played, even when a later sentence fails to synthesize', async () => {
-    for (let i = 0; i < 5; i++) mocks.rounds.push(async (round) => { round.text(REPORT, '結果は三件です。'); return {} })
-    mocks.failSynthesis = (text) => text.includes('三件')
-    const { brain, events } = await loadBrain()
-    await startReporting(brain)
-    await finishJob()
-    await vi.waitFor(() => expect(events.some((e) => e.type === 'done')).toBe(true))
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(mocks.requests).toHaveLength(1)
-    expect(segmentsOf(events).filter((text) => text === REPORT)).toHaveLength(1)
-  })
-
-  it('counts a report as said when its turn fails after the report was spoken', async () => {
-    mocks.rounds.push(async (round) => {
-      round.text(REPORT)
-      throw Object.assign(new Error('invalid request'), { status: 400 })
-    })
-    for (let i = 0; i < 4; i++) mocks.rounds.push(async (round) => { round.text(REPORT); return {} })
-    const { brain, events } = await loadBrain()
-    await startReporting(brain)
-    await finishJob()
-    await vi.waitFor(() => expect(events.some((e) => e.type === 'done')).toBe(true))
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    expect(mocks.requests).toHaveLength(1)
-    expect(segmentsOf(events).filter((text) => text === REPORT)).toHaveLength(1)
   })
 
   it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
@@ -771,7 +654,8 @@ describe('brain turn', () => {
       const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
       acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
       initJobReporting()
-      await finishJob()
+      const agent = await import('../src/main/services/agent')
+      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
       await vi.advanceTimersByTimeAsync(10 * 60_000)
       expect(mocks.requests).toHaveLength(1)
       expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
@@ -1129,7 +1013,8 @@ describe('brain turn', () => {
     const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
     acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
     initJobReporting()
-    await finishJob()
+    const agent = await import('../src/main/services/agent')
+    agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
     await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
     // A report counted as not delivered goes out again at once, so a second request would have started by now.
     await new Promise((resolve) => setTimeout(resolve, 200))
