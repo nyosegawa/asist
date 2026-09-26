@@ -792,7 +792,8 @@ describe('numbers and times on cards', () => {
     expect(elapsedLabel(ja, 192_000)).toBe(ja('jobs.elapsed.minutes', { minutes: 3, seconds: 12 }))
     expect(elapsedLabel(ja, 3_720_000)).toBe(ja('jobs.elapsed.hours', { hours: 1, minutes: '02' }))
     expect(elapsedLabel(createTranslator('en-US'), 3_720_000)).toBe('1h 02m')
-    const now = Date.parse('2026-09-15T12:00:00+09:00')
+    // A time more than a week old is written as its date in the Mac's time zone, so now is noon on that clock.
+    const now = new Date(2026, 8, 15, 12).getTime()
     expect(relativeTime(now - 30_000, now)).toBe(t('cardsTime.justNow'))
     expect(relativeTime(now - 5 * 60_000, now)).toBe(t('cardsTime.minutesAgo', { count: 5 }))
     expect(relativeTime(now - 2 * 3_600_000, now)).toBe(t('cardsTime.hoursAgo', { count: 2 }))
