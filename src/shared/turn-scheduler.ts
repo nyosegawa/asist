@@ -30,14 +30,20 @@ interface ScheduledTurn {
 }
 
 export class LatestTurnScheduler {
-  private nextTurnId = 1
+  private nextTurnId: number | null = null
   private current: ScheduledTurn | null = null
   private tail: Promise<void> = Promise.resolve()
+
+  /**
+   * `firstTurnId` is read once, when the first id is taken, so that the ids can continue from what an
+   * earlier launch left in the conversation log rather than start again at the same numbers.
+   */
+  constructor(private readonly firstTurnId: () => number = () => 1) {}
 
   start(run: (ctx: TurnRunContext) => Promise<void>): TurnHandle {
     if (this.current) this.stop(this.current)
 
-    const turn: ScheduledTurn = { turnId: this.nextTurnId++, controller: new AbortController(), holds: 0, abortAtRelease: false }
+    const turn: ScheduledTurn = { turnId: this.takeTurnId(), controller: new AbortController(), holds: 0, abortAtRelease: false }
     const { turnId, controller } = turn
     const previous = this.tail.catch(() => {})
     const completion = previous
@@ -88,6 +94,11 @@ export class LatestTurnScheduler {
    * from the same counter as start, so the ids never collide.
    */
   allocateTurnId(): number {
+    return this.takeTurnId()
+  }
+
+  private takeTurnId(): number {
+    this.nextTurnId ??= this.firstTurnId()
     return this.nextTurnId++
   }
 

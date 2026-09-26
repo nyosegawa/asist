@@ -160,4 +160,16 @@ describe('LatestTurnScheduler', () => {
     expect(handle.signal.aborted).toBe(true)
     await handle.completion
   })
+
+  it('reads the first turn id only when an id is first needed, and gives turns and live exchanges ids from one counter', async () => {
+    const firstTurnId = vi.fn(() => 58)
+    const scheduler = new LatestTurnScheduler(firstTurnId)
+    expect(firstTurnId).not.toHaveBeenCalled()
+    expect(scheduler.allocateTurnId()).toBe(58)
+    const handle = scheduler.start(async () => {})
+    expect(handle.turnId).toBe(59)
+    expect(scheduler.allocateTurnId()).toBe(60)
+    expect(firstTurnId).toHaveBeenCalledOnce()
+    await handle.completion
+  })
 })

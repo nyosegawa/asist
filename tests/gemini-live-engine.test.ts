@@ -5,6 +5,7 @@ import type { LiveEvent, TurnEvent } from '@shared/ipc'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 import { marker } from '@shared/conversation-markers'
+import { buildMemoryInjection, type InjectableMemory } from '@shared/memory-injection'
 import type { GeminiConnectParams, GeminiServerMessage, GeminiSession } from '../src/main/services/live/gemini-live'
 
 /** These tests drive the Gemini Live engine end to end against a fake session. */
@@ -50,6 +51,10 @@ type ExecuteTool = (name: string, input: Record<string, unknown>, ctx: { signal:
 
 const result = (content: string): ToolExecution => ({ content, isError: false, durationMs: 1, resultLength: content.length, truncated: false })
 
+const CAFE: InjectableMemory = { id: 'm-cafe', kind: 'section', page: '行きつけ', heading: 'いつもの店', text: '中野のカフェ', date: '' }
+/** The note the engine sends and records for the memory above. */
+const CAFE_NOTE = buildMemoryInjection([CAFE], { locale: 'ja-JP' })!.text
+
 /** A tool call whose answer and work have both ended. */
 const finished = (content: string): ToolExecutionTask => Object.assign(Promise.resolve(result(content)), { completion: Promise.resolve() })
 
@@ -59,16 +64,14 @@ async function setup(execute?: ExecuteTool): Promise<{
   events: LiveEvent[]
   turnEvents: TurnEvent[]
   executeTool: ReturnType<typeof vi.fn>
-  memoryInjection: ReturnType<typeof vi.fn>
+  findMemories: ReturnType<typeof vi.fn>
 }> {
   const { GeminiLiveEngine } = await import('../src/main/services/live/gemini-live')
   const sessions: FakeSession[] = []
   const events: LiveEvent[] = []
   const turnEvents: TurnEvent[] = []
   const executeTool = vi.fn(execute ?? ((name: string) => finished(`{"shown":true,"panel":"${name}"}`)))
-  const memoryInjection = vi.fn(async (text: string) =>
-    text.includes('いつもの') ? { text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] } : null
-  )
+  const findMemories = vi.fn(async (text: string): Promise<InjectableMemory[]> => (text.includes('いつもの') ? [CAFE] : []))
   const engine = new GeminiLiveEngine(LIVE_ENGINE_INFO['gemini-live'], {
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
     apiKey: () => 'key',
@@ -84,7 +87,8 @@ async function setup(execute?: ExecuteTool): Promise<{
     // The show_ tools only read, as in the registry; every other name stands for a tool that writes.
     isParallel: (name) => name.startsWith('show_'),
     recordTool: vi.fn(),
-    memoryInjection,
+    findMemories,
+    memoryBlock: () => '',
     recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
     recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
     history: () => [{ role: 'user', content: '前の話' }],
@@ -92,7 +96,7 @@ async function setup(execute?: ExecuteTool): Promise<{
   })
   engine.events.on('event', (event) => events.push(event))
   await engine.start()
-  return { engine, sessions, events, turnEvents, executeTool, memoryInjection }
+  return { engine, sessions, events, turnEvents, executeTool, findMemories }
 }
 
 /** A tool call that runs until the test ends it, as one waiting for approval does. `finish` ends its work as well. */
@@ -158,31 +162,126 @@ describe('GeminiLiveEngine', () => {
   })
 
   it('records the user transcript once it is finished and adds the related memory without asking for a reply', async () => {
-    const { engine, sessions, events, memoryInjection } = await setup()
+    const { engine, sessions, events, findMemories } = await setup()
     const session = await open(engine, sessions)
     session.message({ serverContent: { inputTranscription: { text: 'いつもの' } } })
     session.message({ serverContent: { inputTranscription: { text: '店を教えて', finished: true } } })
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.record).toHaveBeenCalledWith({ kind: 'user', turnId: 200, text: 'いつもの店を教えて' })
     expect(events.at(-1)).toMatchObject({ type: 'userTranscript', text: 'いつもの店を教えて', final: true })
-    expect(memoryInjection).toHaveBeenCalledWith('いつもの店を教えて')
-    expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: '[記憶] いつもの店は中野のカフェ' }] }], turnComplete: false })
-    // The note is recorded on the utterance's turn, which keeps its memories from being injected again.
-    expect(mocks.record).toHaveBeenLastCalledWith({ kind: 'note', turnId: 200, text: '[記憶] いつもの店は中野のカフェ', memoryIds: ['m-cafe'] })
+    expect(findMemories).toHaveBeenCalledWith('いつもの店を教えて')
+    expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: CAFE_NOTE }] }], turnComplete: false })
+    // The note is recorded on the utterance's turn, which keeps its memories in the history brain reads.
+    expect(mocks.record).toHaveBeenLastCalledWith({ kind: 'note', turnId: 200, text: CAFE_NOTE, memoryIds: ['m-cafe'] })
+    await engine.stop()
+  })
+
+  it('shows a memory again to a session that opened blank, though an earlier session was shown it, and not to one that resumed', async () => {
+    const { engine, sessions } = await setup()
+    const notes = (session: FakeSession): number => session.contents.filter((content) => JSON.stringify(content).includes(CAFE.text)).length
+    const first = await open(engine, sessions)
+    first.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(first)).toBe(1)
+    // The session goes idle and closes before the provider gave a resumption handle.
+    await vi.advanceTimersByTimeAsync(31_000)
+    const second = await open(engine, sessions)
+    expect(second.params.resumptionHandle).toBeNull()
+    second.message({ serverContent: { inputTranscription: { text: 'いつもの店は何時まで', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(second)).toBe(1)
+    second.message({ sessionResumptionUpdate: { newHandle: 'h2', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const third = await open(engine, sessions)
+    expect(third.params.resumptionHandle).toBe('h2')
+    third.message({ serverContent: { inputTranscription: { text: 'いつもの店の場所', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(third)).toBe(0)
+    await engine.stop()
+  })
+
+  it('shows a memory again after resuming from a handle issued before the note that showed it, and not one shown before the handle', async () => {
+    const STATION: InjectableMemory = { id: 'm-station', kind: 'section', page: '行きつけ', heading: '最寄り駅', text: '中野駅の北口', date: '' }
+    const { engine, sessions, findMemories } = await setup()
+    findMemories.mockImplementation(async (text: string) => [...(text.includes('いつもの') ? [CAFE] : []), ...(text.includes('駅') ? [STATION] : [])])
+    const shown = (session: FakeSession, memory: InjectableMemory): number =>
+      session.contents.filter((content) => JSON.stringify(content).includes(memory.text)).length
+    const first = await open(engine, sessions)
+    first.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    first.message({ serverContent: { inputTranscription: { text: '駅からの道は', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shown(first, STATION)).toBe(1)
+    // The model starts generating, which the provider offers no handle for, and the connection drops.
+    first.message({ sessionResumptionUpdate: { resumable: false } })
+    first.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    const second = await open(engine, sessions)
+    expect(second.params.resumptionHandle).toBe('h1')
+    second.message({ serverContent: { inputTranscription: { text: 'いつもの店から駅まで', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shown(second, STATION)).toBe(1)
+    expect(shown(second, CAFE)).toBe(0)
+    await engine.stop()
+  })
+
+  it('shows a memory again once the session has had more audio since it than its sliding window can be assumed to keep', async () => {
+    const { engine, sessions } = await setup()
+    const notes = (session: FakeSession): number => session.contents.filter((content) => JSON.stringify(content).includes(CAFE.text)).length
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店は混んでる', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(session)).toBe(1)
+    // Ten minutes of audio reach the session, which its context compression may have cut the note from.
+    for (let i = 0; i < 60; i++) engine.pushAudio(new Float32Array(160_000))
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店は何時まで', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notes(session)).toBe(2)
+    await engine.stop()
+  })
+
+  it('shows no memory that a recall result already gave the session', async () => {
+    const recalled: ToolExecution = { ...result('{"hits":[{"id":"m-cafe"}]}'), value: { hits: [{ id: 'm-cafe' }] } }
+    const { engine, sessions } = await setup(() => Object.assign(Promise.resolve(recalled), { completion: Promise.resolve() }))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'r', name: 'recall', args: { query: '店' } }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['r'])
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.contents.some((content) => JSON.stringify(content).includes(CAFE.text))).toBe(false)
+    await engine.stop()
+  })
+
+  it('shows a memory once when the searches of two utterances end together', async () => {
+    const { engine, sessions, findMemories } = await setup()
+    const searches: Array<(memories: InjectableMemory[]) => void> = []
+    findMemories.mockImplementation(() => new Promise((resolve) => searches.push(resolve)))
+    const session = await open(engine, sessions)
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店まで何分', finished: true } } })
+    expect(searches).toHaveLength(2)
+    for (const resolve of searches) resolve([CAFE])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.contents.filter((content) => JSON.stringify(content).includes(CAFE.text))).toHaveLength(1)
+    expect(mocks.record.mock.calls.filter((c) => c[0].kind === 'note')).toHaveLength(1)
     await engine.stop()
   })
 
   it('records no memory note when the session closed before the note was ready, since no model read it', async () => {
-    const { engine, sessions, memoryInjection } = await setup()
-    let ready!: (injection: { text: string; ids: string[] }) => void
-    memoryInjection.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
+    const { engine, sessions, findMemories } = await setup()
+    let ready!: (memories: InjectableMemory[]) => void
+    findMemories.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
     const session = await open(engine, sessions)
     session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
     await engine.stop()
-    ready({ text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] })
+    ready([CAFE])
     await vi.advanceTimersByTimeAsync(0)
     expect(mocks.record.mock.calls.map((c) => c[0].kind)).toEqual(['user'])
-    expect(session.contents.some((content) => JSON.stringify(content).includes('[記憶]'))).toBe(false)
+    expect(session.contents.some((content) => JSON.stringify(content).includes(CAFE.text))).toBe(false)
   })
 
   it('tells the renderer about an interruption, keeps what was spoken, and sends typed text and notices as text turns', async () => {
@@ -269,6 +368,32 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('lets a later write run once a write that ignores its abort has had its time to stop, rather than holding every write for good', async () => {
+    const { createToolRegistry, executeTool, STOP_GRACE_MS } = await import('@shared/tool-registry')
+    const tool = (name: string, run: () => Promise<unknown>) => ({
+      name,
+      description: { ja: name, en: name },
+      inputSchema: { type: 'object' as const, properties: {} },
+      parallel: false,
+      timeoutMs: 1000,
+      maxResultChars: 500,
+      run
+    })
+    const registry = createToolRegistry([tool('run_agent_task', () => new Promise(() => {})), tool('change_mail', async () => 'archived')])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { engine, sessions } = await setup((name, input, ctx) => executeTool(registry, name, input, undefined, ctx.signal, 'ja'))
+    const session = await open(engine, sessions)
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(1000)
+    session.message({ toolCall: { functionCalls: [{ id: 'b', name: 'change_mail', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(responseIds(session)).toEqual(['a'])
+    await vi.advanceTimersByTimeAsync(STOP_GRACE_MS)
+    expect(responseIds(session)).toEqual(['a', 'b'])
+    errors.mockRestore()
+    await engine.stop()
+  })
+
   it('answers the model with an error and marks the tool failed when the tool throws before it returns its task', async () => {
     const { engine, sessions, turnEvents } = await setup(() => {
       throw new Error('settings unreadable')
@@ -338,6 +463,24 @@ describe('GeminiLiveEngine', () => {
     sessions[0].message({ serverContent: { modelTurn: { parts: [{ inlineData: { data: Buffer.from([0, 64]).toString('base64'), mimeType: 'audio/pcm' } }] } } })
     expect(audio).toHaveLength(0)
     await engine.stop()
+  })
+
+  it('stops at once while a session is still opening, closes it when it arrives, and reports no error', async () => {
+    let connect!: () => void
+    mocks.connected = new Promise((resolve) => (connect = resolve))
+    const { engine, sessions, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    let stopped = false
+    const stopping = engine.stop().then(() => (stopped = true))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(stopped).toBe(true)
+    expect(engine.state).toBe('off')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    connect()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions[0].closed).toBe(true)
+    await stopping
   })
 
   it('closes a session that arrives only after its opening already failed', async () => {
@@ -442,15 +585,15 @@ describe('GeminiLiveEngine', () => {
   })
 
   it('sends nothing but the history to a session before its setup completes, so a memory note that settles meanwhile is neither sent nor recorded', async () => {
-    const { engine, sessions, memoryInjection } = await setup()
-    let ready!: (injection: { text: string; ids: string[] }) => void
-    memoryInjection.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
+    const { engine, sessions, findMemories } = await setup()
+    let ready!: (memories: InjectableMemory[]) => void
+    findMemories.mockImplementationOnce(() => new Promise((resolve) => (ready = resolve)))
     const first = await open(engine, sessions)
     first.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
     first.params.callbacks.onclose('session time limit')
     await vi.advanceTimersByTimeAsync(0)
     const second = sessions[1]
-    ready({ text: '[記憶] いつもの店は中野のカフェ', ids: ['m-cafe'] })
+    ready([CAFE])
     await vi.advanceTimersByTimeAsync(0)
     expect(second.contents).toEqual([])
     second.message({ setupComplete: {} })

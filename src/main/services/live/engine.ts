@@ -51,6 +51,8 @@ export abstract class LiveEngineBase {
   protected enabled = false
   private ticker: ReturnType<typeof setInterval> | null = null
   private opening: Promise<void> | null = null
+  /** Lets a close end the opening in progress at once, rather than wait for its setup or its timeout. */
+  private openingAbort: AbortController | null = null
   private readonly encoder: InputEncoder
   /** The turn id of the current exchange. The exchange closes once the assistant transcript is final. */
   protected exchangeTurnId: number | null = null
@@ -148,9 +150,10 @@ export abstract class LiveEngineBase {
 
   /**
    * Opens the session. Once it resolves, audio can be sent. The engine owns the socket from the moment
-   * it creates it, and ignores what any socket it no longer owns reports.
+   * it creates it, and ignores what any socket it no longer owns reports. It rejects as soon as `signal`
+   * is aborted.
    */
-  protected abstract openSession(): Promise<void>
+  protected abstract openSession(signal: AbortSignal): Promise<void>
   /** Closes the socket the engine owns, including one whose opening failed or has not finished. */
   protected abstract closeSession(reason: 'idle' | 'stop' | 'error'): Promise<void>
   /** Sends base64 PCM16 at the input rate. `seconds` is the length of that audio, which the usage counts. */
@@ -163,8 +166,11 @@ export abstract class LiveEngineBase {
     if (this.opening) return this.opening
     this.openStartedAt = this.now()
     this.setConnection('connecting')
-    this.opening = this.openSession()
+    const abort = new AbortController()
+    this.openingAbort = abort
+    this.opening = this.openSession(abort.signal)
       .then(() => {
+        if (abort.signal.aborted) return
         this.policy.opened(this.now())
         this.setConnection('open')
         const connectMs = Math.round(this.now() - this.openStartedAt)
@@ -175,6 +181,8 @@ export abstract class LiveEngineBase {
         }
       })
       .catch(async (err) => {
+        // The close that let the opening go releases what it left.
+        if (abort.signal.aborted) return
         // Left open, the socket of a session that did not start can still start late, and the provider
         // bills it for as long as it is open.
         await this.release('error')
@@ -184,12 +192,15 @@ export abstract class LiveEngineBase {
       })
       .finally(() => {
         this.opening = null
+        this.openingAbort = null
       })
     return this.opening
   }
 
   protected async close(reason: 'idle' | 'stop' | 'error'): Promise<void> {
     if (!this.policy.isOpen && !this.opening) return
+    // A stop, or a change of engine, does not wait up to the setup timeout for a session it closes at once.
+    this.openingAbort?.abort()
     await this.opening?.catch(() => {})
     await this.release(reason)
     if (this.enabled) this.setConnection(reason === 'error' ? 'error' : 'idle')

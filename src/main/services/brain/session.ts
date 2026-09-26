@@ -21,8 +21,15 @@ type Events = { event: TurnEvent }
 export const events: Emitter<Events> = mitt<Events>()
 export const emit = (event: TurnEvent): void => events.emit('event', event)
 
-/** Exactly one turn runs at a time: a new input aborts the running turn before it starts. */
-export const turnScheduler = new LatestTurnScheduler()
+/**
+ * Exactly one turn runs at a time: a new input aborts the running turn before it starts. Turn ids
+ * continue after the ones the history replays from the log: a record of this launch that came before
+ * its first input would otherwise attach to the last turn of an earlier launch that had the same id.
+ */
+export const turnScheduler = new LatestTurnScheduler(() => {
+  history.ensureLoaded()
+  return history.highestTurnId + 1
+})
 
 let speechRoute: SpeechRoute = ttsRoute
 /** Where runTurn and interject hand their sentences. A live engine registers its route on start and restores the TTS route on stop. */

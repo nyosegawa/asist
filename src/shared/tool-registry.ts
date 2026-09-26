@@ -21,6 +21,13 @@ import type { PromptLanguage, PromptText } from './conversation-locale'
 export const FETCHER_TIMEOUT_MS = 8_000
 /** The time limit for work that stays local. */
 export const LOCAL_TIMEOUT_MS = 2_000
+/**
+ * How long a tool has to stop once its signal is aborted, by the caller or by its time limit. Until
+ * then its call keeps its place among the calls and in its round, so that a write that timed out does
+ * not overlap the next one. A tool still working past it ignores its signal, and waiting for it for
+ * good would hold every later write, and the turn, with it.
+ */
+export const STOP_GRACE_MS = 30_000
 
 /**
  * Packs both prompt languages into a single string, for the places that hold one string and cannot
@@ -128,7 +135,7 @@ export interface ToolExecution {
 
 /**
  * The promise itself resolves even on a timeout, while `completion` waits until run's own work has
- * finished.
+ * finished, or until STOP_GRACE_MS after its abort for a tool that does not stop.
  */
 export interface ToolExecutionTask extends Promise<ToolExecution> {
   readonly completion: Promise<void>
@@ -376,7 +383,23 @@ export function executeTool<Ctx>(
     combined.throwIfAborted()
     return def.run(input, ctx, combined)
   })
-  const completion = operation.then(() => undefined, () => undefined)
+  const completion = new Promise<void>((resolve) => {
+    let abandon: ReturnType<typeof setTimeout> | null = null
+    const allowToStop = (): void => {
+      abandon = setTimeout(() => {
+        console.error(`tool ${def.name} did not stop within ${STOP_GRACE_MS} ms of its abort, and the calls after it no longer wait for it`)
+        resolve()
+      }, STOP_GRACE_MS)
+    }
+    combined.addEventListener('abort', allowToStop, { once: true })
+    if (combined.aborted) allowToStop()
+    const stopped = (): void => {
+      if (abandon) clearTimeout(abandon)
+      combined.removeEventListener('abort', allowToStop)
+      resolve()
+    }
+    operation.then(stopped, stopped)
+  })
   const response = Promise.race([operation, aborted])
     .then((value): ToolExecution => ({
       ...formatToolResult(value, def.maxResultChars, language),

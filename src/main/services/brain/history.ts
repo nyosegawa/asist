@@ -129,6 +129,15 @@ function unsentReply(turn: HistoryTurn): string {
   return sent && spoken.startsWith(sent) ? spoken.slice(sent.length) : spoken
 }
 
+function highestTurnId(records: readonly ConversationRecord[]): number {
+  let highest = 0
+  for (const record of records) {
+    const id = record.kind === 'checkpoint' ? highestTurnId(record.records) : record.turnId
+    if (id > highest) highest = id
+  }
+  return highest
+}
+
 /** An estimate of what is sent. The provider's raw output is not counted, because it replaces `parts` rather than adding to it. */
 const messageTokens = (message: ConversationMessage): number => estimateTokens(JSON.stringify(message.parts))
 
@@ -143,6 +152,7 @@ export class ConversationHistory {
   private addedTokens = 0
   /** How many checkpoints this history has written, which tells a measurement whether the history it measured is still the current one. */
   private checkpoints = 0
+  private highestLoadedTurnId = 0
 
   constructor(private readonly options: HistoryOptions) {}
 
@@ -156,6 +166,7 @@ export class ConversationHistory {
       this.options.onError?.('load', err)
       return
     }
+    this.highestLoadedTurnId = highestTurnId(records)
     const checkpointIndex = records.map((r) => r.kind).lastIndexOf('checkpoint')
     if (checkpointIndex >= 0) {
       const checkpoint = records[checkpointIndex] as Extract<ConversationRecord, { kind: 'checkpoint' }>
@@ -169,6 +180,15 @@ export class ConversationHistory {
 
   get summary(): string {
     return this.summaryText
+  }
+
+  /**
+   * The highest turn id in the records read at startup, those before the latest checkpoint and inside
+   * it included. The ids of a new launch continue after it, so that none of them is the id of a turn
+   * the history replayed or of an earlier turn in the same day's log.
+   */
+  get highestTurnId(): number {
+    return this.highestLoadedTurnId
   }
 
   /** The number of turns still sent raw. */
