@@ -8,6 +8,7 @@ import { useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { answerConfirm } from './helpers/confirm'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 
 const t = createTranslator('ja-JP')
 
@@ -32,7 +33,8 @@ const listed = (): string[] => {
 const api = {
   memoryDocuments: vi.fn(async () => listed().map((file) => documentOf(file, files[file]))),
   memoryDocumentRead: vi.fn(async (file: string) => files[file] ?? null),
-  memoryDocumentWrite: vi.fn(async (file: string, markdown: string) => {
+  memoryDocumentWrite: vi.fn(async (file: string, markdown: string, base: string) => {
+    if (files[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened', { file }))
     files[file] = markdown
     return documentOf(file, markdown)
   }),
@@ -129,8 +131,8 @@ describe('the memory screen', () => {
     const draft = FILES['me.md'].replace('落ち着いて話す。', '落ち着いて、確かめてから話す。')
     await act(async () => setValue(editor, draft))
     await act(async () => editor.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: true, bubbles: true })))
-    await act(async () => {})
-    expect(api.memoryDocumentWrite).toHaveBeenCalledWith('me.md', draft)
+    await settle()
+    expect(api.memoryDocumentWrite).toHaveBeenCalledWith('me.md', draft, FILES['me.md'])
     expect(useToastStore.getState().toasts.at(-1)?.title).toBe(t('memory.saved'))
     expect(view.querySelector('textarea')).toBeNull()
     expect(view.textContent).toContain('確かめてから話す')
@@ -142,6 +144,38 @@ describe('the memory screen', () => {
     await act(async () => {})
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', body: t('memory.check.frontmatterMissing', { file: 'me.md' }) })
     expect(view.querySelector('textarea')).not.toBeNull()
+  })
+
+  it('does not save over a document a curation changed while it was being edited, keeps the draft, and shows the current version once the editor is left', async () => {
+    const view = await render()
+    await act(async () => itemByTitle(view, t('memory.kind.instruction')).click())
+    await act(async () => {})
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
+    const curated = FILES['instruction.md'].replace('最寄り駅は中野。', '最寄り駅は中野。\n猫のムギと暮らす。')
+    files['instruction.md'] = curated
+    const draft = FILES['instruction.md'].replace('最寄り駅は中野。', '最寄り駅は中野。駅から徒歩10分。')
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, draft))
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent?.startsWith(t('common.save')))!.click())
+    await settle()
+    expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
+      kind: 'error',
+      title: t('memory.saveFailed'),
+      body: t('memory.errors.changedSinceOpened', { file: 'instruction.md' })
+    })
+    expect(files['instruction.md']).toBe(curated)
+    expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(draft)
+
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('common.cancel'))!.click())
+    await answerConfirm(true)
+    expect(view.querySelector('textarea')).toBeNull()
+    expect(view.textContent).toContain('猫のムギと暮らす。')
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('memory.doc.edit'))!.click())
+    const redone = curated.replace('最寄り駅は中野。', '最寄り駅は中野。駅から徒歩10分。')
+    await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, redone))
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent?.startsWith(t('common.save')))!.click())
+    await settle()
+    expect(files['instruction.md']).toBe(redone)
+    expect(useToastStore.getState().toasts.at(-1)?.title).toBe(t('memory.saved'))
   })
 
   it('creates a new page from its name, opens the editor on it, and deletes a page only after the confirmation', async () => {

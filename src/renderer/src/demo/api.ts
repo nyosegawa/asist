@@ -458,7 +458,8 @@ export const mockApi: RendererApi = {
   metricsLog: async () => {},
   memoryDocuments: async () => demoDocuments(demoMemory),
   memoryDocumentRead: async (file) => demoMemory[file] ?? null,
-  memoryDocumentWrite: async (file, markdown) => {
+  memoryDocumentWrite: async (file, markdown, base) => {
+    if ((demoMemory[file] ?? null) !== base) throw new Error(errorText('memory.errors.changedSinceOpened', { file }))
     const errors = validateDocument(file, markdown, translate)
     if (errors.length > 0) throw new Error(errors.join(' / '))
     demoMemory[file] = markdown

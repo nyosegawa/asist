@@ -50,7 +50,8 @@ const matches = (doc: MemoryDocument, filter: string): boolean => {
   return [doc.title, doc.summary, ...doc.aliases, ...doc.headings].some((text) => text.toLowerCase().includes(needle))
 }
 
-type Mode = { kind: 'read' } | { kind: 'edit'; draft: string } | { kind: 'create' }
+/** An edit keeps the text it started from, which a save hands to main as the version it replaces. */
+type Mode = { kind: 'read' } | { kind: 'edit'; draft: string; base: string } | { kind: 'create' }
 
 /** App passes `open`, so the view keeps drawing through the closing animation even after the store says it is closed. */
 export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
@@ -109,7 +110,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
         setMarkdown(value)
         if (editOnLoad.current === selected) {
           editOnLoad.current = null
-          setMode({ kind: 'edit', draft: value })
+          setMode({ kind: 'edit', draft: value, base: value })
         }
       })
       .catch((err: unknown) => active && setError(displayError(err)))
@@ -118,7 +119,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     }
   }, [open, selected, revision])
 
-  const dirty = mode.kind === 'edit' && mode.draft !== (markdown ?? '')
+  const dirty = mode.kind === 'edit' && mode.draft !== mode.base
   const leaveEditing = async (): Promise<boolean> => {
     if (dirty && !(await askConfirm({ message: t('common.confirmDiscard'), confirmLabel: t('common.discardChanges'), destructive: true }))) return false
     setMode({ kind: 'read' })
@@ -161,17 +162,24 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
   }
   const save = (): void => {
     if (mode.kind !== 'edit' || !doc || busy) return
-    const draft = mode.draft
     setBusy(true)
     void window.api
-      .memoryDocumentWrite(doc.file, draft)
-      .then(async () => {
-        setMarkdown(draft)
-        setMode({ kind: 'read' })
-        toast({ kind: 'ok', title: t('memory.saved'), body: titleOf(doc, t, locale) })
-        await reload()
-      })
-      .catch((err: unknown) => toast({ kind: 'error', title: t('memory.saveFailed'), body: displayError(err) }))
+      .memoryDocumentWrite(doc.file, mode.draft, mode.base)
+      .then(
+        () => {
+          toast({ kind: 'ok', title: t('memory.saved'), body: titleOf(doc, t, locale) })
+          // Main may have written the draft with a final newline added, so the next edit starts from the file.
+          setRevision((v) => v + 1)
+        },
+        async (err: unknown) => {
+          toast({ kind: 'error', title: t('memory.saveFailed'), body: displayError(err) })
+          // The draft stays in the editor. The document is read again for the view the editor leaves to,
+          // because a save is refused when a curation has changed it since the editor opened.
+          const text = await window.api.memoryDocumentRead(doc.file)
+          setMarkdown(text ?? '')
+        }
+      )
+      .catch((err: unknown) => setError(displayError(err)))
       .finally(() => setBusy(false))
   }
   const create = (name: string): void => {
@@ -340,7 +348,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
                         type="button"
                         className="my-btn"
                         disabled={markdown === null || busy}
-                        onClick={() => setMode({ kind: 'edit', draft: markdown ?? '' })}
+                        onClick={() => setMode({ kind: 'edit', draft: markdown ?? '', base: markdown ?? '' })}
                       >
                         <Pencil size={13} />
                         {t('memory.doc.edit')}
@@ -361,7 +369,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
                   aria-label={t('memory.doc.body')}
                   value={mode.draft}
                   spellCheck={false}
-                  onChange={(e) => setMode({ kind: 'edit', draft: e.target.value })}
+                  onChange={(e) => setMode({ ...mode, draft: e.target.value })}
                   onKeyDown={(e) => {
                     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
                       e.preventDefault()

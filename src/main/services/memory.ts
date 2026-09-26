@@ -121,10 +121,13 @@ export function documentRead(file: string): string | null {
   return store.readDocument(file)
 }
 
-/** Replaces a whole document on the user's own action from the memory screen. A document that breaks the rules is not written and the reason is thrown. */
-export function documentWrite(file: string, markdown: string): MemoryDocument {
+/**
+ * Replaces a whole document on the user's own action from the memory screen, unless it has changed since
+ * the screen read `base`. A document that breaks the rules is not written and the reason is thrown.
+ */
+export function documentWrite(file: string, markdown: string, base: string): MemoryDocument {
   requireOpen()
-  const document = store.writeDocument(file, markdown)
+  const document = store.writeDocument(file, markdown, base)
   reindex()
   block.invalidate()
   return document

@@ -76,11 +76,12 @@ describe('memory service', () => {
     const [summary] = service.list()
     expect(summary).toMatchObject({ kind: 'section', page: '松葉軒', heading: '要約', aliases: ['松葉軒', 'ラーメン屋'] })
     expect(service.documents().map((d) => [d.kind, d.title])).toEqual([['page', '松葉軒']])
-    service.documentWrite('pages/松葉軒.md', MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。').replace(/## 好み[\s\S]*$/, ''))
+    const rewritten = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。').replace(/## 好み[\s\S]*$/, '')
+    service.documentWrite('pages/松葉軒.md', rewritten, MATSUBAKEN)
     expect(service.list()).toHaveLength(1)
     expect(service.list()[0]).toMatchObject({ id: summary.id, text: '本人の行きつけの店。' })
     expect((await service.search('松葉軒行った', { mode: 'utterance' }))[0]).toMatchObject({ record: { id: summary.id }, exact: true })
-    expect(() => service.documentWrite('pages/松葉軒.md', '# 松葉軒\n## 好み\nx\n')).toThrow(ja('memory.check.frontmatterMissing', { file: 'pages/松葉軒.md' }))
+    expect(() => service.documentWrite('pages/松葉軒.md', '# 松葉軒\n## 好み\nx\n', service.documentRead('pages/松葉軒.md')!)).toThrow(ja('memory.check.frontmatterMissing', { file: 'pages/松葉軒.md' }))
     service.documentDelete('pages/松葉軒.md')
     expect(service.list()).toEqual([])
     expect(service.documents()).toEqual([])
@@ -191,7 +192,7 @@ describe('memory service', () => {
     expect(mocks.embed).toHaveBeenCalledOnce()
 
     expect(service.get(id)).not.toBeNull()
-    service.documentWrite('pages/ムギ.md', MUGI.replace('本人の猫。キジトラで窓辺によくいる。', 'チェスを楽しんでいる。'))
+    service.documentWrite('pages/ムギ.md', MUGI.replace('本人の猫。キジトラで窓辺によくいる。', 'チェスを楽しんでいる。'), MUGI)
     first.resolve([new Float32Array([1, 0])])
     expect(await pending).toBe(1)
     expect(mocks.embed.mock.calls).toEqual([

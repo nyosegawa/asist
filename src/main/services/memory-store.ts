@@ -198,11 +198,15 @@ export function readDocument(file: string, dir = memoryDir()): string | null {
 }
 
 /**
- * Replaces a whole document and commits it, on the user's own action from the memory screen. A document
- * that breaks the rules is not written and the reason is thrown.
+ * Replaces a whole document and commits it, on the user's own action from the memory screen. `base` is
+ * the text the screen read before the user started editing. A document that has changed since, as a
+ * curation merged meanwhile changes it, is not written, because the save would take back what the other
+ * writer added without anyone seeing it. A document that breaks the rules is not written either, and the
+ * reason is thrown.
  */
-export function writeDocument(file: string, markdown: string, dir = memoryDir()): MemoryDocument {
+export function writeDocument(file: string, markdown: string, base: string, dir = memoryDir()): MemoryDocument {
   const full = documentPath(dir, file)
+  if (readFileOf(dir, file) !== base) throw new Error(errorText('memory.errors.changedSinceOpened', { file }))
   const errors = validateDocument(file, markdown, t)
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`

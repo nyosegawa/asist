@@ -1133,6 +1133,19 @@ export const memory = defineMessages({
       'pt-BR': '{file} não é um arquivo nem uma pasta comum, por isso não foi lido',
       'es-419': '{file} no es un archivo ni una carpeta común, así que no se leyó',
       'es-ES': '{file} no es un archivo ni una carpeta normal, así que no se ha leído'
+    },
+    changedSinceOpened: {
+      'ja-JP': '{file} は開いたあとに記憶の整理などで変わったため、保存しませんでした。書いた内容を控えてから編集を取り消すと、今の内容が表示されます',
+      'en-US': '{file} changed after you opened it, for example in a memory curation, so it was not saved. Copy what you wrote, then cancel editing to see the current version',
+      'fr-FR': "{file} a changé après son ouverture, par exemple lors d'une organisation de la mémoire, il n'a donc pas été enregistré. Copiez ce que vous avez écrit, puis annulez la modification pour voir la version actuelle",
+      'de-DE': '{file} hat sich nach dem Öffnen geändert, etwa durch die Gedächtnispflege, und wurde daher nicht gespeichert. Kopieren Sie Ihren Text und brechen Sie die Bearbeitung ab, um die aktuelle Fassung zu sehen',
+      'hi-IN': '{file} खोलने के बाद बदल गई, जैसे याददाश्त की सफ़ाई से, इसलिए सेव नहीं हुई। जो लिखा है उसे कॉपी करें, फिर बदलाव रद्द करें, तब अभी का रूप दिखेगा',
+      'id-ID': '{file} berubah setelah Anda membukanya, misalnya karena penataan ingatan, jadi tidak disimpan. Salin yang Anda tulis, lalu batalkan pengeditan untuk melihat versi terbaru',
+      'it-IT': "{file} è cambiato dopo che l'hai aperto, per esempio con un riordino della memoria, quindi non è stato salvato. Copia quello che hai scritto, poi annulla la modifica per vedere la versione attuale",
+      'ko-KR': '{file}이(가) 연 뒤에 기억 정리 등으로 바뀌어 저장하지 않았습니다. 쓴 내용을 복사해 둔 뒤 편집을 취소하면 지금 내용이 보입니다',
+      'pt-BR': '{file} mudou depois que você o abriu, por exemplo numa organização da memória, por isso não foi salvo. Copie o que escreveu e cancele a edição para ver a versão atual',
+      'es-419': '{file} cambió después de que lo abriste, por ejemplo en una organización de la memoria, así que no se guardó. Copia lo que escribiste y cancela la edición para ver la versión actual',
+      'es-ES': '{file} ha cambiado después de abrirlo, por ejemplo en una organización de la memoria, así que no se ha guardado. Copia lo que has escrito y cancela la edición para ver la versión actual'
     }
   }
 })
