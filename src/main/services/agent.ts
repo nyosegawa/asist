@@ -187,7 +187,7 @@ function update(id: string, patch: Partial<AgentJob>): void {
   if (
     patch.status === 'done' &&
     entry.job.status !== 'done' &&
-    entry.job.cwd.includes('/asist-jobs/') &&
+    path.basename(path.dirname(entry.job.cwd)) === WORKSPACES &&
     !entry.job.worktree
   ) {
     for (const file of scanWorkspaceFiles(entry.job.cwd)) addArtifact(entry, file)
@@ -282,9 +282,12 @@ export function contextBlock(): string | null {
   )
 }
 
+/** The name of the folder in agentCwd that holds the workspace of every job naming no cwd, and the worktrees. */
+const WORKSPACES = 'asist-jobs'
+
 /** The folder `<agentCwd>/asist-jobs` that holds the workspace of every job naming no cwd, and the worktrees. */
 export function workspaceRoot(): string {
-  return path.join(getSettings().agentCwd || homedir(), 'asist-jobs')
+  return path.join(getSettings().agentCwd || homedir(), WORKSPACES)
 }
 
 /** Creates the workspace `<agentCwd>/asist-jobs/<timestamp>-<name>/` for a job that names no cwd. */
@@ -749,7 +752,7 @@ export function allowedFileRoots(): string[] {
   ensureLoaded()
   const roots = new Set<string>()
   const settings = getSettings()
-  if (settings.agentCwd) roots.add(path.join(settings.agentCwd, 'asist-jobs'))
+  if (settings.agentCwd) roots.add(path.join(settings.agentCwd, WORKSPACES))
   // Once a curation job is merged, its output lives in the memory directory.
   roots.add(memoryDir())
   for (const root of settings.fileRoots) if (root.trim()) roots.add(root.trim())
