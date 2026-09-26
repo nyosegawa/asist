@@ -4,6 +4,7 @@ import { PANEL_CATALOG } from '@shared/panel-catalog'
 import { taskSummary } from '@shared/tasks'
 import { FETCHER_TIMEOUT_MS, LOCAL_TIMEOUT_MS, resolvePromptTexts } from '@shared/tool-registry'
 import { createTranslator } from '@shared/i18n'
+import { errorText, readErrorText } from '@shared/i18n/error-text'
 
 const ja = createTranslator('ja-JP')
 
@@ -159,6 +160,26 @@ describe('brain tools registry', () => {
     expect(result.content).toContain('HTTP 503')
     const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
     expect(patch).toMatchObject({ event: { state: 'error', error: 'open-meteo: HTTP 503' } })
+  })
+
+  it('hands the card the error with its key, for the screen to word, and tells the model in the language of the conversation', async () => {
+    const failure = errorText('panels.errors.placeNotFound', { place: 'Atlantis' })
+    mocks.fetchPanel.mockRejectedValueOnce(new Error(failure))
+    const { executeClientTool } = await load()
+    const { ctx, events } = makeCtx()
+    const result = await executeClientTool('show_clock', { city: 'Atlantis' }, ctx)
+    const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
+    const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
+    expect(readErrorText(shown ?? '')).toEqual(readErrorText(failure))
+    expect(result.content).toContain(ja('panels.errors.placeNotFound', { place: 'Atlantis' }))
+  })
+
+  it('refuses a data card whose input is invalid with a failure the model reads, and puts up no card', async () => {
+    const { putUpCard } = await import('../src/main/services/brain/cards')
+    const { ToolError } = await import('@shared/tool-registry')
+    const { ctx, events } = makeCtx()
+    await expect(putUpCard('mail-message', { id: '' }, ctx, ctx.signal, 'en')).rejects.toBeInstanceOf(ToolError)
+    expect(events).toEqual([])
   })
 
   it('returns the fetched data as JSON and puts the panel into the ready state', async () => {

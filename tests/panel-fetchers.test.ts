@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
+import { formatMessage } from '@shared/i18n'
+import { readErrorText } from '@shared/i18n/error-text'
 
 const mocks = vi.hoisted(() => ({ conversationLocale: 'ja-JP', region: 'JP' }))
 vi.mock('../src/main/services/settings', () => ({
@@ -86,6 +88,30 @@ describe('the requests a card makes for the conversation language and the region
     await expect(fetchPanel('fx', { base: 'USD' })).rejects.toThrow('[asist:panels.errors.currencyUnknown {"region":"AT"}]')
     // A currency the user named is still quoted, whatever the region is.
     expect((await fetchPanel('fx', { base: 'USD', quote: 'JPY' })).props).toMatchObject({ quote: 'JPY' })
+  })
+})
+
+describe('a card that cannot be filled', () => {
+  it('names the service and the status of a failed request in a message the screen words', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })))
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      ['clock', { city: 'Berlin' }, 'geocoding-api.open-meteo.com'],
+      ['fx', { base: 'USD', quote: 'EUR' }, 'open.er-api.com'],
+      ['news', { topic: 'AI' }, 'news.google.com']
+    ]
+    for (const [type, props, host] of cases) {
+      const error = (await fetchPanel(type, props).catch((err: unknown) => err)) as Error
+      const known = readErrorText(error.message)
+      expect(known, type).not.toBeNull()
+      const text = formatMessage(known!.message, 'en-US', known!.values)
+      expect(text).toContain(host)
+      expect(text).toContain('503')
+    }
+  })
+
+  it('refuses a clock without a city in a message the screen words', async () => {
+    respond({ results: [] }, [])
+    await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message) !== null)
   })
 })
 

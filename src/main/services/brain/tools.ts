@@ -35,7 +35,7 @@ import { agentTool, jobTools, projectTools } from './job-tools'
 import { memoryTools } from './memory-tools'
 import { miniAppTools } from './mini-app-tools'
 import { noteTools } from './note-tools'
-import { detail, errMessage } from './tool-error-text'
+import { cardError, detail, issueText } from './tool-error-text'
 
 /**
  * The client tools the conversation model can call, held in a registry. One tool is one definition
@@ -62,10 +62,6 @@ const PANEL_RESULT_MAX = 3000
 const DISPLAY_ONLY_RESULT_MAX = 1500
 
 const LOCAL_WRITE_PANELS = new Set(['timer'])
-
-/** The reasons a schema rejected the input, as one sentence the model reads. */
-const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
-  issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
 
 /** The panels that get their own line in the tool guide; the other show_ tools are collapsed into a single line. */
 const PANEL_USAGE: Record<string, PromptText> = {
@@ -139,8 +135,8 @@ async function runPanelTool(
   const key = entry.key(props)
   const panelEvent = (event: PanelEvent): void =>
     ctx.emit({ type: 'panel', turnId: ctx.turnId, event })
-  const failPanel = (message: string): void =>
-    panelEvent({ op: 'patch', key, state: 'error', error: message })
+  const failPanel = (err: unknown): void =>
+    panelEvent({ op: 'patch', key, state: 'error', error: cardError(err) })
 
   if (type === 'agent-job') return showAgentJob(props, panelEvent)
 
@@ -163,7 +159,7 @@ async function runPanelTool(
       panelEvent({ op: 'patch', key, props, state: 'ready', source: t('cardsTime.timer.source') })
       return { shown: true, panel: type, started: true, timer }
     } catch (err) {
-      failPanel(detail(err, language))
+      failPanel(err)
       throw new ToolError(TEXTS.timerFailed(detail(err, language)))
     }
   }
@@ -173,7 +169,7 @@ async function runPanelTool(
     panelEvent({ op: 'patch', key, props: result.props, state: 'ready', source: result.source })
     return { shown: true, panel: type, data: result.data ?? result.props }
   } catch (err) {
-    failPanel(detail(err, language))
+    failPanel(err)
     throw new ToolError(TEXTS.panelFailed(detail(err, language)))
   }
 }

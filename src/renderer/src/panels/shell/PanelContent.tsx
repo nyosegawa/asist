@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { PanelSpec } from '@shared/ipc'
 import { cardDefinition } from '@/panels/registry'
 import { useT } from '@/i18n'
+import { displayError } from '@/display-error'
 import type { CardSurfaceSize } from './card'
 import { PanelErrorBoundary } from './PanelErrorBoundary'
 
@@ -28,7 +29,7 @@ export function PanelContent({
     return (
       <div className="py-1 text-xs leading-relaxed text-holo-red/90" role="alert">
         {t('panels.loadFailed')}
-        <div className="mt-1 font-mono text-[10px] text-holo-dim">{spec.error?.slice(0, 90)}</div>
+        <div className="mt-1 font-mono text-[10px] text-holo-dim">{spec.error && displayError(spec.error).slice(0, 90)}</div>
       </div>
     )
   }

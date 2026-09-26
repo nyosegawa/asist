@@ -25,11 +25,13 @@ type Props = Record<string, unknown>
 type Fetched = { props: Props; source?: string; data?: unknown }
 type Fetcher = (props: Props, signal: AbortSignal) => Promise<Fetched>
 
-const json = async <T>(url: string, signal: AbortSignal): Promise<T> => {
+const request = async (url: string, signal: AbortSignal): Promise<Response> => {
   const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!res.ok) throw new Error(`${new URL(url).hostname}: HTTP ${res.status}`)
-  return (await res.json()) as T
+  if (!res.ok) throw new Error(errorText('panels.errors.fetchFailed', { host: new URL(url).hostname, status: res.status }))
+  return res
 }
+
+const json = async <T>(url: string, signal: AbortSignal): Promise<T> => (await (await request(url, signal)).json()) as T
 
 interface GeoResult {
   name: string
@@ -73,7 +75,7 @@ const weather: Fetcher = weatherPanelProps
 
 const clock: Fetcher = async (props, signal) => {
   const city = String(props.city ?? '').trim()
-  if (!city) throw new Error('city required')
+  if (!city) throw new Error(errorText('panels.errors.cityMissing'))
   const geo = await geocode(city, signal)
   return {
     props: { city: geo.name, timezone: geo.timezone, country: geo.country ?? '' },
@@ -126,9 +128,7 @@ const news: Fetcher = async (props, signal) => {
     topic === NEWS_TOP_TOPIC
       ? `https://news.google.com/rss?${edition}`
       : `https://news.google.com/rss/search?q=${encodeURIComponent(topic)}&${edition}`
-  const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } })
-  if (!res.ok) throw new Error(`news: HTTP ${res.status}`)
-  const xml = await res.text()
+  const xml = await (await request(url, signal)).text()
   const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 6).map((m) => {
     const block = m[1]
     const pick = (tag: string): string => {

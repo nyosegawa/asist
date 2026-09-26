@@ -16,3 +16,13 @@ export const errMessage = (err: unknown): string => errorMessageIn(conversationL
  */
 export const detail = (err: unknown, language: PromptLanguage): string =>
   resolvePromptTexts(errMessage(err), language)
+
+/** The reasons a schema rejected the input, as one sentence the model reads. */
+export const issueText = (issues: readonly { message: string }[], language: PromptLanguage): string =>
+  issues.map((issue) => resolvePromptTexts(errMessage(issue.message), language)).join(language === 'ja' ? '、' : ', ')
+
+/**
+ * The error a card shows, which is the error's own message with its key still in it: the screen words
+ * it in the language of the interface, which need not be the language the model is told the failure in.
+ */
+export const cardError = (err: unknown): string => (err instanceof Error ? err.message : String(err))

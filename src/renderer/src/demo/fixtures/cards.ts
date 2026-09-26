@@ -1,4 +1,5 @@
 import type { PanelState } from '@shared/ipc'
+import { errorText } from '@shared/i18n/error-text'
 import { DEMO_CALENDAR_CARD } from './calendar'
 import { DEMO_FX } from './finance'
 import { DEMO_JOB } from './jobs'
@@ -104,7 +105,13 @@ export const STATE_GROUP: { command: string; label: string; cards: CardFixture[]
   label: '揃っていない状態',
   cards: [
     { type: 'fx', variant: 'loading', state: 'loading', props: { base: 'USD', quote: 'JPY' } },
-    { type: 'fx', variant: 'error', state: 'error', error: 'open.er-api.com: HTTP 429', props: { base: 'USD', quote: 'JPY' } },
+    {
+      type: 'fx',
+      variant: 'error',
+      state: 'error',
+      error: errorText('panels.errors.fetchFailed', { host: 'open.er-api.com', status: 429 }),
+      props: { base: 'USD', quote: 'JPY' }
+    },
     { type: 'fx', variant: 'stale', state: 'stale', props: DEMO_FX, source: 'open.er-api.com' },
     // A map without a location throws while its input is validated, and the per-card error boundary catches it.
     { type: 'map', variant: 'crash', props: {} }

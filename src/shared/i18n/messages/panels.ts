@@ -200,6 +200,32 @@ export const panels = defineMessages({
       'pt-BR': 'A rota não tem ponto de partida.',
       'es-419': 'La ruta no tiene punto de partida.',
       'es-ES': 'La ruta no tiene punto de partida.'
+    },
+    fetchFailed: {
+      'ja-JP': '{host} からデータを取得できませんでした(HTTP {status})。',
+      'en-US': "Couldn't get the data from {host} (HTTP {status}).",
+      'fr-FR': "Impossible d'obtenir les données de {host} (HTTP {status}).",
+      'de-DE': 'Die Daten von {host} ließen sich nicht abrufen (HTTP {status}).',
+      'hi-IN': '{host} से डेटा नहीं मिला (HTTP {status})।',
+      'id-ID': 'Tidak bisa mengambil data dari {host} (HTTP {status}).',
+      'it-IT': 'Impossibile ottenere i dati da {host} (HTTP {status}).',
+      'ko-KR': '{host}에서 데이터를 가져오지 못했습니다(HTTP {status}).',
+      'pt-BR': 'Não foi possível obter os dados de {host} (HTTP {status}).',
+      'es-419': 'No se pudieron obtener los datos de {host} (HTTP {status}).',
+      'es-ES': 'No se han podido obtener los datos de {host} (HTTP {status}).'
+    },
+    cityMissing: {
+      'ja-JP': '都市が指定されていません。',
+      'en-US': 'No city was given.',
+      'fr-FR': "Aucune ville n'a été indiquée.",
+      'de-DE': 'Es wurde keine Stadt angegeben.',
+      'hi-IN': 'कोई शहर नहीं दिया गया।',
+      'id-ID': 'Tidak ada kota yang disebutkan.',
+      'it-IT': 'Non è stata indicata nessuna città.',
+      'ko-KR': '도시가 지정되지 않았습니다.',
+      'pt-BR': 'Nenhuma cidade foi indicada.',
+      'es-419': 'No se indicó ninguna ciudad.',
+      'es-ES': 'No se ha indicado ninguna ciudad.'
     }
   }
 })

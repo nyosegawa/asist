@@ -1,5 +1,4 @@
 import { usePanelStore } from '@/state/stores'
-import { displayError } from '@/display-error'
 
 /**
  * Opens a files card from inside the renderer, for a job's artifacts or the entries of a folder. It follows
@@ -14,8 +13,5 @@ export function openFiles(paths: string[], title?: string, selected = 0): void {
   void window.api
     .panelFetch('files', props)
     .then((result) => apply({ op: 'patch', key, props: result.props, state: 'ready', source: result.source }))
-    .catch((err: unknown) => {
-      const message = displayError(err)
-      apply({ op: 'patch', key, state: 'error', error: message })
-    })
+    .catch((err: unknown) => apply({ op: 'patch', key, state: 'error', error: err instanceof Error ? err.message : String(err) }))
 }
