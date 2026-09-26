@@ -3,6 +3,8 @@ import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AgentJob } from '@shared/ipc'
+import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { JobStopButton } from '@/ui/JobStopButton'
 import { useToastStore } from '@/state/stores'
 
@@ -46,11 +48,13 @@ it('allows another stop request after the first one answers and blocks a second 
   expect(button.disabled).toBe(false)
 })
 
-it('shows a failed stop request and allows it to be retried', async () => {
-  cancel.mockRejectedValueOnce(new Error('disk full')).mockResolvedValue(undefined)
+it('shows why a stop request failed in the language of the interface, and allows it to be retried', async () => {
+  cancel
+    .mockRejectedValueOnce(new Error(`Error invoking remote method 'job-cancel': Error: ${errorText('jobs.process.stopTimedOut')}`))
+    .mockResolvedValue(undefined)
   await render()
   await act(async () => container.querySelector('button')!.click())
-  expect(useToastStore.getState().toasts.at(-1)?.body).toContain('disk full')
+  expect(useToastStore.getState().toasts.at(-1)?.body).toBe(createTranslator('ja-JP')('jobs.process.stopTimedOut'))
   await act(async () => container.querySelector('button')!.click())
   expect(cancel).toHaveBeenCalledTimes(2)
 })
