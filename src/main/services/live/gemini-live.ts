@@ -9,7 +9,7 @@ import { conversationLocale } from '../conversation-locale'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { ToolCallOrder } from '@shared/tool-call-order'
-import type { MemoryInjection } from '@shared/memory-injection'
+import { buildMemoryInjection, memoryIdsInToolResult, type InjectableMemory } from '@shared/memory-injection'
 import type { ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -89,8 +89,10 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   /** Whether the registry lets the tool run at the same time as other calls, which a writing tool does not. */
   isParallel: (name: string) => boolean
   recordTool: (turnId: number, name: string, input: Record<string, unknown>, execution: ToolExecution) => void
-  /** Looks for memories related to the user's utterance and returns a note about them with their ids, or null. */
-  memoryInjection: (text: string) => Promise<Pick<MemoryInjection, 'text' | 'ids'> | null>
+  /** Looks for the memories related to the user's utterance. */
+  findMemories: (text: string) => Promise<readonly InjectableMemory[]>
+  /** The memory block of the system instruction, whose memories a note leaves out, or null when memory is unavailable. */
+  memoryBlock: () => string | null
   /** Records a note sent to the model after the utterance of the turn, with the ids of the memories it shows. */
   recordNote: (turnId: number, text: string, memoryIds: string[]) => void
   /** Records typed input in the conversation log. A spoken user line is written when its transcript is final. */
@@ -135,6 +137,13 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    * arrive while an earlier one still waits for approval.
    */
   private readonly order = new ToolCallOrder()
+  /**
+   * The memories the context of the current session holds, from the notes and the recall results sent
+   * to it, which a note does not show again. A session that opens blank is seeded with the transcript,
+   * which carries neither, so it holds none of them whatever earlier sessions were shown. A resumed
+   * session keeps its context, and the set with it.
+   */
+  private sessionMemoryIds = new Set<string>()
 
   constructor(
     info: LiveEngineInfo,
@@ -201,7 +210,10 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     await setup
     const session = await connected
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
-    if (!resume) this.seedHistory(session)
+    if (!resume) {
+      this.seedHistory(session)
+      this.sessionMemoryIds = new Set()
+    }
     owned.ready = true
   }
 
@@ -332,7 +344,9 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     this.deps.emitTurn({ type: 'tool', turnId, name, status: execution.isError ? 'error' : 'done' })
     this.deps.recordTool(turnId, name, call.args ?? {}, execution)
     this.touch()
-    this.session?.sendToolResponse({
+    const session = this.session
+    if (!session) return
+    session.sendToolResponse({
       functionResponses: [
         {
           id,
@@ -342,6 +356,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         }
       ]
     })
+    for (const memoryId of memoryIdsInToolResult(name, execution)) this.sessionMemoryIds.add(memoryId)
   }
 
   protected override working(): boolean {
@@ -373,17 +388,26 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   }
 
   /**
-   * A user utterance is final. Any related memory is added to the context silently, without asking for
-   * a reply, and is recorded on the utterance's turn only once a session has it.
+   * A user utterance is final. Any related memory the session does not hold yet is added to its context
+   * silently, without asking for a reply, and is recorded on the utterance's turn only once a session
+   * has it. The note is written when it is sent rather than when the search starts, so that two
+   * searches that end together do not both show the same memory.
    */
   protected override onUserUtterance(turnId: number, text: string): void {
     void this.deps
-      .memoryInjection(text)
-      .then((injection) => {
+      .findMemories(text)
+      .then((memories) => {
         const session = this.session
-        if (!injection || !session) return
-        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: injection.text }] }], turnComplete: false })
-        this.deps.recordNote(turnId, injection.text, injection.ids)
+        if (!session) return
+        const note = buildMemoryInjection(memories, {
+          locale: conversationLocale(),
+          memoryBlock: this.deps.memoryBlock(),
+          excludeIds: this.sessionMemoryIds
+        })
+        if (!note) return
+        session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: note.text }] }], turnComplete: false })
+        for (const memoryId of note.ids) this.sessionMemoryIds.add(memoryId)
+        this.deps.recordNote(turnId, note.text, note.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
   }

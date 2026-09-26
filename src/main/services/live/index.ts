@@ -3,7 +3,6 @@ import { LiveWS } from 'openai/resources/live/ws'
 import type { LiveConnection, LiveStartResult } from '@shared/ipc'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
-import { buildMemoryInjection } from '@shared/memory-injection'
 import {
   CONVERSATION_LANGUAGE_NAMES,
   fillPrompt,
@@ -164,13 +163,8 @@ function createEngine(): LiveEngineBase {
         ...(memoryIds.length > 0 ? { memoryIds } : {})
       })
     },
-    memoryInjection: async (text) => {
-      const hits = await memory.search(text, { limit: 8, mode: 'utterance' })
-      return buildMemoryInjection(
-        hits.map((hit) => hit.record),
-        { locale: conversationLocale(), memoryBlock: memory.promptBlock(), excludeIds: history.shownMemoryIds() }
-      )
-    },
+    findMemories: async (text) => (await memory.search(text, { limit: 8, mode: 'utterance' })).map((hit) => hit.record),
+    memoryBlock: () => memory.promptBlock(),
     recordNote: (turnId, text, memoryIds) => {
       record({ kind: 'note', turnId, text, memoryIds })
     },
