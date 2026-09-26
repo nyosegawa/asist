@@ -14,7 +14,8 @@ import { isPathAllowed } from './services/file-preview'
 
 export const FILE_SCHEME = 'asist-file'
 
-export const fileUrl = (filePath: string): string => `${FILE_SCHEME}://${encodeURI(filePath)}`
+/** Every character of a name that is not plain is escaped, so that a # or ? in a file name stays part of the path. */
+export const fileUrl = (filePath: string): string => `${FILE_SCHEME}://${filePath.split('/').map(encodeURIComponent).join('/')}`
 
 /** Has to be called before app.whenReady. */
 export function registerFileScheme(): void {
@@ -88,32 +89,36 @@ export function contentHeaders(filePath: string): Record<string, string> {
   return { 'Content-Type': type, 'Content-Security-Policy': HTML_PAGE_POLICY, 'Referrer-Policy': 'no-referrer' }
 }
 
-/** Takes the absolute path out of the URL. Only the form asist-file:///Users/... is accepted. */
+/**
+ * Takes the absolute path out of the URL. Only the form asist-file:///Users/... is accepted. Every escape
+ * is decoded, because a page's relative link may escape a reserved character, such as %2C for a comma.
+ */
 export function filePathFromUrl(url: string): string | null {
-  if (!url.startsWith(`${FILE_SCHEME}://`)) return null
-  const rest = url.slice(`${FILE_SCHEME}://`.length)
-  const withoutQuery = rest.split(/[?#]/)[0]
+  let parsed: URL
   try {
-    const decoded = decodeURI(withoutQuery)
-    return decoded.startsWith('/') ? decoded : null
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== `${FILE_SCHEME}:` || parsed.host !== '' || !parsed.pathname.startsWith('/')) return null
+  try {
+    return decodeURIComponent(parsed.pathname)
   } catch {
     return null
   }
 }
 
-/** Turns a Range header of the form `bytes=a-b` into [start, end], or null when it is invalid. */
+/**
+ * Turns a Range header of the form `bytes=a-b`, `bytes=a-` or `bytes=-n` (the last n bytes) into [start, end]
+ * within the file, or null when no byte of the file is in it.
+ */
 export function parseRange(header: string | null, size: number): { start: number; end: number } | null {
-  if (!header) return null
-  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
-  if (!m) return null
-  if (m[1] === '' && m[2] === '') return null
-  if (m[1] === '') {
-    const suffix = Number(m[2])
-    return suffix <= 0 ? null : { start: Math.max(0, size - suffix), end: size - 1 }
-  }
-  const start = Number(m[1])
-  const end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)
-  return start > end || start >= size ? null : { start, end }
+  const m = header ? /^bytes=(\d*)-(\d*)$/.exec(header.trim()) : null
+  if (!m || (m[1] === '' && m[2] === '')) return null
+  const suffix = m[1] === ''
+  const start = suffix ? Math.max(0, size - Number(m[2])) : Number(m[1])
+  const end = suffix || m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1)
+  return start > end ? null : { start, end }
 }
 
 /** Has to be called after app.whenReady. allowedRoots is read per request, because a new job adds roots. */

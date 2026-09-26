@@ -1,9 +1,21 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ protocol: { registerSchemesAsPrivileged: vi.fn(), handle: vi.fn() } }))
+const electron = vi.hoisted(() => ({ handle: vi.fn() }))
+vi.mock('electron', () => ({ protocol: { registerSchemesAsPrivileged: vi.fn(), handle: electron.handle } }))
 
 const load = () => import('../src/main/file-protocol')
+
+/** Registers the handler for the folder and returns what it answers for a URL and a Range header. */
+async function serve(folder: string, url: string, range?: string): Promise<Response> {
+  const { handleFileScheme } = await load()
+  electron.handle.mockClear()
+  handleFileScheme(() => [folder])
+  const handler = electron.handle.mock.calls[0][1] as (request: { url: string; headers: Headers }) => Response
+  return handler({ url, headers: new Headers(range ? { range } : {}) })
+}
 
 describe('asist-file:// URLs and paths', () => {
   it('turns an absolute path into a URL and reads the same path back, including Japanese characters and spaces', async () => {
@@ -19,6 +31,31 @@ describe('asist-file:// URLs and paths', () => {
     const { filePathFromUrl } = await load()
     expect(filePathFromUrl('file:///etc/passwd')).toBeNull()
     expect(filePathFromUrl('asist-file://relative/a.png')).toBeNull()
+  })
+
+  it('keeps a #, a ? or a % in a file name as part of the path rather than a fragment or a query', async () => {
+    const { fileUrl, filePathFromUrl } = await load()
+    for (const file of ['/Users/me/Documents/C# notes.pdf', '/Users/me/Documents/why?.png', '/Users/me/Documents/Issue #12.png', '/Users/me/Documents/100%.png']) {
+      const url = new URL(fileUrl(file))
+      expect([url.hash, url.search]).toEqual(['', ''])
+      expect(filePathFromUrl(url.href)).toBe(file)
+    }
+  })
+
+  it('reads the file a page names in a relative link with its reserved characters escaped', async () => {
+    const { fileUrl, filePathFromUrl } = await load()
+    const page = fileUrl('/r/report.html')
+    expect(filePathFromUrl(new URL('Q1%2C%20Q2.png', page).href)).toBe('/r/Q1, Q2.png')
+    expect(filePathFromUrl(new URL('C%23.png', page).href)).toBe('/r/C#.png')
+  })
+
+  it('serves a file whose name holds a # from the URL the files card is given', async () => {
+    const { fileUrl } = await load()
+    const folder = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
+    writeFileSync(path.join(folder, 'C# notes.txt'), 'notes')
+    const response = await serve(folder, fileUrl(path.join(folder, 'C# notes.txt')))
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('notes')
   })
 })
 
@@ -38,6 +75,17 @@ describe('the Range header that video and audio use to seek', () => {
     expect(parseRange('bytes=1000-', 1000)).toBeNull()
     expect(parseRange('bytes=50-10', 1000)).toBeNull()
     expect(parseRange('items=0-1', 1000)).toBeNull()
+  })
+
+  it('finds no byte of an empty file, and serves the empty file whole when its last bytes are asked for', async () => {
+    const { fileUrl, parseRange } = await load()
+    expect(parseRange('bytes=-100', 0)).toBeNull()
+    expect(parseRange('bytes=0-', 0)).toBeNull()
+    const folder = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
+    writeFileSync(path.join(folder, 'empty.mp3'), '')
+    const response = await serve(folder, fileUrl(path.join(folder, 'empty.mp3')), 'bytes=-100')
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('')
   })
 })
 
