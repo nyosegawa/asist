@@ -26,15 +26,19 @@ func status() -> [String: Any] {
     ["authorization": authorization(), "calendars": authorization() == "fullAccess" ? store.calendars(for: .event).map(account) : []]
 }
 // ASIST ends an all-day event at midnight after its last day, exclusive like every other end. EventKit
-// ignores the time of day of an all-day event's dates, so it would read that midnight as one more day,
-// and it reports the end as 23:59:59 of the last day. These two functions are the only place where the
-// two conventions meet.
+// is described as ignoring the time of day of an all-day event's dates and as reporting the end as
+// 23:59:59 of the last day, which has not been checked on a Mac. These two functions are the only
+// place where the two conventions meet, and each gives the same result under either of them.
+// Reading: the last day is the day that holds the second before endDate, so an end of 23:59:59 on the
+// last day and one of 00:00 on the day after both come back as 00:00 on the day after.
 func appEnd(of event: EKEvent, in zone: TimeZone) throws -> Date {
     guard event.isAllDay else { return event.endDate }
     var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
-    guard let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: event.endDate)) else { try fail("eventKitFailed") }
+    let lastDay = calendar.startOfDay(for: event.endDate.addingTimeInterval(-1))
+    guard let end = calendar.date(byAdding: .day, value: 1, to: lastDay) else { try fail("eventKitFailed") }
     return end
 }
+// Writing: 23:59:59 of the last day is the last day whether EventKit ignores the time or keeps it.
 func eventKitEnd(fromAppEnd end: Date, allDay: Bool) -> Date {
     allDay ? end.addingTimeInterval(-1) : end
 }

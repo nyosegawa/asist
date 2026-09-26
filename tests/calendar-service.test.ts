@@ -439,6 +439,9 @@ describe('calendar dates', () => {
       expect(shown.date).toBe('2026-09-15(火)')
       const update = { title: '祝日', start: shown.start, end: shown.end, allDay: shown.allDay, timeZone: shown.timeZone, location: '', notes: '' }
       expect(calendarEventInputSchema.safeParse(update).success).toBe(true)
+      const trip = detailCalendarEvent('ja-JP', { ...holiday, end: Date.parse('2026-09-18T00:00:00+09:00') })
+      expect(trip.date).toBe('2026-09-15(火) 〜 2026-09-17(木)')
+      expect(calendarEventInputSchema.safeParse({ ...update, end: trip.end }).success).toBe(true)
     } finally {
       if (previous === undefined) delete process.env.TZ
       else process.env.TZ = previous
