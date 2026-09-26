@@ -56,9 +56,19 @@ export function resolvePromptTexts<T>(value: T, language: PromptLanguage): T {
 /**
  * The JSON Schema of a zod schema for a tool's input, as the model fills it in. zod writes the parsed
  * output by default, where a field with a default is required because parsing always fills it in, so
- * the model would be told to write a value the description says to leave out.
+ * the model would be told to write a value the description says to leave out. The input form in turn
+ * leaves a plain object open, because parsing drops a key it does not know rather than refusing it;
+ * the model is still told to write no other key, as the output form told it.
  */
-export const inputJsonSchema = (schema: z.ZodType): JsonSchema => z.toJSONSchema(schema, { io: 'input' }) as JsonSchema
+export const inputJsonSchema = (schema: z.ZodType): JsonSchema =>
+  z.toJSONSchema(schema, {
+    io: 'input',
+    override: ({ zodSchema, jsonSchema }) => {
+      if (zodSchema._zod.def.type === 'object' && jsonSchema.additionalProperties === undefined) {
+        jsonSchema.additionalProperties = false
+      }
+    }
+  }) as JsonSchema
 
 export interface ToolDefinition<Ctx = unknown> {
   name: string

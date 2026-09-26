@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import {
   ToolError,
   bilingual,
   createToolRegistry,
   executeTool,
   formatToolResult,
+  inputJsonSchema,
   renderToolGuide,
   resolvePromptTexts,
   truncateMiddle,
@@ -89,6 +91,17 @@ describe('renderToolGuide', () => {
     expect(renderToolGuide(entries, 'en')).toBe(
       '# Choosing between the tools\n- a: when to use it\n- b: in this case'
     )
+  })
+})
+
+describe('inputJsonSchema', () => {
+  it('lets the model leave out a field with a default, and still tells it to write no key the schema does not list', () => {
+    const schema = inputJsonSchema(
+      z.object({ place: z.string(), mode: z.enum(['place', 'search']).default('place'), origin: z.object({ name: z.string() }).optional() })
+    )
+    expect(schema.required).toEqual(['place'])
+    expect(schema.additionalProperties).toBe(false)
+    expect((schema.properties as Record<string, { additionalProperties?: unknown }>).origin.additionalProperties).toBe(false)
   })
 })
 
