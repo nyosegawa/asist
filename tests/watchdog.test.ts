@@ -6,7 +6,7 @@ import { EMBEDDING_MODEL } from '@shared/memory-embedding'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
-  settings: { aizuchi: true, conversationLocale: 'ja-JP', voiceEngine: 'cascade', uiLocale: 'en-US' },
+  settings: { aizuchi: true, vapEnabled: true, conversationLocale: 'ja-JP', voiceEngine: 'cascade', uiLocale: 'en-US' },
   startEmbedding: vi.fn(async () => false)
 }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -34,9 +34,11 @@ const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const arch = Object.getOwnPropertyDescriptor(process, 'arch')!
 let children: Child[] = []
 const classifierChildren = (): Child[] => children.filter((child) => child.script.endsWith('aizuchi_worker.py'))
+const vapChildren = (): Child[] => children.filter((child) => child.script.endsWith('vap_worker.py'))
 let watchdog: typeof import('../src/main/services/watchdog')
 let classifier: typeof import('../src/main/services/aizuchi-classifier')
 let embedding: typeof import('../src/main/services/embedding')
+let vap: typeof import('../src/main/services/vap')
 
 beforeEach(async () => {
   vi.resetModules()
@@ -44,9 +46,11 @@ beforeEach(async () => {
   Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
   Object.defineProperty(process, 'arch', { ...arch, value: 'arm64' })
   vi.stubEnv('ASIST_EMBEDDING_PYTHON', '/unused/python')
+  vi.stubEnv('ASIST_VAP_PYTHON', '/unused/python')
   vi.spyOn(fs, 'existsSync').mockReturnValue(true)
   vi.spyOn(console, 'log').mockImplementation(() => {})
   mocks.settings.aizuchi = true
+  mocks.settings.vapEnabled = true
   mocks.startEmbedding.mockClear()
   children = []
   mocks.spawn.mockReset().mockImplementation((_python: string, args: string[]) => {
@@ -57,10 +61,12 @@ beforeEach(async () => {
   watchdog = await import('../src/main/services/watchdog')
   classifier = await import('../src/main/services/aizuchi-classifier')
   embedding = await import('../src/main/services/embedding')
+  vap = await import('../src/main/services/vap')
 })
 afterEach(() => {
   classifier.stop()
   embedding.stop()
+  vap.stop()
   vi.clearAllTimers()
   vi.useRealTimers()
   vi.restoreAllMocks()
@@ -71,6 +77,8 @@ afterEach(() => {
     child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy()
   }
 })
+
+const VAP_READY = 'ASIST_JSON:{"type":"ready","device":"cpu","frameHz":12.5}\n'
 
 async function classifierReady(child: Child): Promise<void> {
   child.stdout.write('ASIST_JSON:{"type":"ready"}\n')
@@ -122,5 +130,78 @@ describe('the watchdog', () => {
     expect(embedding.running()).toBe(false)
     await vi.advanceTimersByTimeAsync(30_000)
     expect(mocks.startEmbedding).toHaveBeenCalledOnce()
+  })
+
+  it('starts the VAP worker again after it crashed, and hands its state to the handler the conversation gave', async () => {
+    const states: number[] = []
+    const starting = vap.ensureStarted((state) => states.push(state.pNowUser))
+    await vi.advanceTimersByTimeAsync(10)
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    watchdog.start(() => {})
+    vapChildren()[0].exitCode = 1
+    vapChildren()[0].emit('exit', 1)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vapChildren()).toHaveLength(2)
+    vapChildren()[1].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    vapChildren()[1].stdout.write('ASIST_JSON:{"type":"state","pNowUser":0.8}\n')
+    await vi.advanceTimersByTimeAsync(10)
+    expect(states).toEqual([0.8])
+  })
+
+  it('leaves the VAP worker alone until the conversation starts it, and once the setting stopped it', async () => {
+    watchdog.start(() => {})
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vapChildren()).toEqual([])
+
+    const starting = vap.ensureStarted(() => {})
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    mocks.settings.vapEnabled = false
+    vap.stop()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(vapChildren()).toHaveLength(1)
+  })
+
+  it('tries a crashed VAP worker once, not on every tick, when it no longer loads', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const starting = vap.ensureStarted(() => {})
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    watchdog.start(() => {})
+    vapChildren()[0].exitCode = 1
+    vapChildren()[0].emit('exit', 1)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    vapChildren()[1].stdout.write('ASIST_JSON:{"type":"fatal","error":"torch is missing"}\n')
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(vapChildren()).toHaveLength(2)
+  })
+
+  it('stops starting again a VAP worker that keeps crashing after it has loaded', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const starting = vap.ensureStarted(() => {})
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+    watchdog.start(() => {})
+    for (let crash = 0; crash < 6; crash++) {
+      const current = vapChildren().at(-1)!
+      current.exitCode = 1
+      current.emit('exit', 1)
+      await vi.advanceTimersByTimeAsync(30_000)
+      if (vapChildren().at(-1) === current) break
+      vapChildren().at(-1)!.stdout.write(VAP_READY)
+      await vi.advanceTimersByTimeAsync(100)
+    }
+    const spawned = vapChildren().length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(vapChildren()).toHaveLength(spawned)
+    expect(spawned).toBeLessThan(7)
   })
 })

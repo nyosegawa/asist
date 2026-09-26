@@ -108,7 +108,8 @@ const opening = new TurnOpening({
   play: (clip, role) => speechPlayer.playClip(clip.audio, clip.text, { role }),
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
-  onBridgeOutcome: noteBridgeOutcome
+  onBridgeOutcome: noteBridgeOutcome,
+  withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })
 const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
   window.api.turnPlaybackAck(turnId, status)
@@ -457,7 +458,10 @@ function enableMic(): Promise<void> {
   return liveMode() ? liveVoice.enable() : voiceController.enable()
 }
 
-/** Turns the microphone on when the user chose to have it on at launch. */
+/**
+ * Turns the microphone on when the user chose to have it on at launch: at launch, and again once the
+ * setup or the notice of the risks that held it off has been answered.
+ */
 export function startMicAtLaunch(): void {
   if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
 }
@@ -608,6 +612,7 @@ async function finishUserTurnStart(requestId: string, turnId: number): Promise<b
 
 function failUserTurnStart(requestId: string, error: unknown): void {
   if (pendingRequestId !== requestId && activeRequestId !== requestId) return
+  opening.withdraw()
   pendingRequestId = null
   activeRequestId = null
   turnMetrics.discardRequest(requestId)
@@ -803,6 +808,7 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'done': {
       interjectPlayback.finishTurn(event.turnId)
+      if (!event.fullText) opening.withdraw()
       usePanelStore.getState().dismissLoadingOwnedBy(event.turnId)
       if (aiLineId !== null) feed.update(aiLineId, { streaming: false })
       if (!speechPlayer.isPlaying && !speechPlayer.isStreaming) turn.setPhase(liveVoice.current === 'on' ? 'listen' : 'idle')
