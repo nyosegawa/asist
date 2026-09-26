@@ -117,14 +117,16 @@ describe('CalendarService', () => {
     await expect(fixture({ readCalendarIds: [] }).service.list({ start, end: '2026-09-07T00:00:00+09:00' })).rejects.toThrow()
     await expect(fixture({ enabled: false }).service.list({ start, end: '2026-09-07T00:00:00+09:00' })).rejects.toThrow()
   })
-  it('keeps an event without length at the first instant of the range and leaves out the events that only touch it', async () => {
+  it('keeps an event without length at the first instant of the range and trims what the helper finds just outside it', async () => {
     const f = fixture()
     const start = '2026-09-14T00:00:00+09:00'
     const end = '2026-09-21T00:00:00+09:00'
     const reminder = { ...event, id: 'reminder', start: Date.parse(start), end: Date.parse(start) }
+    // The helper searches from a minute before the range, so it also returns what ends in that minute.
     const endsAtStart = { ...event, id: 'late', start: Date.parse('2026-09-13T22:00:00+09:00'), end: Date.parse(start) }
+    const minuteBefore = { ...event, id: 'before', start: Date.parse('2026-09-13T23:59:00+09:00'), end: Date.parse('2026-09-13T23:59:00+09:00') }
     const startsAtEnd = { ...event, id: 'next', start: Date.parse(end), end: Date.parse(end) }
-    f.native.mockImplementation(async () => [endsAtStart, reminder, f.current, startsAtEnd])
+    f.native.mockImplementation(async () => [endsAtStart, minuteBefore, reminder, f.current, startsAtEnd])
     expect(await f.service.list({ start, end })).toEqual([reminder, f.current])
     expect((await f.service.search({ start, end })).events).toEqual([reminder, f.current])
   })

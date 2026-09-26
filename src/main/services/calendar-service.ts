@@ -97,9 +97,9 @@ export class CalendarService {
     const events = z
       .array(calendarEventSchema)
       .parse(await this.deps.native({ operation: 'search', calendarIds: settings.readCalendarIds, start, end }, signal))
-    // EventKit does not document whether its predicate takes an event that only touches the range, and
-    // the helper passes on whatever it matched, so the range is applied here, by the rule the calendar
-    // screen puts an event on a day with.
+    // The helper asks EventKit from a minute before the range, so that an event without length at its
+    // start is matched however EventKit tests overlap, and the range is applied here, by the rule the
+    // calendar screen puts an event on a day with.
     return events.filter((event) => overlaps(event, Date.parse(start), Date.parse(end)))
   }
 
