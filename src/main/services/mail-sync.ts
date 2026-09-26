@@ -17,7 +17,7 @@ import {
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
 import type { MailBodyParts, MailCache, MailFlagUpdate } from './mail-cache'
-import { readStream, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
+import { disconnect, readStream, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
 
 /**
  * The sync of one account. It holds a single connection and runs every operation on it (fetching
@@ -94,6 +94,8 @@ export class MailAccountSync {
    * skip them, so one such message does not hold up the bodies behind it.
    */
   private readonly failedBodies: Record<MailFolder, Set<number>> = { inbox: new Set(), sent: new Set(), archive: new Set() }
+  /** Why each folder's last fetch failed while the connection held, oldest failure first. */
+  private readonly folderFailures = new Map<MailFolder, string>()
   state: MailSyncState = 'off'
   error = ''
   lastSyncAt: number | null = null
@@ -129,13 +131,7 @@ export class MailAccountSync {
     this.reconnectTimer = this.hydrateTimer = this.periodicTimer = null
     const client = this.client
     this.client = null
-    if (client) {
-      try {
-        await client.logout()
-      } catch {
-        client.close()
-      }
-    }
+    if (client) await disconnect(client)
     // An operation that was running can still write what it fetched into the cache, so a caller that
     // clears part of the cache after stopping waits for it to end.
     await this.queue
@@ -146,21 +142,38 @@ export class MailAccountSync {
   syncNow(): Promise<void> {
     return this.run(async (client) => {
       this.setState('syncing')
-      let failure = ''
       for (const folder of ['sent', 'archive', 'inbox'] as const) {
         const path = this.pathOf(folder)
-        if (!path) continue
-        try {
-          await this.syncFolder(client, folder, path)
-        } catch (error) {
-          failure = t('mail.errors.sync.folderFailed', { box: t(`mail.boxes.${folder}`), reason: errorMessage(error) })
-          if (!client.usable) throw error
-        }
+        if (path) await this.syncRecorded(client, folder, path)
       }
-      this.lastSyncAt = this.now()
-      this.setState(failure ? 'error' : 'connected', failure)
-      this.scheduleHydrate(0)
+      this.showSynced()
     })
+  }
+
+  /**
+   * Fetches one folder and records how it went. A folder that fails on a working connection waits for the
+   * next fetch; a broken connection is thrown, since dropping the client schedules the reconnect.
+   */
+  private async syncRecorded(client: ImapClient, folder: MailFolder, path: string): Promise<void> {
+    try {
+      await this.syncFolder(client, folder, path)
+      this.folderFailures.delete(folder)
+    } catch (error) {
+      if (!client.usable) throw error
+      this.folderFailures.delete(folder)
+      this.folderFailures.set(folder, t('mail.errors.sync.folderFailed', { box: t(`mail.boxes.${folder}`), reason: errorMessage(error) }))
+    }
+  }
+
+  /**
+   * The account is in error while any folder's last fetch failed, so fetching one folder does not hide
+   * another's failure. The latest failure is the one shown.
+   */
+  private showSynced(): void {
+    this.lastSyncAt = this.now()
+    const failure = [...this.folderFailures.values()].at(-1) ?? ''
+    this.setState(failure ? 'error' : 'connected', failure)
+    this.scheduleHydrate(0)
   }
 
   /**
@@ -261,6 +274,11 @@ export class MailAccountSync {
       this.scheduleReconnect()
       throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: message }))
     }
+    // stop() ran while the connection was being made and found no client to end.
+    if (this.stopped) {
+      await disconnect(client)
+      throw new Error(errorText('mail.errors.sync.stopped'))
+    }
     this.client = client
     this.gmail = supportsGmail(client)
     this.reconnectAttempts = 0
@@ -311,12 +329,12 @@ export class MailAccountSync {
       folder,
       setTimeout(() => {
         this.folderTimers.delete(folder)
+        // Every failure has already reached the account's state: the folder's in syncRecorded, and a
+        // connection that failed or broke in ensureClient or dropClient, which also schedule the reconnect.
         void this.run(async (client) => {
-          await this.syncFolder(client, folder, path)
-          this.lastSyncAt = this.now()
-          this.setState('connected')
-          this.scheduleHydrate(0)
-        }).catch((error: unknown) => console.warn(`mail sync (${this.account.label}):`, errMessage(error)))
+          await this.syncRecorded(client, folder, path)
+          this.showSynced()
+        }).catch(() => undefined)
       }, this.intervals.debounceMs)
     )
   }
@@ -329,11 +347,11 @@ export class MailAccountSync {
     try {
       const mailbox = client.mailbox
       if (!mailbox) throw new Error(errorText('mail.errors.folder.openFailed', { path }))
-      const uidValidity = String(mailbox.uidValidity)
-      const reset = cache.uidValidity(account.id, folder) !== uidValidity
-      const first = reset || !this.synced.has(folder)
-      cache.setUidValidity(account.id, folder, uidValidity)
-      if (reset) this.failedBodies[folder].clear()
+      // A folder dropped for a new UIDVALIDITY has changed even when nothing of its new generation is fetched.
+      const dropped = cache.setUidValidity(account.id, folder, String(mailbox.uidValidity))
+      changed = dropped
+      const first = dropped || !this.synced.has(folder)
+      if (dropped) this.failedBodies[folder].clear()
       const since = syncSince(new Date(this.now()), this.options.syncDays())
       const serverUids = await client.search({ since }, { uid: true })
       // imapflow's search answers false instead of throwing when the server rejects the command or the
@@ -380,8 +398,9 @@ export class MailAccountSync {
       this.synced.add(folder)
     } finally {
       lock.release()
+      // What was written before a later step failed is in the cache as well, and the list has to show it.
+      if (changed) this.options.onChanged()
     }
-    if (changed) this.options.onChanged()
     if (arrived.length) this.options.onArrived(arrived)
   }
 

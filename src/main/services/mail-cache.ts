@@ -170,12 +170,14 @@ export class MailCache {
     return row ? String(row.uid_validity) : null
   }
 
-  /** Records UIDVALIDITY, and drops everything cached for the folder when the value has changed. */
-  setUidValidity(accountId: string, folder: MailFolder, uidValidity: string): void {
-    this.transaction(() => {
+  /** Records UIDVALIDITY. When it differs from the one recorded, everything cached for the folder is dropped and true is returned. */
+  setUidValidity(accountId: string, folder: MailFolder, uidValidity: string): boolean {
+    return this.transaction(() => {
       const current = this.uidValidity(accountId, folder)
-      if (current !== null && current !== uidValidity) this.clearFolder(accountId, folder)
+      const dropped = current !== null && current !== uidValidity
+      if (dropped) this.clearFolder(accountId, folder)
       this.db.prepare('INSERT OR REPLACE INTO folders (account_id, folder, uid_validity) VALUES (?, ?, ?)').run(accountId, folder, uidValidity)
+      return dropped
     })
   }
 

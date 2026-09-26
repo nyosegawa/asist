@@ -37,7 +37,7 @@ import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
 import type { MailCache } from './mail-cache'
 import type { MailDraftStore } from './mail-drafts'
-import { supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
+import { disconnect, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
 import type { MailSecretStore } from './mail-secrets'
 import { failedBeforeSending, type OutgoingMail, type SmtpSender } from './mail-smtp'
 import { MailAccountSync, type MailSyncIntervals } from './mail-sync'
@@ -222,11 +222,7 @@ export class MailService {
         mailboxes: folders.map((folder) => folder.path)
       }
     } finally {
-      try {
-        await client.logout()
-      } catch {
-        client.close()
-      }
+      await disconnect(client)
     }
   }
 
