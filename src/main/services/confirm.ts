@@ -9,7 +9,8 @@ import { errorText } from '@shared/i18n/error-text'
  * The approval gate. A mail or calendar operation that leaves the machine or is hard to undo, and an
  * agent job the conversation model starts, carries on, merges or discards, opens the renderer's
  * confirmation screen here and waits for the user's answer before it runs. Aborting the caller's signal
- * closes the screen and returns false. The confirmation is a single sheet inside the app, ConfirmSheet.
+ * closes the screen and returns false. The confirmation is a single sheet inside the app, ConfirmSheet,
+ * and the gate is the one place that knows which requests are still waiting.
  */
 
 export type ConfirmInput = Omit<ConfirmRequest, 'id' | 'holdsConversation'>
@@ -30,11 +31,12 @@ export interface ConfirmGate {
   request(input: ConfirmInput, signal: AbortSignal): Promise<boolean>
   /** The renderer's answer. An unknown id, for instance one already aborted, returns false. */
   resolve(id: string, approved: boolean): boolean
-  pendingIds(): string[]
+  /** The requests waiting for an answer, oldest first, for a renderer that loaded after they opened. */
+  pending(): ConfirmRequest[]
 }
 
 export function createConfirmGate(options: { emit: (event: ConfirmEvent) => void; createId?: () => string; beforeOpen?: () => void }): ConfirmGate {
-  const pending = new Map<string, (approved: boolean) => void>()
+  const pending = new Map<string, { request: ConfirmRequest; finish: (approved: boolean) => void }>()
   return {
     request(input, signal) {
       if (signal.aborted) return Promise.resolve(false)
@@ -49,18 +51,18 @@ export function createConfirmGate(options: { emit: (event: ConfirmEvent) => void
           resolve(approved)
         }
         const onAbort = (): void => finish(false)
-        pending.set(id, finish)
+        pending.set(id, { request, finish })
         signal.addEventListener('abort', onAbort, { once: true })
         options.emit({ type: 'open', request })
       })
     },
     resolve(id, approved) {
-      const finish = pending.get(id)
-      if (!finish) return false
-      finish(approved)
+      const entry = pending.get(id)
+      if (!entry) return false
+      entry.finish(approved)
       return true
     },
-    pendingIds: () => [...pending.keys()]
+    pending: () => [...pending.values()].map((entry) => entry.request)
   }
 }
 
@@ -81,3 +83,4 @@ function electronGate(): ConfirmGate {
 
 export const requestConfirm = (input: ConfirmInput, signal: AbortSignal): Promise<boolean> => electronGate().request(input, signal)
 export const resolveConfirm = (id: string, approved: boolean): boolean => electronGate().resolve(id, approved)
+export const pendingConfirms = (): ConfirmRequest[] => electronGate().pending()

@@ -16,11 +16,11 @@ describe('createConfirmGate', () => {
     const pending = gate.request({ title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false }, new AbortController().signal)
     const request = { id: 'c1', title: 't', message: 'm', detail: 'd', confirmLabel: '実行', destructive: false, holdsConversation: false }
     expect(events).toEqual([{ type: 'open', request }])
-    expect(gate.pendingIds()).toEqual(['c1'])
+    expect(gate.pending()).toEqual([request])
     expect(gate.resolve('c1', true)).toBe(true)
     await expect(pending).resolves.toBe(true)
     expect(events.at(-1)).toEqual({ type: 'close', id: 'c1' })
-    expect(gate.pendingIds()).toEqual([])
+    expect(gate.pending()).toEqual([])
     expect(gate.resolve('c1', true)).toBe(false)
   })
 
@@ -92,9 +92,27 @@ describe('the gate wired to the renderer\'s confirmation store', () => {
     gate.resolve('c2', false)
     await expect(fromTool).resolves.toBe(false)
     expect(useConfirmStore.getState().queue).toEqual([])
-    expect(gate.pendingIds()).toEqual([])
+    expect(gate.pending()).toEqual([])
   })
 
+  it('puts the requests main still waits on back on a reloaded page once, and the answer given there reaches the caller', async () => {
+    const gate = wired()
+    const first = gate.request(input, new AbortController().signal)
+    const second = gate.request(input, new AbortController().signal)
+    // A reload empties the page's queue while main keeps waiting.
+    useConfirmStore.setState({ queue: [] })
+    // The page listens again before it asks, so a request can reach it both as an event and in the list.
+    useConfirmStore.getState().open(gate.pending()[1])
+    for (const request of gate.pending()) useConfirmStore.getState().open(request)
+    expect(useConfirmStore.getState().queue.map((request) => request.id)).toEqual(['c2', 'c1'])
+
+    gate.resolve('c2', true)
+    await expect(second).resolves.toBe(true)
+    expect(useConfirmStore.getState().queue.map((request) => request.id)).toEqual(['c1'])
+    gate.resolve('c1', false)
+    await expect(first).resolves.toBe(false)
+    expect(useConfirmStore.getState().queue).toEqual([])
+  })
 
   it('takes a waiting request off the queue when its caller aborts, before it reaches the screen', async () => {
     const gate = wired()

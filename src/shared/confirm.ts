@@ -2,7 +2,7 @@
  * The shared shape of the approval gate. The main process asks before an operation that reaches
  * outside or is hard to undo, and the renderer answers from a confirmation screen inside the app; no
  * native dialog is used. If the requester aborts before an answer arrives, a `close` event follows and
- * the screen goes away.
+ * the screen goes away. A renderer that loads while requests wait asks main for them.
  */
 
 export interface ConfirmRequest {

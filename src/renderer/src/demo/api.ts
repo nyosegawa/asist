@@ -681,6 +681,7 @@ export const mockApi: RendererApi = {
     confirmListeners.add(callback)
     return () => confirmListeners.delete(callback)
   },
+  confirmPending: async () => [],
   confirmResolve: async (id, approved) => {
     confirmPending.get(id)?.(approved)
   },

@@ -21,6 +21,7 @@ export type ShownConfirm =
 interface ConfirmState {
   /** Oldest first; the first is on screen. A request from a screen is only ever alone in it. */
   queue: ShownConfirm[]
+  /** Queues a request from main. One already queued, which a reloaded page can hear of twice, stays as it is. */
   open: (request: ConfirmRequest) => void
   /**
    * Resolves true when the user confirms, and false on cancel or when main's request takes the screen.
@@ -36,6 +37,7 @@ let nextLocalConfirm = 1
 export const useConfirmStore = create<ConfirmState>((set, get) => ({
   queue: [],
   open: (request) => {
+    if (get().queue.some((queued) => queued.id === request.id)) return
     const [shown] = get().queue
     // Main's approval gate cannot wait behind a delete the user is still deciding on, so the delete
     // counts as cancelled. A request from main on screen stays instead, because replacing it would

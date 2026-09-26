@@ -118,6 +118,7 @@ export const rendererApiMethods = [
   'mailDraftRemove',
   'mailDraftSend',
   'onConfirmEvent',
+  'confirmPending',
   'confirmResolve',
   'getSettings',
   'saveSettings',
