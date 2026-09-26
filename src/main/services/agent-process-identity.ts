@@ -30,39 +30,51 @@ export function captureProcessIdentity(pid: number, token: string): AgentProcess
 }
 
 /**
+ * Whether the member carries the agent's token. 'unreadable' means its environment could not be read on this
+ * pass, so it is neither ours nor foreign yet.
+ */
+function memberToken(pid: number, token: string): 'ours' | 'foreign' | 'unreadable' {
+  // The environment ps prints can contain secrets, so it is only matched against and neither the raw
+  // output nor the underlying error leaves this function.
+  let environment: string
+  try {
+    environment = execFileSync('/bin/ps', ['eww', '-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8', timeout: 2_000, maxBuffer: 4 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'], env: childEnv()
+    })
+  } catch (error) {
+    // ps exits with 1 when the member ended after the table was read.
+    if ((error as { status?: number | null }).status === 1) return 'unreadable'
+    throw new Error(errorText('jobs.process.tokenUnreadable'))
+  }
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (new RegExp(`(?:^|\\s)${AGENT_PROCESS_TOKEN}=${escaped}(?:\\s|$)`).test(environment)) return 'ours'
+  // A process that is exiting stays in the table as "Ss", "Rs" or "?Es" for a few milliseconds after the
+  // kernel has released its arguments, and ps then prints "(node)" or "<defunct>" with no environment.
+  // Measured on macOS 26.2 on 2026-09-22: 22 of 1431 reads of a Node process around its exit. Another
+  // user's process prints the same form, so it proves nothing about ownership either way.
+  if (/^(?:\(.*\)|<defunct>)$/.test(environment.trim())) return 'unreadable'
+  return 'foreign'
+}
+
+/**
  * A PID alone never stops another process. Every remaining member is checked, even once the leader is gone.
  * 'unreadable' means a member's environment could not be read on this pass, so it is neither ours nor foreign yet.
  */
 export function inspectProcessIdentity(identity: AgentProcessIdentity): 'gone' | 'owned' | 'unreadable' {
   const members = processTable().filter((row) => row.pgid === identity.pid && !row.state.startsWith('Z'))
   if (members.length === 0) return 'gone'
+  const tokens = members.map((member) => memberToken(member.pid, identity.token))
   const leader = members.find((row) => row.pid === identity.pid)
   // macOS, like BSD, never gives a new process a PID that is still the id of a process group, so a leader
-  // that started at another time means the agent's group ended before its PID was reused. The group now
-  // belongs to that other process.
-  if (leader && leader.startedAt !== identity.startedAt) return 'gone'
-  for (const member of members) {
-    // The environment ps prints can contain secrets, so it is only matched against and neither the raw
-    // output nor the underlying error leaves this function.
-    let environment: string
-    try {
-      environment = execFileSync('/bin/ps', ['eww', '-p', String(member.pid), '-o', 'command='], {
-        encoding: 'utf8', timeout: 2_000, maxBuffer: 4 * 1024 * 1024,
-        stdio: ['ignore', 'pipe', 'ignore'], env: childEnv()
-      })
-    } catch (error) {
-      // ps exits with 1 when the member ended after the table was read.
-      if ((error as { status?: number | null }).status === 1) return 'unreadable'
-      throw new Error(errorText('jobs.process.tokenUnreadable'))
-    }
-    const token = identity.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    if (new RegExp(`(?:^|\\s)${AGENT_PROCESS_TOKEN}=${token}(?:\\s|$)`).test(environment)) continue
-    // A process that is exiting stays in the table as "Ss", "Rs" or "?Es" for a few milliseconds after the
-    // kernel has released its arguments, and ps then prints "(node)" or "<defunct>" with no environment.
-    // Measured on macOS 26.2 on 2026-09-22: 22 of 1431 reads of a Node process around its exit. Another
-    // user's process prints the same form, so it proves nothing about ownership either way.
-    if (/^(?:\(.*\)|<defunct>)$/.test(environment.trim())) return 'unreadable'
-    throw new Error(errorText('jobs.process.tokenMismatch'))
+  // that started at another time, in a group where no member carries the token, means the agent's group
+  // ended and its PID went to another process, which is left alone. ps prints the start time in the local
+  // time zone, so the same agent also shows another start time after the Mac changed time zone, and its
+  // token tells it apart.
+  if (leader && leader.startedAt !== identity.startedAt && !tokens.includes('ours')) return 'gone'
+  for (const token of tokens) {
+    if (token === 'unreadable') return 'unreadable'
+    if (token === 'foreign') throw new Error(errorText('jobs.process.tokenMismatch'))
   }
   return 'owned'
 }

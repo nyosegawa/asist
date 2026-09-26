@@ -264,13 +264,11 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
     expect(alive(group)).toBe(true)
   })
 
-  it('treats the job as ended and sends no signal when its group PID now leads a process started at another time', async () => {
-    const token = crypto.randomUUID()
-    parent = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
-      detached: true, stdio: 'ignore', env: { ...process.env, [AGENT_PROCESS_TOKEN]: token }
-    })
+  it('treats the job as ended and sends no signal when its group PID now leads another process started at another time', async () => {
+    // Another program of the same user, which carries no token of the app.
+    parent = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore', env: { ...process.env } })
     group = parent.pid!
-    const identity = captureProcessIdentity(group, token)
+    const identity = captureProcessIdentity(group, crypto.randomUUID())
     const stopped = vi.fn()
     const recovery = recoverAgentProcess({ ...identity, startedAt: 'Thu Jan  1 09:00:00 2026' }, stopped)
     recovery.stop()
@@ -279,11 +277,27 @@ describe('Agent crash recovery with real processes', { timeout: 30_000 }, () => 
     expect(alive(group)).toBe(true)
   })
 
+  it('keeps an agent as its own after the Mac changed time zone, which changes the start time ps prints', async () => {
+    const token = crypto.randomUUID()
+    vi.stubEnv('TZ', 'Asia/Tokyo')
+    parent = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+      detached: true, stdio: 'ignore', env: { ...process.env, [AGENT_PROCESS_TOKEN]: token }
+    })
+    group = parent.pid!
+    await vi.waitFor(() => expect(captureProcessIdentity(group!, token).pid).toBe(group), PROCESS_START)
+    const identity = captureProcessIdentity(group, token)
+    expect(inspectProcessIdentity(identity)).toBe('owned')
+    vi.stubEnv('TZ', 'America/New_York')
+    expect(captureProcessIdentity(group, token).startedAt).not.toBe(identity.startedAt)
+    expect(inspectProcessIdentity(identity)).toBe('owned')
+  })
+
   it('settles a restored job whose group PID was reused and releases its worktree, leaving the other process alone', async () => {
     const { job, writer } = await crashParent(false)
     const historyFile = path.join(mocks.data, 'jobs.json')
     const saved = JSON.parse(fs.readFileSync(historyFile, 'utf8')) as { version: number; jobs: AgentJob[] }
-    saved.jobs[0].processIdentity!.startedAt = 'Thu Jan  1 09:00:00 2026'
+    // A process that is not the agent: another start time and none of its token.
+    saved.jobs[0].processIdentity = { ...saved.jobs[0].processIdentity!, startedAt: 'Thu Jan  1 09:00:00 2026', token: crypto.randomUUID() }
     fs.writeFileSync(historyFile, JSON.stringify(saved))
     agent = await import('../src/main/services/agent')
     agent.list()
