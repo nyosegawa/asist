@@ -232,6 +232,8 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--color-holo-dim);
+  /* A reason main gives can span several lines, such as each problem of a file it cannot read. */
+  white-space: pre-line;
 }
 .st-row-control {
   display: flex;
