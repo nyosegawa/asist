@@ -364,6 +364,31 @@ describe('git service with an isolated worktree', () => {
     expect(run(repo, ['worktree', 'list', '--porcelain'])).not.toContain('asist/deleted')
   })
 
+  it('keeps another worktree whose folder is missing registered when it removes a job whose folder was deleted', () => {
+    const job = path.join(root, 'job')
+    const mine = path.join(root, 'mine')
+    git.worktreeAdd(repo, job, 'asist/job')
+    run(repo, ['worktree', 'add', '-q', '-b', 'mine', mine])
+    // The user's own worktree, as on an external disk that is not mounted.
+    fs.rmSync(mine, { recursive: true, force: true })
+    fs.rmSync(job, { recursive: true, force: true })
+    git.worktreeRemove(repo, job, 'asist/job')
+    const listed = run(repo, ['worktree', 'list', '--porcelain'])
+    expect(listed).toContain('branch refs/heads/mine')
+    expect(listed).not.toContain('asist/job')
+    expect(run(repo, ['branch', '--list', 'asist/*'])).toBe('')
+  })
+
+  it('refuses to leave a folder that git no longer lists behind in silence', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/unlisted')
+    fs.renameSync(wt, `${wt}-moved`)
+    run(repo, ['worktree', 'prune'])
+    fs.renameSync(`${wt}-moved`, wt)
+    expect(() => git.worktreeRemove(repo, wt, 'asist/unlisted')).toThrow()
+    expect(fs.existsSync(wt)).toBe(true)
+  })
+
   it('reports a dirty working tree before a merge', () => {
     fs.writeFileSync(path.join(repo, 'a.txt'), 'dirty\n')
     expect(git.isClean(repo)).toBe(false)

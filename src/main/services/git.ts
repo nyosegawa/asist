@@ -97,26 +97,50 @@ export function worktreeAdd(repo: string, path: string, branch: string): void {
   }
 }
 
+/** The worktrees git has registered for repo, the main one included, with the branch each has checked out. */
+function listWorktrees(repo: string): Array<{ path: string; branch?: string }> {
+  const worktrees: Array<{ path: string; branch?: string }> = []
+  for (const line of git(repo, ['worktree', 'list', '--porcelain', '-z']).split('\0')) {
+    if (line.startsWith('worktree ')) worktrees.push({ path: line.slice('worktree '.length) })
+    else if (line.startsWith('branch refs/heads/')) worktrees[worktrees.length - 1].branch = line.slice('branch refs/heads/'.length)
+  }
+  return worktrees
+}
+
 /** The path of the worktree that has the branch checked out, or null when none has. */
 function worktreeOn(repo: string, branch: string): string | null {
-  let path: string | null = null
-  for (const line of git(repo, ['worktree', 'list', '--porcelain', '-z']).split('\0')) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
+  return listWorktrees(repo).find((worktree) => worktree.branch === branch)?.path ?? null
+}
+
+/**
+ * The path with its symbolic links resolved as far as it exists, which is how git records a worktree and
+ * finds one by its path: one made under /tmp is listed under /private/tmp on macOS, and a worktree's folder
+ * may be gone.
+ */
+function resolvedAsFarAsExists(file: string): string {
+  const missing: string[] = []
+  let existing = path.resolve(file)
+  while (!fs.existsSync(existing) && path.dirname(existing) !== existing) {
+    missing.unshift(path.basename(existing))
+    existing = path.dirname(existing)
   }
-  return null
+  return path.join(fs.realpathSync(existing), ...missing)
 }
 
 /**
  * Removes the worktree and its branch together with whatever the worktree still holds. git refuses to
  * remove a worktree in which a submodule was initialized unless it is forced, so a caller removes one only
  * when nothing in it is left to lose: its changes are merged, there were none, or the user threw them away.
- * A worktree whose folder was deleted by hand is only forgotten, since `worktree remove` refuses a path that
- * is no longer a working tree, and its branch is removed all the same.
+ * `worktree remove --force` also forgets a worktree whose folder was deleted by hand, and refuses one that git
+ * no longer lists, as after a prune by the user or by gc, so only such a worktree is left alone before its
+ * branch goes. A repository-wide `worktree prune` is never run: it would also forget the user's own worktrees
+ * whose folders are missing at that moment, such as one on an external disk that is not mounted.
  */
-export function worktreeRemove(repo: string, path: string, branch: string): void {
-  if (fs.existsSync(path)) git(repo, ['worktree', 'remove', '--force', path])
-  else git(repo, ['worktree', 'prune'])
+export function worktreeRemove(repo: string, dir: string, branch: string): void {
+  const target = resolvedAsFarAsExists(dir)
+  const listed = listWorktrees(repo).some((worktree) => resolvedAsFarAsExists(worktree.path) === target)
+  // A folder git does not list is not left behind in silence: git refuses to remove it and says why.
+  if (listed || fs.existsSync(dir)) git(repo, ['worktree', 'remove', '--force', dir])
   git(repo, ['branch', '-D', branch])
 }
 
