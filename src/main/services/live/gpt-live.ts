@@ -14,7 +14,7 @@ import type { HistoryMessage } from '../brain/history'
 import { turnScheduler } from '../brain/session'
 import { liveRoute } from '../brain/speech-route'
 import { decodeOutput } from './audio'
-import { LiveEngineBase, type LiveEngineDeps } from './engine'
+import { LiveEngineBase, TRANSCRIPT_QUIET_MS, type LiveEngineDeps } from './engine'
 import type { TranscriptRole } from './transcripts'
 
 /**
@@ -72,6 +72,17 @@ export interface GptLiveDeps extends LiveEngineDeps {
 const OPEN_TIMEOUT_MS = 15_000
 /** How long the input transcript stays quiet before a delegation takes it. */
 const DELEGATION_QUIET_MS = 400
+/**
+ * How long after the last fragment of the newest utterance no delegation took, a delegation that finds
+ * nothing in progress is still taken to be for that utterance. A delegation in time finds its
+ * transcript in progress and takes it once it has been quiet for DELEGATION_QUIET_MS, while the quiet
+ * timer settles a transcript TRANSCRIPT_QUIET_MS after its last fragment. One that comes within
+ * DELEGATION_QUIET_MS of that settling is late by no more than the quiet a delegation waits for anyway.
+ * One later than that is at least as likely a new request whose transcript never arrived, such as a
+ * question after a backchannel, and brain is told so with the earlier lines as context, from which it
+ * can still take the request when that is where it was.
+ */
+const LATE_DELEGATION_MS = TRANSCRIPT_QUIET_MS + DELEGATION_QUIET_MS
 /**
  * How long a delegation waits for the input transcript to begin, which can be after the delegation.
  * Past it brain is told that no transcript arrived.
@@ -277,11 +288,22 @@ export class GptLiveEngine extends LiveEngineBase {
     }
     // A stop meanwhile ended the delegation, and closed the user's line as it was heard.
     if (!this.enabled) return
-    // A delegation that comes after its utterance went quiet finds nothing in progress, and the
-    // utterance is among the unhanded ones.
-    const text = this.withUnhanded(this.takeUserUtterance()) || promptText(conversationLocale(), NO_TRANSCRIPT)
-    this.deps.beginTurn(text, false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
+    this.deps.beginTurn(this.delegatedInput(startedAt), false, liveRoute((sentence, signal) => this.say(sentence, delegationId, signal)))
     this.touch()
+  }
+
+  /**
+   * What a delegation created at `createdAt` hands brain: the utterances no delegation took, then its
+   * own. When nothing was in progress, its own either settled before it came, or never arrived.
+   */
+  private delegatedInput(createdAt: number): string {
+    const own = this.takeUserUtterance()
+    const earlier = this.takeUnhanded()
+    const lines = earlier.map((utterance) => utterance.text)
+    if (own) return [...lines, own].join('\n')
+    const newest = earlier.at(-1)
+    if (newest && createdAt - newest.endedAt < LATE_DELEGATION_MS) return lines.join('\n')
+    return [...lines, promptText(conversationLocale(), NO_TRANSCRIPT)].join('\n')
   }
 
   /** Takes the user's utterance in progress, closing its line on screen under the id it was shown with. */

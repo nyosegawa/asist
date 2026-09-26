@@ -369,6 +369,26 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('tells brain that the request was not heard, after the earlier lines, when a delegation whose transcript never arrives comes well after a backchannel', async () => {
+    const { engine, sockets, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    // A delegation with nothing heard at all hands brain the notice alone.
+    socket.emit({ type: 'session.delegation.created', event_id: 'd1', offset_ms: 0, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(2200)
+    const notice = beginTurn.mock.calls[0][0] as string
+    // A backchannel while the voice reads, then a question that takes a second to say and whose transcript never arrives.
+    socket.emit({ type: 'session.input_transcript.delta', delta: 'うん', event_id: 'a', start_ms: 0, end_ms: 1 })
+    await vi.advanceTimersByTimeAsync(2600)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd2', offset_ms: 1, delegation: { id: 'dlg2', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(2200)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual([notice, `うん\n${notice}`])
+    await engine.stop()
+  })
+
   it('hands brain what the user said before the voice asked back together with the answer, as one input in order, and shows each on a line of its own', async () => {
     const { engine, sockets, events, beginTurn } = await setup()
     engine.activity(true)
@@ -535,11 +555,11 @@ describe('GptLiveEngine', () => {
     socket.started()
     await saying
     // The next utterance is a line of its own, which the stopped delegation does not take for brain,
-    // and the next delegation hands brain nothing heard before the stop.
+    // and the next delegation, which comes just after it went quiet, hands brain nothing heard before the stop.
     socket.emit({ type: 'session.output_transcript.delta', delta: 'うん。', event_id: 'b', start_ms: 1, end_ms: 2 })
     await vi.advanceTimersByTimeAsync(100)
     socket.emit({ type: 'session.input_transcript.delta', delta: 'はい', event_id: 'c', start_ms: 2, end_ms: 3 })
-    await vi.advanceTimersByTimeAsync(3000)
+    await vi.advanceTimersByTimeAsync(1600)
     const finals = events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [[e.turnId, e.text]] : []))
     expect(finals).toEqual([[100, '明日の天気は'], [101, 'はい']])
     expect(beginTurn).not.toHaveBeenCalled()
