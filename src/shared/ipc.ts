@@ -25,7 +25,7 @@ import type {
 import type { Task, TaskInput, TaskMove, TaskPatch } from './tasks'
 import type { AsrModel, ResolvedAsrModel } from './asr-models'
 import type { CacheMissReason } from './cache-diagnosis'
-import type { AppSettings } from './settings'
+import type { AppSettings, SettingsPatch } from './settings'
 export type { AppSettings } from './settings'
 import type { ConversationModel, LlmProvider } from './llm-catalog'
 export type { ConversationModel, LlmProvider } from './llm-catalog'
@@ -1005,7 +1005,7 @@ export interface RendererApi {
   onConfirmEvent(callback: (event: ConfirmEvent) => void): () => void
   confirmResolve(id: string, approved: boolean): Promise<void>
   getSettings(): Promise<AppSettings>
-  saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>
+  saveSettings(patch: SettingsPatch): Promise<AppSettings>
   /** Validates the provider's API key, saves it to the .env under userData, and returns the status afterwards. */
   saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>

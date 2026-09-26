@@ -62,6 +62,25 @@ describe('settings persistence', () => {
     })
   })
 
+  it('changes one mail option onto the accounts main holds, and still checks the mail settings as a whole', async () => {
+    const settings = await import('../src/main/services/settings')
+    const account = {
+      id: 'a1',
+      label: '仕事',
+      email: 'me@example.com',
+      name: '',
+      provider: 'gmail' as const,
+      imap: { host: 'imap.gmail.com', port: 993, secure: true },
+      smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
+      folders: { sent: null, archive: null, trash: null }
+    }
+    // Main saves the whole mail group when it adds an account.
+    settings.saveSettings({ mail: { ...settings.getSettings().mail, enabled: true, accounts: [account], defaultAccountId: 'a1' } })
+    expect(settings.saveSettings({ mail: { notifyNewMail: false } }).mail).toMatchObject({ enabled: true, accounts: [account], defaultAccountId: 'a1', notifyNewMail: false })
+    expect(() => settings.saveSettings({ mail: { defaultAccountId: 'gone' } })).toThrow(SETTINGS_INVALID)
+    expect(settings.getSettings().mail.defaultAccountId).toBe('a1')
+  })
+
   it.each(['{broken', JSON.stringify({ persona: 'incomplete' })])('does not overwrite a broken settings file with defaults and names the file and the reason: %s', async (source) => {
     const target = path.join(mocks.userData, 'settings.json')
     fs.writeFileSync(target, source)

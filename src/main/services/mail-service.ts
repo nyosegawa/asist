@@ -259,15 +259,23 @@ export class MailService {
       // The new password is stored only after a real connection with it has succeeded.
       await this.probe({ label: next.label, email: next.email, name: next.name, provider: next.provider, imap: next.imap, smtp: next.smtp, password })
       this.deps.secrets.set(id, password)
-      // A sync that is already connected still holds the old password, so it is thrown away and rebuilt.
-      const sync = this.syncs.get(id)
-      if (sync) {
-        this.syncs.delete(id)
-        await sync.stop()
-      }
     }
+    // The account's sync is rebuilt below. The running one is stopped first, since it holds the old
+    // password and could still write the folder it was fetching after the cache is cleared.
+    const sync = this.syncs.get(id)
+    if (sync) {
+      this.syncs.delete(id)
+      await sync.stop()
+    }
+    // The cache files messages under the role of their folder, not its path, and drops them by itself only
+    // when UIDVALIDITY changes, which two mailboxes can share. Unless a folder that now points at another
+    // mailbox is emptied, the list goes on showing the old messages, and a move to the trash takes the new
+    // mailbox's message with the same UID.
+    const repointed = (['sent', 'archive'] as const).filter((folder) => next.folders[folder] !== current.folders[folder])
+    for (const folder of repointed) this.deps.cache.clearFolder(id, folder)
     this.deps.saveSettings({ ...settings, accounts: settings.accounts.map((account) => (account.id === id ? next : account)) })
     this.applySettings()
+    if (repointed.length > 0) this.deps.emit({ type: 'changed', accountId: id })
     return next
   }
 

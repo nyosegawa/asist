@@ -1,6 +1,7 @@
 import type { AizuchiClassifierStatus, AppSettings, AppStatus, EmbeddingStatus, SetupProgress, SetupStatus, TtsEngine, VapStatus } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import type { SettingsPage } from '@shared/mini-apps'
+import type { SettingsPatch } from '@shared/settings'
 
 export type { SettingsPage }
 
@@ -31,9 +32,9 @@ export interface SettingsContext {
   aizuchiClassifier: AizuchiClassifierStatus | null
   prep: Preparation
   /** Saves and reloads the status, reporting a failure as a toast. */
-  set: (patch: Partial<AppSettings>) => void
+  set: (patch: SettingsPatch) => void
   /** Saves and throws on failure, for a caller that wants to word the message itself. */
-  save: (patch: Partial<AppSettings>) => Promise<void>
+  save: (patch: SettingsPatch) => Promise<void>
   refreshStatus: () => Promise<void>
   refreshSetup: () => Promise<void>
   go: (page: SettingsPage) => void

@@ -712,19 +712,6 @@ export const mail = defineMessages({
       'es-419': { one: 'Cargar {count} mensaje más', other: 'Cargar {count} mensajes más' },
       'es-ES': { one: 'Cargar {count} mensaje más', other: 'Cargar {count} mensajes más' }
     },
-    loadMoreFailed: {
-      'ja-JP': '続きを読み込めませんでした',
-      'en-US': "Couldn't load the rest",
-      'fr-FR': 'Impossible de charger la suite',
-      'de-DE': 'Der Rest konnte nicht geladen werden',
-      'hi-IN': 'बाकी मेल लोड नहीं हो सकीं',
-      'id-ID': 'Tidak bisa memuat sisanya',
-      'it-IT': 'Impossibile caricare il resto',
-      'ko-KR': '나머지를 불러오지 못했습니다',
-      'pt-BR': 'Não foi possível carregar o resto',
-      'es-419': 'No se pudo cargar el resto',
-      'es-ES': 'No se ha podido cargar el resto'
-    },
     markAllRead: {
       'ja-JP': { other: '未読 {count} 件を既読にする' },
       'en-US': { one: 'Mark {count} as read', other: 'Mark {count} as read' },
@@ -1988,6 +1975,19 @@ export const mail = defineMessages({
         'pt-BR': 'Não foi possível receber {box} ({reason})',
         'es-419': 'No se pudo recibir {box} ({reason})',
         'es-ES': 'No se ha podido recibir {box} ({reason})'
+      },
+      noMessageList: {
+        'ja-JP': 'サーバーがメールの一覧を返しませんでした',
+        'en-US': 'The server did not return the list of messages',
+        'fr-FR': "Le serveur n'a pas renvoyé la liste des messages",
+        'de-DE': 'Der Server hat die Liste der E-Mails nicht geliefert',
+        'hi-IN': 'सर्वर ने मेल की सूची नहीं भेजी',
+        'id-ID': 'Server tidak mengirimkan daftar email',
+        'it-IT': "Il server non ha restituito l'elenco dei messaggi",
+        'ko-KR': '서버가 메일 목록을 보내지 않았습니다',
+        'pt-BR': 'O servidor não enviou a lista de e-mails',
+        'es-419': 'El servidor no envió la lista de correos',
+        'es-ES': 'El servidor no ha enviado la lista de correos'
       }
     }
   },

@@ -51,6 +51,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
 import { DEFAULT_THEME, THEMES } from '@shared/themes'
+import { mergeSettings } from '@shared/settings'
 
 /**
  * Demo mode: the mock used where window.api (preload) does not exist, that is, in a plain browser. Only
@@ -611,6 +612,9 @@ export const mockApi: RendererApi = {
   mailList: async (value) => {
     const query = parseMailInput(mailListQuerySchema, value)
     const needle = query.query.toLowerCase()
+    // The order of main's cache, in which `before` names the last message of the page before.
+    const order = (a: Pick<MailMessage, 'date' | 'uid' | 'id'>, b: Pick<MailMessage, 'date' | 'uid' | 'id'>): number =>
+      b.date - a.date || b.uid - a.uid || b.id.localeCompare(a.id)
     const hits = demoMail
       .filter((m) =>
         query.view === 'starred' ? m.starred : m.folder === query.view
@@ -622,8 +626,9 @@ export const mockApi: RendererApi = {
           !needle ||
           [m.subject, m.from.name, m.from.address, m.snippet, DEMO_MAIL_BODIES.get(m.id) ?? ''].some((text) => text.toLowerCase().includes(needle))
       )
-      .sort((a, b) => b.date - a.date)
-    const page = hits.filter((m) => query.before === null || m.date < query.before).slice(0, query.limit)
+      .sort(order)
+    const { before } = query
+    const page = hits.filter((m) => before === null || order(m, before) > 0).slice(0, query.limit)
     return { messages: page.map((m) => ({ ...m })), total: hits.length, unread: hits.filter((m) => m.unread).length }
   },
   mailThread: async (accountId, threadId) =>
@@ -682,7 +687,7 @@ export const mockApi: RendererApi = {
     confirmPending.get(id)?.(approved)
   },
   getSettings: async () => settings,
-  saveSettings: async (patch) => Object.assign(settings, patch),
+  saveSettings: async (patch) => Object.assign(settings, mergeSettings(settings, patch)),
   saveApiKey: async () => mockApi.getStatus(),
   listSpeakers: async () => [],
   ttsTest: async () => ({ turnId: 0, index: 0, text: 'テスト', audio: null, phonemes: null }),

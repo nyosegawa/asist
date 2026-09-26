@@ -413,4 +413,22 @@ describe('accounts', () => {
     expect(f.settings().accounts[0].label).toBe('会社')
     await f.service.stop()
   })
+
+  it('lists and trashes the messages of the newly chosen Sent folder once the setting points at another mailbox with the same UIDVALIDITY', async () => {
+    const f = await setup()
+    await vi.advanceTimersByTimeAsync(500)
+    // Both mailboxes were created together, and Dovecot, for one, derives UIDVALIDITY from the creation time.
+    f.imap.addFolder('Sent Messages', { uidValidity: f.imap.folders.get('Sent')!.uidValidity })
+    const other = f.imap.put('Sent Messages', { uid: 1, subject: '別の送信済み', from: me, to: suzuki, date: new Date(NOW - 4 * HOUR), text: '別の本文', flags: ['\\Seen'] })
+    expect(f.service.list({ view: 'sent' }).messages.map((m) => m.uid)).toEqual([other.uid])
+    await f.service.updateAccount('a1', { folders: { sent: 'Sent Messages', archive: 'Archive', trash: 'Trash' } })
+    await f.service.syncNow()
+    await vi.advanceTimersByTimeAsync(500)
+    expect(f.service.list({ view: 'sent' }).messages.map((m) => m.subject)).toEqual(['別の送信済み'])
+    await expect(f.service.read(f.ids.sent)).resolves.toMatchObject({ text: '別の本文' })
+    await f.service.change({ operation: 'trash', id: f.ids.sent }, f.signal.signal, 'screen')
+    expect(f.imap.folders.get('Sent')!.messages.size).toBe(1)
+    expect([...f.imap.folders.get('Trash')!.messages.values()].map((m) => m.subject)).toEqual(['別の送信済み'])
+    await f.service.stop()
+  })
 })

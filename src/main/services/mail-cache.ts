@@ -299,11 +299,13 @@ export class MailCache {
     return String(row.text ?? '')
   }
 
-  /** The messages whose body is still missing, newest first. */
-  pendingBodies(accountId: string, folder: MailFolder, limit: number): Array<{ uid: number } & MailBodyParts> {
+  /** The messages whose body is still missing, newest first, leaving out the uids in `skip`. */
+  pendingBodies(accountId: string, folder: MailFolder, limit: number, skip: readonly number[]): Array<{ uid: number } & MailBodyParts> {
     const rows = this.db
-      .prepare('SELECT uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 ORDER BY date DESC, uid DESC LIMIT ?')
-      .all(accountId, folder, limit) as Row[]
+      .prepare(
+        'SELECT uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 AND uid NOT IN (SELECT value FROM json_each(?)) ORDER BY date DESC, uid DESC LIMIT ?'
+      )
+      .all(accountId, folder, JSON.stringify(skip), limit) as Row[]
     return rows.map((row) => ({ uid: Number(row.uid), textPart: row.text_part === null ? null : String(row.text_part), htmlPart: row.html_part === null ? null : String(row.html_part) }))
   }
 
@@ -331,12 +333,15 @@ export class MailCache {
     const counts = this.db.prepare(`SELECT COUNT(*) AS n, SUM(unread) AS unread FROM messages WHERE ${where.join(' AND ')}`).get(...params) as Row
     const total = Number(counts.n)
     const unread = Number(counts.unread ?? 0)
+    // Several messages can share a date, since a Date header counts whole seconds, and the same date and
+    // uid can recur across accounts and folders. The id completes the order, so a page that ends inside
+    // such a run continues exactly where it stopped.
     if (query.before !== null) {
-      where.push('date < ?')
-      params.push(query.before)
+      where.push('(date, uid, id) < (?, ?, ?)')
+      params.push(query.before.date, query.before.uid, query.before.id)
     }
     const rows = this.db
-      .prepare(`SELECT ${COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY date DESC, uid DESC LIMIT ?`)
+      .prepare(`SELECT ${COLUMNS} FROM messages WHERE ${where.join(' AND ')} ORDER BY date DESC, uid DESC, id DESC LIMIT ?`)
       .all(...params, query.limit) as Row[]
     return { messages: rows.map(rowToMessage), total, unread }
   }
