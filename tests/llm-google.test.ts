@@ -194,6 +194,15 @@ describe('the Google stream', () => {
     ])
   })
 
+  it('counts the tokens that the results of a search add to the prompt as input', async () => {
+    mocks.chunks = [
+      chunk([{ text: 'ニュースです。' }], { finishReason: 'STOP' }),
+      { usageMetadata: { promptTokenCount: 1000, cachedContentTokenCount: 900, toolUsePromptTokenCount: 3000, candidatesTokenCount: 20 } }
+    ]
+    const result = await (await open({ webSearch: true })).stream.final()
+    expect(result.usage.input).toBe(3100)
+  })
+
   it('leaves a search call whose result never arrived out of what is sent back after a broken stream', async () => {
     mocks.chunks = [chunk([{ text: '調べます。' }]), chunk([{ toolCall: { toolType: 'GOOGLE_SEARCH_WEB', args: { queries: ['x'] }, id: 's1' }, thoughtSignature: 'sig' }])]
     const { stream } = await open({ webSearch: true })

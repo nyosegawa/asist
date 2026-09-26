@@ -214,11 +214,15 @@ class GoogleStream extends AdapterStream {
   }
 }
 
-/** Thinking tokens are billed as output, and grounding on Gemini 3 per search query the model runs. */
+/**
+ * Thinking tokens are billed as output, and grounding on Gemini 3 per search query the model runs. The
+ * results of a search that go back to the model are input counted apart from the prompt
+ * (toolUsePromptTokenCount, which totalTokenCount adds to promptTokenCount).
+ */
 function roundUsage(usage: GenerateContentResponseUsageMetadata | undefined, grounding: GroundingMetadata | undefined): RoundUsage {
   const cachedTokens = usage?.cachedContentTokenCount ?? 0
   return {
-    input: Math.max((usage?.promptTokenCount ?? 0) - cachedTokens, 0),
+    input: Math.max((usage?.promptTokenCount ?? 0) - cachedTokens, 0) + (usage?.toolUsePromptTokenCount ?? 0),
     cacheRead: cachedTokens,
     cacheCreation: 0,
     output: (usage?.candidatesTokenCount ?? 0) + (usage?.thoughtsTokenCount ?? 0),
