@@ -96,14 +96,15 @@ ASIST_SELFTEST=1 npx electron .
 
 ## サイトと紹介動画
 
-紹介ページとドキュメントは [website/](../website/) にあり、https://asist-agent.com で公開しています。Astro と Starlight で作る、アプリとは別の npm のプロジェクトです。X に投稿する紹介動画は [promotions/x-promo-video/](../promotions/x-promo-video/) にあります。どちらもアプリには含まれません。
+紹介ページとドキュメントは [website/](../website/) にあり、https://asist-agent.com で公開しています。Astro と Starlight で作る、アプリとは別の npm のプロジェクトです。YouTube と X に投稿する紹介動画とそのサムネイルは [promotions/launch-video/](../promotions/launch-video/) にあります。どちらもアプリには含まれません。
 
 ```bash
 npm --prefix website install # サイトの依存を入れます(最初に一度だけ)
 npm run website              # http://localhost:5194 で開きます
 npm run website:build        # website/dist に書き出し、全ページのリンクと画像を確かめます
 npm run website:deploy       # asist-agent.com に公開します(main から)
-npm run promo:video          # 紹介動画を promotions/x-promo-video/out/asist-promo.mp4 に作ります
+npm run promo:video          # 紹介動画を promotions/launch-video/out/asist-launch-video.mp4 に作ります
+npm run promo:thumbnail      # YouTube のサムネイルを promotions/launch-video/out/youtube-thumbnail.png に作ります
 ```
 
 ドキュメントを書く場所、訳し方、公開の手順は [website のスキル](../skills/website/SKILL.md)にあります。
