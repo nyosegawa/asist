@@ -1,3 +1,4 @@
+import { dirName, isAbsolutePath } from '@shared/file-path'
 import { rowText, type JobLogRow } from '@shared/job-log-view'
 import { useT, useFormatLocale } from '@/i18n'
 import './job-log.css'
@@ -10,8 +11,8 @@ import './job-log.css'
 
 /** Shows only the last two elements of a path, because long absolute paths under the working directory line up otherwise; the full path stays in the title. */
 export function shortPath(path: string): string {
-  const parts = path.split('/').filter(Boolean)
-  return parts.length > 2 ? `…/${parts.slice(-2).join('/')}` : path
+  const shown = dirName(dirName(path))
+  return dirName(shown) === shown ? path : `…${path.slice(shown.length)}`
 }
 
 const timeLabel = (locale: string, at: number): string =>
@@ -32,7 +33,7 @@ export function JobLogRowView({ row, time }: { row: JobLogRow; time?: boolean })
             {row.count > 1 && <em> ×{row.count}</em>}
           </span>
           <span className="jl-detail" title={row.detail}>
-            {row.detail.startsWith('/') ? shortPath(row.detail) : row.detail}
+            {isAbsolutePath(row.detail) ? shortPath(row.detail) : row.detail}
           </span>
         </div>
       )

@@ -7,6 +7,7 @@ import {
   type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
+import { ABSOLUTE_PATH_START } from '@shared/file-path'
 import { errorText } from '@shared/i18n/error-text'
 import type { JobDiff } from '@shared/ipc'
 import { resolveJobAccess } from '@shared/job-workspace'
@@ -177,10 +178,11 @@ export function agentTool(locale: ConversationLocale): Def {
 }
 
 /**
- * An absolute path written in a text. The slash must not continue a word, a number or another path, so
- * that the "/20" of a date such as 9/20, or the slashes of a URL, are not taken for one.
+ * An absolute path written in a text, in the POSIX or a Windows form. Its start must not continue a word, a
+ * number or another path, so that the "/20" of a date such as 9/20, or the slashes of a URL, are not taken
+ * for one.
  */
-const ABSOLUTE_PATH = /(?<![\w./:~-])\/[^\s"'、。()（）]+/
+const ABSOLUTE_PATH = new RegExp(String.raw`(?<![\w./:~\\-])${ABSOLUTE_PATH_START}[^\s"'、。()（）]+`)
 
 export function projectTools(language: PromptLanguage): Def[] {
   return [

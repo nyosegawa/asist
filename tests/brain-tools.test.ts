@@ -410,6 +410,18 @@ describe('brain tools registry', () => {
       .toEqual(['/Users/me/work/lp'])
   })
 
+  it('takes from a memory a Windows path written with either separator or on a share', async () => {
+    const { executeClientTool } = await load()
+    const { ctx } = makeCtx()
+    for (const path of ['C:\\Users\\me\\work\\lp', 'D:/work/lp', '\\\\nas\\team\\lp']) {
+      mocks.memory.search.mockReturnValueOnce([
+        { via: 'lexical', exact: false, record: { id: 'e1', file: 'pages/LP.md', line: 2, kind: 'section', page: 'LP', heading: '要約', aliases: [], text: `9/20 に作った例のLPは${path} にある`, date: '2026-09-01', order: 0 } }
+      ] as never)
+      const candidates = JSON.parse((await executeClientTool('resolve_project', { name: '例のLP' }, ctx)).content).candidates
+      expect(candidates.map((c: { path: string }) => c.path)).toEqual([path])
+    }
+  })
+
   it('continues a job in the session of the original one after the user approves it, and returns a failed result when it cannot', async () => {
     const { executeClientTool } = await load()
     const { ctx, events } = makeCtx()

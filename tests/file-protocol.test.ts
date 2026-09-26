@@ -49,6 +49,33 @@ describe('asist-file:// URLs and paths', () => {
     expect(filePathFromUrl(new URL('C%23.png', page).href)).toBe('/r/C#.png')
   })
 
+  it('writes a macOS path as it always has, escaping every character of a name that is not plain', async () => {
+    const { fileUrl } = await load()
+    expect(fileUrl('/Users/me/Q1, Q2 (draft).png', { windows: false })).toBe('asist-file:///Users/me/Q1%2C%20Q2%20(draft).png')
+  })
+
+  it('writes a Windows path with its drive letter as file:// does and reads the same path back', async () => {
+    const { fileUrl, filePathFromUrl } = await load()
+    const windows = { windows: true }
+    for (const file of ['C:\\Users\\me\\Documents\\大川俊介.md', 'D:\\work\\C# notes\\why?.png', 'C:\\Users\\me\\100%.png', '\\\\nas\\team\\Q1, Q2.pdf']) {
+      const url = fileUrl(file, windows)
+      expect([file, filePathFromUrl(url, windows)]).toEqual([file, file])
+      expect([file, new URL(url).hash, new URL(url).search]).toEqual([file, '', ''])
+    }
+    expect(fileUrl('C:\\Users\\me\\a b.png', windows)).toBe('asist-file:///C:/Users/me/a%20b.png')
+    expect(fileUrl('\\\\nas\\team\\a.pdf', windows)).toBe('asist-file://nas/team/a.pdf')
+  })
+
+  it('reads the file a Windows page names in a relative link, and refuses a path without a drive or with an escaped separator', async () => {
+    const { fileUrl, filePathFromUrl } = await load()
+    const windows = { windows: true }
+    const page = fileUrl('C:\\r\\report.html', windows)
+    expect(filePathFromUrl(new URL('img/Q1%2C%20Q2.png', page).href, windows)).toBe('C:\\r\\img\\Q1, Q2.png')
+    expect(filePathFromUrl('asist-file:///Users/me/a.png', windows)).toBeNull()
+    expect(filePathFromUrl('asist-file:///C:/r/sub/..%5Csecret.txt', windows)).toBeNull()
+    expect(filePathFromUrl('asist-file:///C:/r/sub/..%2Fsecret.txt', windows)).toBeNull()
+  })
+
   it('refuses a file outside the folder that an escaped .. reaches through a symbolic link', async () => {
     const base = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
     const root = path.join(base, 'root')
