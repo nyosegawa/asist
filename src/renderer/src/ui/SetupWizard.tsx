@@ -113,7 +113,8 @@ export function SetupWizard(): React.JSX.Element | null {
   const defaults = defaultModelsFor(provider)
   const modelsMatch = sameModel(settings.conversationModel, defaults.conversationModel) && sameModel(settings.bridgeModel, defaults.bridgeModel)
   const modelReady = setup?.services.llm === true && modelsMatch
-  const keyConfigured = (setup?.services.llmKeys[provider] ?? 'missing') !== 'missing'
+  // A saved key this build cannot decrypt is asked for again rather than offered for another check.
+  const keyConfigured = ['saved', 'verified'].includes(setup?.services.llmKeys[provider] ?? 'missing')
   const serverReady = setup?.services.asr === true
   const listeningReady = (listening === 'server' && serverReady) || (listening === 'local' && localReady)
   const ttsReady = setup?.services.tts === true

@@ -7,10 +7,13 @@ import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 
 /**
  * API keys saved on the settings screen: only the encrypted value reaches the file, the key never enters
- * process.env, and nothing is stored where encryption is unavailable.
+ * process.env, nothing is stored where encryption is unavailable, and a key this build cannot decrypt
+ * stops only its own provider until it is entered again.
  */
 
 const reverse = (text: string): string => [...text].reverse().join('')
+/** What a key encrypted by another build or another Keychain looks like to this process. */
+const FOREIGN = 'encrypted-elsewhere:'
 const electron = vi.hoisted(() => ({ userData: '', available: true, decryptFails: false }))
 vi.mock('electron', () => ({
   app: { getPath: () => electron.userData },
@@ -18,11 +21,30 @@ vi.mock('electron', () => ({
     isEncryptionAvailable: () => electron.available,
     encryptString: (plain: string) => Buffer.from(reverse(plain), 'utf8'),
     decryptString: (encrypted: Buffer) => {
-      if (electron.decryptFails) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.')
-      return reverse(encrypted.toString('utf8'))
+      const text = encrypted.toString('utf8')
+      if (electron.decryptFails || text.startsWith(FOREIGN)) throw new Error('Error while decrypting the ciphertext provided to safeStorage.decryptString.')
+      return reverse(text)
     }
   }
 }))
+
+const models = vi.hoisted(() => ({
+  settings: {
+    uiLocale: 'ja-JP',
+    conversationLocale: 'ja-JP',
+    conversationModel: { provider: 'anthropic', id: 'claude-main' },
+    bridgeModel: { provider: 'anthropic', id: 'claude-fast' }
+  },
+  retrieved: [] as Array<{ id: string; key: string }>
+}))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => models.settings }))
+vi.mock('../src/main/services/llm/call', () => {
+  const adapter = {
+    retrieveModel: async (id: string, key: string) => { models.retrieved.push({ id, key }) },
+    listModels: async () => {}
+  }
+  return { ADAPTERS: { anthropic: adapter, openai: adapter, google: adapter, cerebras: adapter }, completeJson: vi.fn(), completeText: vi.fn() }
+})
 
 const KEY = 'sk-ant-api03-saved-in-settings'
 const file = (): string => path.join(electron.userData, 'api-keys.json')
@@ -32,6 +54,9 @@ beforeEach(() => {
   electron.userData = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-api-keys-'))
   electron.available = true
   electron.decryptFails = false
+  models.settings.conversationModel = { provider: 'anthropic', id: 'claude-main' }
+  models.settings.bridgeModel = { provider: 'anthropic', id: 'claude-fast' }
+  models.retrieved.length = 0
   for (const provider of LLM_PROVIDERS) vi.stubEnv(LLM_PROVIDER_INFO[provider].envKey, undefined)
 })
 afterEach(() => {
@@ -52,7 +77,6 @@ describe('saved API keys', () => {
     vi.resetModules()
     const fresh = await import('../src/main/services/llm/keys')
     expect(fresh.providerKey('anthropic')).toBe(KEY)
-    expect(fresh.providerKeys()).toEqual({ anthropic: KEY })
     const { revealedApiKeys } = await import('../src/main/services/api-key-secrets')
     expect(revealedApiKeys()).toEqual([KEY])
   })
@@ -84,5 +108,45 @@ describe('saved API keys', () => {
     keys.saveProviderKey('google', 'AIza-saved-google-key')
     electron.decryptFails = true
     expect(() => keys.providerKey('google')).toThrow(errorText('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'Google' }))
+  })
+})
+
+describe('a saved key that this build cannot decrypt', () => {
+  /** The Anthropic key as the installed build saved it, seen from the development build or after the Keychain entry was lost. */
+  const saveForeignAnthropicKey = (): void => {
+    const secrets = { anthropic: Buffer.from(`${FOREIGN}sk-ant-old`, 'utf8').toString('base64') }
+    fs.writeFileSync(file(), JSON.stringify({ version: 1, secrets }))
+  }
+
+  it('is replaced by entering it again, without the old key being read', async () => {
+    saveForeignAnthropicKey()
+    const llm = await import('../src/main/services/llm/configuration')
+    await llm.validateProviderKey('anthropic', 'sk-ant-new')
+    llm.saveProviderKey('anthropic', 'sk-ant-new')
+    expect(models.retrieved).toEqual([{ id: 'claude-main', key: 'sk-ant-new' }, { id: 'claude-fast', key: 'sk-ant-new' }])
+    expect(llm.providerKey('anthropic')).toBe('sk-ant-new')
+    expect(llm.llmKeyStates().anthropic).toBe('verified')
+  })
+
+  it('is reported for its own provider while another key is saved and the status is read', async () => {
+    saveForeignAnthropicKey()
+    const llm = await import('../src/main/services/llm/configuration')
+    await llm.validateProviderKey('openai', 'sk-openai-new')
+    llm.saveProviderKey('openai', 'sk-openai-new')
+    expect(llm.llmKeyStates()).toEqual({ anthropic: 'unreadable', openai: 'verified', google: 'missing', cerebras: 'missing' })
+    expect(llm.apiKeyConfigured()).toBe(false)
+    await expect(llm.configuredApiKeyAvailable()).resolves.toBe(false)
+    expect(() => llm.providerKey('anthropic')).toThrow(errorText('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'Anthropic' }))
+  })
+
+  it('does not stop a configuration whose models belong to another provider', async () => {
+    saveForeignAnthropicKey()
+    models.settings.conversationModel = { provider: 'openai', id: 'gpt-main' }
+    models.settings.bridgeModel = { provider: 'openai', id: 'gpt-fast' }
+    const llm = await import('../src/main/services/llm/configuration')
+    llm.saveProviderKey('openai', 'sk-openai-saved')
+    expect(llm.apiKeyConfigured()).toBe(true)
+    await expect(llm.configuredApiKeyAvailable()).resolves.toBe(true)
+    expect(models.retrieved.map(({ id }) => id)).toEqual(['gpt-main', 'gpt-fast'])
   })
 })

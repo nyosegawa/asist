@@ -12,8 +12,9 @@ import { errorText } from '@shared/i18n/error-text'
 import type { ApiKeyState, AppSettings } from '@shared/ipc'
 import { t } from '../i18n'
 import { conversationLocale } from '../conversation-locale'
+import { SecretUnreadableError } from '../encrypted-secrets'
 import { getSettings } from '../settings'
-import { providerKeys, type ProviderKeys } from './keys'
+import { providerKey, type ProviderKeys } from './keys'
 import { ADAPTERS, completeJson, completeText } from './call'
 
 /**
@@ -22,7 +23,7 @@ import { ADAPTERS, completeJson, completeText } from './call'
  * the real API with that provider's key, so a configuration that cannot run is never stored.
  */
 
-export { providerKeys, providerKey, saveProviderKey } from './keys'
+export { providerKey, saveProviderKey } from './keys'
 
 let validatedConfiguration: string | null = null
 const validationFlights = new Map<string, Promise<void>>()
@@ -35,15 +36,24 @@ function forgetIfUnauthenticated(error: unknown, provider: LlmProvider, key: str
   }
 }
 
-/** A provider counts as verified only while the key in the environment is still the one that was verified. */
+function keyState(provider: LlmProvider): ApiKeyState {
+  let key: string | undefined
+  try {
+    key = providerKey(provider)
+  } catch (error) {
+    if (error instanceof SecretUnreadableError) return 'unreadable'
+    throw error
+  }
+  return key === undefined ? 'missing' : verifiedKeys.get(provider) === key ? 'verified' : 'saved'
+}
+
+/**
+ * A provider counts as verified only while the key in the environment is still the one that was verified.
+ * A saved key that cannot be decrypted is reported for its own provider, so the status still shows the
+ * others and the screen can ask for that one key again.
+ */
 export function llmKeyStates(): Record<LlmProvider, ApiKeyState> {
-  const keys = providerKeys()
-  return Object.fromEntries(
-    LLM_PROVIDERS.map((provider): [LlmProvider, ApiKeyState] => {
-      const key = keys[provider]
-      return [provider, key === undefined ? 'missing' : verifiedKeys.get(provider) === key ? 'verified' : 'saved']
-    })
-  ) as Record<LlmProvider, ApiKeyState>
+  return Object.fromEntries(LLM_PROVIDERS.map((provider) => [provider, keyState(provider)])) as Record<LlmProvider, ApiKeyState>
 }
 
 export function configuredModels(
@@ -55,19 +65,30 @@ export function configuredModels(
   ]
 }
 
+/** The keys of the providers the models use. No other provider's key is read. */
+function keysOf(models: readonly ConfiguredApiModel[]): ProviderKeys {
+  const keys: ProviderKeys = {}
+  for (const { provider } of models) {
+    const key = providerKey(provider)
+    if (key) keys[provider] = key
+  }
+  return keys
+}
+
 function validationFingerprint(keys: ProviderKeys, models: readonly ConfiguredApiModel[]): string {
   return JSON.stringify(models.map(({ provider, id }) => [provider, id.trim(), keys[provider] ?? '']))
 }
 
-/** Whether every provider the configured models use has a key. It says nothing about whether those keys authenticate. */
+/** Whether every provider the configured models use has a key that can be read. It says nothing about whether those keys authenticate. */
 export const apiKeyConfigured = (): boolean => {
-  const keys = providerKeys()
-  return configuredModels().every((model) => keys[model.provider] !== undefined)
+  const states = llmKeyStates()
+  return configuredModels().every(({ provider }) => states[provider] === 'saved' || states[provider] === 'verified')
 }
 
 /** Whether the current combination of keys and models was verified against the real API in this process. */
 export function configuredApiKeyVerified(): boolean {
-  return validatedConfiguration === validationFingerprint(providerKeys(), configuredModels())
+  const models = configuredModels()
+  return validatedConfiguration === validationFingerprint(keysOf(models), models)
 }
 
 const RETRIEVE_TIMEOUT_MS = 15_000
@@ -85,7 +106,10 @@ function listModels(provider: LlmProvider, key: string): Promise<void> {
  * provider without a key counts as an authentication failure, and only one validation of the same
  * configuration runs at a time.
  */
-export async function validateConfiguration(keys: ProviderKeys, models: readonly ConfiguredApiModel[] = configuredModels()): Promise<void> {
+export async function validateConfiguration(
+  models: readonly ConfiguredApiModel[] = configuredModels(),
+  keys: ProviderKeys = keysOf(models)
+): Promise<void> {
   const fingerprint = validationFingerprint(keys, models)
   const existing = validationFlights.get(fingerprint)
   if (existing) return existing
@@ -123,6 +147,7 @@ export async function validateConfiguration(keys: ProviderKeys, models: readonly
 /**
  * Checks a candidate key for a provider before it is saved. If a configured model uses that provider
  * the model itself is fetched; otherwise listing the models checks only that the key authenticates.
+ * No saved key is read, so entering a key again replaces one that can no longer be decrypted.
  */
 export async function validateProviderKey(
   provider: LlmProvider,
@@ -132,7 +157,7 @@ export async function validateProviderKey(
   const key = rawKey.trim()
   if (!key || /[\r\n]/.test(key)) throw new Error(errorText('llmModels.errors.keyEmpty'))
   const own = models.filter((model) => model.provider === provider)
-  if (own.length > 0) return validateConfiguration({ ...providerKeys(), [provider]: key }, own)
+  if (own.length > 0) return validateConfiguration(own, { [provider]: key })
   try {
     await listModels(provider, key)
     verifiedKeys.set(provider, key)
@@ -145,9 +170,8 @@ export async function validateProviderKey(
 
 /** First-run setup needs the current key to authenticate, not merely to be present, so a stored key alone is not enough. */
 export async function configuredApiKeyAvailable(): Promise<boolean> {
-  if (configuredApiKeyVerified()) return true
   try {
-    await validateConfiguration(providerKeys(), configuredModels())
+    if (!configuredApiKeyVerified()) await validateConfiguration()
     return true
   } catch {
     return false

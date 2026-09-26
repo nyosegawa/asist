@@ -600,9 +600,10 @@ export interface MemoryOverview {
 /**
  * The state of a provider's API key. `verified` means the key currently in the environment
  * authenticated against the real API within this process; validating on save and a successful model
- * lookup reach it, and replacing the key drops back to `saved`.
+ * lookup reach it, and replacing the key drops back to `saved`. `unreadable` is a saved key that this
+ * build cannot decrypt, such as one saved by the development build, and it has to be entered again.
  */
-export type ApiKeyState = 'missing' | 'saved' | 'verified'
+export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
 
 export interface AppStatus {
   /** Whether both the conversation model and the bridge phrase model could be fetched from the real API with their providers' keys. */
@@ -625,7 +626,7 @@ export interface AppStatus {
 /** What first-time setup shows about installation progress, as opposed to plain liveness. */
 export interface SetupStatus {
   services: AppStatus
-  /** Whether a value exists in the environment or in userData/.env. Whether it authenticates is `services.llm`. */
+  /** Whether each provider of the configured models has a key that can be read. Whether it authenticates is `services.llm`. */
   apiKeyConfigured: boolean
   asr: {
     selectedModel: AsrModel

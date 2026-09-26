@@ -41,7 +41,7 @@ import {
   apiKeyConfigured,
   configuredModels,
   configuredApiKeyAvailable,
-  providerKeys,
+  providerKey,
   llmKeyStates,
   saveProviderKey,
   validateConfiguration,
@@ -473,13 +473,13 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       ) {
         // The prospective values are checked against the real API first, so that saving cannot leave a
         // broken configuration behind. A missing key for that provider is rejected here.
-        await validateConfiguration(providerKeys(), configuredModels(prospective))
+        await validateConfiguration(configuredModels(prospective))
       }
       // A live engine is only checked for the provider's key, because the Live API has no way to query a
       // model. A failure to connect surfaces as a notification when the microphone is turned on.
       if (isLiveEngine(prospective.voiceEngine) && prospective.voiceEngine !== before.voiceEngine) {
         const info = LIVE_ENGINE_INFO[prospective.voiceEngine]
-        if (!providerKeys()[info.provider]) {
+        if (!providerKey(info.provider)) {
           throw new Error(errorText('settings.errors.keyRequired', { target: info.label, envKey: LLM_PROVIDER_INFO[info.provider].envKey }))
         }
       }

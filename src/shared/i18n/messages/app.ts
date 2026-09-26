@@ -2,7 +2,8 @@ import { defineMessages } from '../message'
 
 /**
  * Text that belongs to no screen: the tray menu, the notifications macOS shows, the dialogs shown when
- * starting or quitting fails, and the errors of reading and writing files that any feature can hit.
+ * starting or quitting fails, a failed check of the services, and the errors of reading and writing files
+ * that any feature can hit.
  */
 export const app = defineMessages({
   storage: {
@@ -206,6 +207,21 @@ export const app = defineMessages({
       'pt-BR': 'Solicitação recusada de uma página que não é o ASIST: {url}',
       'es-419': 'Se rechazó una solicitud de una página que no es ASIST: {url}',
       'es-ES': 'Se ha rechazado una solicitud de una página que no es ASIST: {url}'
+    }
+  },
+  status: {
+    checkFailed: {
+      'ja-JP': 'サービスの状態を確認できませんでした',
+      'en-US': "Couldn't check the services",
+      'fr-FR': 'Impossible de vérifier les services',
+      'de-DE': 'Die Dienste ließen sich nicht prüfen',
+      'hi-IN': 'सेवाओं की स्थिति देखी नहीं जा सकी',
+      'id-ID': 'Tidak bisa memeriksa layanan',
+      'it-IT': 'Impossibile controllare i servizi',
+      'ko-KR': '서비스 상태를 확인하지 못했습니다',
+      'pt-BR': 'Não foi possível verificar os serviços',
+      'es-419': 'No se pudieron verificar los servicios',
+      'es-ES': 'No se han podido comprobar los servicios'
     }
   }
 })

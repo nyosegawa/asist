@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { KeyRound } from 'lucide-react'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
+import type { MessageKey } from '@shared/i18n'
+import type { ApiKeyState } from '@shared/ipc'
 import { useStatusStore, useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
 import { CalendarSettings } from '../CalendarSettings'
 import { MailSettings } from '../MailSettings'
-import { Btn, Chip, Group, Page } from '../primitives'
+import { Btn, Chip, Group, Page, type ChipTone } from '../primitives'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 
@@ -21,6 +23,13 @@ export function IntegrationsPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
     </Page>
   )
 }
+
+const KEY_STATE_CHIP = {
+  verified: { tone: 'ok', label: 'settingsIntegrations.apiKeys.verified' },
+  saved: { tone: 'cyan', label: 'settingsIntegrations.apiKeys.saved' },
+  unreadable: { tone: 'warn', label: 'settingsIntegrations.apiKeys.unreadable' },
+  missing: { tone: 'dim', label: 'settingsIntegrations.apiKeys.notSet' }
+} as const satisfies Record<ApiKeyState, { tone: ChipTone; label: MessageKey }>
 
 /**
  * The API key of each provider. The list shows only the state, and the input field opens just for
@@ -38,8 +47,7 @@ function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
       {LLM_PROVIDERS.map((provider) => {
         const info = LLM_PROVIDER_INFO[provider]
         const state = status?.llmKeys[provider] ?? 'missing'
-        const saved = state !== 'missing'
-        const verified = state === 'verified'
+        const saved = state === 'saved' || state === 'verified'
         const inUse =
           provider === settings.conversationModel.provider ||
           provider === settings.bridgeModel.provider ||
@@ -51,13 +59,7 @@ function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
               <KeyRound size={14} style={{ color: 'var(--color-holo-dim)' }} />
               {info.label}
               <code>{info.envKey}</code>
-              <Chip tone={verified ? 'ok' : saved ? 'cyan' : 'dim'}>
-                {verified
-                  ? t('settingsIntegrations.apiKeys.verified')
-                  : saved
-                    ? t('settingsIntegrations.apiKeys.saved')
-                    : t('settingsIntegrations.apiKeys.notSet')}
-              </Chip>
+              <Chip tone={KEY_STATE_CHIP[state].tone}>{t(KEY_STATE_CHIP[state].label)}</Chip>
               {inUse && <Chip tone="cyan">{t('settingsIntegrations.apiKeys.inUse')}</Chip>}
             </div>
             <Btn tone={saved ? 'quiet' : undefined} onClick={() => setOpened(opened === provider ? null : provider)}>

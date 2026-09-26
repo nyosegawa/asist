@@ -13,7 +13,6 @@ const mocks = vi.hoisted(() => ({
   },
   saveSettings: vi.fn(),
   validateConfiguration: vi.fn(),
-  providerKeys: vi.fn(() => ({ anthropic: 'test-key' })),
   configuredModels: vi.fn(() => [
     { label: t('llmModels.targets.conversationModel'), provider: 'anthropic', id: 'claude-main' },
     { label: t('llmModels.targets.bridgeModel'), provider: 'anthropic', id: 'claude-fast' }
@@ -31,7 +30,6 @@ vi.mock('../src/main/services/settings', () => ({
 }))
 vi.mock('../src/main/services/llm', () => ({
   validateConfiguration: mocks.validateConfiguration,
-  providerKeys: mocks.providerKeys,
   configuredModels: mocks.configuredModels
 }))
 vi.mock('../src/main/services/asr', () => ({
@@ -57,7 +55,6 @@ beforeEach(() => {
   mocks.ttsEnsure.mockResolvedValue(undefined)
   mocks.ttsAvailable.mockResolvedValue(true)
   mocks.saveSettings.mockImplementation((patch) => ({ ...mocks.settings, ...patch }))
-  mocks.providerKeys.mockReturnValue({ anthropic: 'test-key' })
   process.env.ANTHROPIC_API_KEY = 'test-key'
 })
 
@@ -144,7 +141,7 @@ describe('completeSetup', () => {
       })
     ).resolves.toMatchObject({ onboardingVersion: 1 })
 
-    expect(mocks.validateConfiguration).toHaveBeenCalledWith({ anthropic: 'test-key' }, expect.any(Array))
+    expect(mocks.validateConfiguration).toHaveBeenCalledWith(mocks.configuredModels.mock.results[0].value)
     expect(mocks.ttsAvailable).toHaveBeenCalledTimes(1)
     expect(mocks.saveSettings).toHaveBeenCalledTimes(1)
     expect(mocks.saveSettings).toHaveBeenCalledWith({
@@ -169,16 +166,6 @@ describe('completeSetup', () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith(
       expect.objectContaining({ localAsrEnabled: false, micAutoStart: false })
     )
-  })
-
-  it('completes with the chosen provider key and model even when there is no Anthropic key', async () => {
-    mocks.providerKeys.mockReturnValue({ openai: 'openai-key' } as never)
-    const { completeSetup } = await import('../src/main/services/setup-completion')
-
-    await expect(
-      completeSetup({ voiceMode: 'text', microphoneVerified: false, localAsrVerified: false, systemTtsVerified: true, micAutoStart: false })
-    ).resolves.toMatchObject({ onboardingVersion: 1 })
-    expect(mocks.validateConfiguration).toHaveBeenCalledWith({ openai: 'openai-key' }, expect.any(Array))
   })
 
   it('neither starts nor checks a TTS engine when the user asked for nothing to be read aloud', async () => {
