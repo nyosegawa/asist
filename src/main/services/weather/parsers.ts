@@ -89,7 +89,11 @@ export function parseForecast(
     if (point?.temps)
       series.timeDefines.forEach((at, i) => {
         if (at.slice(0, 10) !== target) return
-        if (at.slice(11, 13) === '00') day.min = numeric(point.temps![i])
+        // The 5:00 and 11:00 releases forecast no minimum for their own day, whose morning has begun,
+        // yet still list 00:00 of that day, holding the maximum's value; JMA's forecast page reads
+        // that day's minimum as missing.
+        if (at.slice(11, 13) === '00' && Date.parse(at) > Date.parse(short.reportDatetime))
+          day.min = numeric(point.temps![i])
         if (at.slice(11, 13) === '09') day.max = numeric(point.temps![i])
       })
   }
