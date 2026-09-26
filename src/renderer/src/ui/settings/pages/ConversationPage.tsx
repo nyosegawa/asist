@@ -172,7 +172,7 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
             className="st-input is-mono"
             style={{ width: 88 }}
             aria-label={t('settingsConversation.log.retentionLabel')}
-            {...retention}
+            {...retention.props}
           />
         </Row>
       </Group>

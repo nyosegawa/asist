@@ -133,7 +133,7 @@ export function MailSettings({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           style={{ width: 80 }}
           min={MIN_SYNC_DAYS}
           max={MAX_SYNC_DAYS}
-          {...syncDays}
+          {...syncDays.props}
         />
       </Row>
       <Row label={t('settingsMail.notify')} hint={t('settingsMail.notifyHint')}>

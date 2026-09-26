@@ -60,20 +60,20 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
       <Group title={t('settingsAgent.workspace.title')} description={t('settingsAgent.workspace.description')}>
         <Row label={t('settingsAgent.workspace.parent')} wide>
           <div className="st-field-action">
-            <input className="st-input is-mono" aria-label={t('settingsAgent.workspace.parentLabel')} {...cwd} />
-            <Btn onClick={() => chooseFolder(settings.agentCwd, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
+            <input className="st-input is-mono" aria-label={t('settingsAgent.workspace.parentLabel')} {...cwd.props} />
+            <Btn onClick={() => chooseFolder(cwd.value, (folder) => set({ agentCwd: folder }))}>{t('settingsAgent.workspace.choose')}</Btn>
           </div>
         </Row>
       </Group>
 
       <Group title={t('settingsAgent.roots.title')} description={t('settingsAgent.roots.description')}>
         <Row label={t('settingsAgent.roots.folders')} wide>
-          <textarea className="st-input is-mono st-roots" aria-label={t('settingsAgent.roots.title')} placeholder="/Users/you/Desktop" {...roots} />
+          <textarea className="st-input is-mono st-roots" aria-label={t('settingsAgent.roots.title')} placeholder="/Users/you/Desktop" {...roots.props} />
           <div className="st-row-actions">
             <Btn
               onClick={() =>
                 chooseFolder(undefined, (folder) => {
-                  if (!settings.fileRoots.includes(folder)) set({ fileRoots: [...settings.fileRoots, folder] })
+                  if (!roots.value.includes(folder)) set({ fileRoots: [...roots.value, folder] })
                 })
               }
             >

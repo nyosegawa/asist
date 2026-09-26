@@ -106,6 +106,7 @@ const api = {
   embeddingPrepare: vi.fn(async () => ({ ok: true, message: '' })),
   onSetupProgress: vi.fn((_callback: (p: SetupProgress) => void) => () => {}),
   openExternal: vi.fn(async () => {}),
+  folderChoose: vi.fn(async (_startAt?: string): Promise<string | null> => null),
   apiUsage: vi.fn(async (): Promise<UsageDay[]> => [
     {
       date: localDate(new Date()),
@@ -349,6 +350,69 @@ describe('settings fields that are saved once the user leaves them', () => {
     expect(api.saveSettings).not.toHaveBeenCalled()
     await act(async () => root.render(React.createElement('div')))
     expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/projects' }]])
+  })
+
+  it('does not leave the working folder on the Enter that confirms an IME conversion', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'agent').click())
+    const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+    folder.focus()
+    await act(async () => type(folder, '/Users/demo/しごと'))
+    await act(async () => void folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })))
+    expect(document.activeElement).toBe(folder)
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => void folder.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/しごと' }]])
+  })
+
+  it('keeps a second edit of the days made while main has not answered the save of the first', async () => {
+    const answers: Array<() => void> = []
+    const later = (patch: Partial<AppSettings>): Promise<AppSettings> => new Promise((resolve) => answers.push(() => resolve({ ...settings, ...patch })))
+    api.saveSettings.mockImplementationOnce(later).mockImplementationOnce(later)
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    const days = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsConversation.log.retentionLabel')}"]`)!
+    days.focus()
+    await act(async () => type(days, '3'))
+    await act(async () => leave(days))
+    days.focus()
+    await act(async () => type(days, '30'))
+    // Main answers the save of 3 while 30 is being typed.
+    await act(async () => answers.shift()!())
+    expect(days.value).toBe('30')
+    await act(async () => leave(days))
+    expect(api.saveSettings.mock.calls).toEqual([[{ conversationLogRetentionDays: 3 }], [{ conversationLogRetentionDays: 30 }]])
+    await act(async () => answers.shift()!())
+    expect(days.value).toBe('30')
+  })
+
+  it('adds a chosen folder to the folders typed in the field and opens the folder dialog at the typed folder, before main has answered their saves', async () => {
+    api.saveSettings.mockImplementation(() => new Promise(() => {}))
+    try {
+      const view = await render()
+      await act(async () => nav(view, 'agent').click())
+      const button = (key: Parameters<typeof t>[0]): HTMLButtonElement => [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((b) => b.textContent === t(key))!
+      const roots = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsAgent.roots.title')}"]`)!
+      roots.focus()
+      await act(async () => type(roots, '/Users/demo/Desktop\n/Users/demo/Documents'))
+      api.folderChoose.mockResolvedValueOnce('/Users/demo/Pictures')
+      // Pressing a button takes the focus from the field before the click.
+      await act(async () => leave(roots))
+      await act(async () => button('settingsAgent.roots.add').click())
+      expect(api.saveSettings.mock.calls).toEqual([
+        [{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents'] }],
+        [{ fileRoots: ['/Users/demo/Desktop', '/Users/demo/Documents', '/Users/demo/Pictures'] }]
+      ])
+
+      const folder = view.querySelector<HTMLInputElement>(`[aria-label="${t('settingsAgent.workspace.parentLabel')}"]`)!
+      folder.focus()
+      await act(async () => type(folder, '/Users/demo/projects'))
+      await act(async () => leave(folder))
+      await act(async () => button('settingsAgent.workspace.choose').click())
+      expect(api.folderChoose).toHaveBeenLastCalledWith('/Users/demo/projects')
+    } finally {
+      api.saveSettings.mockImplementation(async (patch: Partial<AppSettings>) => ({ ...settings, ...patch }))
+    }
   })
 
   it('drops a day count that is not one when the page goes away, as it does when the field is left', async () => {
