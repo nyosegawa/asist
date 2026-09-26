@@ -152,7 +152,6 @@ const MAX_PAGE_NAME_LENGTH = 60
 
 const PAGE_NAME_ERRORS = {
   characters: 'memory.errors.nameCharacters',
-  end: 'memory.errors.nameEnd',
   reserved: 'memory.errors.nameReserved'
 } as const satisfies Record<PageNameIssue, string>
 

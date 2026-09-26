@@ -129,12 +129,11 @@ const WINDOWS_DEVICE_NAME = /^(con|conin\$|conout\$|prn|aux|nul|com[1-9¹²³]|l
  * What keeps a page's name, its file name without .md, from being used, or null when nothing does. A
  * memory folder is a git repository that may be cloned on macOS or on Windows, so a name either of them
  * cannot give a file is refused on both: 'characters' for a character that cannot stand in a file name or
- * a leading dot, which hides the file, 'end' for a dot or a space at the end, which Windows removes from
- * the end of a file name, and 'reserved' for a name Windows keeps for a device.
+ * a leading dot, which hides the file, and 'reserved' for a name Windows keeps for a device. A dot or a
+ * space at the end of the name is not at the end of the file name, which always ends in .md.
  */
 export function pageNameIssue(name) {
   if (/[/\\:*?"<>|]/.test(name) || name.startsWith('.')) return 'characters'
-  if (/[. ]$/.test(name)) return 'end'
   if (WINDOWS_DEVICE_NAME.test(name)) return 'reserved'
   return null
 }

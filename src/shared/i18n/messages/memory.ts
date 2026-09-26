@@ -1173,19 +1173,6 @@ export const memory = defineMessages({
       'es-419': 'Windows no permite este nombre para un archivo, así que no puede ser el nombre de una página.',
       'es-ES': 'Windows no permite este nombre para un archivo, así que no puede usarse como nombre de página.'
     },
-    nameEnd: {
-      'ja-JP': 'ページの名前の最後には、点(.)や空白を使えません。',
-      'en-US': 'A page name cannot end with a dot or a space.',
-      'fr-FR': "Le nom d'une page ne peut pas se terminer par un point ou une espace.",
-      'de-DE': 'Ein Seitenname darf nicht mit einem Punkt oder einem Leerzeichen enden.',
-      'hi-IN': 'पेज का नाम बिंदु (.) या स्पेस पर खत्म नहीं हो सकता।',
-      'id-ID': 'Nama halaman tidak boleh diakhiri titik atau spasi.',
-      'it-IT': 'Il nome di una pagina non può finire con un punto o uno spazio.',
-      'ko-KR': '페이지 이름은 마침표(.)나 공백으로 끝날 수 없습니다.',
-      'pt-BR': 'O nome de uma página não pode terminar com ponto ou espaço.',
-      'es-419': 'El nombre de una página no puede terminar en punto ni en espacio.',
-      'es-ES': 'El nombre de una página no puede terminar en punto ni en espacio.'
-    },
     pageNamesRefused: {
       'ja-JP': 'ファイルの名前として使えないページの名前があるため、取り込みませんでした:\n{files}',
       'en-US': 'Some page names cannot be used as file names, so the changes were not merged:\n{files}',

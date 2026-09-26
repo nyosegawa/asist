@@ -34,7 +34,6 @@ const MESSAGES = {
 
 const NAME_MESSAGES = {
   characters: 'the page name holds a character a file name cannot (/ \\ : * ? " < > |); rename the page',
-  end: 'a page name cannot end with a dot or a space; rename the page',
   reserved: 'Windows does not allow this name for a file; rename the page'
 }
 
