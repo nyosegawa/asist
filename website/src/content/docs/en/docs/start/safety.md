@@ -26,11 +26,13 @@ ASIST does the following only when you approve them on a confirmation screen or 
 
 - Writes to the calendar, whether you ask in the conversation or use the screen, are saved after you approve them on a confirmation screen.
 - When you ask ASIST to send or reply to mail in the conversation, it doesn't send anything; it shows a draft card, and the message is sent when you click "Send". Archiving and moving to the trash happen after you approve them on a confirmation screen.
-- An Agent job you ask for in the conversation shows a confirmation screen before it starts and before it continues, and runs only when you click "Start job". Merging a job's changes also happens only after you approve it.
+- An Agent job you ask for in the conversation shows a confirmation screen before it starts and before it continues, and runs only when you click "Start job". Merging or discarding a job's changes also happens only after you approve it.
 
 Actions you can easily fix on the screen afterwards, such as adding or changing a task or creating a new note, happen right away without a confirmation.
 
 The confirmation screen shows what ASIST will actually do. Read the date and time, the recipients, the text and the instructions for the agent, and check that they match what you asked for before you approve. If you don't remember asking for it, cancel instead of approving.
+
+You answer a confirmation screen with its buttons. Speaking while it is open neither approves nor cancels it, and ASIST replies to what you said after you answer. With Gemini Live as the voice engine, Gemini replies right away, and the confirmation screen closes if Gemini withdraws the operation.
 
 ## An agent changes files with your permissions
 

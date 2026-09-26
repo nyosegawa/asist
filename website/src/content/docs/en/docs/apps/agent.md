@@ -11,11 +11,11 @@ Research that takes a while and edits to files go to the codex or claude CLI as 
 
 ## Every job is confirmed first
 
-Every job you ask for in the conversation, even one that only reads, shows a confirmation screen before it starts and before it continues. The screen shows the instructions for the agent, the working directory, and whether the job can write. The job starts only when you click "Start job". Jobs run with your permissions, so cancel any job whose instructions you don't remember giving.
+Every job you ask for in the conversation, even one that only reads, shows a confirmation screen before it starts and before it continues. The screen shows the instructions for the agent, the working directory, and whether the job can write. The job starts only when you click "Start job". Speaking while the confirmation screen is open neither approves nor cancels it. Jobs run with your permissions, so cancel any job whose instructions you don't remember giving.
 
 ## Merging the changes
 
-Edits to a Git repository are made in a separate worktree. When the job finishes, review the diff and choose "Merge" or "Discard". When you ask for a merge in the conversation, a confirmation screen lists the changes, and ASIST merges them only after you approve.
+Edits to a Git repository are made in a separate worktree. When the job finishes, review the diff and choose "Merge" or "Discard". When you ask for a merge in the conversation, a confirmation screen lists the changes, and ASIST merges them only after you approve. When you ask in the conversation for the changes to be discarded, ASIST discards them only after you approve on a confirmation screen. Discarded changes cannot be restored.
 
 When the working directory is a folder inside a repository, the job runs in the same folder of the worktree. That folder has to be committed to the repository: a job whose working directory is a folder that isn't committed does not start. Merging does not run the repository's commit hooks (commit-msg, prepare-commit-msg and pre-merge-commit).
 

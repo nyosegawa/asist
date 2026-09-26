@@ -407,9 +407,40 @@ describe('brain tools registry', () => {
     const conflict = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, ctx)
     expect(conflict.isError).toBe(true)
     expect(conflict.content).toContain('continue_agent_job')
+  })
+
+  it('throws a worktree job\'s changes away only after the user approves, and keeps them when the user cancels', async () => {
+    const worktreeJob = { id: 'w1', title: 'fix', status: 'done', mergeState: 'pending', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } }
+    const { executeClientTool } = await load()
+    const { ctx } = makeCtx()
+    mocks.requestConfirm.mockResolvedValueOnce(false)
+    mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
+    const declined = await executeClientTool('discard_agent_job', { jobId: 'w1' }, ctx)
+    expect(JSON.parse(declined.content)).toMatchObject({ discarded: false, declined: true, jobId: 'w1' })
+    expect(mocks.agent.discard).not.toHaveBeenCalled()
+    const request = mocks.requestConfirm.mock.calls[0][0] as { detail: string; destructive: boolean }
+    expect(request.destructive).toBe(true)
+    for (const line of [ja('jobs.confirm.job', { title: 'fix' }), ja('jobs.confirm.place', { place: ja('jobs.confirm.worktree', { path: '/repo' }) })]) {
+      expect(request.detail).toContain(line)
+    }
+
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     const discarded = await executeClientTool('discard_agent_job', { jobId: 'w1' }, ctx)
     expect(JSON.parse(discarded.content)).toEqual({ discarded: true, jobId: 'w1' })
+    expect(mocks.requestConfirm).toHaveBeenCalledTimes(2)
+    expect(mocks.agent.discard).toHaveBeenCalledWith('w1')
+  })
+
+  it.each([
+    ['a job still running', { id: 'w1', title: 'fix', status: 'running', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } }],
+    ['a job without a worktree', { id: 'j1', title: 'report', status: 'done' }]
+  ])('does not ask about discarding %s, and throws nothing away', async (_name, job) => {
+    mocks.agent.userJob.mockReturnValueOnce(job as never)
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('discard_agent_job', { jobId: job.id }, makeCtx().ctx)
+    expect(result.isError).toBe(true)
+    expect(mocks.requestConfirm).not.toHaveBeenCalled()
+    expect(mocks.agent.discard).not.toHaveBeenCalled()
   })
 
   it('does not ask about a merge whose commit is not the one waiting, and merges nothing', async () => {
