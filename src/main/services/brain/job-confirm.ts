@@ -65,7 +65,6 @@ export function mergeConfirmation(job: { title: string; repo: string }, review: 
     detail: [
       t('jobs.confirm.job', { title: job.title }),
       t('jobs.confirm.mergeInto', { repo: job.repo }),
-      ...(review.submodules.length > 0 ? [t('jobs.worktree.submodulesLeftOut', { paths: review.submodules.join(', ') })] : []),
       '',
       review.stat
     ].join('\n'),
@@ -82,7 +81,7 @@ export function discardConfirmation(title: string, target: DiscardPreview): Conf
       t('jobs.confirm.job', { title }),
       t('jobs.confirm.place', { place: target.dir }),
       t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
-      ...(target.submodules.length > 0 ? [t('jobs.worktree.submodulesLeftOut', { paths: target.submodules.join(', ') })] : []),
+      ...(target.submodules.length > 0 ? [t('jobs.merging.submodules', { paths: target.submodules.join(', '), branch: target.branch })] : []),
       ...(target.stat ? ['', target.stat] : []),
       '',
       t('jobs.confirm.discardWarning')

@@ -23,6 +23,19 @@ const mergeReviewed = (agent: Agent, id: string): void => {
   const review = agent.diff(id)
   agent.merge(id, review.commit, review.base)
 }
+
+/** A job that touched submodules waits with its worktree, and no merge of it changes the user's branch. */
+const expectRefused = (agent: Agent, id: string, submodules: string[], head: string): void => {
+  const job = agent.get(id)!
+  expect(job.mergeState).toBe('pending')
+  const review = agent.diff(id)
+  expect(review.submodules).toEqual(submodules)
+  expect(() => agent.merge(id, review.commit, review.base)).toThrow(
+    errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: job.worktree!.branch })
+  )
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
+  expect(fs.existsSync(job.worktree!.dir)).toBe(true)
+}
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
@@ -414,22 +427,19 @@ describe('a repository with a submodule', () => {
     expect(git(repo, 'branch', '--list', 'asist/*')).toBe('')
   })
 
-  it('offers the other changes for merge and names the submodule whose files it leaves out', async () => {
-    const entry = git(repo, 'ls-tree', 'HEAD', 'vendor/sub')
+  it('does not merge a job that wrote into the folder of a submodule that is not initialized, and keeps its worktree', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
     const agent = await import('../src/main/services/agent')
     const job = agent.startIsolated('直す', { cwd: repo })
     // In a new worktree the submodule is not initialized, and git does not look inside its empty folder.
     fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
     fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
     mocks.launch.mock.calls[0][2].onExit(0)
-    const review = agent.diff(job.id)
-    expect(review.submodules).toEqual(['vendor/sub'])
-    agent.merge(job.id, review.commit, review.base)
-    expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
-    expect(git(repo, 'ls-tree', 'HEAD', 'vendor/sub')).toBe(entry)
+    expectRefused(agent, job.id, ['vendor/sub'], head)
   })
 
-  it('keeps the worktree of a job whose only change is a commit inside a submodule, which has no other copy, and merges nothing from it', async () => {
+  it('keeps the worktree of a job whose only change is a commit inside a submodule, which has no other copy, and does not merge it', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
     const agent = await import('../src/main/services/agent')
     const job = agent.startIsolated('直す', { cwd: repo })
     git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
@@ -439,10 +449,7 @@ describe('a repository with a submodule', () => {
     git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fix')
     const onlyCopy = git(inside, 'rev-parse', '--absolute-git-dir')
     mocks.launch.mock.calls[0][2].onExit(0)
-    expect(agent.get(job.id)?.mergeState).toBe('pending')
-    const review = agent.diff(job.id)
-    expect(review).toMatchObject({ stat: '', submodules: ['vendor/sub'] })
-    expect(() => agent.merge(job.id, review.commit, review.base)).toThrow(errorText('jobs.merging.noChanges', { id: job.id }))
+    expectRefused(agent, job.id, ['vendor/sub'], head)
     expect(fs.existsSync(onlyCopy)).toBe(true)
     expect(agent.discardPreview(job.id).submodules).toEqual(['vendor/sub'])
   })
@@ -501,5 +508,103 @@ describe('a repository with a submodule', () => {
     expect(agent.diff(job.id).submodules).toEqual(['vendor/sub'])
     expect(agent.diff(job.id).submodules).toEqual(['vendor/sub'])
     expect(look).not.toHaveBeenCalled()
+  })
+
+  it.each(['all', 'dirty', 'untracked'])('does not merge a job that changed a submodule whose ignore setting is %s, and keeps its worktree', async (mode) => {
+    const lib = path.join(mocks.root, 'lib')
+    fs.mkdirSync(lib)
+    git(lib, 'init', '-q', '-b', 'main')
+    fs.writeFileSync(path.join(lib, 'lib.txt'), 'lib\n')
+    git(lib, 'add', '.')
+    git(lib, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'lib')
+    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', lib, 'vendor/lib')
+    git(repo, 'config', '-f', '.gitmodules', 'submodule.vendor/lib.ignore', mode)
+    git(repo, 'add', '.gitmodules')
+    git(repo, 'commit', '-qm', 'a submodule whose changes git is told to ignore')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init', 'vendor/lib')
+    const inside = path.join(job.cwd, 'vendor', 'lib')
+    if (mode === 'all') {
+      fs.writeFileSync(path.join(inside, 'lib.txt'), 'fixed by the agent\n')
+      git(inside, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qam', 'fix')
+    } else if (mode === 'dirty') {
+      fs.writeFileSync(path.join(inside, 'lib.txt'), 'edited, not committed\n')
+    } else {
+      fs.writeFileSync(path.join(inside, 'new.txt'), 'a new file\n')
+    }
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expectRefused(agent, job.id, ['vendor/lib'], head)
+  })
+
+  it('does not merge a job that changed a submodule while diff.ignoreSubmodules hides such changes, and keeps its worktree', async () => {
+    git(repo, 'config', 'diff.ignoreSubmodules', 'all')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'new.txt'), 'a new file\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expectRefused(agent, job.id, ['vendor/sub'], head)
+  })
+
+  it('does not merge a job that took in another branch which moved a submodule, and leaves the user\'s branch as it was', async () => {
+    const sub = path.join(mocks.root, 'sub')
+    git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'v2')
+    const v2 = git(sub, 'rev-parse', 'HEAD')
+    // A branch the user has not merged, such as an upstream one, moves the submodule.
+    git(repo, 'checkout', '-q', '-b', 'upstream')
+    git(repo, 'update-index', '--cacheinfo', `160000,${v2},vendor/sub`)
+    fs.writeFileSync(path.join(repo, 'up.txt'), 'upstream\n')
+    git(repo, 'add', 'up.txt')
+    git(repo, 'commit', '-qm', 'upstream moves the submodule')
+    git(repo, 'checkout', '-q', 'main')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    git(job.cwd, 'commit', '-qam', 'agent work')
+    git(job.cwd, 'merge', '-q', '--no-edit', 'upstream')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expectRefused(agent, job.id, ['vendor/sub'], head)
+  })
+
+  it('does not merge a job that settled while a branch was checked out against which a submodule moved, even back on the first branch', async () => {
+    git(repo, 'branch', 'release')
+    const sub = path.join(mocks.root, 'sub')
+    git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'v2')
+    git(path.join(repo, 'vendor', 'sub'), '-c', 'protocol.file.allow=always', 'pull', '-q', 'origin', 'main')
+    git(repo, 'add', 'vendor/sub')
+    git(repo, 'commit', '-qm', 'bump the submodule')
+    const head = git(repo, 'rev-parse', 'HEAD')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    git(job.cwd, 'commit', '-qam', 'agent work')
+    git(repo, 'checkout', '-q', 'release')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    git(repo, 'checkout', '-q', 'main')
+    expectRefused(agent, job.id, ['vendor/sub'], head)
+  })
+
+  it('settles again a job that version 3 of the history kept as waiting to be merged, so that work only its worktree holds is not deleted by a merge', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('直す', { cwd: repo })
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    // What the code of version 3 did when the job ended: commit what git shows, and wait for the merge.
+    git(job.cwd, 'add', '-A')
+    git(job.cwd, 'commit', '-qm', 'asist: 直す')
+    const file = path.join(mocks.root, 'data', 'jobs.json')
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8')) as { jobs: Array<Record<string, unknown>> }
+    const saved = stored.jobs.find((entry) => entry.id === job.id)!
+    Object.assign(saved, { status: 'done', endedAt: Date.now(), mergeState: 'pending' })
+    saved.worktree = { ...(saved.worktree as object), commit: git(job.cwd, 'rev-parse', 'HEAD') }
+    fs.writeFileSync(file, JSON.stringify({ ...stored, version: 3 }))
+    vi.resetModules()
+    const restored = await import('../src/main/services/agent')
+    expectRefused(restored, job.id, ['vendor/sub'], head)
   })
 })

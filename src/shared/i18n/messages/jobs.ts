@@ -1227,19 +1227,6 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível arrumar o worktree: {detail}',
       'es-419': 'No se pudo limpiar el worktree: {detail}',
       'es-ES': 'No se ha podido limpiar el worktree: {detail}'
-    },
-    submodulesLeftOut: {
-      'ja-JP': 'サブモジュールの変更は取り込みません。取り込むか捨てると、worktree と一緒に消えます: {paths}',
-      'en-US': 'Changes to submodules are not merged. They are deleted with the worktree when you merge or discard it: {paths}',
-      'fr-FR': "Les modifications des sous-modules ne sont pas fusionnées. Elles sont supprimées avec le worktree quand vous le fusionnez ou l'abandonnez : {paths}",
-      'de-DE': 'Änderungen an Submodulen werden nicht übernommen. Sie werden mit dem worktree gelöscht, wenn Sie ihn übernehmen oder verwerfen: {paths}',
-      'hi-IN': 'सबमॉड्यूल के बदलाव मर्ज नहीं किए जाते। मर्ज करने या छोड़ देने पर वे worktree के साथ मिट जाते हैं: {paths}',
-      'id-ID': 'Perubahan pada submodul tidak digabungkan. Perubahan itu terhapus bersama worktree saat Anda menggabungkan atau membuangnya: {paths}',
-      'it-IT': 'Le modifiche ai sottomoduli non vengono integrate. Vengono eliminate insieme al worktree quando lo integri o lo scarti: {paths}',
-      'ko-KR': '서브모듈의 변경은 병합하지 않습니다. 병합하거나 버리면 worktree와 함께 지워집니다: {paths}',
-      'pt-BR': 'As alterações em submódulos não são mescladas. Elas são apagadas junto com o worktree quando você mescla ou descarta: {paths}',
-      'es-419': 'Los cambios en submódulos no se fusionan. Se borran junto con el worktree cuando lo fusionas o lo descartas: {paths}',
-      'es-ES': 'Los cambios en submódulos no se fusionan. Se eliminan junto con el worktree cuando lo fusionas o lo descartas: {paths}'
     }
   },
   discard: {
@@ -1616,6 +1603,19 @@ export const jobs = defineMessages({
       'pt-BR': 'O branch aberto no repositório não tem histórico em comum com este job. Abra o branch de onde o job partiu antes de mesclar.',
       'es-419': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.',
       'es-ES': 'La rama activa del repositorio no tiene historial en común con este trabajo. Cambia a la rama desde la que empezó el trabajo antes de fusionar.'
+    },
+    submodules: {
+      'ja-JP': 'このジョブはサブモジュール({paths})を変更したので、ASIST では取り込めません。ブランチ {branch} を自分で取り込むか、捨ててください。',
+      'en-US': 'This job changed submodules ({paths}), so ASIST cannot merge it. Merge the branch {branch} yourself, or discard it.',
+      'fr-FR': 'Ce job a modifié des sous-modules ({paths}) : ASIST ne peut pas le fusionner. Fusionnez vous-même la branche {branch}, ou abandonnez-le.',
+      'de-DE': 'Dieser Job hat Submodule geändert ({paths}), deshalb kann ASIST ihn nicht übernehmen. Übernehmen Sie den Branch {branch} selbst, oder verwerfen Sie ihn.',
+      'hi-IN': 'इस जॉब ने सबमॉड्यूल ({paths}) बदले हैं, इसलिए ASIST इसे मर्ज नहीं कर सकता। ब्रांच {branch} को खुद मर्ज करें, या इसे छोड़ दें।',
+      'id-ID': 'Pekerjaan ini mengubah submodul ({paths}), jadi ASIST tidak bisa menggabungkannya. Gabungkan branch {branch} sendiri, atau buang pekerjaan ini.',
+      'it-IT': 'Questo incarico ha modificato dei sottomoduli ({paths}), quindi ASIST non può integrarlo. Integra tu il branch {branch}, oppure scartalo.',
+      'ko-KR': '이 작업은 서브모듈({paths})을 바꿨기 때문에 ASIST가 병합할 수 없습니다. {branch} 브랜치를 직접 병합하거나 버리십시오.',
+      'pt-BR': 'Este job alterou submódulos ({paths}), então o ASIST não pode mesclá-lo. Mescle você mesmo o branch {branch}, ou descarte o job.',
+      'es-419': 'Este trabajo cambió submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo.',
+      'es-ES': 'Este trabajo ha cambiado submódulos ({paths}), así que ASIST no puede fusionarlo. Fusiona tú la rama {branch} o descártalo.'
     }
   },
   confirm: {

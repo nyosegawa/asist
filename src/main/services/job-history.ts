@@ -64,9 +64,22 @@ export const JOBS_FORMAT: StoredFormat<AgentJob[]> = {
           job?.worktree ? { ...job, worktree: { ...job.worktree, dir: job.cwd } } : job)
       }
     },
-    // Version 4 records the submodules a worktree was settled without. A job of version 3 was settled
-    // before any were left out, so it has none to record.
-    3: (content) => content
+    // Version 4 records the submodules a job touched, and ASIST does not merge a job that touched any. A job
+    // of version 3 waiting to be merged was settled without that check, and its commit can point a submodule
+    // at a commit that only its worktree holds, so it loses its merge state and is settled again when the
+    // history is read.
+    3: (content) => {
+      const { jobs, ...rest } = content as { jobs?: unknown }
+      if (!Array.isArray(jobs)) return content
+      return {
+        ...rest,
+        jobs: jobs.map((job: { worktree?: object; mergeState?: unknown }) => {
+          if (!job?.worktree || job.mergeState !== 'pending') return job
+          const { mergeState: _unsettled, ...unsettled } = job
+          return unsettled
+        })
+      }
+    }
   },
   parse: (content) => historySchema.parse((content as { jobs?: unknown } | null)?.jobs),
   serialize: (jobs) => ({ jobs })

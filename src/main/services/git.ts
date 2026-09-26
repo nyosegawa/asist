@@ -130,18 +130,8 @@ const literal = (file: string): string => `:(literal)${file}`
  */
 const WHOLE = { maxBuffer: Infinity }
 
-export interface CommitOutcome {
-  committed: boolean
-  /** The submodule entries, and .gitmodules, that differed from `base` and that the commit kept as base has them. */
-  leftOut: string[]
-}
-
 /**
- * Commits every uncommitted change in dir, except that the commit keeps the submodule entries and
- * .gitmodules of `base`, together with anything under the path of such an entry, and says which it left out.
- * A commit made inside a submodule of a worktree lives only in the worktree's own copy of that submodule, so
- * an entry pointing to it would reach the user's repository pointing to nothing. What is left out stays in
- * the working tree and the index.
+ * Commits every uncommitted change in dir as it is, and returns false when there is nothing to commit.
  *
  * The commit is built by write-tree and commit-tree from a copy of the index in a folder of its own, so no
  * hook of the repository runs and ASIST holds no lock of the repository between git's commands: git commit
@@ -149,12 +139,9 @@ export interface CommitOutcome {
  * The index is brought up to the commit by git itself once the branch has moved, and when that fails the
  * branch goes back, so that a commit that fails leaves the index and the branch as they were.
  */
-export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOutcome {
+export function commitAll(dir: string, message: string): boolean {
+  if (git(dir, ['status', '--porcelain'], WHOLE).trim() === '') return false
   const head = hasHead(dir) ? headCommit(dir) : null
-  // The status does not show a submodule entry that was committed in dir since base, which has to be put back too.
-  const pending = git(dir, ['status', '--porcelain'], WHOLE).trim() !== '' ||
-    (head !== null && submoduleEntries(git(dir, ['diff-tree', '-r', '-z', '--no-renames', base, head], WHOLE)).length > 0)
-  if (!pending) return { committed: false, leftOut: [] }
   const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
   const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
   try {
@@ -162,15 +149,13 @@ export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOu
     if (fs.existsSync(index)) fs.copyFileSync(index, staging)
     const env = { GIT_INDEX_FILE: staging }
     git(dir, ['add', '-A'], { env })
-    const leftOut = head ? submoduleEntries(git(dir, ['diff-index', '--cached', '--raw', '-z', '--no-renames', base], { env, ...WHOLE })) : []
-    if (leftOut.length > 0) git(dir, ['restore', '--staged', `--source=${base}`, '--', ...leftOut.map(literal)], { env })
     const tree = git(dir, ['write-tree'], { env }).trim()
     if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) {
       // Nothing is left to commit, but the index can still disagree with HEAD: a change staged and then
       // undone on disk, or a commit whose index was never brought up to it before a crash. Left so, the
       // job would never count as settled.
       git(dir, ['add', '-A'])
-      return { committed: false, leftOut }
+      return false
     }
     const commit = git(dir, [
       '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', tree, ...(head ? ['-p', head] : []), '-m', message
@@ -182,7 +167,7 @@ export function commitAll(dir: string, message: string, base = 'HEAD'): CommitOu
       git(dir, head ? ['update-ref', 'HEAD', head, commit] : ['update-ref', '-d', 'HEAD', commit])
       throw error
     }
-    return { committed: true, leftOut }
+    return true
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true })
   }
@@ -205,16 +190,21 @@ function rawEntries(raw: string): RawEntry[] {
   return entries
 }
 
-/** The paths of the submodule entries and of .gitmodules among the entries of a raw diff. */
-const submoduleEntries = (raw: string): string[] =>
-  rawEntries(raw)
+/**
+ * The submodules the changes from base to commit touch, with .gitmodules when it changed: a submodule moved
+ * to another commit, added or removed, or a path turned into a submodule or out of one.
+ */
+export function submoduleEntryChanges(repo: string, base: string, commit: string): string[] {
+  return rawEntries(git(repo, ['diff', '--raw', '-z', '--no-renames', base, commit], WHOLE))
     .filter((entry) => entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES)
     .map((entry) => entry.path)
+}
 
 /**
- * The submodules of HEAD whose folder holds a change no commit carries: files changed or added inside one
- * that is initialized, a commit it moved to, or, in one that is not initialized, files written into its
- * folder, which git status does not show at all.
+ * The submodules of HEAD whose own folder holds a change: a commit it moved to, files changed or added
+ * inside one that is initialized, or, in one that is not initialized, files written into its folder, which
+ * git status does not show at all. --ignore-submodules=none overrides the `ignore` setting a submodule can
+ * carry in .gitmodules or the configuration, which would otherwise hide every such change.
  */
 export function submodulesWithChanges(dir: string): string[] {
   const submodules = submodulesAtHead(dir)
@@ -224,7 +214,9 @@ export function submodulesWithChanges(dir: string): string[] {
   // fixed fields, spaces included. Without renames no entry carries a second path. Untracked files are
   // listed, since otherwise git does not look for new files inside a submodule either.
   const fixedFields: Record<string, number> = { '1': 8, u: 10 }
-  const status = git(dir, ['status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal', '--', ...submodules.map(literal)])
+  const status = git(dir, [
+    'status', '--porcelain=v2', '-z', '--no-renames', '--untracked-files=normal', '--ignore-submodules=none', '--', ...submodules.map(literal)
+  ])
   for (const entry of status.split('\0')) {
     const count = fixedFields[entry[0]]
     if (count === undefined) continue
@@ -270,12 +262,11 @@ function writtenWhileUninitialized(folder: string): boolean {
 }
 
 /**
- * Whether dir holds no change that commitAll would commit, leaving out the paths it left out and every
- * submodule. It does not look inside submodules, which no merge takes in anyway.
+ * Whether dir holds no change that commitAll would commit. It does not look inside submodules, whose changes
+ * no commit of dir carries and which submodulesWithChanges finds instead.
  */
-export function isSettled(dir: string, leftOut: readonly string[] = []): boolean {
-  const excluded = leftOut.map((file) => `:(exclude,literal)${file}`)
-  return git(dir, ['status', '--porcelain', '--ignore-submodules=all', '--', '.', ...excluded], WHOLE).trim() === ''
+export function isSettled(dir: string): boolean {
+  return git(dir, ['status', '--porcelain', '--ignore-submodules=all'], WHOLE).trim() === ''
 }
 
 /**

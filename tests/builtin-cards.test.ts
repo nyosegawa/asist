@@ -453,6 +453,19 @@ describe('agent job card', () => {
     expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')
   })
 
+  it('offers no merge for a job that touched submodules, and says why and which branch the user can merge', async () => {
+    useJobStore.setState({
+      jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],
+      logs: {}
+    })
+    api.jobDiff.mockResolvedValueOnce({ commit: 'abc', base: 'a0c', stat: ' vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
+    const card = await renderAt(spec('agent-job', { jobId: DEMO_JOB.id }), L)
+    expect(card.querySelector('.aj-merge')?.textContent).toContain(t('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x' }))
+    const [merge] = [...card.querySelectorAll<HTMLButtonElement>('.aj-merge .card-action')]
+    expect(merge.textContent).toBe(t('jobs.card.merge.merge'))
+    expect(merge.disabled).toBe(true)
+  })
+
   it('shows the current diff beside the reason when main refuses a merge because the repository moved to another branch', async () => {
     useJobStore.setState({
       jobs: [{ ...DEMO_JOB, status: 'done', endedAt: DEMO_JOB.startedAt + 65_000, mergeState: 'pending', worktree: { repo: '/r', dir: '/w', branch: 'asist/x', base: 'main' } }],

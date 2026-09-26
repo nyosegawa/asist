@@ -293,8 +293,8 @@ export function jobTools(locale: ConversationLocale): Def[] {
     {
       name: 'get_agent_job',
       description: {
-        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }。reviewには確認対象のcommitと差分、取り込まれないサブモジュールの変更(submodules)が入る。',
-        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }, where review holds the commit to look over, its diff, and the submodules whose changes a merge leaves out.'
+        ja: '特定ジョブの詳細(状態、要約、成果物、最近のログ15行)を確認する。結果は { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }。reviewには確認対象のcommitと差分、ジョブが変えたサブモジュール(submodules)が入る。submodulesのあるジョブはASISTでは取り込めない。',
+        en: 'Gives the detail of one job: its status, its summary, what it produced and the last fifteen lines of its log. The result is { jobId, title, status, cwd, summary, numTurns, costUsd, artifacts, mergeState, review, logTail }, where review holds the commit to look over, its diff, and the submodules the job changed. A job that changed any submodule cannot be merged by ASIST.'
       },
       usage: {
         ja: '特定のジョブの進捗や成果物のパスを知りたいとき、完了報告で詳細が要るとき',
@@ -427,6 +427,9 @@ export function jobTools(locale: ConversationLocale): Def[] {
         try {
           review = agentRunner.diff(job.id)
           if (review.commit !== commit) throw new Error(errorText('jobs.worktree.reviewStale'))
+          if (review.submodules.length > 0) {
+            throw new Error(errorText('jobs.merging.submodules', { paths: review.submodules.join(', '), branch: job.worktree!.branch }))
+          }
           if (!review.stat) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
         } catch (err) {
           throw new ToolError(TEXTS.mergeFailed(detail(err, language)))

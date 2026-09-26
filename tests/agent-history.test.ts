@@ -64,11 +64,11 @@ describe('agent history ownership', () => {
       engine: 'codex', status: 'done', startedAt: 100 + index
     }))
     saved.push({ id: 'unmerged', title: 'unmerged', prompt: 'edit', cwd: mocks.root, readonly: false,
-      engine: 'codex', status: 'done', startedAt: 1, mergeState: 'pending',
+      engine: 'codex', status: 'done', startedAt: 1, mergeState: 'conflict',
       worktree: { repo: '/repo', branch: 'branch', base: 'base', commit: 'commit' } })
     fs.writeFileSync(historyFile(), JSON.stringify(saved))
     const agent = await import('../src/main/services/agent')
-    expect(agent.get('unmerged')?.mergeState).toBe('pending')
+    expect(agent.get('unmerged')?.mergeState).toBe('conflict')
     expect(readSaved()).toHaveLength(51)
     agent.discard('unmerged')
     // The history was written before the worktree kept its own path, when every job ran at its top.

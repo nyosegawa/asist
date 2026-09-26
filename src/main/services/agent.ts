@@ -18,7 +18,7 @@ import { memoryDir } from './memory-store'
 import { findCli, launchAgentProcess } from './agent-process'
 import type { AgentProcess } from './agent-process-lifetime'
 import { recoverAgentProcess } from './agent-process-identity'
-import { assertWorktreeReview, captureWorktree, discardStat, mergeBase, readWorktreeDiff } from './job-worktree'
+import { assertMergeable, assertWorktreeReview, captureWorktree, discardStat, readWorktreeDiff } from './job-worktree'
 import * as projectIndex from './project-index'
 import { installSkill } from './memory-curation-skill'
 import * as git from './git'
@@ -315,7 +315,9 @@ function settleWorktree(job: AgentJob): Partial<AgentJob> {
       ? 'jobs.worktree.unchanged'
       : 'jobs.worktree.committed'))
     const submodules = settled.worktree?.submodules
-    if (submodules) pushLog(job.id, 'system', t('jobs.worktree.submodulesLeftOut', { paths: submodules.join(', ') }))
+    if (submodules) {
+      pushLog(job.id, 'system', t('jobs.merging.submodules', { paths: submodules.join(', '), branch: settled.worktree!.branch }))
+    }
     return settled
   } catch (err) {
     pushLog(job.id, 'stderr', t('jobs.worktree.settleFailed', { detail: errorMessage(err) }))
@@ -497,10 +499,7 @@ export function merge(id: string, commit: string, base: string): AgentJob {
   assertWriterStopped(entry.job)
   assertWorktreeReview(entry.job, commit)
   const wt = entry.job.worktree
-  // Another branch checked out since the review would take in changes the diff did not show.
-  if (mergeBase(wt, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
-  // A job whose only changes were to submodules waits with nothing a merge would take in.
-  if (!git.hasChanges(wt.repo, base, commit)) throw new Error(errorText('jobs.merging.noChanges', { id }))
+  assertMergeable(entry.job, commit, base)
   if (!git.isClean(wt.repo)) throw new Error(errorText('jobs.merging.dirtyRepo'))
   const outcome = git.mergeNoFf(wt.repo, commit, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
@@ -549,7 +548,7 @@ export interface DiscardPreview {
   branch: string
   /** What a merge of the branch would have brought in, as git's stat. */
   stat: string
-  /** The submodules whose changes only the worktree holds, which the discard deletes with it. */
+  /** The submodules the job touched, whose changes the discard deletes with the worktree. */
   submodules: string[]
 }
 

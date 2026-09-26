@@ -568,9 +568,20 @@ describe('brain tools registry', () => {
     expect(mocks.agent.merge).not.toHaveBeenCalled()
   })
 
+  it('refuses to merge a job that touched submodules before asking the user about it', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', stat: 'vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain(ja('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x' }))
+    expect(mocks.requestConfirm).not.toHaveBeenCalled()
+    expect(mocks.agent.merge).not.toHaveBeenCalled()
+  })
+
   it('refuses to merge a job with nothing to merge before asking the user about it', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', stat: '', patch: '', submodules: ['vendor/sub'] })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', stat: '', patch: '', submodules: [] })
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)

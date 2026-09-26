@@ -5,6 +5,8 @@ import * as git from './git'
 
 type Worktree = NonNullable<AgentJob['worktree']>
 
+const sortedUnique = (paths: string[]): string[] => [...new Set(paths)].sort()
+
 /**
  * The commit a job's own changes are counted from: its merge base with the repository's current HEAD, since
  * a job that merged or rebased onto the user's branch holds the user's commits as well. A branch that shares
@@ -16,16 +18,17 @@ function jobBase(worktree: Worktree, commit: string): string {
 }
 
 /**
- * Settles the output after the process has ended. On failure the caller keeps the worktree. The submodule
- * changes left out are the job's own, counted from jobBase. A worktree is removed only when nothing in it is
- * left, since a commit made inside a submodule of the worktree has no other copy.
+ * Settles the output after the process has ended. On failure the caller keeps the worktree. The commit holds
+ * the worktree as the agent left it, and the submodules it touched are recorded: a job that touched any is
+ * never merged by ASIST, and its worktree stays until the user discards it, since a commit made inside a
+ * submodule of the worktree has no other copy.
  */
 export function captureWorktree(job: AgentJob): Pick<AgentJob, 'worktree' | 'mergeState'> {
   const worktree = job.worktree!
-  const base = jobBase(worktree, git.headCommit(worktree.dir))
-  const { leftOut } = git.commitAll(worktree.dir, `asist: ${job.title}`, base)
-  const submodules = [...new Set([...leftOut, ...git.submodulesWithChanges(worktree.dir)])].sort()
+  git.commitAll(worktree.dir, `asist: ${job.title}`)
   const commit = git.headCommit(worktree.dir)
+  const base = jobBase(worktree, commit)
+  const submodules = sortedUnique([...git.submoduleEntryChanges(worktree.repo, base, commit), ...git.submodulesWithChanges(worktree.dir)])
   const settled = { ...worktree, commit, submodules: submodules.length > 0 ? submodules : undefined }
   if (!git.hasChanges(worktree.repo, base, commit) && submodules.length === 0) {
     git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
@@ -50,6 +53,14 @@ export function mergeBase(worktree: Worktree, commit: string): string {
   return base
 }
 
+/**
+ * The submodules that keep a job from being merged by ASIST: those the changes a merge counted from `base`
+ * would bring in touch, and those the job changed inside their own folders, as found when it settled.
+ */
+function touchedSubmodules(worktree: Worktree, base: string, commit: string): string[] {
+  return sortedUnique([...(worktree.submodules ?? []), ...git.submoduleEntryChanges(worktree.repo, base, commit)])
+}
+
 /** Acts only while the commit that was shown still matches the current branch and worktree. */
 export function assertWorktreeReview(job: AgentJob, commit: string): void {
   const worktree = job.worktree
@@ -57,15 +68,29 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
   if (!worktree || job.mergeState !== 'pending' || !commit || commit !== worktree.commit) {
     throw new Error(errorText('jobs.worktree.reviewStale'))
   }
-  if (!git.isSettled(worktree.dir, worktree.submodules)) throw new Error(errorText('jobs.worktree.uncommitted'))
+  if (!git.isSettled(worktree.dir)) throw new Error(errorText('jobs.worktree.uncommitted'))
   if (git.headCommit(worktree.dir) !== commit || git.headCommit(worktree.repo, worktree.branch) !== commit) {
     throw new Error(errorText('jobs.worktree.commitChanged'))
   }
 }
 
 /**
- * The diff a merge would bring in, counted from the merge base it names, and the submodules the job settled
- * without, as they were found when it settled.
+ * Refuses a merge that would apply more than the review counted from `base` showed, one of a job that
+ * touched submodules, which the user merges or discards, and one with nothing to merge.
+ */
+export function assertMergeable(job: AgentJob, commit: string, base: string): void {
+  const worktree = job.worktree!
+  if (mergeBase(worktree, commit) !== base) throw new Error(errorText('jobs.merging.baseChanged'))
+  const submodules = touchedSubmodules(worktree, base, commit)
+  if (submodules.length > 0) {
+    throw new Error(errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch }))
+  }
+  if (!git.hasChanges(worktree.repo, base, commit)) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
+}
+
+/**
+ * The diff a merge would bring in, counted from the merge base it names, and the submodules that keep the
+ * job from being merged by ASIST.
  */
 export function readWorktreeDiff(job: AgentJob): JobDiff {
   const commit = job.worktree?.commit ?? ''
@@ -77,6 +102,6 @@ export function readWorktreeDiff(job: AgentJob): JobDiff {
     base,
     stat: git.diffStat(worktree.repo, base, commit),
     patch: git.diffPatch(worktree.repo, base, commit),
-    submodules: worktree.submodules ?? []
+    submodules: touchedSubmodules(worktree, base, commit)
   }
 }

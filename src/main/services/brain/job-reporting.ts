@@ -38,8 +38,8 @@ const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 
   },
   mergeUnchanged: { ja: ` 取り込む変更は無かったのでworktreeは片付けた。`, en: ` There was nothing to take in, so the worktree has been cleared away.` },
   submodules: {
-    ja: ` サブモジュールの変更は取り込まれない({paths})。worktreeにだけあり、取り込むか捨てると一緒に消える。ほかに変更が無ければ取り込めるものは無い。`,
-    en: ` The changes to the submodules {paths} are not taken in. Only the worktree holds them, and they are deleted with it when the job is taken in or thrown away. With no other change there is nothing to take in.`
+    ja: ` このジョブはサブモジュール({paths})を変えたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。ユーザー自身が取り込むか、捨てる(discard_agent_job)かを伝えること。`,
+    en: ` This job changed submodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Tell the user they can merge it themselves or throw it away with discard_agent_job.`
   },
   noSummary: { ja: `要約なし`, en: `no summary` },
   noReason: { ja: `不明`, en: `unknown` }
@@ -125,12 +125,13 @@ export function initJobReporting(): void {
     const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
     const submodules = job.worktree?.submodules
     const mergeNote =
-      (job.mergeState === 'pending'
-        ? promptText(locale, REPORT.mergePending)
-        : job.worktree && job.mergeState === 'unchanged'
-          ? promptText(locale, REPORT.mergeUnchanged)
-          : '') +
-      (submodules ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', ') }) : '')
+      job.mergeState === 'pending' && submodules
+        ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch })
+        : job.mergeState === 'pending'
+          ? promptText(locale, REPORT.mergePending)
+          : job.worktree && job.mergeState === 'unchanged'
+            ? promptText(locale, REPORT.mergeUnchanged)
+            : ''
     const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
     const notice: TurnInput =
       job.status === 'done'

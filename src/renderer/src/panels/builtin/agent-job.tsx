@@ -110,7 +110,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
         {job.worktree?.branch} → {job.worktree?.repo}
       </p>
       {diff && diff.submodules.length > 0 && (
-        <p className="aj-text">{t('jobs.worktree.submodulesLeftOut', { paths: diff.submodules.join(', ') })}</p>
+        <p className="aj-text">{t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: job.worktree?.branch ?? '' })}</p>
       )}
       {diff && (
         <pre className="aj-diff">
@@ -127,7 +127,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
         {!conflict && (
           <Action
             tone="primary"
-            disabled={busy || !diff?.stat}
+            disabled={busy || !diff?.stat || diff.submodules.length > 0}
             // The diff on the card can be out of date once the repository has another branch checked out, and
             // main refuses the merge then, so the card shows the current one beside the reason.
             onClick={() => diff && act(() => window.api.jobMerge(job.id, diff.commit, diff.base), loadDiff)}
