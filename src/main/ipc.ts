@@ -122,7 +122,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   agent.events.on('event', (event) => {
     if (agent.userJob(event.type === 'update' ? event.job.id : event.id)) send(IpcChannel.JobEvent, event)
   })
-  // A job that comes to wait for a merge or that finishes pushes its card straight away, without waiting for an LLM call.
+  // A job that starts, comes to wait for a merge or finishes pushes its card straight away, without waiting for an LLM call.
   const jobPhases = new Map<string, AgentJob>()
   agent.events.on('event', (event) => {
     if (event.type !== 'update') return

@@ -94,7 +94,7 @@ export function agentTool(locale: ConversationLocale): Def {
     parallel: false,
     timeoutMs: CONFIRM_TIMEOUT_MS,
     maxResultChars: SMALL_RESULT_MAX,
-    run: async (input, ctx, signal) => {
+    run: async (input, _ctx, signal) => {
       const prompt = String(input.prompt ?? '').trim()
       if (!prompt) throw new ToolError(TEXTS.emptyPrompt)
       const options = {
@@ -145,18 +145,6 @@ export function agentTool(locale: ConversationLocale): Def {
       } catch (err) {
         throw new ToolError(TEXTS.startFailed(detail(err, language)))
       }
-      ctx.emit({
-        type: 'panel',
-        turnId: ctx.turnId,
-        event: {
-          op: 'create',
-          key: `job:${job.id}`,
-          type: 'agent-job',
-          slot: 'right',
-          props: { jobId: job.id },
-          state: 'ready'
-        }
-      })
       if (access.isolate) {
         return {
           started: true,
@@ -363,7 +351,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
       parallel: false,
       timeoutMs: CONFIRM_TIMEOUT_MS,
       maxResultChars: SMALL_RESULT_MAX,
-      run: async (input, ctx, signal) => {
+      run: async (input, _ctx, signal) => {
         const prompt = String(input.prompt ?? '').trim()
         if (!prompt) throw new ToolError(TEXTS.emptyFollowUp)
         const parent = requireJob(input)
@@ -386,11 +374,6 @@ export function jobTools(locale: ConversationLocale): Def[] {
         } catch (err) {
           throw new ToolError(TEXTS.continueFailed(detail(err, language)))
         }
-        ctx.emit({
-          type: 'panel',
-          turnId: ctx.turnId,
-          event: { op: 'create', key: `job:${job.id}`, type: 'agent-job', slot: 'right', props: { jobId: job.id }, state: 'ready' }
-        })
         return { started: true, jobId: job.id, title: job.title, parentId: parent.id }
       }
     },

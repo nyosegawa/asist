@@ -24,6 +24,11 @@ describe('when the app pushes a job card on its own', () => {
     expect(shouldPushJobCard(undefined, job({ status: 'error' }))).toBe(true)
   })
 
+  it('pushes a card when a job starts, since the turn that started it may no longer be the one the screen follows', () => {
+    expect(shouldPushJobCard(undefined, job({ status: 'running' }))).toBe(true)
+    expect(shouldPushJobCard(undefined, job({ status: 'running', memoryCuration: { through: null, applied: false } }))).toBe(false)
+  })
+
   it('pushes nothing for an update while running, an update within the same phase, memory curation, or a cancel by the user', () => {
     expect(shouldPushJobCard(job({}), job({ artifacts: ['/w/a'] }))).toBe(false)
     expect(shouldPushJobCard(job({ status: 'done' }), job({ status: 'done', artifacts: ['/w/a'] }))).toBe(false)
