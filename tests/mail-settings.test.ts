@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { AppSettings } from '@shared/settings'
+import { mergeSettings, type AppSettings, type SettingsPatch } from '@shared/settings'
 import { createTranslator } from '@shared/i18n'
 import { MailSettings } from '../src/renderer/src/ui/settings/MailSettings'
 import type { SettingsContext } from '../src/renderer/src/ui/settings/context'
@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('window', Object.assign(window, { api }))
   for (const fn of Object.values(api)) fn.mockClear()
-  set.mockClear()
+  set.mockReset()
   useSettingsStore.setState({ settings: settings() })
   useMailStore.setState({ status: null, revision: 0 })
   useToastStore.setState({ toasts: [] })
@@ -90,15 +90,51 @@ it('fills the host presets from the chosen provider and adds the account to main
   expect(group.querySelector(`[aria-label="${t('settingsMail.form.title')}"]`)).toBeNull()
 })
 
-it('saves the toggle and the day count as one mail settings object, and ignores a day count outside the allowed range', async () => {
+it('saves only the option that changed, and ignores a day count outside the allowed range', async () => {
   const group = await render()
   await act(async () => group.querySelector<HTMLButtonElement>(`[aria-label="${t('settingsMail.notify')}"]`)!.click())
-  expect(set).toHaveBeenLastCalledWith({ mail: expect.objectContaining({ notifyNewMail: false, accounts: [DEMO_MAIL_ACCOUNTS[0]] }) })
+  expect(set).toHaveBeenLastCalledWith({ mail: { notifyNewMail: false } })
   const days = group.querySelector<HTMLInputElement>(`[aria-label="${t('settingsMail.syncDays')}"]`)!
   await act(async () => setValue(days, '3'))
   await act(async () => days.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
   expect(set).toHaveBeenCalledTimes(1)
   await act(async () => setValue(days, '60'))
   await act(async () => days.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
-  expect(set).toHaveBeenLastCalledWith({ mail: expect.objectContaining({ syncDays: 60 }) })
+  expect(set).toHaveBeenLastCalledWith({ mail: { syncDays: 60 } })
+})
+
+it('keeps an account that main adds while an option is switched on the same page', async () => {
+  // Main adds the account and saves the settings one after the other, each onto the settings it holds.
+  let held = settings()
+  let queue: Promise<unknown> = Promise.resolve()
+  const inTurn = <T>(operation: () => Promise<T> | T): Promise<T> => {
+    const result = queue.then(operation)
+    queue = result.catch(() => undefined)
+    return result
+  }
+  const added = { ...DEMO_MAIL_ACCOUNTS[1], id: 'added' }
+  let connected!: () => void
+  api.mailAccountAdd.mockImplementationOnce(() =>
+    inTurn(async () => {
+      // The connection check takes seconds on a real server.
+      await new Promise<void>((resolve) => (connected = resolve))
+      held = mergeSettings(held, { mail: { ...held.mail, accounts: [...held.mail.accounts, added] } })
+      return added
+    })
+  )
+  set.mockImplementation((patch: SettingsPatch) => void inTurn(() => (held = mergeSettings(held, patch))))
+  const group = await render()
+  await act(async () => [...group.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('settingsMail.add'))!.click())
+  const form = group.querySelector<HTMLFormElement>(`[aria-label="${t('settingsMail.form.title')}"]`)!
+  await act(async () => setValue(form.querySelector(`[aria-label="${t('settingsMail.form.label')}"]`)!, '個人'))
+  await act(async () => setValue(form.querySelector(`[aria-label="${t('settingsMail.form.email')}"]`)!, 'me@example.com'))
+  await act(async () => setValue(form.querySelector(`[aria-label="${t('settingsMail.form.password')}"]`)!, 'app-pass'))
+  await act(async () => form.requestSubmit())
+  await act(async () => group.querySelector<HTMLButtonElement>(`[aria-label="${t('settingsMail.notify')}"]`)!.click())
+  await act(async () => {
+    connected()
+    await queue
+  })
+  expect(held.mail.accounts.map((account) => account.id)).toEqual([DEMO_MAIL_ACCOUNTS[0].id, 'added'])
+  expect(held.mail.notifyNewMail).toBe(false)
 })

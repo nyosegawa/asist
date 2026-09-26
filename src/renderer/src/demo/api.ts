@@ -51,6 +51,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
 import { DEFAULT_THEME, THEMES } from '@shared/themes'
+import { mergeSettings } from '@shared/settings'
 
 /**
  * Demo mode: the mock used where window.api (preload) does not exist, that is, in a plain browser. Only
@@ -686,7 +687,7 @@ export const mockApi: RendererApi = {
     confirmPending.get(id)?.(approved)
   },
   getSettings: async () => settings,
-  saveSettings: async (patch) => Object.assign(settings, patch),
+  saveSettings: async (patch) => Object.assign(settings, mergeSettings(settings, patch)),
   saveApiKey: async () => mockApi.getStatus(),
   listSpeakers: async () => [],
   ttsTest: async () => ({ turnId: 0, index: 0, text: 'テスト', audio: null, phonemes: null }),
