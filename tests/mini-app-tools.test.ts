@@ -4,6 +4,7 @@ import { MINI_APPS, openMiniAppSchema, type MiniAppView } from '@shared/mini-app
 import { ToolError } from '@shared/tool-registry'
 import { describeOpenApp, miniAppTools, openAppNote, parseTarget } from '../src/main/services/brain/mini-app-tools'
 import { openMiniApp, reportOpenMiniApp } from '../src/main/services/mini-app-view'
+import { placeMiniApp } from '@/state/view'
 
 function run(name: string, input: Record<string, unknown> = {}): { result: unknown; events: TurnEvent[] } {
   const events: TurnEvent[] = []
@@ -41,6 +42,14 @@ describe('open_app', () => {
     expect(() => parseTarget({ app: 'calendar', date: 'next monday' })).toThrow(ToolError)
     expect(() => parseTarget({ app: 'mail', messageId: 'm', draftId: 'd' })).toThrow(ToolError)
     expect(() => parseTarget({ app: 'browser' })).toThrow(ToolError)
+  })
+
+  it('refuses a day that does not exist, so the renderer never has to report a view it cannot parse', () => {
+    for (const date of ['2026-02-30', '2026-13-01', '2026-00-10']) {
+      expect(() => parseTarget({ app: 'calendar', date }), date).toThrow(ToolError)
+    }
+    const leapDay = parseTarget({ app: 'calendar', date: '2028-02-29' })
+    expect(openMiniAppSchema.safeParse(placeMiniApp(null, leapDay)).success).toBe(true)
   })
 
   it('sends nothing to the renderer when the input is refused', () => {

@@ -6,6 +6,7 @@ import {
   MINI_APPS,
   SETTINGS_PAGES,
   TASK_VIEWS,
+  localDate,
   type MiniAppTarget,
   type MiniAppView
 } from '@shared/mini-apps'
@@ -51,7 +52,7 @@ export function parseTarget(input: Record<string, unknown>): MiniAppTarget {
   if (target.view !== undefined && views && !views.includes(target.view)) throw new ToolError(TEXTS.badValue('view', views))
   if (target.box !== undefined && !(MAIL_BOXES as readonly string[]).includes(target.box)) throw new ToolError(TEXTS.badValue('box', MAIL_BOXES))
   if (target.page !== undefined && !(SETTINGS_PAGES as readonly string[]).includes(target.page)) throw new ToolError(TEXTS.badValue('page', SETTINGS_PAGES))
-  if (target.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(target.date)) throw new ToolError(TEXTS.badDate)
+  if (target.date !== undefined && !localDate.safeParse(target.date).success) throw new ToolError(TEXTS.badDate)
   if (target.messageId !== undefined && target.draftId !== undefined) throw new ToolError(TEXTS.messageOrDraft)
   return { app: miniApp, ...target } as MiniAppTarget
 }
@@ -227,7 +228,7 @@ const TEXTS = {
     ja: `${field} は ${values.join('、')} のどれか。`,
     en: `${field} is one of ${values.join(', ')}.`
   }),
-  badDate: { ja: 'date は YYYY-MM-DD で書く。', en: 'Write date as YYYY-MM-DD.' },
+  badDate: { ja: 'date は実在する日を YYYY-MM-DD で書く。', en: 'Write date as a day that exists, in the form YYYY-MM-DD.' },
   messageOrDraft: { ja: 'messageId と draftId はどちらか一つだけ。', en: 'Give messageId or draftId, not both.' }
 } as const
 

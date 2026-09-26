@@ -24,7 +24,11 @@ export const TASK_VIEWS = ['board', 'list'] as const
 export type TaskViewMode = (typeof TASK_VIEWS)[number]
 
 const id = z.string().min(1)
-const localDate = z.iso.date()
+/**
+ * A local calendar day that exists. open_app checks the day it is given with this, so that it never
+ * places the calendar on a day the report of the view then refuses.
+ */
+export const localDate = z.iso.date()
 
 const mailPane = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('message'), id }),
