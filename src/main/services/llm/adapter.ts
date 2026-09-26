@@ -120,14 +120,16 @@ export abstract class AdapterStream implements ConversationStream {
 }
 
 /**
- * The events of a stream from the openai package, raising the request's abort at their end. The
- * package ends a stream quietly when its request is aborted mid-response (isTransportAbortError in
- * openai/core/streaming.js), so a response cut off by a round's timeout would otherwise read as one
- * that ran to its end, and would not count as the transient failure a timeout is.
+ * The failure of a response from the openai package whose stream ended before its terminal event. The
+ * package ends a stream quietly both when its request is aborted mid-response (isTransportAbortError in
+ * openai/core/streaming.js) and when the server closes it early, so only a missing terminal event tells
+ * that the response was cut off. An abort, such as a round's timeout, is raised as it was given;
+ * otherwise the failure says "premature close", which api-errors reads as a dropped connection and so
+ * as transient. A response whose terminal event arrived stands, even when an abort came after it.
  */
-export async function* raisingAbort<T>(events: AsyncIterable<T>, signal: AbortSignal): AsyncGenerator<T> {
-  for await (const event of events) yield event
+export function streamCutOff(signal: AbortSignal, provider: string): never {
   signal.throwIfAborted()
+  throw new Error(`${provider}: premature close, the stream ended before the response did`)
 }
 
 /** Empty arguments mean no arguments. Invalid JSON throws instead of running the tool with broken arguments. */

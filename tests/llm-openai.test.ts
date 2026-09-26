@@ -7,6 +7,8 @@ import { isTransientApiError } from '@shared/api-errors'
 const mocks = vi.hoisted(() => ({
   events: [] as unknown[],
   failAfter: null as Error | null,
+  /** Runs once every event has been read, before the stream ends. */
+  atEnd: null as (() => void) | null,
   params: [] as Array<Record<string, unknown>>
 }))
 
@@ -21,6 +23,7 @@ vi.mock('openai', () => ({
             if (options.signal.aborted) return
             yield event
           }
+          mocks.atEnd?.()
           if (mocks.failAfter) throw mocks.failAfter
         })()
       }
@@ -67,6 +70,7 @@ beforeEach(() => {
   vi.resetModules()
   mocks.events = []
   mocks.failAfter = null
+  mocks.atEnd = null
   mocks.params.length = 0
 })
 
@@ -211,9 +215,22 @@ describe('the OpenAI stream', () => {
     // The stream closes normally even after a failure, so without an error it would pass as an empty reply.
     mocks.events = [{ type: 'response.failed', response: { status: 'failed', error: { code: 'rate_limit_exceeded', message: 'slow down' } } }]
     await expect((await open()).stream.final()).rejects.toMatchObject({ status: 429 })
+  })
 
-    mocks.events = []
-    await expect((await open()).stream.final()).rejects.toThrow('without a completion event')
+  it('fails as a transient error when the server ends the stream before the completion event, as when a connection drops', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '大阪は' }]
+    const error = await (await open()).stream.final().then(() => null, (reason: unknown) => reason)
+    expect(isTransientApiError(error)).toBe(true)
+  })
+
+  it('keeps an answer whose completion event arrived before the timeout of the round fired', async () => {
+    mocks.events = [{ type: 'response.output_text.delta', delta: '晴れです。' }, completed()]
+    const controller = new AbortController()
+    mocks.atEnd = () => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+    const result = await (await open({ signal: controller.signal })).stream.final()
+    // A finished reply taken for a cut one would be resumed and spoken again.
+    expect(result.stop).toBe('end')
+    expect(result.message.parts).toEqual([{ type: 'text', text: '晴れです。' }])
   })
 
   it('fails as a transient error when the timeout of the round cuts the response off', async () => {
