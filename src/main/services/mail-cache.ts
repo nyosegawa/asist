@@ -299,11 +299,13 @@ export class MailCache {
     return String(row.text ?? '')
   }
 
-  /** The messages whose body is still missing, newest first. */
-  pendingBodies(accountId: string, folder: MailFolder, limit: number): Array<{ uid: number } & MailBodyParts> {
+  /** The messages whose body is still missing, newest first, leaving out the uids in `skip`. */
+  pendingBodies(accountId: string, folder: MailFolder, limit: number, skip: readonly number[]): Array<{ uid: number } & MailBodyParts> {
     const rows = this.db
-      .prepare('SELECT uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 ORDER BY date DESC, uid DESC LIMIT ?')
-      .all(accountId, folder, limit) as Row[]
+      .prepare(
+        'SELECT uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 AND uid NOT IN (SELECT value FROM json_each(?)) ORDER BY date DESC, uid DESC LIMIT ?'
+      )
+      .all(accountId, folder, JSON.stringify(skip), limit) as Row[]
     return rows.map((row) => ({ uid: Number(row.uid), textPart: row.text_part === null ? null : String(row.text_part), htmlPart: row.html_part === null ? null : String(row.html_part) }))
   }
 

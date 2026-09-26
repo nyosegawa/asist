@@ -1988,6 +1988,19 @@ export const mail = defineMessages({
         'pt-BR': 'Não foi possível receber {box} ({reason})',
         'es-419': 'No se pudo recibir {box} ({reason})',
         'es-ES': 'No se ha podido recibir {box} ({reason})'
+      },
+      noMessageList: {
+        'ja-JP': 'サーバーがメールの一覧を返しませんでした',
+        'en-US': 'The server did not return the list of messages',
+        'fr-FR': "Le serveur n'a pas renvoyé la liste des messages",
+        'de-DE': 'Der Server hat die Liste der E-Mails nicht geliefert',
+        'hi-IN': 'सर्वर ने मेल की सूची नहीं भेजी',
+        'id-ID': 'Server tidak mengirimkan daftar email',
+        'it-IT': "Il server non ha restituito l'elenco dei messaggi",
+        'ko-KR': '서버가 메일 목록을 보내지 않았습니다',
+        'pt-BR': 'O servidor não enviou a lista de e-mails',
+        'es-419': 'El servidor no envió la lista de correos',
+        'es-ES': 'El servidor no ha enviado la lista de correos'
       }
     }
   },

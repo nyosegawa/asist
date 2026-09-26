@@ -87,6 +87,13 @@ export class MailAccountSync {
   private readonly folderTimers = new Map<MailFolder, ReturnType<typeof setTimeout>>()
   private hydrateTimer: ReturnType<typeof setTimeout> | null = null
   private synced = new Set<MailFolder>()
+  /** How many operations are queued or running on the connection. */
+  private pending = 0
+  /**
+   * The uids whose body could not be fetched or turned into text in this session. The hydrate passes
+   * skip them, so one such message does not hold up the bodies behind it.
+   */
+  private readonly failedBodies: Record<MailFolder, Set<number>> = { inbox: new Set(), sent: new Set(), archive: new Set() }
   state: MailSyncState = 'off'
   error = ''
   lastSyncAt: number | null = null
@@ -158,6 +165,7 @@ export class MailAccountSync {
    * the same account are serialized, so they never contend for the single IMAP connection.
    */
   run<T>(operation: (client: ImapClient, gmail: boolean) => Promise<T>): Promise<T> {
+    this.pending += 1
     const task = this.queue.then(
       async () => {
         if (this.stopped) throw new Error(errorText('mail.errors.sync.stopped'))
@@ -175,11 +183,30 @@ export class MailAccountSync {
         return operation(client, this.gmail)
       }
     )
-    this.queue = task.then(
-      () => undefined,
-      () => undefined
-    )
+    const settle = async (): Promise<void> => {
+      this.pending -= 1
+      if (this.pending === 0) await this.returnToInbox()
+    }
+    this.queue = task.then(settle, settle)
     return task
+  }
+
+  /**
+   * imapflow idles on the folder selected last, and IDLE is how mail arriving in the inbox is noticed
+   * between the periodic fetches. Fetching bodies, opening a sent message or starring an archived one
+   * selects another folder, so the connection goes back to the inbox once no operation is waiting.
+   */
+  private async returnToInbox(): Promise<void> {
+    const client = this.client
+    if (this.stopped || !client?.usable) return
+    if (client.mailbox && client.mailbox.path === 'INBOX') return
+    try {
+      const lock = await client.getMailboxLock('INBOX')
+      lock.release()
+    } catch (error) {
+      if (!client.usable) this.dropClient(client, errorMessage(error))
+      else this.setState('error', t('mail.errors.sync.folderFailed', { box: t('mail.boxes.inbox'), reason: errorMessage(error) }))
+    }
   }
 
   private pathOf(folder: MailFolder): string | null {
@@ -190,7 +217,15 @@ export class MailAccountSync {
   private async ensureClient(): Promise<ImapClient> {
     if (this.client?.usable) return this.client
     this.setState('connecting')
-    const client = this.options.createClient(this.account, this.options.password())
+    let client: ImapClient
+    try {
+      client = this.options.createClient(this.account, this.options.password())
+    } catch (error) {
+      // The password store throws when the entry is missing or cannot be decrypted, and the account would
+      // otherwise stay "connecting" with nothing to say why.
+      this.setState('error', errorMessage(error))
+      throw error
+    }
     client.on('error', (error: unknown) => {
       if (this.client === client) this.setState('error', errorMessage(error))
     })
@@ -292,10 +327,16 @@ export class MailAccountSync {
       const mailbox = client.mailbox
       if (!mailbox) throw new Error(errorText('mail.errors.folder.openFailed', { path }))
       const uidValidity = String(mailbox.uidValidity)
-      const first = cache.uidValidity(account.id, folder) !== uidValidity || !this.synced.has(folder)
+      const reset = cache.uidValidity(account.id, folder) !== uidValidity
+      const first = reset || !this.synced.has(folder)
       cache.setUidValidity(account.id, folder, uidValidity)
+      if (reset) this.failedBodies[folder].clear()
       const since = syncSince(new Date(this.now()), this.options.syncDays())
-      const serverUids = (await client.search({ since }, { uid: true })) || []
+      const serverUids = await client.search({ since }, { uid: true })
+      // imapflow's search answers false instead of throwing when the server rejects the command or the
+      // connection breaks during it. Read as an empty folder, it would remove every cached message, and the
+      // next fetch would announce the unread ones of the last day as new mail again.
+      if (!Array.isArray(serverUids)) throw new Error(errorText('mail.errors.sync.noMessageList'))
       const cached = cache.flagsIn(account.id, folder)
       const serverSet = new Set(serverUids)
       const removed = [...cached.keys()].filter((uid) => !serverSet.has(uid))
@@ -400,13 +441,22 @@ export class MailAccountSync {
 
   private async hydrate(client: ImapClient, folder: MailFolder, path: string, limit: number): Promise<number> {
     const { account, cache } = this.options
-    const pending = cache.pendingBodies(account.id, folder, limit)
+    const failed = this.failedBodies[folder]
+    const pending = cache.pendingBodies(account.id, folder, limit, [...failed])
     if (pending.length === 0) return 0
     const lock = await client.getMailboxLock(path)
     try {
       for (const item of pending) {
-        const text = await fetchText(client, item.uid, item)
-        cache.setBody(messageIdOf(account.id, folder, item.uid), text)
+        try {
+          const text = await fetchText(client, item.uid, item)
+          cache.setBody(messageIdOf(account.id, folder, item.uid), text)
+        } catch (error) {
+          if (!client.usable) throw error
+          // A server can refuse one FETCH, and html-to-text throws RangeError on deeply nested HTML. The
+          // message keeps no body rather than an empty one, so opening it fetches again and shows the reason.
+          failed.add(item.uid)
+          console.warn(`mail body (${account.label}, ${folder} ${item.uid}):`, errMessage(error))
+        }
       }
     } finally {
       lock.release()

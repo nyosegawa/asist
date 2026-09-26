@@ -91,7 +91,7 @@ describe('MailCache', () => {
       message('sent', { uid: 3, threadId: 't' }),
       message('archive', { uid: 4, threadId: 't', labels: ['\\Inbox'] })
     ])
-    expect(cache.pendingBodies('a1', 'inbox', 10)).toEqual([
+    expect(cache.pendingBodies('a1', 'inbox', 10, [])).toEqual([
       { uid: 1, textPart: null, htmlPart: '2' },
       { uid: 2, textPart: '1', htmlPart: null }
     ])
@@ -99,7 +99,8 @@ describe('MailCache', () => {
     cache.setBody(messageIdOf('a1', 'inbox', 1), '本文の一行目\n\n> 引用\n二行目')
     expect(cache.body(messageIdOf('a1', 'inbox', 1))).toBe('本文の一行目\n\n> 引用\n二行目')
     expect(cache.get(messageIdOf('a1', 'inbox', 1))).toMatchObject({ snippet: '本文の一行目 二行目', bodyFetched: true })
-    expect(cache.pendingBodies('a1', 'inbox', 10).map((item) => item.uid)).toEqual([2])
+    expect(cache.pendingBodies('a1', 'inbox', 10, []).map((item) => item.uid)).toEqual([2])
+    expect(cache.pendingBodies('a1', 'inbox', 10, [2])).toEqual([])
     expect(cache.thread('a1', 't').map((m) => m.uid)).toEqual([3, 2, 1])
   })
 
