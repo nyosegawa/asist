@@ -3,8 +3,10 @@ import EventKit
 import CryptoKit
 
 // One request per process. Calendar contents travel through stdin/stdout only, never argv or logs.
-struct Failure: Error { let message: String }
-func fail(_ message: String) throws -> Never { throw Failure(message: message) }
+// A failure is reported as a code that src/main/services/calendar.ts turns into a message, so that the
+// message is written in the language of whoever reads it.
+struct Failure: Error { let code: String }
+func fail(_ code: String) throws -> Never { throw Failure(code: code) }
 let store = EKEventStore()
 func authorization() -> String {
     switch EKEventStore.authorizationStatus(for: .event) {
@@ -23,14 +25,29 @@ func account(_ calendar: EKCalendar) -> [String: Any] {
 func status() -> [String: Any] {
     ["authorization": authorization(), "calendars": authorization() == "fullAccess" ? store.calendars(for: .event).map(account) : []]
 }
+// ASIST ends an all-day event at midnight after its last day, exclusive like every other end. EventKit
+// ignores the time of day of an all-day event's dates, so it would read that midnight as one more day,
+// and it reports the end as 23:59:59 of the last day. These two functions are the only place where the
+// two conventions meet.
+func appEnd(of event: EKEvent, in zone: TimeZone) throws -> Date {
+    guard event.isAllDay else { return event.endDate }
+    var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
+    guard let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: event.endDate)) else { try fail("eventKitFailed") }
+    return end
+}
+func eventKitEnd(fromAppEnd end: Date, allDay: Bool) -> Date {
+    allDay ? end.addingTimeInterval(-1) : end
+}
 func eventData(_ event: EKEvent) throws -> [String: Any] {
-    guard let id = event.eventIdentifier else { try fail("予定の識別子を取得できません") }
+    guard let id = event.eventIdentifier else { try fail("eventKitFailed") }
+    // An all-day event floats in the zone of the Mac, and EventKit gives it no zone of its own.
+    let zone = event.timeZone ?? TimeZone.current
     var data: [String: Any] = [
         "id": id, "calendarId": event.calendar.calendarIdentifier, "calendarTitle": event.calendar.title,
         "title": event.title ?? "", "start": event.startDate.timeIntervalSince1970 * 1000,
-        "end": event.endDate.timeIntervalSince1970 * 1000, "allDay": event.isAllDay,
+        "end": try appEnd(of: event, in: zone).timeIntervalSince1970 * 1000, "allDay": event.isAllDay,
         "location": event.location ?? "", "notes": event.notes ?? "",
-        "timeZone": event.timeZone?.identifier ?? TimeZone.current.identifier,
+        "timeZone": zone.identifier,
         "recurring": event.hasRecurrenceRules || event.isDetached,
         // Google can set an organizer even on personal events without invitees.
         "hasAttendees": event.hasAttendees,
@@ -43,8 +60,10 @@ func eventData(_ event: EKEvent) throws -> [String: Any] {
     data["revision"] = SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
     return data
 }
+// ASIST checks what it sends before it sends it, so input that does not read is a defect of ASIST,
+// reported as badRequest.
 func text(_ input: [String: Any], _ key: String) throws -> String {
-    guard let value = input[key] as? String else { try fail("入力が不正です: \(key)") }
+    guard let value = input[key] as? String else { try fail("badRequest") }
     return value
 }
 func date(_ input: [String: Any], _ key: String) throws -> Date {
@@ -53,15 +72,15 @@ func date(_ input: [String: Any], _ key: String) throws -> Date {
     format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     if let result = format.date(from: value) { return result }
     format.formatOptions = [.withInternetDateTime]
-    guard let result = format.date(from: value) else { try fail("日時が不正です: \(key)") }
+    guard let result = format.date(from: value) else { try fail("badRequest") }
     return result
 }
 func existing(_ input: [String: Any]) throws -> EKEvent {
-    guard let event = store.event(withIdentifier: try text(input, "eventId")) else { try fail("予定が見つかりません。再検索してください") }
+    guard let event = store.event(withIdentifier: try text(input, "eventId")) else { try fail("eventNotFound") }
     return event
 }
 func writable(_ calendar: EKCalendar) throws {
-    guard calendar.allowsContentModifications else { try fail("このカレンダーには書き込めません") }
+    guard calendar.allowsContentModifications else { try fail("destinationUnwritable") }
 }
 func perform(_ input: [String: Any]) async throws -> Any {
     let operation = try text(input, "operation")
@@ -70,51 +89,49 @@ func perform(_ input: [String: Any]) async throws -> Any {
         _ = try await store.requestFullAccessToEvents()
         return status()
     }
-    guard authorization() == "fullAccess" else { try fail("macOSのカレンダーへのフルアクセスを許可してください") }
+    guard authorization() == "fullAccess" else { try fail("needsFullAccess") }
     if operation == "search" {
-        guard let ids = input["calendarIds"] as? [String], !ids.isEmpty else { try fail("表示するカレンダーを選んでください") }
+        guard let ids = input["calendarIds"] as? [String], !ids.isEmpty else { try fail("noReadCalendars") }
         let calendars = try ids.map { id -> EKCalendar in
-            guard let calendar = store.calendar(withIdentifier: id) else { try fail("選択したカレンダーが見つかりません。設定で選び直してください") }
+            guard let calendar = store.calendar(withIdentifier: id) else { try fail("calendarNotFound") }
             return calendar
         }
         let start = try date(input, "start"), end = try date(input, "end")
-        guard end > start, end.timeIntervalSince(start) <= 366 * 86400 else { try fail("検索範囲が不正です") }
+        guard end > start, end.timeIntervalSince(start) <= 366 * 86400 else { try fail("badRequest") }
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
         return try store.events(matching: predicate).filter { $0.startDate < end && $0.endDate > start }
             .sorted { $0.startDate < $1.startDate }.map(eventData)
     }
     if operation == "get" { return try eventData(existing(input)) }
-    guard ["create", "update", "delete"].contains(operation) else { try fail("未対応の操作です") }
+    guard ["create", "update", "delete"].contains(operation) else { try fail("badRequest") }
     let event: EKEvent
     if operation == "create" {
-        guard let calendar = store.calendar(withIdentifier: try text(input, "calendarId")) else { try fail("保存先が見つかりません") }
+        guard let calendar = store.calendar(withIdentifier: try text(input, "calendarId")) else { try fail("destinationUnwritable") }
         try writable(calendar)
         event = EKEvent(eventStore: store)
         event.calendar = calendar
     } else {
         event = try existing(input)
         try writable(event.calendar)
-        guard !event.hasRecurrenceRules && !event.isDetached && !event.hasAttendees else {
-            try fail("繰り返し予定と招待付き予定の変更・削除はmacOSのカレンダーで行ってください")
-        }
-        guard try text(input, "revision") == eventData(event)["revision"] as? String else { try fail("確認後に予定が変わりました。再検索して確認し直してください") }
+        guard !event.hasRecurrenceRules && !event.isDetached && !event.hasAttendees else { try fail("locked") }
+        guard try text(input, "revision") == eventData(event)["revision"] as? String else { try fail("changedSinceConfirm") }
     }
     if operation == "delete" {
         let before = try eventData(event)
         try store.remove(event, span: .thisEvent, commit: true)
         return before
     }
-    guard let fields = input["event"] as? [String: Any] else { try fail("予定の入力がありません") }
+    guard let fields = input["event"] as? [String: Any] else { try fail("badRequest") }
     let start = try date(fields, "start"), end = try date(fields, "end")
     guard end > start, let allDay = fields["allDay"] as? Bool,
-          let zone = TimeZone(identifier: try text(fields, "timeZone")) else { try fail("予定の日時が不正です") }
+          let zone = TimeZone(identifier: try text(fields, "timeZone")) else { try fail("badRequest") }
     let title = try text(fields, "title").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty else { try fail("件名を入力してください") }
+    guard !title.isEmpty else { try fail("badRequest") }
     if allDay {
         var calendar = Calendar(identifier: .gregorian); calendar.timeZone = zone
-        guard calendar.startOfDay(for: start) == start && calendar.startOfDay(for: end) == end else { try fail("終日は0時を指定してください") }
+        guard calendar.startOfDay(for: start) == start && calendar.startOfDay(for: end) == end else { try fail("badRequest") }
     }
-    event.title = title; event.startDate = start; event.endDate = end
+    event.title = title; event.startDate = start; event.endDate = eventKitEnd(fromAppEnd: end, allDay: allDay)
     event.isAllDay = allDay; event.timeZone = zone
     event.location = try text(fields, "location"); event.notes = try text(fields, "notes")
     try store.save(event, span: .thisEvent, commit: true)
@@ -124,15 +141,15 @@ func perform(_ input: [String: Any]) async throws -> Any {
 Task {
     do {
         let data = FileHandle.standardInput.readDataToEndOfFile()
-        guard let input = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { try fail("JSONオブジェクトが必要です") }
+        guard let input = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { try fail("badRequest") }
         let result = try await perform(input)
         let output = try JSONSerialization.data(withJSONObject: ["ok": true, "data": result], options: [.sortedKeys])
         FileHandle.standardOutput.write(output)
         exit(0)
     } catch {
         // Do not emit EventKit errors, which may contain user data.
-        let message = (error as? Failure)?.message ?? "EventKitの処理に失敗しました。カレンダーの権限と同期状態を確認してください"
-        let output = try! JSONSerialization.data(withJSONObject: ["ok": false, "error": message])
+        let code = (error as? Failure)?.code ?? "eventKitFailed"
+        let output = try! JSONSerialization.data(withJSONObject: ["ok": false, "error": code])
         FileHandle.standardOutput.write(output)
         exit(0)
     }

@@ -429,6 +429,21 @@ describe('calendar dates', () => {
       else process.env.TZ = previous
     }
   })
+  it('takes back an all-day event, as the helper reports it and show_calendar shows it, in an update', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      // asist-calendar.swift reports the end of an all-day event as midnight after its last day.
+      const holiday = { ...event, allDay: true, start: Date.parse('2026-09-15T00:00:00+09:00'), end: Date.parse('2026-09-16T00:00:00+09:00') }
+      const shown = detailCalendarEvent('ja-JP', holiday)
+      expect(shown.date).toBe('2026-09-15(火)')
+      const update = { title: '祝日', start: shown.start, end: shown.end, allDay: shown.allDay, timeZone: shown.timeZone, location: '', notes: '' }
+      expect(calendarEventInputSchema.safeParse(update).success).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
   it('tells the model that an event ending at midnight is on the day it starts', () => {
     const previous = process.env.TZ
     try {
