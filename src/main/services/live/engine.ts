@@ -54,8 +54,11 @@ export abstract class LiveEngineBase {
   private readonly encoder: InputEncoder
   /** The turn id of the current exchange. The exchange closes once the assistant transcript is final. */
   protected exchangeTurnId: number | null = null
-  /** Whether this exchange has emitted a started TurnEvent, which engines that open tools or panels need. */
-  private exchangeStarted = false
+  /**
+   * Who emitted the started TurnEvent of this exchange, which engines that open tools or panels need:
+   * the engine itself, or brain for a turn it was handed. Whoever started a turn ends it.
+   */
+  private exchangeStartedBy: 'engine' | 'brain' | null = null
   /**
    * Whether a GPT-Live delegation has claimed the user's utterance in progress for brain. Until the
    * delegation takes it, the reply's transcript neither finalizes it nor closes the exchange.
@@ -250,29 +253,33 @@ export abstract class LiveEngineBase {
     return this.exchangeTurnId
   }
 
-  /** The exchange is handed to a brain turn, so later assistant transcripts are recorded under that turn. */
+  /**
+   * The exchange is handed to a brain turn, so later assistant transcripts are recorded under that turn.
+   * Brain started the turn and ends it when its reply is over, which can be after the voice has read the
+   * first of its sentences.
+   */
   protected adoptTurn(turnId: number): void {
     this.exchangeTurnId = turnId
-    this.exchangeStarted = true
+    this.exchangeStartedBy = 'brain'
   }
 
   /** Tells the renderer about this exchange's turn before any tool or panel appears. */
   protected ensureTurnStarted(emit: (event: TurnEvent) => void): number {
     const turnId = this.exchange()
-    if (!this.exchangeStarted) {
-      this.exchangeStarted = true
+    if (this.exchangeStartedBy === null) {
+      this.exchangeStartedBy = 'engine'
       emit({ type: 'started', turnId, origin: 'live' })
     }
     return turnId
   }
 
-  /** Ends the exchange, emitting done only if started was emitted. */
+  /** Ends the exchange, emitting done only for a turn the engine started itself. */
   protected finishExchange(emit: (event: TurnEvent) => void, fullText: string): void {
-    if (this.exchangeTurnId !== null && this.exchangeStarted) {
+    if (this.exchangeTurnId !== null && this.exchangeStartedBy === 'engine') {
       emit({ type: 'done', turnId: this.exchangeTurnId, fullText })
     }
     this.exchangeTurnId = null
-    this.exchangeStarted = false
+    this.exchangeStartedBy = null
   }
 
   protected pushTranscript(role: TranscriptRole, delta: string): void {

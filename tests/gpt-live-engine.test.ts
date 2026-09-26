@@ -314,6 +314,25 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('leaves the end of a turn it handed to brain to brain, which ends it once its reply is over', async () => {
+    const { engine, sockets, turnEvents } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.input_transcript.delta', delta: '明日の天気は', event_id: 'a', start_ms: 0, end_ms: 1 })
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(600)
+    // The voice reads the first of brain's sentences, and brain is still working on the rest.
+    socket.emit({ type: 'session.output_transcript.delta', delta: '調べますね。', event_id: 'b', start_ms: 2, end_ms: 3 })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(mocks.record).toHaveBeenCalledWith({ kind: 'assistant', turnId: 42, text: '調べますね。' })
+    // A done here would end the turn on screen while brain still opens its panels.
+    expect(turnEvents).toEqual([])
+    await engine.stop()
+  })
+
   it('ends a delegation still waiting for its transcript when the engine stops, and carries nothing of it into the next start', async () => {
     const { engine, sockets, beginTurn } = await setup()
     engine.activity(true)
