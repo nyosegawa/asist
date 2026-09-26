@@ -8,7 +8,7 @@ import { openStoredFileSync } from './stored-file'
 
 export const DRAFTS_FORMAT: StoredFormat<MailDraft[]> = {
   name: 'mail-drafts.json',
-  version: 2,
+  version: 3,
   upgrades: {
     // A version 1 reply held only the message it answered, and its recipients were decided when it was
     // sent. Nothing in the file says where it would have gone, so it becomes a new message with an empty
@@ -21,6 +21,13 @@ export const DRAFTS_FORMAT: StoredFormat<MailDraft[]> = {
           draft.reply ? { ...draft, to: [], cc: [], subject: replySubject(String(draft.reply.subject ?? '')), reply: null } : draft
         )
       }
+    },
+    // Version 2 recorded no send. A draft still in the file was either never sent or sent while its removal
+    // failed, and nothing tells the two apart, so each is taken as not sent, as version 2 did.
+    2: (content) => {
+      const drafts = (content as { drafts?: unknown } | null)?.drafts
+      if (!Array.isArray(drafts)) throw new Error('drafts is not a list')
+      return { drafts: drafts.map((draft: object) => ({ ...draft, sendStartedAt: null })) }
     }
   },
   parse: (content) => {
@@ -46,7 +53,7 @@ export interface MailDraftStoreOptions {
   onChanged?: (drafts: MailDraft[]) => void
 }
 
-export type MailDraftSeed = Omit<MailDraft, 'id' | 'createdAt' | 'updatedAt'>
+export type MailDraftSeed = Omit<MailDraft, 'id' | 'createdAt' | 'updatedAt' | 'sendStartedAt'>
 
 export class MailDraftStore {
   private drafts: MailDraft[] | null = null
@@ -101,7 +108,7 @@ export class MailDraftStore {
     const current = this.load()
     if (current.length >= MAX_MAIL_DRAFTS) throw new Error(errorText('mail.errors.draft.tooMany', { count: MAX_MAIL_DRAFTS }))
     const now = this.now()
-    const draft: MailDraft = { ...seed, id: this.options.createId?.() ?? randomUUID(), createdAt: now, updatedAt: now }
+    const draft: MailDraft = { ...seed, id: this.options.createId?.() ?? randomUUID(), createdAt: now, updatedAt: now, sendStartedAt: null }
     this.commit([draft, ...current])
     return { ...draft }
   }
@@ -117,6 +124,16 @@ export class MailDraftStore {
     const allowed = before.reply ? { body: patch.body } : patch
     const next: MailDraft = { ...before, ...stripUndefined(allowed), updatedAt: this.now() }
     this.commit(current.map((draft, at) => (at === index ? next : draft)))
+    return { ...next }
+  }
+
+  /** Records that a send started, or with null that it failed. updatedAt stays, since it follows edits of the text. */
+  setSendStartedAt(id: string, at: number | null): MailDraft {
+    const current = this.load()
+    const index = current.findIndex((draft) => draft.id === id)
+    if (index < 0) throw new Error(errorText('mail.errors.draft.gone'))
+    const next: MailDraft = { ...current[index], sendStartedAt: at }
+    this.commit(current.map((draft, position) => (position === index ? next : draft)))
     return { ...next }
   }
 

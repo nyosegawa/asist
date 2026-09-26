@@ -22,6 +22,7 @@ import {
   type Task
 } from '@shared/tasks'
 import type { CalendarChange, CalendarChangeResult, CalendarEvent } from '@shared/calendar'
+import { overlaps } from '@shared/calendar-layout'
 import { defaultPersona } from '@shared/persona'
 import { demoUsageDays } from './fixtures/usage'
 import { DEFAULT_DOCK_ORDER } from '@shared/dock'
@@ -588,7 +589,7 @@ export const mockApi: RendererApi = {
   calendarStatus: async () => DEMO_CALENDAR_STATUS,
   calendarRequestAccess: async () => DEMO_CALENDAR_STATUS,
   calendarEvents: async ({ start, end }) =>
-    demoCalendarEvents().filter((e) => e.start < Date.parse(end) && e.end > Date.parse(start)),
+    demoCalendarEvents().filter((e) => overlaps(e, Date.parse(start), Date.parse(end))),
   calendarChange: async (change) => demoCalendarChange(change),
   calendarOpenGuide: async () => {
     throw new Error('手順書はmacOSアプリで開いてください')

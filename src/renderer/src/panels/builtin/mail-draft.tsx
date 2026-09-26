@@ -17,6 +17,8 @@ import { useT } from '@/i18n'
  * from main's drafts (useMailStore.drafts) and the props carry only the draftId. A reply's recipients were
  * settled from the message it answers, Reply-To and a reply-all's Cc included, and are shown as the full
  * addresses it is sent to, since the sender's name alone would hide a Reply-To that points elsewhere.
+ * A draft whose send started and did not fail may already have gone out, so it offers no send button and
+ * says it can only be discarded.
  */
 
 const ROWS: Record<CardContext['size'], number> = { l: 8, m: 6, s: 4, focus: 16 }
@@ -47,7 +49,8 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
     )
   }
   const account = accounts?.find((item) => item.id === draft.accountId)
-  const busy = editor.busy === 'send' || editor.busy === 'discard'
+  const busy = editor.sending || editor.busy === 'discard'
+  const locked = busy || editor.sendStarted
   const send = async (): Promise<void> => {
     const summary = await editor.send()
     if (summary) toast({ kind: 'ok', title: draft.reply ? t('mail.done.reply') : t('mail.done.send'), body: summary })
@@ -62,7 +65,10 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
           {draft.origin === 'agent' && ` · ${t('mailCards.draft.fromVoice')}`}
         </p>
       </div>
-      <Box title={t('mailCards.draft.content')} note={editor.busy === 'save' ? t('common.saving') : editor.dirty ? t('mail.composer.notSaved') : t('mailCards.draft.editable')}>
+      <Box
+        title={t('mailCards.draft.content')}
+        note={editor.sendStarted ? undefined : editor.busy === 'save' ? t('common.saving') : editor.dirty ? t('mail.composer.notSaved') : t('mailCards.draft.editable')}
+      >
         <div className="md-fields">
           {draft.reply && replyValues ? (
             <>
@@ -86,17 +92,17 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
             <>
               <label className="md-field">
                 <span>{t('mail.fields.to')}</span>
-                <input aria-label={t('mail.fields.to')} value={editor.fields.to} disabled={busy} onChange={(event) => editor.set({ to: event.target.value })} />
+                <input aria-label={t('mail.fields.to')} value={editor.fields.to} disabled={locked} onChange={(event) => editor.set({ to: event.target.value })} />
               </label>
               {(size !== 's' || editor.fields.cc) && (
                 <label className="md-field">
                   <span>Cc</span>
-                  <input aria-label="Cc" value={editor.fields.cc} disabled={busy} onChange={(event) => editor.set({ cc: event.target.value })} />
+                  <input aria-label="Cc" value={editor.fields.cc} disabled={locked} onChange={(event) => editor.set({ cc: event.target.value })} />
                 </label>
               )}
               <label className="md-field">
                 <span>{t('mail.fields.subject')}</span>
-                <input aria-label={t('mail.fields.subject')} value={editor.fields.subject} disabled={busy} onChange={(event) => editor.set({ subject: event.target.value })} />
+                <input aria-label={t('mail.fields.subject')} value={editor.fields.subject} disabled={locked} onChange={(event) => editor.set({ subject: event.target.value })} />
               </label>
             </>
           )}
@@ -105,15 +111,22 @@ function MailDraftBody({ spec, size }: CardContext): React.JSX.Element {
             aria-label={t('mail.fields.body')}
             rows={ROWS[size]}
             value={editor.fields.body}
-            disabled={busy}
+            disabled={locked}
             onChange={(event) => editor.set({ body: event.target.value })}
           />
         </div>
       </Box>
+      {editor.sendStarted && (
+        <p className="md-started" role="status">
+          {t('mail.drafts.sendStarted')}
+        </p>
+      )}
       <Actions>
-        <Action tone="primary" disabled={busy || !editor.fields.body.trim()} onClick={() => void send()}>
-          {editor.busy === 'send' ? t('mail.sending') : t('mail.send')}
-        </Action>
+        {!editor.sendStarted && (
+          <Action tone="primary" disabled={busy || !editor.fields.body.trim()} onClick={() => void send()}>
+            {editor.sending ? t('mail.sending') : t('mail.send')}
+          </Action>
+        )}
         <Action tone="danger" disabled={busy} onClick={() => void editor.discard()}>
           {t('mail.composer.discard')}
         </Action>
