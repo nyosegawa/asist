@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentJob, AgentProcessIdentity } from '@shared/ipc'
 import { setCapabilities, WINDOWS } from './helpers/platform'
 
@@ -10,6 +10,16 @@ vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ agentEng
 vi.mock('../src/main/services/agent-process/cli-locator', () => ({ requireCli: () => process.execPath }))
 
 const { launchAgentProcess, recoverAgentProcess } = await import('../src/main/services/agent-process')
+
+const runs: Array<ReturnType<typeof launchAgentProcess>> = []
+
+// A failed test would otherwise leave its CLI and grandchild running on the machine.
+afterEach(async () => {
+  for (const run of runs.splice(0)) {
+    run.stop()
+    await run.completion.catch(() => {})
+  }
+})
 
 const alive = (pid: number): boolean => {
   try {
@@ -49,6 +59,7 @@ function launch(keepRunning: boolean) {
     },
     onExit: (code) => exits.push(code)
   })
+  runs.push(run)
   return { run, grandchild, exits, identity: () => identity }
 }
 

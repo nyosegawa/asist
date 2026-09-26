@@ -10,17 +10,11 @@ const launcher = path.resolve('resources/native/windows/asist-agent-launcher.exe
 const EXIT_STOPPED = 130
 
 const started: ChildProcess[] = []
-const leftovers: number[] = []
 
+// Killing a launcher closes the last handle of its job, which ends whatever a failed test left in it. The
+// pids a test read are never killed here: Windows gives a freed pid to a new process at once.
 afterEach(() => {
   for (const child of started.splice(0)) child.kill()
-  for (const pid of leftovers.splice(0)) {
-    try {
-      process.kill(pid)
-    } catch {
-      // Already gone, which is what the tests expect.
-    }
-  }
 })
 
 const alive = (pid: number): boolean => {
@@ -63,10 +57,13 @@ const tool = (args: string[]): { status: number | null; stdout: string } => {
   return { status: result.status, stdout: result.stdout.trim() }
 }
 
-/** A program that starts a grandchild outside its own lifetime, reports both pids, and keeps running or exits. */
-const leavesDescendant = (keepRunning: boolean): string => `
+/**
+ * A program that starts a grandchild, reports both pids, and keeps running or exits. A detached grandchild
+ * leaves the program's lifetime; one that is not goes into the job libuv gives the program's children.
+ */
+const leavesDescendant = (keepRunning: boolean, detached = true): string => `
   const { spawn } = require('node:child_process');
-  const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+  const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: ${detached}, stdio: 'ignore' });
   grandchild.unref();
   process.stdout.write(process.pid + ' ' + grandchild.pid + '\\n');
   ${keepRunning ? 'setInterval(() => {}, 1000);' : 'setTimeout(() => process.exit(0), 200);'}
@@ -95,12 +92,11 @@ describe.runIf(process.platform === 'win32')('the Windows agent launcher', { tim
     expect(fs.existsSync(marker)).toBe(false)
   })
 
-  it('exits only once a descendant the program left behind is gone', async () => {
-    const child = launch(randomUUID(), process.pid, process.execPath, ['-e', leavesDescendant(false)])
+  it.each([true, false])('exits only once a descendant the program left behind is gone (detached: %s)', async (detached) => {
+    const child = launch(randomUUID(), process.pid, process.execPath, ['-e', leavesDescendant(false, detached)])
     const pids = firstLine(child)
     child.stdin!.end('start\n')
     const [, grandchild] = (await pids).split(' ').map(Number)
-    leftovers.push(grandchild)
     expect(await exited(child)).toBe(0)
     expect(alive(grandchild)).toBe(false)
   })
@@ -112,7 +108,6 @@ describe.runIf(process.platform === 'win32')('the Windows agent launcher', { tim
     const pids = firstLine(child)
     child.stdin!.end('start\n')
     const [program, grandchild] = (await pids).split(' ').map(Number)
-    leftovers.push(program, grandchild)
     parent.kill()
     expect(await exited(child)).toBe(EXIT_STOPPED)
     expect(alive(program)).toBe(false)
@@ -125,13 +120,23 @@ describe.runIf(process.platform === 'win32')('the Windows agent launcher', { tim
     const pids = firstLine(child)
     child.stdin!.end('start\n')
     const [program, grandchild] = (await pids).split(' ').map(Number)
-    leftovers.push(program, grandchild)
     expect(Number(tool(['--inspect', token]).stdout)).toBe(2)
     expect(tool(['--stop', token])).toEqual({ status: 0, stdout: 'stopped' })
     expect(await exited(child)).toBe(EXIT_STOPPED)
     expect(alive(grandchild)).toBe(false)
     expect(tool(['--inspect', token])).toEqual({ status: 0, stdout: 'gone' })
     expect(tool(['--stop', randomUUID()])).toEqual({ status: 0, stdout: 'gone' })
+  })
+
+  it('never starts the program when a stop comes after the job exists but before "start"', async () => {
+    const token = randomUUID()
+    const marker = path.join(os.tmpdir(), `asist-launcher-${randomUUID()}`)
+    const child = launch(token, process.pid, process.execPath, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`])
+    while (tool(['--inspect', token]).stdout === 'gone') await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(tool(['--stop', token])).toEqual({ status: 0, stdout: 'stopped' })
+    child.stdin!.end('start\n')
+    expect(await exited(child)).toBe(EXIT_STOPPED)
+    expect(fs.existsSync(marker)).toBe(false)
   })
 
   it('refuses a program that is not an .exe, and a token that is not one', () => {

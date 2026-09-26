@@ -30,6 +30,7 @@ function ownLauncher(child: ChildProcess, token: string, onClose: (code: number 
   let finished = false
   let stopping = false
   let deadline: ReturnType<typeof setTimeout> | undefined
+  let resend: ReturnType<typeof setTimeout> | undefined
   let resolve!: () => void
   let reject!: (error: Error) => void
   const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail })
@@ -39,15 +40,31 @@ function ownLauncher(child: ChildProcess, token: string, onClose: (code: number 
   child.once('close', (code: number | null) => {
     finished = true
     clearTimeout(deadline)
+    clearTimeout(resend)
     onClose(code)
     resolve()
   })
   const stop = (): void => {
     if (finished || stopping) return
     stopping = true
-    stopJob(token).catch(() => reject(new Error(errorText('jobs.process.exitUnconfirmed'))))
+    let expired = false
+    // A stop that reaches the launcher before it has created its job finds nothing to stop, and the
+    // launcher, which has been sent "start", would then run the CLI. So the stop is sent again until the
+    // launcher has exited; once the job exists, the launcher keeps the stop even before the CLI does.
+    const send = (): void => {
+      stopJob(token).then(
+        () => {
+          if (!finished && !expired) resend = setTimeout(send, 100)
+        },
+        () => reject(new Error(errorText('jobs.process.exitUnconfirmed')))
+      )
+    }
+    send()
     // Ownership is not given up after the deadline: a late exit of the launcher still settles the job.
-    deadline = setTimeout(() => reject(new Error(errorText('jobs.process.stopTimedOut'))), 5_000)
+    deadline = setTimeout(() => {
+      expired = true
+      reject(new Error(errorText('jobs.process.stopTimedOut')))
+    }, 5_000)
   }
   return { completion, stop }
 }

@@ -24,7 +24,8 @@
  * launcher itself is killed, the job kills everything in it when its last handle closes.
  *
  * --inspect prints "gone" when no job has the token, or the number of processes in it. --stop stops every
- * process in the job and returns once it is empty; the --run that owns the job then exits as well.
+ * process in the job and returns once it is empty; the --run that owns the job then exits as well, and a
+ * --run that has not created the program yet never does.
  *
  * Only an .exe is started. CreateProcess runs a .cmd or .bat through cmd.exe, which reads the quotes and
  * parentheses in the arguments ASIST passes as its own syntax.
@@ -47,17 +48,17 @@ static int is_exe(const wchar_t *program)
 }
 
 /**
- * The name of the job of a token. A token is ASIST's random UUID; anything else is refused, so that a
- * token can never name an object outside the launcher's own names.
+ * The name of the job or the stop event of a token. A token is ASIST's random UUID; anything else is
+ * refused, so that a token can never name an object outside the launcher's own names.
  */
-static int job_name(const wchar_t *token, wchar_t *name, size_t capacity)
+static int object_name(const wchar_t *kind, const wchar_t *token, wchar_t *name, size_t capacity)
 {
     size_t length = wcslen(token);
     if (length == 0 || length > 64 || wcsspn(token, L"0123456789abcdefABCDEF-") != length) {
         fprintf(stderr, "asist-agent-launcher: %ls is not a token\n", token);
         return 1;
     }
-    swprintf(name, capacity, L"Local\\asist-agent-%ls", token);
+    swprintf(name, capacity, L"Local\\asist-agent-%ls%ls", kind, token);
     return 0;
 }
 
@@ -160,7 +161,9 @@ static int read_start(void)
 static int run(int argc, wchar_t **argv)
 {
     wchar_t name[128];
-    if (job_name(argv[2], name, sizeof name / sizeof name[0]) != 0) return 1;
+    wchar_t stop_name[128];
+    if (object_name(L"", argv[2], name, sizeof name / sizeof name[0]) != 0) return 1;
+    if (object_name(L"stop-", argv[2], stop_name, sizeof stop_name / sizeof stop_name[0]) != 0) return 1;
     wchar_t *end = NULL;
     unsigned long parent_pid = wcstoul(argv[3], &end, 10);
     if (end == argv[3] || *end != L'\0' || parent_pid == 0) {
@@ -189,6 +192,11 @@ static int run(int argc, wchar_t **argv)
     if (!SetInformationJobObject(job, JobObjectExtendedLimitInformation, &limits, sizeof limits)) {
         return fail("SetInformationJobObject");
     }
+    // --stop sets this event before it empties the job. An empty job gives it nothing to stop, so a stop
+    // that comes before the program exists is kept here, and the program is created suspended and started
+    // only once the event is seen unset.
+    HANDLE stopped = CreateEventW(NULL, TRUE, FALSE, stop_name);
+    if (stopped == NULL) return fail("CreateEvent");
 
     if (!read_start()) return EXIT_STOPPED;
 
@@ -217,12 +225,20 @@ static int run(int argc, wchar_t **argv)
 
     // With the program as the application name, CreateProcess neither searches for it nor appends .exe.
     PROCESS_INFORMATION child;
-    if (!CreateProcessW(argv[4], line, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &startup.StartupInfo, &child)) {
+    if (!CreateProcessW(argv[4], line, NULL, NULL, TRUE, EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED, NULL, NULL,
+                        &startup.StartupInfo, &child)) {
         return fail("CreateProcess");
     }
     DeleteProcThreadAttributeList(attributes);
     free(attributes);
     free(line);
+    if (WaitForSingleObject(stopped, 0) == WAIT_OBJECT_0) {
+        if (empty_job(job) != 0) return 1;
+        return EXIT_STOPPED;
+    }
+    // A stop after the check terminates the suspended program with the job, and the resume then fails
+    // on a thread that is gone, which is harmless.
+    ResumeThread(child.hThread);
     CloseHandle(child.hThread);
 
     HANDLE waits[2];
@@ -244,7 +260,13 @@ static int run(int argc, wchar_t **argv)
 static int reach(const wchar_t *token, int stop)
 {
     wchar_t name[128];
-    if (job_name(token, name, sizeof name / sizeof name[0]) != 0) return 1;
+    wchar_t stop_name[128];
+    if (object_name(L"", token, name, sizeof name / sizeof name[0]) != 0) return 1;
+    if (object_name(L"stop-", token, stop_name, sizeof stop_name / sizeof stop_name[0]) != 0) return 1;
+    if (stop) {
+        HANDLE stopped = OpenEventW(EVENT_MODIFY_STATE, FALSE, stop_name);
+        if (stopped != NULL && !SetEvent(stopped)) return fail("SetEvent");
+    }
     HANDLE job = OpenJobObjectW(JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE, FALSE, name);
     if (job == NULL) {
         if (GetLastError() != ERROR_FILE_NOT_FOUND) return fail("OpenJobObject");
