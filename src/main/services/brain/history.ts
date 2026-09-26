@@ -16,15 +16,20 @@ import { stampUserMessage } from './prompt'
  * shape on the next turn. Because nothing but the end changes, the prefix stays stable and the prompt
  * cache keeps working, and ids or paths a tool returned can still be referred to in later turns.
  *
+ * Turns run one after another, so only the newest turn that has an input, an utterance or a notice,
+ * can still be in progress, and the records that follow an input belong to it. A turn before it that
+ * never got a reply will never get one: a voice model records what it said under an exchange of its
+ * own, and a turn cut off by quitting or a crash is not resumed.
+ *
  * Compaction is decided in tokens. The context length is the server's usage plus an estimate of what
  * was added since. Above compressAtTokens it runs when the conversation goes quiet; above limitTokens
  * it starts before the turn without being waited for; above hardLimitTokens, which is close to the API
  * window, that one turn waits for it, which guards against replaying a long log with no checkpoint.
  *
- * A compaction keeps the most recent recentTurns turns raw and folds the answered turns before them
- * into one handover summary that replaces them. The summary is written from the user and assistant
- * text plus one line per tool with its name and input, because paths and ids appear only in the input;
- * tool results are not passed to it. If the turns kept raw alone exceed half the limit, fewer are
+ * A compaction keeps the most recent recentTurns turns raw and folds the turns before them, up to the
+ * turn in progress, into one handover summary that replaces them. The summary is written from the
+ * user and assistant text plus one line per tool with its name and input, because paths and ids
+ * appear only in the input; tool results are not passed to it. If the turns kept raw alone exceed half the limit, fewer are
  * kept. Turns added while the summary is being written stay. The summary is rewritten from scratch
  * each time, so it does not grow with every compaction. The compacted history is written to the log as
  * a checkpoint, and a failed summary leaves the history untouched: a crash during the summary call
@@ -44,8 +49,10 @@ export interface HistoryTurn {
   failed?: boolean
   /** The messages sent to the API during the turn, after the user's utterance. Tool calls and their results live here. */
   messages: ConversationMessage[]
-  /** The note injected alongside the user's utterance, which the history also appends after the text. */
+  /** The note injected alongside the input, which the history also appends after the text. */
   notes?: string
+  /** The job status sent with the input, which follows the notes. A turn carries it only when it changed, so the newest one is the one in force. */
+  jobStatus?: string
   /** The ids of the memories shown to the model in this turn, from the note and from recall. */
   memoryIds: string[]
   /** The original records, kept so the turn can be written back into a checkpoint. */
@@ -110,9 +117,6 @@ const LOG_TOOL_FAILED: PromptText = { ja: ` → 失敗`, en: ` -> failed` }
 /** A system notice interrupted before any reply is withdrawn, because the retry of the report puts it back. */
 const withdrawn = (turn: HistoryTurn): boolean => Boolean(turn.notice) && turn.interrupted === 'before-reply'
 
-/** The turn has finished answering and may therefore be compacted. */
-const settled = (turn: HistoryTurn): boolean => turn.user === undefined || hasReply(turn)
-
 /** The part of what was spoken that is not already in the text of the assistant messages sent during the turn. */
 function unsentReply(turn: HistoryTurn): string {
   const spoken = turn.assistant ?? ''
@@ -123,9 +127,6 @@ function unsentReply(turn: HistoryTurn): string {
   }
   return sent && spoken.startsWith(sent) ? spoken.slice(sent.length) : spoken
 }
-
-/** The longest summary that is accepted. The prompt asks for well under this, and anything beyond it counts as a failed compaction. */
-export const SUMMARY_MAX_CHARS = 10_000
 
 /** An estimate of what is sent. The provider's raw output is not counted, because it replaces `parts` rather than adding to it. */
 const messageTokens = (message: ConversationMessage): number => estimateTokens(JSON.stringify(message.parts))
@@ -139,6 +140,8 @@ export class ConversationHistory {
   private measuredTokens: number | null = null
   /** An estimate of what was added since that measurement. */
   private addedTokens = 0
+  /** How many checkpoints this history has written, which tells a measurement whether the history it measured is still the current one. */
+  private checkpoints = 0
 
   constructor(private readonly options: HistoryOptions) {}
 
@@ -176,44 +179,47 @@ export class ConversationHistory {
   apply(record: ConversationRecord): void {
     if (record.kind === 'checkpoint') return
     if (record.kind === 'user' || record.kind === 'notice') {
-      const notes = record.kind === 'user' ? record.notes : undefined
+      const { notes, jobStatus } = record
       this.turns.push({
         t: record.t,
         turnId: record.turnId,
         user: record.text,
         ...(record.kind === 'notice' ? { notice: true } : {}),
         ...(notes ? { notes } : {}),
+        ...(jobStatus ? { jobStatus } : {}),
         messages: [],
         memoryIds: record.kind === 'user' ? [...(record.memoryIds ?? [])] : [],
         records: [record]
       })
-      this.addedTokens += estimateTokens(record.text) + (notes ? estimateTokens(notes) : 0)
+      this.addedTokens += estimateTokens(record.text) + (notes ? estimateTokens(notes) : 0) + (jobStatus ? estimateTokens(jobStatus) : 0)
       return
     }
-    const open = this.turns.length > 0 ? this.turns[this.turns.length - 1] : undefined
-    const sameTurn = open !== undefined && open.turnId === record.turnId && !hasReply(open)
+    const current = this.currentIndex()
+    const own = current >= 0 && this.turns[current].turnId === record.turnId ? this.turns[current] : undefined
+    // A voice model records what it said as soon as its transcript settles, which can be while the
+    // turn's tools are still running, so the tool round trip recorded after that still belongs to the turn.
     if (record.kind === 'tool') {
-      if (sameTurn) {
-        if (record.memoryIds) open.memoryIds.push(...record.memoryIds)
-        open.records.push(record)
+      if (own) {
+        if (record.memoryIds) own.memoryIds.push(...record.memoryIds)
+        own.records.push(record)
       }
       return
     }
     if (record.kind === 'message') {
-      if (sameTurn) {
+      if (own) {
         const message: ConversationMessage = { role: record.role, parts: record.parts, ...(record.native ? { native: record.native } : {}) }
-        open.messages.push(message)
-        open.records.push(record)
+        own.messages.push(message)
+        own.records.push(record)
         this.addedTokens += messageTokens(message)
       }
       return
     }
     this.addedTokens += estimateTokens(record.text)
-    if (sameTurn && open.user !== undefined) {
-      open.assistant = record.text
-      if (record.interrupted) open.interrupted = record.interrupted
-      if (record.failed) open.failed = true
-      open.records.push(record)
+    if (own && !hasReply(own)) {
+      own.assistant = record.text
+      if (record.interrupted) own.interrupted = record.interrupted
+      if (record.failed) own.failed = true
+      own.records.push(record)
       return
     }
     this.turns.push({
@@ -233,6 +239,15 @@ export class ConversationHistory {
     return new Set(this.turns.flatMap((turn) => turn.memoryIds))
   }
 
+  /** The job status the model last read in the raw history, or null when no turn sent raw carries one any more. */
+  lastJobStatus(): string | null {
+    for (let i = this.turns.length - 1; i >= 0; i--) {
+      const turn = this.turns[i]
+      if (turn.jobStatus && !withdrawn(turn)) return turn.jobStatus
+    }
+    return null
+  }
+
   /**
    * The message list for an API request. The user's text carries a stamp of when it was spoken, and
    * the messages sent during the turn follow unchanged. A turn that was interrupted or failed gets an
@@ -245,7 +260,7 @@ export class ConversationHistory {
       if (withdrawn(turn)) continue
       if (turn.user !== undefined) {
         const body = turn.notice ? turn.user : stampUserMessage(this.options.locale(), turn.user, new Date(turn.t))
-        out.push(userText(turn.notes ? `${body}\n\n${turn.notes}` : body))
+        out.push(userText([body, turn.notes, turn.jobStatus].filter(Boolean).join('\n\n')))
       }
       out.push(...turn.messages)
       if (!hasReply(turn)) continue
@@ -288,8 +303,19 @@ export class ConversationHistory {
     return out
   }
 
-  /** Receives the context length counted from the server's usage, which is the total input of the last round. */
-  noteContextTokens(tokens: number): void {
+  /** Changes whenever a compaction or a new summary rewrites the history, so a request can say which history it was built from. */
+  get revision(): number {
+    return this.checkpoints
+  }
+
+  /**
+   * Receives the context length the server counted for a request, which is the total input of its last
+   * round, together with the revision the request was built from. A request built before a compaction
+   * finished still carried the turns it removed, so its count no longer describes the history, and the
+   * estimate the compaction left stands instead.
+   */
+  noteContextTokens(tokens: number, revision: number): void {
+    if (revision !== this.checkpoints) return
     this.measuredTokens = tokens
     this.addedTokens = 0
   }
@@ -304,14 +330,19 @@ export class ConversationHistory {
     return estimateTokens(this.summaryText) + this.toMessages().reduce((n, message) => n + messageTokens(message), 0)
   }
 
-  /** The end of the run of answered turns, which is where a turn still in progress begins. */
-  private settledBoundary(): number {
-    let boundary = 0
-    while (boundary < this.turns.length && settled(this.turns[boundary])) boundary++
-    return boundary
+  /** The newest turn that has an input, which is the only one that can still be in progress; -1 when there is none. */
+  private currentIndex(): number {
+    for (let i = this.turns.length - 1; i >= 0; i--) if (this.turns[i].user !== undefined) return i
+    return -1
   }
 
-  /** How far the compaction reaches: the answered turns, minus the most recent recentTurns of them. */
+  /** Where the turn still in progress begins, or the end when every turn is over. */
+  private settledBoundary(): number {
+    const current = this.currentIndex()
+    return current >= 0 && !hasReply(this.turns[current]) ? current : this.turns.length
+  }
+
+  /** How far the compaction reaches: the turns that are over, minus the most recent recentTurns of them. */
   private compactionBoundary(): number {
     let boundary = Math.min(this.settledBoundary(), Math.max(0, this.turns.length - this.options.recentTurns))
     // If the turns kept raw alone exceed half the limit, fewer of them are kept until they fit.
@@ -339,9 +370,9 @@ export class ConversationHistory {
   }
 
   /**
-   * Runs a compaction, and a second call joins the one already running. The turns answered up to the
-   * moment it starts are folded into a handover summary and removed from the history, while turns
-   * added after that stay. The 'daily' reason takes the same path; the cleanup job passes it
+   * Runs a compaction, and a second call joins the one already running. The turns over by the moment
+   * it starts are folded into a handover summary and removed from the history, while turns added after
+   * that stay. The 'daily' reason takes the same path; the cleanup job passes it
    * regardless of the thresholds. A failed summary changes nothing and reports why.
    */
   compact(reason: CompactionReason): Promise<void> {
@@ -376,9 +407,6 @@ export class ConversationHistory {
     try {
       summary = (await this.options.summarize(this.summaryText, lines.join('\n'))).trim()
       if (!summary) throw new Error('summary is empty')
-      // A summary far beyond the 5000 characters asked for means the rewrite failed, so it is refused
-      // and both the previous summary and the history are kept.
-      if (summary.length > SUMMARY_MAX_CHARS) throw new Error(`summary too long: ${summary.length} chars`)
     } catch (err) {
       this.options.onError?.('summarize', err)
       return
@@ -407,6 +435,7 @@ export class ConversationHistory {
     return (
       (turn.user !== undefined ? estimateTokens(turn.user) : 0) +
       (turn.notes ? estimateTokens(turn.notes) : 0) +
+      (turn.jobStatus ? estimateTokens(turn.jobStatus) : 0) +
       (turn.messages.length === 0 && turn.assistant !== undefined ? estimateTokens(turn.assistant) : 0) +
       turn.messages.reduce((n, message) => n + messageTokens(message), 0)
     )
@@ -415,6 +444,7 @@ export class ConversationHistory {
   /** Applies the result of a compaction to the context length estimate and writes the checkpoint. */
   private commit(stats: CompactionStats, savedTokens: number): void {
     if (this.measuredTokens !== null) this.measuredTokens = Math.max(0, this.measuredTokens - savedTokens)
+    this.checkpoints++
     try {
       this.options.saveCheckpoint({
         summary: this.summaryText,

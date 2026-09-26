@@ -21,7 +21,9 @@ export const CONVERSATION_MARKERS = {
   /** The cards on screen, which the voice model cannot see. */
   screen: { ja: '[画面]', en: '[Screen]' },
   /** The mini app open on screen and what it shows, as a note attached to the utterance. */
-  openApp: { ja: '[開いているミニアプリ]', en: '[Open app]' }
+  openApp: { ja: '[開いているミニアプリ]', en: '[Open app]' },
+  /** The status of the agent jobs and the recent projects, as a note attached to the input when it changed. */
+  jobStatus: { ja: '[ジョブの状況]', en: '[Jobs]' }
 } as const satisfies Record<string, PromptText>
 
 export type ConversationMarker = keyof typeof CONVERSATION_MARKERS

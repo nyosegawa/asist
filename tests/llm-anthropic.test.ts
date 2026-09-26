@@ -114,19 +114,18 @@ describe('toAnthropicMessages', () => {
 })
 
 describe('the Anthropic stream', () => {
-  it('puts a cache breakpoint on every system layer that does not change each turn and on the last message, never more than four', async () => {
+  it('puts a cache breakpoint on every system layer and on the last message, never more than four', async () => {
     mocks.script = () => ({ content: [{ type: 'text', text: 'はい' }], stop_reason: 'end_turn' })
     const { stream } = await open({
       system: [
         { name: 'base', text: 'BASE' },
         { name: 'memory', text: 'MEMORY' },
-        { name: 'summary', text: 'SUMMARY' },
-        { name: 'other', text: 'JOBS', volatile: true }
+        { name: 'summary', text: 'SUMMARY' }
       ]
     })
     await stream.final()
     const system = mocks.params[0].system as Array<{ text: string; cache_control?: unknown }>
-    expect(system.map((block) => [block.text, block.cache_control !== undefined])).toEqual([['BASE', true], ['MEMORY', true], ['SUMMARY', true], ['JOBS', false]])
+    expect(system.map((block) => [block.text, block.cache_control !== undefined])).toEqual([['BASE', true], ['MEMORY', true], ['SUMMARY', true]])
     // A fifth cache_control block makes the API answer with a 400.
     expect(JSON.stringify(mocks.params[0]).split('"cache_control"').length - 1).toBe(4)
   })
@@ -216,6 +215,37 @@ describe('the Anthropic stream', () => {
       ],
       // Sending a server_tool_use back without its result answers with a 400.
       native: { provider: 'anthropic', model: 'claude-sonnet-5', payload: [THINKING, TOOL_USE, { type: 'text', text: '少々' }] }
+    })
+  })
+
+  /**
+   * The API closes a tool_use block that the output limit cut off like a whole one, with its input
+   * parsed as far as it got. Running it would act on half the input, and sending it back without a
+   * result is refused with a 400.
+   */
+  it('reports a tool call once the next block starts, and drops one the output limit cut off from the calls and from what goes back', async () => {
+    const spoken = { type: 'text', text: '調べますね。' }
+    const cut = { type: 'tool_use', id: 't2', name: 'show_weather', input: { location: '東' } }
+    const order: string[] = []
+    mocks.script = ({ event, block }) => {
+      event(textDelta('調べますね。'))
+      block(spoken)
+      block(TOOL_USE)
+      event({ type: 'content_block_start', content_block: { type: 'tool_use', id: 't2', name: 'show_weather' } })
+      order.push('second block started')
+      block(cut)
+      return { content: [spoken, TOOL_USE, cut], stop_reason: 'max_tokens' }
+    }
+    const { anthropicAdapter } = await import('../src/main/services/llm/anthropic')
+    const stream = anthropicAdapter.stream(request(), 'key')
+    stream.on('toolCall', (call) => order.push(`call ${call.id}`))
+    const result = await stream.final()
+    expect(order).toEqual(['call t1', 'second block started'])
+    expect(result.stop).toBe('max_tokens')
+    expect(result.message).toEqual({
+      role: 'assistant',
+      parts: [{ type: 'text', text: '調べますね。' }, { type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '大阪' } }],
+      native: { provider: 'anthropic', model: 'claude-sonnet-5', payload: [spoken, TOOL_USE] }
     })
   })
 

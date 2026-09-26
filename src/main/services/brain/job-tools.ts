@@ -103,7 +103,7 @@ export function agentTool(locale: ConversationLocale): Def {
         readonly: typeof input.readonly === 'boolean' ? input.readonly : undefined
       }
       // Only a literally identical prompt is guarded here. Whether two requests mean the same work is
-      // left to the model, which sees the job status in the system prompt.
+      // left to the model, which reads the job status attached to the user's input.
       const dup = agentRunner.findActive(prompt)
       if (dup) {
         return {

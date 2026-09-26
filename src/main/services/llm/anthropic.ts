@@ -11,10 +11,10 @@ import { AdapterStream, type JsonRequest, type ProviderAdapter } from './adapter
  *   encrypted bodies, is kept in `native` and sent back unchanged to the same model. Dropping or
  *   altering thinking in the middle of a tool round trip returns 400. Older thinking from previous
  *   turns may be sent; the API decides what to do with it.
- * - Prompt cache breakpoints go after each system layer except the layers that change every turn, and
- *   at the end of the messages, up to the limit of four. The trailing breakpoint is placed again on
- *   every request, so even the rounds inside a turn read everything up to the previous round from the
- *   cache. No breakpoint is stored in the history.
+ * - Prompt cache breakpoints go after each of the three system layers and at the end of the messages,
+ *   which is the limit of four. The trailing breakpoint is placed again on every request, so even the
+ *   rounds inside a turn read everything up to the previous round from the cache. No breakpoint is
+ *   stored in the history.
  * - Web search runs on Anthropic's side: a call starts at content_block_start and its result arrives
  *   as web_search_tool_result.
  * - Retries belong to the brain, so maxRetries is 0 and the SDK does not retry on top of it.
@@ -80,8 +80,18 @@ const STOPS: Record<string, StopReason> = {
   pause_turn: 'pause'
 }
 
+type ToolUseBlock = Extract<Anthropic.ContentBlock, { type: 'tool_use' }>
+
 class AnthropicStream extends AdapterStream {
   private readonly blocks: Anthropic.ContentBlock[] = []
+  /**
+   * The last tool_use block, until it is known to be whole. The API closes a block that the output
+   * limit cut off like any other, with the input parsed as far as it got, and only the stop reason
+   * tells the two apart; running such a call would act on half its input, and sending it back without
+   * a result is refused with a 400. It becomes a call once another block starts or the response ends
+   * on anything but the limit.
+   */
+  private heldToolUse: ToolUseBlock | null = null
 
   constructor(
     client: Anthropic,
@@ -110,7 +120,7 @@ class AnthropicStream extends AdapterStream {
         model: request.model.id,
         max_tokens: request.maxTokens,
         ...(effort ? { output_config: { effort } } : {}),
-        system: request.system.map((layer) => ({ type: 'text', text: layer.text, ...(layer.volatile ? {} : { cache_control: { type: 'ephemeral' } }) })),
+        system: request.system.map((layer) => ({ type: 'text', text: layer.text, cache_control: { type: 'ephemeral' } })),
         tools: request.webSearch ? [...tools, WEB_SEARCH] : tools,
         messages: toAnthropicMessages(request.messages, request.model.id)
       },
@@ -121,6 +131,7 @@ class AnthropicStream extends AdapterStream {
     let inServerTool = false
     stream.on('streamEvent', (event) => {
       if (event.type === 'content_block_start') {
+        this.releaseToolUse()
         inServerTool = event.content_block.type === 'server_tool_use'
         if (inServerTool) {
           searchInput = ''
@@ -132,11 +143,14 @@ class AnthropicStream extends AdapterStream {
       }
     })
     stream.on('contentBlock', (block) => {
+      this.releaseToolUse()
+      if (block.type === 'tool_use') {
+        this.heldToolUse = block
+        return
+      }
       this.blocks.push(block)
       if (block.type === 'text') this.closeText()
-      else if (block.type === 'tool_use') {
-        this.emitToolCall({ type: 'tool_call', id: block.id, name: block.name, input: (block.input ?? {}) as Record<string, unknown> })
-      } else if (block.type === 'web_search_tool_result') {
+      else if (block.type === 'web_search_tool_result') {
         const results = Array.isArray(block.content) ? block.content : []
         let query = ''
         try {
@@ -149,10 +163,17 @@ class AnthropicStream extends AdapterStream {
     })
 
     const final = await stream.finalMessage()
+    const stop = final.stop_reason ? STOPS[final.stop_reason] : undefined
+    if (!stop) throw new Error(`Anthropic: the response ended on an unknown stop reason (${final.stop_reason ?? 'none'})`)
+    // A tool_use block the limit cut off is always the last block, and it goes back neither as a call
+    // nor in the output sent to the model again.
+    const cutToolUse = stop === 'max_tokens' && this.heldToolUse !== null
+    if (!cutToolUse) this.releaseToolUse()
+    const content = cutToolUse ? final.content.slice(0, -1) : final.content
     this.closeText()
     // The citations sit on the text blocks that follow the search, so the sources of the answer are known only now.
     const cited = new Map<string, SearchSource>()
-    for (const block of final.content) {
+    for (const block of content) {
       if (block.type !== 'text') continue
       for (const citation of block.citations ?? []) {
         if (citation.type === 'web_search_result_location' && !cited.has(citation.url)) {
@@ -161,16 +182,22 @@ class AnthropicStream extends AdapterStream {
       }
     }
     if (cited.size > 0) this.emitSearch({ phase: 'cited', sources: [...cited.values()] })
-    const stop = final.stop_reason ? STOPS[final.stop_reason] : undefined
-    if (!stop) throw new Error(`Anthropic: the response ended on an unknown stop reason (${final.stop_reason ?? 'none'})`)
-    const answered = new Set(final.content.flatMap((block) => (block.type === 'web_search_tool_result' ? [block.tool_use_id] : [])))
-    const pendingServerTool = final.content.some((block) => block.type === 'server_tool_use' && !answered.has(block.id))
+    const answered = new Set(content.flatMap((block) => (block.type === 'web_search_tool_result' ? [block.tool_use_id] : [])))
+    const pendingServerTool = content.some((block) => block.type === 'server_tool_use' && !answered.has(block.id))
     return {
-      message: { role: 'assistant', parts: [...this.parts], native: { provider: PROVIDER, model: request.model.id, payload: final.content } },
+      message: { role: 'assistant', parts: [...this.parts], native: { provider: PROVIDER, model: request.model.id, payload: content } },
       stop,
       usage: roundUsage(final.usage),
       ...(pendingServerTool ? { pendingServerTool } : {})
     }
+  }
+
+  private releaseToolUse(): void {
+    const block = this.heldToolUse
+    if (!block) return
+    this.heldToolUse = null
+    this.blocks.push(block)
+    this.emitToolCall({ type: 'tool_call', id: block.id, name: block.name, input: (block.input ?? {}) as Record<string, unknown> })
   }
 }
 
