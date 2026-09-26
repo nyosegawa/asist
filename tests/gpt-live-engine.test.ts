@@ -314,6 +314,28 @@ describe('GptLiveEngine', () => {
     await engine.stop()
   })
 
+  it('hands the whole utterance to brain when its transcript only begins after the delegation, and closes one line for it', async () => {
+    const { engine, sockets, events, beginTurn } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    socket.emit({ type: 'session.delegation.created', event_id: 'd', offset_ms: 1, delegation: { id: 'dlg1', type: 'delegation', target: 'client' } })
+    await vi.advanceTimersByTimeAsync(500)
+    for (const [i, delta] of ['明日の', '天気を', '教えて'].entries()) {
+      socket.emit({ type: 'session.input_transcript.delta', delta, event_id: `t${i}`, start_ms: 2, end_ms: 3 })
+      await vi.advanceTimersByTimeAsync(150)
+    }
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(beginTurn.mock.calls.map((c) => c[0])).toEqual(['明日の天気を教えて'])
+    const finals = events.flatMap((e) => (e.type === 'userTranscript' && e.final ? [[e.turnId, e.text]] : []))
+    expect(finals).toEqual([[100, '明日の天気を教えて']])
+    // Brain records the utterance it took over, so no part of it is recorded here as a line of its own.
+    expect(mocks.record).not.toHaveBeenCalled()
+    await engine.stop()
+  })
+
   it('leaves the end of a turn it handed to brain to brain, which ends it once its reply is over', async () => {
     const { engine, sockets, turnEvents } = await setup()
     engine.activity(true)

@@ -63,7 +63,10 @@ export interface GptLiveDeps extends LiveEngineDeps {
 
 /** How long session.started may take before opening fails. */
 const OPEN_TIMEOUT_MS = 15_000
-/** How long a delegation waits for the input transcript to settle, because the transcript can arrive after it. */
+/**
+ * How long the input transcript stays quiet before a delegation takes it, and how long a delegation
+ * waits at most, because the transcript can arrive after it.
+ */
 const DELEGATION_QUIET_MS = 400
 const DELEGATION_MAX_WAIT_MS = 2000
 /** What brain is told when the voice delegated a turn whose transcript never arrived. */
@@ -246,14 +249,11 @@ export class GptLiveEngine extends LiveEngineBase {
   private async delegate(delegationId: string): Promise<void> {
     this.claimUserUtterance()
     const startedAt = this.now()
-    while (this.now() - this.lastInputDeltaAt < DELEGATION_QUIET_MS && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
+    // A transcript that has only just begun is a fragment of the utterance, so the wait ends once it
+    // has begun and gone quiet, whether it began before the delegation or after it.
+    const settled = (): boolean => this.transcripts.pending('user') !== '' && this.now() - this.lastInputDeltaAt >= DELEGATION_QUIET_MS
+    while (!settled() && this.now() - startedAt < DELEGATION_MAX_WAIT_MS) {
       await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    if (!this.transcripts.pending('user')) {
-      const waitUntil = startedAt + DELEGATION_MAX_WAIT_MS
-      while (!this.transcripts.pending('user') && this.now() < waitUntil) {
-        await new Promise((resolve) => setTimeout(resolve, 100))
-      }
     }
     // A stop meanwhile ended the delegation, and recorded the utterance as it was heard.
     if (!this.enabled) return
