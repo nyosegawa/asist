@@ -8,7 +8,7 @@ import { addDays } from '@shared/calendar-layout'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { searchCalendar } from './calendar'
 import { getMailService } from './mail'
-import { isPathAllowed, readFileItem } from './file-preview'
+import { allowedPath, readFileItem } from './file-preview'
 import { fileUrl } from '../file-protocol'
 import type { FileItem } from '@shared/files'
 import { allowedFileRoots } from './agent'
@@ -236,11 +236,12 @@ const files: Fetcher = async (props) => {
   const paths = Array.isArray(props.paths) ? props.paths.map(String) : []
   if (paths.length === 0) throw new Error(errorText('panels.errors.noPaths'))
   const roots = allowedFileRoots()
-  const items: FileItem[] = paths.map((target) =>
-    isPathAllowed(target, roots)
-      ? readFileItem(target, fileUrl)
+  const items: FileItem[] = paths.map((target) => {
+    const allowed = allowedPath(target, roots)
+    return allowed !== null
+      ? readFileItem(allowed, fileUrl)
       : { path: target, name: target.slice(target.lastIndexOf('/') + 1), kind: 'binary', sizeBytes: 0, error: t('files.errors.outsideRoots') }
-  )
+  })
   if (items.every((item) => item.error)) {
     throw new Error(errorText('panels.errors.filesUnreadable', { files: items.map((item) => `${item.name}: ${item.error}`).join(' / ') }))
   }

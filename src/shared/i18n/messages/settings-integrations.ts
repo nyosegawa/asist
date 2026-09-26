@@ -289,6 +289,19 @@ export const settingsIntegrations = defineMessages({
         'es-419': '{envKey} en el entorno tiene prioridad, así que la clave no se guarda. Quítala del entorno y de .env, y vuelve a guardar.',
         'es-ES': '{envKey} en el entorno tiene prioridad, así que la clave no se guarda. Quítala del entorno y de .env y vuelve a guardarla.'
       }
+    },
+    unreadable: {
+      'ja-JP': '読み出せません',
+      'en-US': "Can't be read",
+      'fr-FR': 'Illisible',
+      'de-DE': 'Nicht lesbar',
+      'hi-IN': 'पढ़ी नहीं जा सकती',
+      'id-ID': 'Tidak terbaca',
+      'it-IT': 'Illeggibile',
+      'ko-KR': '읽을 수 없음',
+      'pt-BR': 'Ilegível',
+      'es-419': 'Ilegible',
+      'es-ES': 'Ilegible'
     }
   }
 })

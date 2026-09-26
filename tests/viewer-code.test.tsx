@@ -4,11 +4,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileItem } from '@shared/files'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { FileViewer } from '@/panels/viewers'
 import { highlightLines, languageFor, splitHighlightedHtml } from '@/panels/viewers/CodeViewer'
 import { childCount, openByDefault, parseData, summaryOf, typeOf } from '@/panels/viewers/DataViewer'
 import { parseNotebook, sanitizeHtml, stripAnsi } from '@/panels/viewers/NotebookViewer'
 import { DEMO_CODE_ITEMS, DEMO_FETCH_TS, DEMO_NOTEBOOK, DEMO_NOTEBOOK_JSON, DEMO_RESULTS_JSON } from '@/demo/fixtures/files-code'
+import { useToastStore } from '@/state/stores'
 
 /**
  * The code, data and notebook viewers: the pure logic (picking the language, the json tree, the ipynb cells) and
@@ -97,6 +99,28 @@ describe('code: language and highlighting', () => {
     expect(card.querySelectorAll('.fv-code-line').length).toBeGreaterThanOrEqual(40)
     expect(card.querySelector('.hljs-comment')).not.toBeNull()
     expect(card.querySelector('.hljs-string')).not.toBeNull()
+  })
+})
+
+describe('markdown: links', () => {
+  it('opens a web or mail link outside the app, says so when it cannot, and keeps any other link as its text', async () => {
+    const openExternal = vi.fn(async (_url: string) => {})
+    Object.assign(window, { api: { openExternal } })
+    useToastStore.setState({ toasts: [] })
+    const text = 'See [the site](https://example.com/a), [mail](mailto:team@example.com), [a sibling](notes.md) and [a script](javascript:alert(1)).'
+    const frame = await render(itemOf('links.md', 'markdown', text), 'focus')
+    const links = [...frame.querySelectorAll<HTMLAnchorElement>('.fv-doc a')]
+    expect(links.map((a) => a.textContent)).toEqual(['the site', 'mail'])
+    expect(frame.querySelector('.fv-doc')?.textContent).toContain('a sibling and a script.')
+
+    await act(async () => links[0].click())
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/a')
+    openExternal.mockRejectedValueOnce(new Error(errorText('app.links.refused', { url: 'mailto:team@example.com' })))
+    await act(async () => links[1].click())
+    await act(async () => {})
+    expect(useToastStore.getState().toasts).toMatchObject([
+      { kind: 'error', title: t('app.links.openFailed'), body: t('app.links.refused', { url: 'mailto:team@example.com' }) }
+    ])
   })
 })
 
@@ -205,8 +229,8 @@ describe('notebook: cells and outputs', () => {
 
   it('strips ANSI codes and lets only tables and text decoration through in HTML', () => {
     expect(stripAnsi('[0;31mKeyError[0m: x')).toBe('KeyError: x')
-    const html = sanitizeHtml('<style>td{color:red}</style><table border="1" class="dataframe"><tr><td colspan="2" onclick="x()">a</td></tr></table><script>alert(1)</script><a href="javascript:x" style="x">l</a><a href="https://example.com">ok</a>')
-    expect(html).toBe('<table><tbody><tr><td colspan="2">a</td></tr></tbody></table><a>l</a><a href="https://example.com">ok</a>')
+    const html = sanitizeHtml('<style>td{color:red}</style><table border="1" class="dataframe"><tr><td colspan="2" onclick="x()">a</td></tr></table><script>alert(1)</script><a href="javascript:x" style="x">l</a><a href="https://example.com">ok</a><a href="mailto:team@example.com">mail</a>')
+    expect(html).toBe('<table><tbody><tr><td colspan="2">a</td></tr></tbody></table>l<a href="https://example.com">ok</a><a href="mailto:team@example.com">mail</a>')
   })
 
   it('draws the first 3 cells in a card and every cell with its outputs in the focus view', async () => {

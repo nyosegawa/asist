@@ -1,4 +1,8 @@
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createTranslator } from '@shared/i18n'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { REGIONS, regionCurrency } from '@shared/conversation-locale'
 import { formatMessage } from '@shared/i18n'
@@ -7,14 +11,15 @@ import { readErrorText } from '@shared/i18n/error-text'
 const mocks = vi.hoisted(() => ({
   conversationLocale: 'ja-JP',
   region: 'JP',
+  roots: [] as string[],
   searchCalendar: vi.fn(async (_query: { start: string; end: string }) => ({ events: [] }))
 }))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: mocks.conversationLocale, region: mocks.region })
 }))
 vi.mock('../src/main/services/calendar', () => ({ searchCalendar: mocks.searchCalendar }))
-vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => ['/allowed'] }))
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
+vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => mocks.roots }))
 
 type Fetch = ReturnType<typeof vi.fn>
 
@@ -163,6 +168,24 @@ describe('a card that cannot be filled', () => {
       expect(known, location).not.toBeNull()
       expect(formatMessage(known!.message, 'en-US', known!.values)).toContain(location)
     }
+  })
+})
+
+describe('the files card (show_files)', () => {
+  it('refuses a path whose .. climbs out of a symbolic link, and reads the path it checked', async () => {
+    const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
+    const root = path.join(base, 'root')
+    mkdirSync(path.join(base, 'outside', 'sub'), { recursive: true })
+    mkdirSync(path.join(root, 'docs'), { recursive: true })
+    writeFileSync(path.join(base, 'outside', 'secret.txt'), 'outside')
+    writeFileSync(path.join(root, 'secret.txt'), 'inside')
+    symlinkSync(path.join(base, 'outside', 'sub'), path.join(root, 'link'))
+    mocks.roots = [root]
+    const { props } = await fetchPanel('files', { paths: [`${root}/link/../secret.txt`, `${root}/docs/../secret.txt`] })
+    const items = props.items as Array<{ path: string; text?: string; error?: string }>
+    expect(items[0]).toMatchObject({ error: createTranslator('ja-JP')('files.errors.outsideRoots') })
+    expect(items[0].text).toBeUndefined()
+    expect(items[1]).toMatchObject({ path: path.join(root, 'secret.txt'), text: 'inside' })
   })
 })
 

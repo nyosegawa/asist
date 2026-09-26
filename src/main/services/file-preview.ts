@@ -11,39 +11,51 @@ import { t } from './i18n'
 export { classifyFile } from '@shared/files'
 
 /**
- * Whether the path sits under an allowed root, which are the jobs' working directories, the memory folder
- * and the folders allowed in the settings. Both sides are compared with symbolic links resolved, so a link
- * inside a root that points outside it, such as one checked into a cloned repository, is refused.
+ * The path to read for target when it lies under an allowed root, which are the jobs' working directories,
+ * the memory folder and the folders allowed in the settings, or null when it does not. Both sides are
+ * compared as the OS resolves them, so a link inside a root that points outside it, such as one checked into
+ * a cloned repository, is refused, and so is a .. that climbs out of such a link. The caller reads the
+ * returned path and never target itself, so that what is read is what was checked.
  */
-export function isPathAllowed(target: string, allowedRoots: readonly string[]): boolean {
-  if (!target.startsWith('/')) return false
+export function allowedPath(target: string, allowedRoots: readonly string[]): string | null {
+  if (!target.startsWith('/')) return null
   const resolved = realPath(target)
-  return allowedRoots.some((root) => {
-    if (!root) return false
-    const resolvedRoot = realPath(root)
-    return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+  if (resolved === null) return null
+  const allowed = allowedRoots.some((root) => {
+    const resolvedRoot = root.startsWith('/') ? realPath(root) : null
+    if (resolvedRoot === null) return false
+    // path.join leaves a single separator at the end, so the root folder "/" is a prefix of every path too.
+    return resolved === resolvedRoot || resolved.startsWith(path.join(resolvedRoot, path.sep))
   })
+  return allowed ? resolved : null
 }
 
 /**
- * The absolute path with the symbolic links of its existing part resolved. The part that does not exist
- * is kept as written, so that a missing file is still reported as missing by the read that follows.
+ * The absolute path the OS opens for target, spelled as the disk stores it. The names of the part that does
+ * not exist are kept as written, so that the read that follows reports the file as missing; a . or .. among
+ * them could never be reached, and the path is refused.
  */
-function realPath(target: string): string {
-  const rest: string[] = []
-  let existing = path.resolve(target)
-  for (;;) {
+function realPath(target: string): string | null {
+  // The path is not normalized as text first: path.resolve would collapse "link/.." to the folder that holds
+  // the link, while the OS follows the link first and climbs out of its target.
+  const names = target.split('/').filter(Boolean)
+  for (let existing = names.length; existing >= 0; existing--) {
+    let real: string
     try {
-      return path.join(fs.realpathSync(existing), ...rest)
+      // fs.realpathSync keeps the letter case and the Unicode normalization the path was written in, while
+      // the default APFS volume matches names regardless of both. The native call returns the names as they
+      // are stored, so a Japanese folder name written in the other normalization form, or a name in another
+      // letter case, still matches its root.
+      real = fs.realpathSync.native(`/${names.slice(0, existing).join('/')}`)
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code
-      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err
-      const parent = path.dirname(existing)
-      if (parent === existing) throw err
-      rest.unshift(path.basename(existing))
-      existing = parent
+      if (code === 'ENOENT' || code === 'ENOTDIR') continue
+      throw err
     }
+    const missing = names.slice(existing)
+    return missing.some((name) => name === '.' || name === '..') ? null : path.join(real, ...missing)
   }
+  return null
 }
 
 const MAX_DIRECTORY_ENTRIES = 200

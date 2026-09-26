@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isExternalLink } from '@shared/external-link'
 import { CodeBlock, languageFor } from './CodeViewer'
 import { Frame } from './Frame'
 import { Action, Actions } from '../primitives/Card'
@@ -6,6 +7,7 @@ import type { Viewer, ViewerProps } from './types'
 import { useParsedBytes } from './use-parsed-bytes'
 import './HtmlViewer.css'
 import { useT } from '@/i18n'
+import { openLink } from '@/open-link'
 
 /**
  * An HTML page, rendered by default and switchable to its highlighted source. The page is loaded from its
@@ -94,8 +96,8 @@ function Page({ item }: { item: ViewerProps['item'] }): React.JSX.Element {
       <div className="fv-html-blocked">
         <p className="fv-note">{t('files.viewer.htmlLinkBlocked', { url: blocked })}</p>
         <Actions>
-          {/^https?:/.test(blocked) && (
-            <Action leadsTo="outside" onClick={() => void window.api.openExternal(blocked)}>
+          {isExternalLink(blocked) && (
+            <Action leadsTo="outside" onClick={() => openLink(blocked)}>
               {t('files.viewer.htmlOpenLink')}
             </Action>
           )}

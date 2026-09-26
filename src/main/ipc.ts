@@ -41,7 +41,7 @@ import {
   apiKeyConfigured,
   configuredModels,
   configuredApiKeyAvailable,
-  providerKeys,
+  providerKey,
   llmKeyStates,
   saveProviderKey,
   validateConfiguration,
@@ -62,9 +62,10 @@ import { events as noteEvents, getNoteService } from './services/user-notes'
 import { events as taskEvents, getTaskService } from './services/user-tasks'
 import { notifyFromRenderer, refreshHotkey, refreshTrayMenu } from './os-integration'
 import { completeSetup } from './services/setup-completion'
-import { isPathAllowed } from './services/file-preview'
+import { allowedPath } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
 import { isAppPage } from '@shared/app-page'
+import { isExternalLink } from '@shared/external-link'
 import { reportOpenMiniApp } from './services/mini-app-view'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { conversationLocale } from './services/conversation-locale'
@@ -474,13 +475,13 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       ) {
         // The prospective values are checked against the real API first, so that saving cannot leave a
         // broken configuration behind. A missing key for that provider is rejected here.
-        await validateConfiguration(providerKeys(), configuredModels(prospective))
+        await validateConfiguration(configuredModels(prospective))
       }
       // A live engine is only checked for the provider's key, because the Live API has no way to query a
       // model. A failure to connect surfaces as a notification when the microphone is turned on.
       if (isLiveEngine(prospective.voiceEngine) && prospective.voiceEngine !== before.voiceEngine) {
         const info = LIVE_ENGINE_INFO[prospective.voiceEngine]
-        if (!providerKeys()[info.provider]) {
+        if (!providerKey(info.provider)) {
           throw new Error(errorText('settings.errors.keyRequired', { target: info.label, envKey: LLM_PROVIDER_INFO[info.provider].envKey }))
         }
       }
@@ -551,14 +552,14 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     }
   })
 
-  handle(IpcChannel.OpenExternal, (_e, url: string) => {
-    if (/^https?:\/\//.test(url)) return shell.openExternal(url)
-    return Promise.resolve()
+  handle(IpcChannel.OpenExternal, (_e, url: unknown) => {
+    const target = String(url)
+    if (!isExternalLink(target)) throw new Error(errorText('app.links.refused', { url: target }))
+    return shell.openExternal(target)
   })
 
   handle(IpcChannel.RevealPath, (_e, target: string) => {
-    if (isPathAllowed(String(target), agent.allowedFileRoots())) {
-      shell.showItemInFolder(String(target))
-    }
+    const allowed = allowedPath(String(target), agent.allowedFileRoots())
+    if (allowed !== null) shell.showItemInFolder(allowed)
   })
 }

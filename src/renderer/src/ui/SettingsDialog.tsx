@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, Brain, Cable, ChartColumn, Info, MessageSquare, Mic, Palette, UserRound, Wrench, X, type LucideIcon } from 'lucide-react'
-import type { AizuchiClassifierStatus, EmbeddingStatus, SetupStatus, VapStatus } from '@shared/ipc'
+import { keyReadable, type AizuchiClassifierStatus, type EmbeddingStatus, type SetupStatus, type VapStatus } from '@shared/ipc'
 import { LLM_PROVIDERS, modelLabel } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
 import { isDefaultPersona } from '@shared/persona'
@@ -220,7 +220,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
       aizuchiClassifier !== null &&
       !(aizuchiClassifier.runtimeInstalled && aizuchiClassifier.modelInstalled)
   ].filter(Boolean).length
-  const keys = LLM_PROVIDERS.filter((provider) => status !== null && status.llmKeys[provider] !== 'missing').length
+  const keys = LLM_PROVIDERS.filter((provider) => status !== null && keyReadable(status.llmKeys[provider])).length
   const live = isLiveEngine(settings.voiceEngine) ? settings.voiceEngine : null
   const agentEngine = settings.agentEngine === 'codex' ? 'Codex' : 'Claude Code'
   const keyCounts = { keys, total: LLM_PROVIDERS.length }

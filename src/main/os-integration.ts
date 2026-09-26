@@ -1,6 +1,7 @@
 import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
 import {
   app,
+  dialog,
   globalShortcut,
   Menu,
   nativeImage,
@@ -11,12 +12,13 @@ import {
 import { IpcChannel } from '@shared/ipc'
 import * as agent from './services/agent'
 import { errorText } from '@shared/i18n/error-text'
-import { t } from './services/i18n'
+import { errorMessage, t } from './services/i18n'
 import { getSettings } from './services/settings'
 
 /**
- * How the app lives in the OS: a resident tray item, the global hotkey ⌥Space, and Notification Center
- * notifications, so that the user never has to open the app to reach it.
+ * How the app lives in the OS: a resident tray item, the global hotkey ⌥Space, Notification Center
+ * notifications and a window that only hides when it is closed, so that the user never has to open the app
+ * to reach it. Quitting waits until the agents have stopped.
  */
 
 /** An 18x18 template icon of the orb. Only black and alpha, which is what the macOS menu bar expects. */
@@ -25,7 +27,6 @@ const TRAY_ICON_B64 =
 
 let tray: Tray | null = null
 let buildTrayMenu: () => void = () => {}
-let quitting = false
 
 const notify = (title: string, body: string): boolean => {
   if (!Notification.isSupported()) return false
@@ -34,12 +35,31 @@ const notify = (title: string, body: string): boolean => {
 }
 
 export function setupOsIntegration(window: BrowserWindow): void {
-  app.on('before-quit', () => (quitting = true))
+  // Only a quit closes the window, and only once every agent the app owns has stopped, so that none keeps
+  // writing to a worktree after the app is gone. When one cannot be stopped the quit is cancelled and the
+  // app stays as it was: the window still hides when closed, and a later quit tries again.
+  let quitApproved = false
+  let stoppingAgents = false
+  app.on('before-quit', (event) => {
+    if (quitApproved) return
+    event.preventDefault()
+    if (stoppingAgents) return
+    stoppingAgents = true
+    void agent.shutdown().then(
+      () => {
+        quitApproved = true
+        app.quit()
+      },
+      (error: unknown) => {
+        stoppingAgents = false
+        dialog.showErrorBox(t('app.startup.agentStopFailed'), errorMessage(error))
+      }
+    )
+  })
   window.on('close', (e) => {
-    if (!quitting) {
-      e.preventDefault()
-      window.hide()
-    }
+    if (quitApproved) return
+    e.preventDefault()
+    window.hide()
   })
 
   const showWindow = (): void => {

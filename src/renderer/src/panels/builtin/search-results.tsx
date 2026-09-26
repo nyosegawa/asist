@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import type { PanelSpec } from '@shared/ipc'
 import { sendTypedMessage } from '@/conversation'
 import { tConversation, useT } from '@/i18n'
+import { openLink } from '@/open-link'
 import { usePanelStore } from '@/state/stores'
 import type { CardContext, CardDefinition } from '../shell/card'
 import { Box, More, Row } from '../primitives/Card'
@@ -45,7 +46,7 @@ function SearchSuggestions({ html }: { html: string }): React.JSX.Element {
       const link = (event.target as Element | null)?.closest('a[href]')
       if (!(link instanceof HTMLAnchorElement)) return
       event.preventDefault()
-      void window.api.openExternal(link.href)
+      openLink(link.href)
     }
     root.addEventListener('click', onClick)
     return () => root.removeEventListener('click', onClick)
@@ -89,7 +90,7 @@ function SearchResultsBody({ spec, size }: CardContext): React.JSX.Element {
                 </button>
               }
             >
-              <button type="button" className="card-row-link" onClick={() => void window.api.openExternal(result.url)}>
+              <button type="button" className="card-row-link" onClick={() => openLink(result.url)}>
                 <span className="card-row-title">{result.title}</span>
                 {metaOf(result) && <span className="card-row-meta">{metaOf(result)}</span>}
                 {withSnippet && result.snippet && <span className="sr-snippet">{result.snippet}</span>}

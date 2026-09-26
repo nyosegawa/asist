@@ -1,7 +1,7 @@
 import type { AppSettings, CompleteSetupRequest } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { getSettings, saveSettings } from './settings'
-import { configuredModels, providerKeys, validateConfiguration } from './llm'
+import { configuredModels, validateConfiguration } from './llm'
 import * as asr from './asr'
 import * as tts from './tts'
 
@@ -33,7 +33,7 @@ export async function completeSetup(request: unknown): Promise<AppSettings> {
   // The snapshot the screen is showing is not trusted here: the current keys and both models are checked
   // again against the real API. Any provider is acceptable, and this fails when the key for the provider
   // of a selected model is missing.
-  await validateConfiguration(providerKeys(), configuredModels(settings))
+  await validateConfiguration(configuredModels(settings))
 
   if (voiceMode === 'server') {
     const serverReady = (await asr.available()) || (await asr.ensureServer())

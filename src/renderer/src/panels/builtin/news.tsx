@@ -3,6 +3,7 @@ import type { PanelSpec } from '@shared/ipc'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { sendTypedMessage } from '@/conversation'
 import { tConversation, useT } from '@/i18n'
+import { openLink } from '@/open-link'
 import { usePanelStore } from '@/state/stores'
 import type { CardContext, CardDefinition } from '../shell/card'
 import { Box, More, Row } from '../primitives/Card'
@@ -65,7 +66,7 @@ function NewsBody({ spec, size }: CardContext): React.JSX.Element {
                   </button>
                 }
               >
-                <button type="button" className="card-row-link" onClick={() => void window.api.openExternal(item.url)}>
+                <button type="button" className="card-row-link" onClick={() => openLink(item.url)}>
                   <span className="card-row-title">{item.title}</span>
                   {meta && <span className="card-row-meta">{meta}</span>}
                 </button>
