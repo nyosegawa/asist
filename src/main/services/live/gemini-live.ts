@@ -115,7 +115,11 @@ function failedExecution(err: unknown): ToolExecution {
 }
 
 export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwner {
-  private session: GeminiSession | null = null
+  /**
+   * The session the engine owns, from the call that creates it until it is closed. Connecting resolves
+   * only once the socket is open, so the session itself is filled in then.
+   */
+  private owned: { session: GeminiSession | null } | null = null
   private resumption: { handle: string; at: number } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
@@ -142,9 +146,15 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     }
     const settings = this.settings().geminiLive
     const resume = this.resumption && this.now() - this.resumption.at < RESUMPTION_TTL_MS ? this.resumption.handle : null
-    let session: GeminiSession | null = null
+    const owned: { session: GeminiSession | null } = { session: null }
+    this.owned = owned
+    let ready = false
     const setup = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
+      const fail = (error: Error): void => {
+        clearTimeout(timer)
+        reject(error)
+      }
+      const timer = setTimeout(() => fail(new Error(errorText('voice.live.openTimeout', { engine: this.info.label }))), OPEN_TIMEOUT_MS)
       this.deps
         .connect({
           model: settings.model,
@@ -154,42 +164,48 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
           resumptionHandle: resume,
           callbacks: {
             onmessage: (message) => {
+              if (this.owned !== owned) return
               if (message.setupComplete !== undefined) {
+                ready = true
                 clearTimeout(timer)
                 resolve()
               }
               this.onMessage(message)
             },
             onerror: (error) => {
-              clearTimeout(timer)
+              if (this.owned !== owned) return
               console.error('gemini-live error:', errMessage(error))
               this.events.emit('event', { type: 'error', message: errMessage(error) })
-              reject(error)
+              fail(error)
             },
             onclose: (reason) => {
-              clearTimeout(timer)
-              if (this.session === session) this.onClosed(reason)
-              reject(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
+              if (this.owned !== owned) return
+              if (ready) this.onClosed(reason)
+              else fail(new Error(errorText('voice.live.closed', { engine: this.info.label, reason })))
             }
           }
         })
-        .then((opened) => {
-          session = opened
-          this.session = opened
-        })
-        .catch((error: unknown) => {
-          clearTimeout(timer)
-          reject(error instanceof Error ? error : new Error(String(error)))
-        })
+        .then(
+          (session) => {
+            owned.session = session
+            // The opening failed and was let go before the session arrived.
+            if (this.owned !== owned) session.close()
+          },
+          (error: unknown) => fail(error instanceof Error ? error : new Error(String(error)))
+        )
     })
     await setup
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
     if (!resume) this.seedHistory()
   }
 
+  private get session(): GeminiSession | null {
+    return this.owned?.session ?? null
+  }
+
   protected async closeSession(): Promise<void> {
     const session = this.session
-    this.session = null
+    this.owned = null
     for (const controller of this.running.values()) controller.abort()
     this.running.clear()
     if (!session) return
@@ -208,12 +224,9 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   }
 
   private onClosed(reason: string): void {
-    this.session = null
-    this.policy.closed()
-    if (this.enabled) {
-      console.warn(`gemini-live: connection closed (${reason})`)
-      this.setConnection('idle')
-    }
+    this.owned = null
+    if (this.enabled) console.warn(`gemini-live: connection closed (${reason})`)
+    this.sessionEnded()
   }
 
   private seedHistory(): void {

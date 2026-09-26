@@ -56,6 +56,8 @@ export abstract class LiveEngineBase {
   protected exchangeTurnId: number | null = null
   /** Whether this exchange has emitted a started TurnEvent, which engines that open tools or panels need. */
   private exchangeStarted = false
+  /** Whether the user is speaking, from the renderer's start of speech to its end. */
+  private speaking = false
   protected readonly transcripts: TranscriptTracker
   /** Response latency measurement: when the last user transcript arrived and whether audio is still awaited. */
   private lastUserDeltaAt = -Infinity
@@ -119,16 +121,21 @@ export abstract class LiveEngineBase {
     if (encoded) this.transmitAudio(encoded, frame.length / 16_000)
   }
 
-  /** The renderer's VAD heard a human voice. A closed session is opened. */
+  /** The renderer's VAD heard a human voice start or stop. The start opens a closed session. */
   activity(active: boolean): void {
-    if (!this.enabled || !active) return
-    if (this.policy.onUserSpeech(this.now()) === 'open') void this.ensureOpen()
+    if (!this.enabled) return
+    this.speaking = active
+    if (active && this.policy.onUserSpeech(this.now()) === 'open') void this.ensureOpen()
   }
 
   abstract sendText(text: string): Promise<void>
 
-  /** Opens the session. Once it resolves, audio can be sent. */
+  /**
+   * Opens the session. Once it resolves, audio can be sent. The engine owns the socket from the moment
+   * it creates it, and ignores what any socket it no longer owns reports.
+   */
   protected abstract openSession(): Promise<void>
+  /** Closes the socket the engine owns, including one whose opening failed or has not finished. */
   protected abstract closeSession(reason: 'idle' | 'stop' | 'error'): Promise<void>
   /** Sends base64 PCM16 at the input rate. `seconds` is the length of that audio, which the usage counts. */
   protected abstract transmitAudio(base64: string, seconds: number): void
@@ -149,8 +156,10 @@ export abstract class LiveEngineBase {
           if (encoded) this.transmitAudio(encoded, frame.length / 16_000)
         }
       })
-      .catch((err) => {
-        this.policy.closed()
+      .catch(async (err) => {
+        // Left open, the socket of a session that did not start can still start late, and the provider
+        // bills it for as long as it is open.
+        await this.release('error')
         const detail = errorMessage(err)
         this.setConnection('error', detail)
         this.events.emit('event', { type: 'error', message: t('voice.live.connectFailed', { detail }) })
@@ -164,13 +173,29 @@ export abstract class LiveEngineBase {
   protected async close(reason: 'idle' | 'stop' | 'error'): Promise<void> {
     if (!this.policy.isOpen && !this.opening) return
     await this.opening?.catch(() => {})
+    await this.release(reason)
+    if (this.enabled) this.setConnection(reason === 'error' ? 'error' : 'idle')
+  }
+
+  private async release(reason: 'idle' | 'stop' | 'error'): Promise<void> {
     this.policy.closed()
     try {
       await this.closeSession(reason)
     } catch (err) {
       console.error('live session close failed:', errMessage(err))
     }
-    if (this.enabled) this.setConnection(reason === 'error' ? 'error' : 'idle')
+  }
+
+  /**
+   * The provider ended the session, as at its time limit. Speech in progress opens a new one at once,
+   * as the start of speech would have, and meanwhile goes into the pre-roll; while the user is silent,
+   * the next speech opens it, as after an idle close.
+   */
+  protected sessionEnded(): void {
+    this.policy.closed()
+    if (!this.enabled) return
+    this.setConnection('idle')
+    if (this.speaking) void this.ensureOpen()
   }
 
   /** Marks the conversation as still going, such as model audio or brain work, and pushes back the idle close. */

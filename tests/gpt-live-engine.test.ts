@@ -15,15 +15,21 @@ vi.mock('../src/main/services/brain/session', () => ({
   turnScheduler: { allocateTurnId: () => mocks.nextTurnId++ }
 }))
 vi.mock('../src/main/services/tts', () => ({ synthesize: vi.fn() }))
-vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: 'ja-JP' }) }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: 'ja-JP', uiLocale: 'ja-JP' }) }))
 
 type Handler = (...args: unknown[]) => void
 
+/** Follows LiveWS: a server's error event reaches both 'event' and 'error', and a send on a closing socket becomes an 'error'. */
 class FakeSocket {
   readonly sent: LiveAPI.ClientEvent[] = []
   readonly handlers = new Map<string, Handler[]>()
+  readonly socket = { readyState: 1 }
   closed = false
   send(event: LiveAPI.ClientEvent): void {
+    if (this.socket.readyState > 1) {
+      this.fire('error', new Error('cannot send on a closed WebSocket'))
+      return
+    }
     this.sent.push(event)
   }
   close(): void {
@@ -33,8 +39,12 @@ class FakeSocket {
     this.handlers.set(event, [...(this.handlers.get(event) ?? []), listener])
     return this
   }
+  fire(name: string, ...args: unknown[]): void {
+    for (const handler of this.handlers.get(name) ?? []) handler(...args)
+  }
   emit(event: LiveAPI.ServerEvent): void {
-    for (const handler of this.handlers.get('event') ?? []) handler(event)
+    this.fire('event', event)
+    if (event.type === 'error') this.fire('error', Object.assign(new Error(JSON.stringify(event)), { error: event }))
   }
   started(): void {
     this.emit({ type: 'session.started', event_id: 'e1', session: { id: 's', expires_at: 0, model: 'gpt-live-1', status: 'active' } })
@@ -202,5 +212,62 @@ describe('GptLiveEngine', () => {
     await engine.stop()
     expect(sockets[1].closed).toBe(true)
     expect(engine.state).toBe('off')
+  })
+
+  it('closes the socket of a session that did not start in time, and ignores what that socket reports afterwards', async () => {
+    const { engine, sockets, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(15_001)
+    expect(engine.state).toBe('error')
+    // GPT-Live bills a session by the second for as long as it is open.
+    expect(sockets[0].closed).toBe(true)
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1].started()
+    sockets[1].emit({ type: 'session.usage.updated', event_id: 'u1', usage: { seconds: 10 } })
+    sockets[0].started()
+    sockets[0].emit({ type: 'session.usage.updated', event_id: 'u0', usage: { seconds: 600 } })
+    expect(events.filter((e) => e.type === 'usage').at(-1)).toEqual({ type: 'usage', usage: { sessionSeconds: 10, costUsd: expect.any(Number) } })
+    await engine.stop()
+  })
+
+  it('reports a server error once with its message, as the failure to connect when it comes before the session started', async () => {
+    const { t } = await import('../src/main/services/i18n')
+    const { engine, sockets, events } = await setup()
+    const errors = (): string[] => events.flatMap((e) => (e.type === 'error' ? [e.message] : []))
+    const serverError = { type: 'error' as const, event_id: 'x', error: { type: 'invalid_request_error', code: 'invalid_value', message: 'Invalid value for voice.' } }
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[0].emit(serverError)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(errors()).toEqual([t('voice.live.connectFailed', { detail: 'Invalid value for voice.' })])
+    expect(sockets[0].closed).toBe(true)
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1].started()
+    await vi.advanceTimersByTimeAsync(0)
+    sockets[1].emit(serverError)
+    expect(errors().slice(1)).toEqual(['Invalid value for voice.'])
+    await engine.stop()
+  })
+
+  it('sends nothing once the server has begun to close the socket, and goes idle when it has closed', async () => {
+    const { engine, sockets, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const socket = sockets[0]
+    socket.started()
+    await vi.advanceTimersByTimeAsync(0)
+    engine.activity(false)
+    const appended = socket.ofType('session.input_audio.append').length
+    socket.socket.readyState = 2
+    for (let i = 0; i < 3; i++) engine.pushAudio(new Float32Array(512))
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    socket.socket.readyState = 3
+    socket.fire('close', 1000, '')
+    expect(engine.state).toBe('idle')
+    expect(socket.ofType('session.input_audio.append')).toHaveLength(appended)
+    await engine.stop()
   })
 })

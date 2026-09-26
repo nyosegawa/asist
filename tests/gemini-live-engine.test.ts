@@ -10,10 +10,12 @@ import type { GeminiConnectParams, GeminiServerMessage, GeminiSession } from '..
 const mocks = vi.hoisted(() => ({
   record: vi.fn(),
   nextTurnId: 200,
-  conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US'
+  conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
+  /** What connecting waits for before the session arrives, as the socket opening does. */
+  connected: Promise.resolve()
 }))
 
-vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: mocks.conversationLocale }) }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: mocks.conversationLocale, uiLocale: 'ja-JP' }) }))
 vi.mock('../src/main/services/brain/session', () => ({
   record: mocks.record,
   turnScheduler: { allocateTurnId: () => mocks.nextTurnId++ }
@@ -67,6 +69,7 @@ async function setup(execute?: ExecuteTool): Promise<{
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
     apiKey: () => 'key',
     connect: async (params) => {
+      await mocks.connected
       const session = new FakeSession(params)
       sessions.push(session)
       return session
@@ -115,6 +118,7 @@ describe('GeminiLiveEngine', () => {
     mocks.record.mockClear()
     mocks.nextTurnId = 200
     mocks.conversationLocale = 'ja-JP'
+    mocks.connected = Promise.resolve()
   })
   afterEach(() => vi.useRealTimers())
 
@@ -299,6 +303,56 @@ describe('GeminiLiveEngine', () => {
     expect(responseIds(session)).toEqual(['a'])
     await vi.advanceTimersByTimeAsync(31_000)
     expect(session.closed).toBe(true)
+    await engine.stop()
+  })
+
+  it('closes a session whose setup did not complete in time, and plays nothing it sends afterwards', async () => {
+    const { engine, sessions } = await setup()
+    const audio: Float32Array[] = []
+    engine.events.on('audio', (samples) => audio.push(samples))
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(15_001)
+    expect(engine.state).toBe('error')
+    expect(sessions[0].closed).toBe(true)
+    sessions[0].message({ setupComplete: {} })
+    sessions[0].message({ serverContent: { modelTurn: { parts: [{ inlineData: { data: Buffer.from([0, 64]).toString('base64'), mimeType: 'audio/pcm' } }] } } })
+    expect(audio).toHaveLength(0)
+    await engine.stop()
+  })
+
+  it('closes a session that arrives only after its opening already failed', async () => {
+    let connect!: () => void
+    mocks.connected = new Promise((resolve) => (connect = resolve))
+    const { engine, sessions } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(15_001)
+    expect(engine.state).toBe('error')
+    connect()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions[0].closed).toBe(true)
+    await engine.stop()
+  })
+
+  it('opens a new session at once when the provider ends one while the user is speaking, and waits for the next speech when the user is silent', async () => {
+    const { engine, sessions } = await setup()
+    const first = await open(engine, sessions)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    first.params.callbacks.onclose('session time limit')
+    // What the user says meanwhile goes into the pre-roll and is sent first once the next session is set up.
+    engine.pushAudio(new Float32Array(1600))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions).toHaveLength(2)
+    const second = sessions[1]
+    expect(second.params.resumptionHandle).toBe('h1')
+    second.message({ setupComplete: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(engine.state).toBe('open')
+    expect(second.realtime).toHaveLength(1)
+    engine.activity(false)
+    second.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessions).toHaveLength(2)
+    expect(engine.state).toBe('idle')
     await engine.stop()
   })
 })
