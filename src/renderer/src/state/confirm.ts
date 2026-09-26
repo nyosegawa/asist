@@ -11,12 +11,12 @@ import { errorText } from '@shared/i18n/error-text'
  */
 
 /** A confirmation a screen asks for. It has no title, because the user has just pressed the button it is about. */
-export type LocalConfirmRequest = Omit<ConfirmRequest, 'id' | 'title' | 'detail'> & { detail?: string }
+export type LocalConfirmRequest = Omit<ConfirmRequest, 'id' | 'title' | 'detail' | 'holdsConversation'> & { detail?: string }
 
 /** A request from main is answered over IPC; one from a screen carries `resolve` and is answered to the waiting caller. */
 export type ShownConfirm =
   | (ConfirmRequest & { resolve?: undefined })
-  | (LocalConfirmRequest & { id: string; title?: undefined; resolve: (approved: boolean) => void })
+  | (LocalConfirmRequest & { id: string; title?: undefined; holdsConversation?: undefined; resolve: (approved: boolean) => void })
 
 interface ConfirmState {
   /** Oldest first; the first is on screen. A request from a screen is only ever alone in it. */

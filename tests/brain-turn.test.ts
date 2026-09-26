@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ConfirmEvent } from '@shared/confirm'
 import type { TurnEvent } from '@shared/ipc'
 import type { ConversationMessage, ConversationPart, ConversationResult, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
@@ -129,8 +130,13 @@ vi.mock('../src/main/services/settings', () => ({
     conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' },
     bridgeModel: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
     conversationLogRetentionDays: 30,
-    agentMode: 'readonly'
+    agentMode: 'readonly',
+    agentEngine: 'claude'
   })
+}))
+// The approval gate shows its sheet in the window that is there.
+vi.mock('electron', () => ({
+  BrowserWindow: { getFocusedWindow: () => ({ isDestroyed: () => false, isVisible: () => true }), getAllWindows: () => [] }
 }))
 vi.mock('../src/main/services/tts', () => ({
   synthesizeSentence: async (_text: string, signal?: AbortSignal) => {
@@ -151,6 +157,7 @@ vi.mock('../src/main/services/agent', () => ({
   cancel: vi.fn(),
   continueJob: vi.fn(),
   isGitRepo: () => false,
+  workspaceRoot: () => '/work/asist-jobs',
   startIsolated: vi.fn(),
   merge: vi.fn(),
   discard: vi.fn()
@@ -966,5 +973,84 @@ describe('brain turn', () => {
       vi.useRealTimers()
       process.off('unhandledRejection', onUnhandled)
     }
+  })
+
+  it.each([
+    ['a turn the user started', 'user'],
+    ['a turn GPT-Live handed over', 'live']
+  ] as const)('keeps %s open while its confirmation waits through the next words, and takes those up once the approved job has started', async (_name, origin) => {
+    mocks.rounds.push(async (round) => {
+      round.text('確認画面で承認してください。')
+      round.toolUse('t1', 'run_agent_task', { prompt: '調べて', title: '調べもの' })
+      return { stop: 'tool_calls' }
+    })
+    mocks.rounds.push(async (round) => { round.text('始めました。終わったら声をかけます。'); return {} })
+    const { brain } = await loadBrain()
+    const { confirmEvents, resolveConfirm } = await import('../src/main/services/confirm')
+    const agent = await import('../src/main/services/agent')
+    vi.mocked(agent.start).mockReturnValueOnce({ id: 'j1', title: '調べもの', cwd: '/work/asist-jobs/j1' } as never)
+    const confirmations: ConfirmEvent[] = []
+    confirmEvents.on('event', (event) => confirmations.push(event))
+    const begin = (text: string) => brain.beginTurn({ text }, {}, origin, false, origin === 'live' ? { route: liveRoute } : {})!
+
+    const asking = begin('調べておいて')
+    await vi.waitFor(() => expect(confirmations).toHaveLength(1))
+    const opened = confirmations[0] as Extract<ConfirmEvent, { type: 'open' }>
+    expect(opened.request.holdsConversation).toBe(true)
+    // The user answers out loud: the renderer aborts the turn it was playing and starts the next one.
+    brain.abortTurn(asking.turnId)
+    const answer = begin('はい')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(confirmations).toHaveLength(1)
+    expect(asking.signal.aborted).toBe(false)
+    expect(agent.start).not.toHaveBeenCalled()
+
+    resolveConfirm(opened.request.id, true)
+    await Promise.all([asking.completion, answer.completion])
+    expect(agent.start).toHaveBeenCalledOnce()
+    // The asking turn stops once the job has started, and the words said meanwhile are answered from its result.
+    expect(asking.signal.aborted).toBe(true)
+    expect(mocks.requests).toHaveLength(2)
+    const sent = mocks.requests[1].messages
+    expect(unansweredCalls(sent)).toEqual([])
+    const result = sent.flatMap((message) => message.parts).find((part) => part.type === 'tool_result' && part.callId === 't1')
+    expect(JSON.parse((result as Extract<ConversationPart, { type: 'tool_result' }>).content)).toMatchObject({ started: true, jobId: 'j1' })
+    expect(textOf(sent.at(-1)!)).toContain('はい')
+  })
+
+  it('does not hold the conversation for a confirmation that something a tool started asks for after the tool\'s round', async () => {
+    mocks.rounds.push(async (round) => {
+      round.toolUse('t1', 'run_agent_task', { prompt: '調べて' })
+      return { stop: 'tool_calls' }
+    })
+    mocks.rounds.push(async (round) => { round.text('始めました。'); return {} })
+    mocks.rounds.push(async (round) => { round.text('はい。'); return {} })
+    const { brain } = await loadBrain()
+    const { confirmEvents, requestConfirm, resolveConfirm } = await import('../src/main/services/confirm')
+    const agent = await import('../src/main/services/agent')
+    const confirmations: ConfirmEvent[] = []
+    confirmEvents.on('event', (event) => confirmations.push(event))
+    let jobEnds!: () => void
+    let answer!: Promise<boolean>
+    // The job's process lives on after the tool, and what it runs later keeps the tool's asynchronous context.
+    vi.mocked(agent.start).mockImplementationOnce(() => {
+      answer = new Promise<void>((resolve) => { jobEnds = resolve }).then(() =>
+        requestConfirm({ title: 't', message: 'm', detail: 'd', confirmLabel: 'ok', destructive: false }, new AbortController().signal)
+      )
+      return { id: 'j1', title: 'job', cwd: '/work/asist-jobs/j1' } as never
+    })
+    const started = brain.beginTurn({ text: '調べておいて' }, {}, 'user', false)!
+    await vi.waitFor(() => expect(confirmations).toHaveLength(1))
+    resolveConfirm((confirmations[0] as Extract<ConfirmEvent, { type: 'open' }>).request.id, true)
+    await started.completion
+
+    jobEnds()
+    await vi.waitFor(() => expect(confirmations.filter((event) => event.type === 'open')).toHaveLength(2))
+    expect(confirmations.at(-1)).toMatchObject({ type: 'open', request: { holdsConversation: false } })
+    const next = brain.beginTurn({ text: 'ありがとう' }, {}, 'user', false)!
+    await next.completion
+    expect(mocks.requests).toHaveLength(3)
+    resolveConfirm((confirmations.at(-1) as Extract<ConfirmEvent, { type: 'open' }>).request.id, false)
+    await expect(answer).resolves.toBe(false)
   })
 })

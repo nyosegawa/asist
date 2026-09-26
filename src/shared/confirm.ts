@@ -17,6 +17,11 @@ export interface ConfirmRequest {
   confirmLabel: string
   /** The operation removes something, such as a mail going to the trash, and its button is drawn as a warning. */
   destructive: boolean
+  /**
+   * A conversation turn asked and waits for the answer: what the user says meanwhile neither answers nor
+   * cancels it, and is taken up once the answer is in.
+   */
+  holdsConversation: boolean
 }
 
 export type ConfirmEvent = { type: 'open'; request: ConfirmRequest } | { type: 'close'; id: string }

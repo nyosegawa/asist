@@ -20,8 +20,9 @@ export const CONFIRM_ARM_MS = 500
  * operation to run or cancelling. Escape cancels. A press within CONFIRM_ARM_MS of a request appearing,
  * whether on a button, with Enter on the focused button, on the backdrop or with Escape, does nothing.
  * The answer goes out exactly once, to main or to the screen that asked. The header appears only for a
- * request with a title, and the confirming button is drawn as a warning only for an operation that
- * removes something.
+ * request with a title, the confirming button is drawn as a warning only for an operation that removes
+ * something, and a request a conversation turn waits on says that what the user says waits for the
+ * answer.
  */
 export function ConfirmSheet(): React.JSX.Element {
   const request = useConfirmStore((s) => s.queue[0] ?? null)
@@ -97,6 +98,7 @@ export function ConfirmSheet(): React.JSX.Element {
             )}
             <h2 id="confirm-title">{request.message}</h2>
             {request.detail && <pre className="confirm-detail">{request.detail}</pre>}
+            {request.holdsConversation && <p className="confirm-note">{t('confirm.conversationWaits')}</p>}
             <div className="confirm-actions">
               <button ref={cancelRef} type="button" className="cal-btn" onClick={() => void answer(false)}>
                 {t('common.cancel')}
