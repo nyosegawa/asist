@@ -5,7 +5,7 @@ import path from 'node:path'
 import { promptLanguage } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from './conversation-locale'
-import { childEnv } from './child-env'
+import { childEnv, removeVariables } from './child-env'
 import { resourcePath } from './resource-path'
 
 /**
@@ -29,7 +29,7 @@ export function gitPath(): string {
  */
 export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = childEnv({}, parent)
-  for (const name of Object.keys(env)) if (name.startsWith('GIT_')) delete env[name]
+  removeVariables(env, (key) => key.startsWith('GIT_'))
   return { ...env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
 }
 
@@ -46,7 +46,8 @@ function git(cwd: string, args: string[], options: GitOptions = {}): string {
     maxBuffer: options.maxBuffer ?? 4 * 1024 * 1024,
     input: options.input,
     stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-    env: { ...gitEnv(), ...options.env }
+    env: { ...gitEnv(), ...options.env },
+    windowsHide: true
   })
 }
 

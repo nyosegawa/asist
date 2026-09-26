@@ -148,9 +148,13 @@ export const DOCUMENT_FILE = /^(instruction\.md|me\.md|user\.md|pages\/[^/\\]+\.
 
 const MAX_PAGE_NAME_LENGTH = 60
 
+/** The names Windows keeps for devices. No file there can take one, whatever extension follows it. */
+const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(\..*)?$/i
+
 /**
- * The input for a new page. The name becomes the file name, so characters that cannot appear in a
- * path are rejected.
+ * The input for a new page. The name becomes the file name, so a name that cannot be a file name on
+ * macOS or on Windows is rejected on both, and a memory folder opens on either. Windows drops a dot or a
+ * space at the end of a name, and trim has already removed the spaces.
  */
 export const memoryPageInputSchema = z.strictObject({
   name: z
@@ -158,7 +162,8 @@ export const memoryPageInputSchema = z.strictObject({
     .trim()
     .min(1, errorText('memory.errors.nameEmpty'))
     .max(MAX_PAGE_NAME_LENGTH, errorText('memory.errors.nameTooLong', { limit: MAX_PAGE_NAME_LENGTH }))
-    .refine((name) => !/[/\\:*?"<>|]/.test(name) && !name.startsWith('.'), errorText('memory.errors.nameCharacters'))
+    .refine((name) => !/[/\\:*?"<>|]/.test(name) && !name.startsWith('.') && !name.endsWith('.'), errorText('memory.errors.nameCharacters'))
+    .refine((name) => !WINDOWS_DEVICE_NAME.test(name), errorText('memory.errors.nameReserved'))
 })
 
 export function documentKindOf(file: string): MemoryDocumentKind | null {

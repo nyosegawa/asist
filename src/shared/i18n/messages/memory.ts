@@ -1159,6 +1159,19 @@ export const memory = defineMessages({
       'pt-BR': 'Excluído depois de aberto, por isso não foi salvo. Copie o que escreveu e clique em “Cancelar”',
       'es-419': 'Se eliminó después de abrirlo, así que no se guardó. Copia lo que escribiste y haz clic en «Cancelar»',
       'es-ES': 'Se ha eliminado tras abrirlo y no se ha guardado. Copia lo que has escrito y pulsa “Cancelar”'
+    },
+    nameReserved: {
+      'ja-JP': 'この名前は Windows でファイルの名前に使えないため、ページの名前にできません。',
+      'en-US': 'Windows does not allow this name for a file, so it cannot be a page name.',
+      'fr-FR': "Windows n'accepte pas ce nom pour un fichier, il ne peut donc pas servir de nom de page.",
+      'de-DE': 'Windows lässt diesen Namen für Dateien nicht zu, daher kann er kein Seitenname sein.',
+      'hi-IN': 'Windows इस नाम को फ़ाइल के नाम के लिए इस्तेमाल नहीं करने देता, इसलिए यह पेज का नाम नहीं हो सकता।',
+      'id-ID': 'Windows tidak mengizinkan nama ini untuk file, jadi nama ini tidak bisa dipakai untuk halaman.',
+      'it-IT': 'Windows non consente questo nome per un file, quindi non può essere il nome di una pagina.',
+      'ko-KR': 'Windows에서 파일 이름으로 쓸 수 없는 이름이라 페이지 이름으로 사용할 수 없습니다.',
+      'pt-BR': 'O Windows não permite este nome para um arquivo, então ele não pode ser o nome de uma página.',
+      'es-419': 'Windows no permite este nombre para un archivo, así que no puede ser el nombre de una página.',
+      'es-ES': 'Windows no permite este nombre para un archivo, así que no puede usarse como nombre de página.'
     }
   }
 })

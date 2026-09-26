@@ -88,11 +88,24 @@ const notRegular = (file: string): Error => new Error(errorText('memory.errors.n
  * shows: reading a pipe blocks the main process until a writer appears, and a link to /dev/zero never
  * ends. The file is opened without following a link and without waiting for a writer, and its type is
  * checked on the open descriptor, so nothing can be put in its place in between.
+ *
+ * Windows has neither O_NOFOLLOW nor O_NONBLOCK, and Node leaves both undefined there, so the open follows a
+ * symbolic link or a junction. The path is therefore looked at with lstat first, and the opened file must
+ * be the one lstat saw, so a link put in its place in between is refused as well.
  */
 function readFileOf(dir: string, file: string): string | null {
+  const target = path.join(dir, file)
+  let seen: fs.BigIntStats
+  try {
+    seen = fs.lstatSync(target, { bigint: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+  if (!seen.isFile()) throw notRegular(file)
   let fd: number
   try {
-    fd = fs.openSync(path.join(dir, file), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)
+    fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK)
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') return null
@@ -100,7 +113,8 @@ function readFileOf(dir: string, file: string): string | null {
     throw error
   }
   try {
-    if (!fs.fstatSync(fd).isFile()) throw notRegular(file)
+    const opened = fs.fstatSync(fd, { bigint: true })
+    if (!opened.isFile() || opened.ino !== seen.ino || opened.dev !== seen.dev) throw notRegular(file)
     return fs.readFileSync(fd, 'utf8')
   } finally {
     fs.closeSync(fd)
