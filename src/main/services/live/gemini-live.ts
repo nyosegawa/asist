@@ -7,7 +7,7 @@ import { marker } from '@shared/conversation-markers'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from '../conversation-locale'
 import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
-import type { ToolExecution } from '@shared/tool-registry'
+import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import type { ConversationOwner } from '../brain/session'
 import type { HistoryMessage } from '../brain/history'
 import { LiveEngineBase, type LiveEngineDeps } from './engine'
@@ -52,10 +52,17 @@ export interface GeminiServerMessage {
     inputTranscription?: { text?: string; finished?: boolean }
     outputTranscription?: { text?: string; finished?: boolean }
   }
-  toolCall?: { functionCalls?: Array<{ id?: string; name?: string; args?: Record<string, unknown> }> }
+  toolCall?: { functionCalls?: GeminiFunctionCall[] }
   toolCallCancellation?: { ids?: string[] }
   goAway?: { timeLeft?: string }
   sessionResumptionUpdate?: { newHandle?: string; resumable?: boolean }
+}
+
+/** One function call of a toolCall message. */
+export interface GeminiFunctionCall {
+  id?: string
+  name?: string
+  args?: Record<string, unknown>
 }
 
 export interface GeminiConnectParams {
@@ -76,7 +83,9 @@ export interface GeminiLiveDeps extends LiveEngineDeps {
   connect: (params: GeminiConnectParams) => Promise<GeminiSession>
   systemInstruction: (startedAt: Date) => string
   functionDeclarations: () => GeminiFunctionDeclaration[]
-  executeTool: (name: string, input: Record<string, unknown>, ctx: { turnId: number; signal: AbortSignal; emit: (event: TurnEvent) => void }) => Promise<ToolExecution>
+  executeTool: (name: string, input: Record<string, unknown>, ctx: { turnId: number; signal: AbortSignal; emit: (event: TurnEvent) => void }) => ToolExecutionTask
+  /** Whether the registry lets the tool run at the same time as other calls, which a writing tool does not. */
+  isParallel: (name: string) => boolean
   recordTool: (turnId: number, name: string, input: Record<string, unknown>, execution: ToolExecution) => void
   /** Looks for memories related to the user's utterance and returns a note about them, or null. */
   memoryInjection: (text: string) => Promise<string | null>
@@ -103,7 +112,17 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
   private resumption: { handle: string; at: number } | null = null
   private inputSeconds = 0
   private outputSeconds = 0
+  /** The calls that still owe the model a result, waiting for their turn or running, by the id Gemini gave them. */
   private readonly running = new Map<string, AbortController>()
+  /**
+   * The calls whose work has not ended, for the read-write lock of a brain tool round (tool-round.ts): a
+   * call the registry marks parallel waits for the writing calls before it, and a writing call waits for
+   * every call before it, so that two approvals are never asked at once. The lock spans the session
+   * rather than one message, because a NON_BLOCKING call can arrive while an earlier one still waits
+   * for approval.
+   */
+  private readonly inFlight = new Set<Promise<void>>()
+  private exclusiveTail: Promise<void> = Promise.resolve()
 
   constructor(
     info: LiveEngineInfo,
@@ -228,7 +247,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         this.emitUsage({ sessionSeconds: Math.round(this.inputSeconds), costUsd: geminiLiveCost(this.inputSeconds, this.outputSeconds) })
       }
     }
-    for (const call of message.toolCall?.functionCalls ?? []) void this.runTool(call)
+    for (const call of message.toolCall?.functionCalls ?? []) this.submitTool(call)
     for (const id of message.toolCallCancellation?.ids ?? []) {
       this.running.get(id)?.abort()
       this.running.delete(id)
@@ -239,37 +258,56 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     if (message.goAway) console.warn(`gemini-live: GoAway (${message.goAway.timeLeft ?? '?'})`)
   }
 
-  private async runTool(call: { id?: string; name?: string; args?: Record<string, unknown> }): Promise<void> {
+  /** A call belongs to the exchange it arrived in, and it runs once the calls it waits for have ended. */
+  private submitTool(call: GeminiFunctionCall): void {
+    const turnId = this.ensureTurnStarted((event) => this.deps.emitTurn(event))
+    const controller = new AbortController()
+    this.running.set(call.id ?? '', controller)
+    this.touch()
+    const parallel = this.deps.isParallel(call.name ?? '')
+    const gate = parallel ? this.exclusiveTail : Promise.allSettled([...this.inFlight]).then(() => undefined)
+    const done = gate
+      .then(() => this.runTool(call, turnId, controller))
+      .catch((err: unknown) => console.error('gemini-live function call failed:', errMessage(err)))
+    this.inFlight.add(done)
+    void done.then(() => this.inFlight.delete(done))
+    if (!parallel) this.exclusiveTail = done
+  }
+
+  private async runTool(call: GeminiFunctionCall, turnId: number, controller: AbortController): Promise<void> {
+    if (controller.signal.aborted) return
     const id = call.id ?? ''
     const name = call.name ?? ''
     const emit = (event: TurnEvent): void => this.deps.emitTurn(event)
-    const turnId = this.ensureTurnStarted(emit)
-    const controller = new AbortController()
-    this.running.set(id, controller)
-    this.touch()
     emit({ type: 'tool', turnId, name, status: 'start' })
     let execution: ToolExecution
+    let completion: Promise<void> = Promise.resolve()
     try {
-      execution = await this.deps.executeTool(name, call.args ?? {}, { turnId, signal: controller.signal, emit })
+      const task = this.deps.executeTool(name, call.args ?? {}, { turnId, signal: controller.signal, emit })
+      completion = task.completion
+      execution = await task
     } catch (err) {
       const content = errMessage(err)
       execution = { content, isError: true, durationMs: 0, resultLength: content.length, truncated: false }
     }
-    this.running.delete(id)
-    if (controller.signal.aborted) return
-    emit({ type: 'tool', turnId, name, status: execution.isError ? 'error' : 'done' })
-    this.deps.recordTool(turnId, name, call.args ?? {}, execution)
-    this.touch()
-    this.session?.sendToolResponse({
-      functionResponses: [
-        {
-          id,
-          name,
-          response: execution.isError ? { error: execution.content } : { result: execution.content },
-          scheduling: 'WHEN_IDLE'
-        }
-      ]
-    })
+    if (this.running.get(id) === controller) this.running.delete(id)
+    if (!controller.signal.aborted) {
+      emit({ type: 'tool', turnId, name, status: execution.isError ? 'error' : 'done' })
+      this.deps.recordTool(turnId, name, call.args ?? {}, execution)
+      this.touch()
+      this.session?.sendToolResponse({
+        functionResponses: [
+          {
+            id,
+            name,
+            response: execution.isError ? { error: execution.content } : { result: execution.content },
+            scheduling: 'WHEN_IDLE'
+          }
+        ]
+      })
+    }
+    // A timed-out tool has answered but may still be working, so the lock is held until its work ends.
+    await completion
   }
 
   private sendUserText(text: string): void {
