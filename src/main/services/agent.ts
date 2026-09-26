@@ -520,27 +520,42 @@ export function merge(id: string, commit: string): AgentJob {
 }
 
 /**
- * The worktree a discard removes. It refuses a job that has none, or whose agent may still write to it,
- * which the conversation checks before it asks the user.
+ * The worktree a discard removes. It refuses a job with nothing left to throw away, whose changes were
+ * merged, discarded or never made, and one whose agent may still write to it.
  */
-export function discardableWorktree(id: string): NonNullable<AgentJob['worktree']> {
+function discardableWorktree(id: string): NonNullable<AgentJob['worktree']> {
   ensureLoaded()
   const job = jobs.get(id)?.job
-  if (!job?.worktree) throw new Error(errorText('jobs.discard.noChanges', { id }))
+  if (!job?.worktree || job.mergeState === 'merged' || job.mergeState === 'discarded' || job.mergeState === 'unchanged') {
+    throw new Error(errorText('jobs.discard.noChanges', { id }))
+  }
   assertWriterStopped(job)
   if (!isJobTerminal(job.status)) throw new Error(errorText('jobs.discard.jobRunning'))
   return job.worktree
 }
 
+/** What a discard of a job would remove, which the conversation shows the user before asking. */
+export interface DiscardPreview {
+  repo: string
+  dir: string
+  branch: string
+  /** The changes the branch holds against the commit the job started from, as git's stat. */
+  stat: string
+}
+
+/** It refuses as discard does, so that the user is never asked about a discard that cannot happen. */
+export function discardPreview(id: string): DiscardPreview {
+  const worktree = discardableWorktree(id)
+  return { repo: worktree.repo, dir: worktree.dir, branch: worktree.branch, stat: git.diffStat(worktree.repo, worktree.base, worktree.branch) }
+}
+
 /** Throws the worktree's changes away by deleting both the worktree and its branch. */
 export function discard(id: string): AgentJob {
   const worktree = discardableWorktree(id)
-  const entry = jobs.get(id)!
-  if (entry.job.mergeState === 'merged' || entry.job.mergeState === 'discarded' || entry.job.mergeState === 'unchanged') return { ...entry.job }
   git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
   pushLog(id, 'system', t('jobs.discard.done'))
   update(id, { mergeState: 'discarded' })
-  return { ...entry.job }
+  return { ...jobs.get(id)!.job }
 }
 
 export function diff(id: string): JobDiff {
@@ -557,7 +572,8 @@ export function diff(id: string): JobDiff {
  * Creates a new job that resumes the original one's session in the same place with the same permissions.
  * A running original is stopped first, so that a correction such as "actually, do it this other way" is a
  * single operation. The write permission carries over from the original job; asking the user whether to
- * carry on belongs to the caller.
+ * carry on belongs to the caller. The caller's signal counts only until the original is stopped: after
+ * that the continuation goes ahead, since dropping it would leave the user's job stopped for nothing.
  */
 export async function continueJob(parentId: string, prompt: string, signal?: AbortSignal): Promise<AgentJob> {
   ensureLoaded()
@@ -578,7 +594,6 @@ export async function continueJob(parentId: string, prompt: string, signal?: Abo
     cancel(parentId)
     await process?.completion
   }
-  signal?.throwIfAborted()
   if (shuttingDown) throw new Error(errorText('jobs.start.shuttingDown'))
   assertNoContinuation()
   const transferWorktree = Boolean(parent.worktree &&

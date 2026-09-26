@@ -460,14 +460,14 @@ export function jobTools(locale: ConversationLocale): Def[] {
       maxResultChars: SMALL_RESULT_MAX,
       run: async (input, _ctx, signal) => {
         const job = requireJob(input)
-        let worktree
-        // A job that cannot be discarded yet is refused before the user is asked about it.
+        let target
+        // A job with nothing to discard, or not ready for it, is refused before the user is asked about it.
         try {
-          worktree = agentRunner.discardableWorktree(job.id)
+          target = agentRunner.discardPreview(job.id)
         } catch (err) {
           throw new ToolError(TEXTS.discardFailed(detail(err, language)))
         }
-        if (!(await confirmDiscard({ title: job.title, repo: worktree.repo }, signal))) {
+        if (!(await confirmDiscard(job.title, target, signal))) {
           return { discarded: false, declined: true, jobId: job.id, note: TEXTS.discardDeclined[language] }
         }
         try {

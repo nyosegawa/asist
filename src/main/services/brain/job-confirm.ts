@@ -1,5 +1,6 @@
 import { AGENT_MODE_NAME } from '@shared/agent-cli'
 import type { AgentEngine, JobDiff } from '@shared/ipc'
+import type { DiscardPreview } from '../agent'
 import { requestConfirm, type ConfirmInput } from '../confirm'
 import { t } from '../i18n'
 
@@ -67,13 +68,15 @@ export function mergeConfirmation(job: { title: string; repo: string }, review: 
   }
 }
 
-export function discardConfirmation(job: { title: string; repo: string }): ConfirmInput {
+export function discardConfirmation(title: string, target: DiscardPreview): ConfirmInput {
   return {
     title: t('jobs.confirm.discardTitle'),
     message: t('jobs.confirm.discardMessage'),
     detail: [
-      t('jobs.confirm.job', { title: job.title }),
-      t('jobs.confirm.place', { place: placeText({ kind: 'worktree', repo: job.repo }) }),
+      t('jobs.confirm.job', { title }),
+      t('jobs.confirm.place', { place: target.dir }),
+      t('jobs.confirm.branch', { repo: target.repo, branch: target.branch }),
+      ...(target.stat ? ['', target.stat] : []),
       '',
       t('jobs.confirm.discardWarning')
     ].join('\n'),
@@ -88,5 +91,5 @@ export const confirmJob = (plan: JobPlan, signal: AbortSignal): Promise<boolean>
 export const confirmMerge = (job: { title: string; repo: string }, review: JobDiff, signal: AbortSignal): Promise<boolean> =>
   requestConfirm(mergeConfirmation(job, review), signal)
 
-export const confirmDiscard = (job: { title: string; repo: string }, signal: AbortSignal): Promise<boolean> =>
-  requestConfirm(discardConfirmation(job), signal)
+export const confirmDiscard = (title: string, target: DiscardPreview, signal: AbortSignal): Promise<boolean> =>
+  requestConfirm(discardConfirmation(title, target), signal)

@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
     diff: vi.fn(() => ({ commit: 'reviewed', stat: 'README.md | 2 +-', patch: '' })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
-    discardableWorktree: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' }))
+    discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-' }))
   },
   requestConfirm: vi.fn(async () => true),
   fetchPanel: vi.fn(),
@@ -422,9 +422,8 @@ describe('brain tools registry', () => {
     expect(mocks.agent.discard).not.toHaveBeenCalled()
     const request = mocks.requestConfirm.mock.calls[0][0] as { detail: string; destructive: boolean }
     expect(request.destructive).toBe(true)
-    for (const line of [ja('jobs.confirm.job', { title: 'fix' }), ja('jobs.confirm.place', { place: ja('jobs.confirm.worktree', { path: '/repo' }) })]) {
-      expect(request.detail).toContain(line)
-    }
+    const lines = [ja('jobs.confirm.job', { title: 'fix' }), ja('jobs.confirm.place', { place: '/ws/wt' }), ja('jobs.confirm.branch', { branch: 'asist/x', repo: '/repo' }), 'README.md | 2 +-']
+    for (const line of lines) expect(request.detail).toContain(line)
 
     mocks.agent.userJob.mockReturnValueOnce(worktreeJob as never)
     const discarded = await executeClientTool('discard_agent_job', { jobId: 'w1' }, ctx)
@@ -433,15 +432,15 @@ describe('brain tools registry', () => {
     expect(mocks.agent.discard).toHaveBeenCalledWith('w1')
   })
 
-  it('does not ask about discarding a job the agent service would refuse, and throws nothing away', async () => {
-    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'running' } as never)
-    mocks.agent.discardableWorktree.mockImplementationOnce(() => {
-      throw new Error(errorText('jobs.discard.jobRunning'))
+  it('does not ask about discarding a job the agent service would refuse, such as one already merged, and tells the model why', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'merged' } as never)
+    mocks.agent.discardPreview.mockImplementationOnce(() => {
+      throw new Error(errorText('jobs.discard.noChanges', { id: 'w1' }))
     })
     const { executeClientTool } = await load()
     const result = await executeClientTool('discard_agent_job', { jobId: 'w1' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
-    expect(result.content).toContain(ja('jobs.discard.jobRunning'))
+    expect(result.content).toContain(ja('jobs.discard.noChanges', { id: 'w1' }))
     expect(mocks.requestConfirm).not.toHaveBeenCalled()
     expect(mocks.agent.discard).not.toHaveBeenCalled()
   })

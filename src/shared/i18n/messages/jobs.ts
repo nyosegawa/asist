@@ -1891,6 +1891,19 @@ export const jobs = defineMessages({
       'pt-BR': 'Descartar alterações',
       'es-419': 'Descartar cambios',
       'es-ES': 'Descartar cambios'
+    },
+    branch: {
+      'ja-JP': 'ブランチ: {branch}({repo})',
+      'en-US': 'Branch: {branch} ({repo})',
+      'fr-FR': 'Branche : {branch} ({repo})',
+      'de-DE': 'Branch: {branch} ({repo})',
+      'hi-IN': 'ब्रांच: {branch} ({repo})',
+      'id-ID': 'Branch: {branch} ({repo})',
+      'it-IT': 'Branch: {branch} ({repo})',
+      'ko-KR': '브랜치: {branch} ({repo})',
+      'pt-BR': 'Branch: {branch} ({repo})',
+      'es-419': 'Rama: {branch} ({repo})',
+      'es-ES': 'Rama: {branch} ({repo})'
     }
   }
 })
