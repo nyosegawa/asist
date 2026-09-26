@@ -17,7 +17,7 @@ const worker = new OnnxWorker<Float32Array[]>({
   script: 'embedding_worker.py',
   modelsDir: 'embedding/models',
   files: [EMBEDDING_MODEL.model, EMBEDDING_MODEL.tokenizer],
-  modelLabel: `${EMBEDDING_MODEL.label} ${EMBEDDING_MODEL.variant}`,
+  modelLabel: EMBEDDING_MODEL.label,
   feature: 'settingsModels.features.semanticSearch',
   read: (line) => {
     const message = parseEmbeddingWorkerLine(line)
