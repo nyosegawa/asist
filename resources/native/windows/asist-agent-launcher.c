@@ -225,7 +225,9 @@ static int run(int argc, wchar_t **argv)
     free(line);
     CloseHandle(child.hThread);
 
-    HANDLE waits[2] = {child.hProcess, parent};
+    HANDLE waits[2];
+    waits[0] = child.hProcess;
+    waits[1] = parent;
     DWORD woke = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
     if (woke == WAIT_OBJECT_0 + 1) {
         if (empty_job(job) != 0) return 1;
