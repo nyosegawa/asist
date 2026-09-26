@@ -5,7 +5,9 @@ Fill in every part. A subagent sees nothing of the conversation, so anything lef
 ```text
 You are working in the ASIST repository. Read AGENTS.md at the repo root first and follow it
 (comment rules, the ui-text skill for any text the app shows or says, tests that protect behavior
-rather than wording). You are in your own git worktree.
+rather than wording). Your git worktree is <absolute path>, on branch <branch>; work only there,
+through absolute paths or (cd <path> && …). node_modules, resources/git and resources/uv are already
+copied into it: never copy, move or re-create them.
 [Or: You are in the main working tree, not a worktree. Do not commit.]
 
 ## Background
@@ -29,6 +31,8 @@ rather than wording). You are in your own git worktree.
 Do all of the work yourself, in this worktree. Do not start other agents or background tasks: when
 you reply, your task is over and nothing you started is waited for. Reply only once the work is
 committed and the report below is complete.
+If a command is refused, do not rephrase it to get around the refusal: stop that step and say so in
+the report. Do not use git stash, git checkout -- <path> or git reset.
 
 ## Finish
 Commit on your branch, with a message that follows AGENTS.md (one English sentence in the imperative,
@@ -37,5 +41,5 @@ then what changed and why). Do not push and do not merge.
 ## Report
 The files changed with one line each, the root cause of each problem, the tests added,
 the typecheck and test results, the paths of any screenshots, what you did not check,
-and the commit hash and branch name.
+any command that was refused, and the commit hash and branch name.
 ```
