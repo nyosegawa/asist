@@ -3,9 +3,9 @@ import { promptText, type ConversationLocale, type PromptText } from './conversa
 import type { ToolRoundResult } from './tool-round'
 
 /**
- * Resuming a turn after a dropped stream, and marking interrupted replies in the history.
- * - A disconnect after speech has started appends the confirmed part as the assistant message and
- *   resumes with a user message that asks for the rest without repetition.
+ * Resuming a turn after a response stopped short, and marking interrupted replies in the history.
+ * - A disconnect after speech has started, or the output limit, appends the confirmed part as the
+ *   assistant message and resumes with a user message that asks for the rest without repetition.
  * - An interruption keeps what was spoken, followed by a marker. The user utterance stays in the
  *   history even when the interruption came before any reply.
  */
@@ -29,14 +29,14 @@ export function markInterruptedReply(locale: ConversationLocale, visibleReply: s
 }
 
 /**
- * The messages appended to resume after a disconnect: the confirmed part of the response, then a user
- * message with a result for every confirmed tool call and the request to continue. A tool call without
- * a result makes the next request invalid, so a missing result throws.
+ * The messages appended to resume a response that stopped short: the confirmed part of the response,
+ * then a user message with a result for every confirmed tool call and the note asking for the rest. A
+ * tool call without a result makes the next request invalid, so a missing result throws.
  */
 export function buildResumeMessages(
-  locale: ConversationLocale,
   recorded: ConversationMessage,
-  results: readonly ToolRoundResult[]
+  results: readonly ToolRoundResult[],
+  note: string
 ): ConversationMessage[] {
   const byId = new Map(results.map((r) => [r.call.id, r]))
   const parts: ConversationPart[] = []
@@ -51,5 +51,5 @@ export function buildResumeMessages(
       ...(result.execution.isError ? { isError: true } : {})
     })
   }
-  return [recorded, { role: 'user', parts: [...parts, { type: 'text', text: resumeAfterDisconnectNote(locale) }] }]
+  return [recorded, { role: 'user', parts: [...parts, { type: 'text', text: note }] }]
 }

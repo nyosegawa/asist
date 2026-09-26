@@ -771,6 +771,84 @@ describe('brain turn', () => {
     expect(readLog().map((r) => r.kind)).toEqual(['user', 'message'])
   })
 
+  it('answers the tool call a response finished before the output limit, then asks for the rest, in the request and in the history', async () => {
+    mocks.fetchPanel.mockResolvedValue(weatherPanel)
+    mocks.rounds.push(async (round) => {
+      round.text('調べますね。')
+      round.toolUse('t1', 'show_weather', { location: '東京都' })
+      round.text('東京は')
+      return { stop: 'max_tokens' }
+    })
+    mocks.rounds.push(async (round) => {
+      round.text('晴天です。')
+      return {}
+    })
+    const { brain, events } = await loadBrain()
+    await brain.beginTurn({ text: '東京の天気' }, {}, 'user', false)!.completion
+    expect(mocks.requests).toHaveLength(2)
+    expect(unansweredCalls(mocks.requests[1].messages)).toEqual([])
+    expect(lastUserParts(mocks.requests[1])[0]).toMatchObject({ type: 'tool_result', callId: 't1' })
+    // Every later turn sends the same history, so a call stored without its result would fail each of them.
+    expect(unansweredCalls(await historyMessages())).toEqual([])
+    expect(events.some((e) => e.type === 'error')).toBe(false)
+  })
+
+  it('closes a turn that has no key for its model with a failed reply in the log, so the utterance counts as answered', async () => {
+    mocks.key = undefined
+    const { brain, events } = await loadBrain()
+    const handle = brain.beginTurn({ text: '予定を教えて' }, {}, 'user', false)!
+    await handle.completion
+    expect(mocks.requests).toEqual([])
+    expect(events.filter((e) => e.turnId === handle.turnId).map((e) => e.type)).toEqual(['started', 'error', 'done'])
+    expect(readLog()).toMatchObject([
+      { kind: 'user', turnId: handle.turnId, text: '予定を教えて' },
+      { kind: 'assistant', turnId: handle.turnId, failed: true }
+    ])
+  })
+
+  it('ends the turn with an error and done, and answers the utterance in the log, when building the request fails after the utterance arrived', async () => {
+    // The job history is read on first use, and a file the app cannot read makes that throw.
+    mocks.contextBlock = () => { throw new Error('jobs.json: unsupported version 3') }
+    const { brain, events } = await loadBrain()
+    const handle = brain.beginTurn({ text: '予定を教えて' }, {}, 'user', false)!
+    await handle.completion
+    expect(mocks.requests).toEqual([])
+    expect(events.filter((e) => e.turnId === handle.turnId).map((e) => e.type)).toEqual(['started', 'error', 'done'])
+    expect(readLog().map((r) => [r.kind, r.turnId])).toEqual([['user', handle.turnId], ['assistant', handle.turnId]])
+  })
+
+  it('keeps the tool round trip of a turn whose voice model recorded its filler while the tool ran', async () => {
+    let turnId = -1
+    const { record } = await import('../src/main/services/brain/session')
+    mocks.fetchPanel.mockImplementation(async () => {
+      // GPT-Live records the transcript of its own filler under brain's turn once it goes quiet for 1.5 seconds.
+      record({ kind: 'assistant', turnId, text: 'ちょっと見てみますね。' })
+      return weatherPanel
+    })
+    mocks.rounds.push(async (round) => {
+      round.toolUse('t1', 'show_weather', { location: '東京都' })
+      return { stop: 'tool_calls' }
+    })
+    mocks.rounds.push(async (round) => {
+      round.text('晴天です。')
+      return {}
+    })
+    mocks.rounds.push(async (round) => {
+      round.text('どういたしまして。')
+      return {}
+    })
+    const { brain } = await loadBrain()
+    const handle = brain.beginTurn({ text: '東京の天気' }, {}, 'live', false, { route: liveRoute })!
+    turnId = handle.turnId
+    await handle.completion
+    await brain.beginTurn({ text: 'ありがとう' }, {}, 'live', false, { route: liveRoute })!.completion
+    const next = mocks.requests[2].messages
+    expect(next.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant', 'user'])
+    expect(next[1].parts).toEqual([{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '東京都' } }])
+    // The prefix the previous turn sent comes back unchanged, which keeps the prompt cache.
+    expect(next.slice(0, 3)).toEqual(mocks.requests[1].messages)
+  })
+
   it.each(['silent', 'live'] as const)('reports a finished job once, not once per attempt, when the %s route plays no segment', async (kind) => {
     for (let i = 0; i < 5; i++) mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
     if (kind === 'silent') mocks.ttsEngine = 'none'
@@ -809,5 +887,84 @@ describe('brain turn', () => {
     record({ kind: 'notice', turnId: 7, notice: 'job-done', text: '[システム通知] ジョブが完了した。' })
     history.ensureLoaded()
     expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('昨日の話'), 'はい。', '[システム通知] ジョブが完了した。'])
+  })
+
+  /**
+   * The job status changes every minute while a job runs. Every provider caches the messages behind
+   * the system prompt, so the status has to ride on the input for the previous turn to stay cached.
+   */
+  it('sends the job status with the input only when it changed, leaving the system prompt and the earlier messages as they were', async () => {
+    for (const reply of ['まだです。', 'もう少しです。', 'はい。', '終わりました。']) mocks.rounds.push(async (round) => { round.text(reply); return {} })
+    const statuses = ['# jobs\n- [j1] running 1 min', '# jobs\n- [j1] running 2 min', '# jobs\n- [j1] running 2 min', null]
+    const { brain } = await loadBrain()
+    for (const [i, status] of statuses.entries()) {
+      mocks.contextBlock = () => status
+      await runToDone(brain, `質問${i}`)
+    }
+    const [first, second, third, fourth] = mocks.requests
+    const jobs = marker('ja-JP', 'jobStatus')
+    expect(second.system).toEqual(first.system)
+    expect(second.messages.slice(0, 2)).toEqual([...first.messages, said('まだです。')])
+    expect(textOf(first.messages.at(-1)!)).toContain(`${jobs}\n# jobs\n- [j1] running 1 min`)
+    expect(textOf(second.messages.at(-1)!)).toContain(`${jobs}\n# jobs\n- [j1] running 2 min`)
+    // The same status is already in the history, so it does not come again.
+    expect(textOf(third.messages.at(-1)!)).not.toContain(jobs)
+    // Once there is nothing to report, the model is told so instead of going on reading the running job as current.
+    expect(textOf(fourth.messages.at(-1)!)).toContain(jobs)
+    expect(textOf(fourth.messages.at(-1)!)).not.toContain('[j1]')
+  })
+
+  it('speaks the sentence for a failed API call in the language of the conversation, not of the screen', async () => {
+    mocks.conversationLocale = 'en-US'
+    mocks.rounds.push(async () => { throw Object.assign(new Error('bad request'), { status: 400 }) })
+    const { brain, events } = await loadBrain()
+    await runToDone(brain, 'what is the weather')
+    const spoken = events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))
+    expect(spoken).toEqual([createTranslator('en-US')('conversation.reply.failed')])
+  })
+
+  it('marks the reply as interrupted when the user barges in while its last sentences are still being synthesized', async () => {
+    mocks.holdSynthesis = true
+    mocks.rounds.push(async (round) => { round.text('明日は晴れです。', '傘はいりません。'); return {} })
+    const { brain, events } = await loadBrain()
+    const handle = brain.beginTurn({ text: '明日の天気は' }, {}, 'user', false)!
+    // The stream has ended and the turn waits for the synthesis of its sentences.
+    await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
+    brain.abortTurn(handle.turnId)
+    await handle.completion
+    expect(events.some((e) => e.type === 'segment')).toBe(false)
+    expect(readLog().at(-1)).toMatchObject({ kind: 'assistant', interrupted: 'while-speaking' })
+    // The reply itself was already sent, so the history adds the marker after it.
+    expect((await historyMessages()).slice(-2)).toEqual([said('明日は晴れです。傘はいりません。'), said(INTERRUPTED_WHILE_SPEAKING)])
+  })
+
+  it('finishes the turn without an unhandled rejection when the clip for a slow tool cannot be read', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+    process.on('unhandledRejection', onUnhandled)
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      mocks.workClip = () => Promise.reject(new Error('clip bank unreadable'))
+      let finishFetch!: () => void
+      mocks.fetchPanel.mockImplementation(() => new Promise((resolve) => { finishFetch = () => resolve(weatherPanel) }))
+      mocks.rounds.push(async (round) => {
+        round.toolUse('t1', 'show_weather', { location: '東京都' })
+        return { stop: 'tool_calls' }
+      })
+      mocks.rounds.push(async (round) => { round.text('晴天です。'); return {} })
+      const { brain, events } = await loadBrain()
+      const handle = brain.beginTurn({ text: '東京の天気' }, {}, 'user', false)!
+      await vi.waitFor(() => expect(finishFetch).toBeDefined())
+      // A tool that runs past two and a half seconds asks for the filler.
+      await vi.advanceTimersByTimeAsync(3000)
+      finishFetch()
+      await handle.completion
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(unhandled).toEqual([])
+      expect(events.at(-1)).toMatchObject({ type: 'done', fullText: '晴天です。' })
+    } finally {
+      vi.useRealTimers()
+      process.off('unhandledRejection', onUnhandled)
+    }
   })
 })

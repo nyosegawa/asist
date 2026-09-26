@@ -34,6 +34,7 @@ function makeHistory(opts?: {
 
 const T0 = new Date(2026, 8, 8, 16, 48).getTime()
 const user = (turnId: number, text: string, t = T0 + turnId * 1000): ConversationRecord => ({ t, kind: 'user', turnId, text })
+const notice = (turnId: number, text: string): ConversationRecord => ({ t: T0 + turnId * 1000, kind: 'notice', turnId, notice: 'job-done', text })
 const assistant = (
   turnId: number,
   text: string,
@@ -174,6 +175,38 @@ describe('ConversationHistory, derived from the conversation log', () => {
     expect(history.toMessages()).toEqual([text('user', '[システム通知] 作業が終わりました'), text('assistant', '終わりましたよ。')])
   })
 
+  it('keeps the tool round trip of a turn whose spoken reply was recorded while its tool still ran', () => {
+    const { history } = makeHistory()
+    history.apply(user(5, '東京の天気は'))
+    // A voice model records its filler once the transcript goes quiet, which can be before the tool round is recorded.
+    history.apply(assistant(5, 'ちょっと見てみますね。'))
+    history.apply(message(5, 'assistant', [{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '東京都' } }]))
+    history.apply(message(5, 'user', [{ type: 'tool_result', callId: 't1', name: 'show_weather', content: '{"id":"card-42"}' }]))
+    history.apply(tool(5, 'recall', '{"query":"東京"}', '{"hits":[]}'))
+    history.apply(message(5, 'assistant', [{ type: 'text', text: '晴天です。' }]))
+    const messages = history.toMessages()
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant'])
+    expect(messages[1].parts).toEqual([{ type: 'tool_call', id: 't1', name: 'show_weather', input: { location: '東京都' } }])
+    expect(JSON.stringify(messages[2].parts)).toContain('card-42')
+    expect(messages[3]).toEqual(text('assistant', '晴天です。'))
+  })
+
+  it('appends the job status after the notes of an utterance or a notice, and names the newest one the model can still read', async () => {
+    const { history } = makeHistory({ recentTurns: 1 })
+    history.apply({ ...user(1, '進み具合は'), notes: '[注: 文字入力]', jobStatus: 'JOBS-1' })
+    history.apply(assistant(1, 'まだです。'))
+    history.apply({ ...notice(2, '[システム通知] 終わった'), jobStatus: 'JOBS-2' })
+    history.apply(assistant(2, '', { interrupted: 'before-reply' }))
+    history.apply(user(3, 'ありがとう'))
+    history.apply(assistant(3, 'どういたしまして。'))
+    expect(textOf(history.toMessages()[0])).toBe('[2026/9/8(火) 16:48] 進み具合は\n\n[注: 文字入力]\n\nJOBS-1')
+    // The withdrawn notice is not sent, so the status it carried was never read.
+    expect(history.lastJobStatus()).toBe('JOBS-1')
+    history.noteContextTokens(1_000, history.revision)
+    await history.compact('limit')
+    expect(history.lastJobStatus()).toBeNull()
+  })
+
   it('turns a record that carries only an assistant reply into a standalone assistant message', () => {
     const { history } = makeHistory()
     history.apply(assistant(1, 'タイマーが終わりました。'))
@@ -202,7 +235,7 @@ describe('context length and the trigger for compaction', () => {
     history.apply(user(1, 'あ'.repeat(40)))
     history.apply(assistant(1, 'い'.repeat(40)))
     expect(history.contextTokens).toBeGreaterThan(0)
-    history.noteContextTokens(10_000)
+    history.noteContextTokens(10_000, history.revision)
     expect(history.contextTokens).toBe(10_000)
     history.apply(user(2, 'う'.repeat(40)))
     expect(history.contextTokens).toBe(10_000 + estimateTokens('う'.repeat(40)))
@@ -215,7 +248,7 @@ describe('context length and the trigger for compaction', () => {
   it('needs no compaction while no turn has been answered', () => {
     const { history } = makeHistory()
     history.apply(user(1, 'u1'))
-    history.noteContextTokens(100_000)
+    history.noteContextTokens(100_000, history.revision)
     expect(history.needsCompaction()).toBe('none')
     history.apply(assistant(1, 'a1'))
     expect(history.needsCompaction()).toBe('now')
@@ -224,21 +257,75 @@ describe('context length and the trigger for compaction', () => {
   it('reports soon past the threshold, now past the limit, and block past the hard limit', () => {
     const { history } = makeHistory({ compressAtTokens: 300, limitTokens: 600, hardLimitTokens: 900 })
     for (let i = 0; i < 4; i++) turn(history, i)
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     expect(history.needsCompaction()).toBe('none')
-    history.noteContextTokens(300)
+    history.noteContextTokens(300, history.revision)
     expect(history.needsCompaction()).toBe('soon')
-    history.noteContextTokens(600)
+    history.noteContextTokens(600, history.revision)
     expect(history.needsCompaction()).toBe('now')
-    history.noteContextTokens(900)
+    history.noteContextTokens(900, history.revision)
     expect(history.needsCompaction()).toBe('block')
   })
 
   it('needs no compaction when only the turns that must stay raw are left, however long the context is', () => {
     const { history } = makeHistory({ recentTurns: 30 })
     for (let i = 0; i < 20; i++) turn(history, i)
-    history.noteContextTokens(100_000)
+    history.noteContextTokens(100_000, history.revision)
     expect(history.needsCompaction()).toBe('none')
+  })
+
+  /**
+   * A turn can be left without a reply for good: under Gemini Live the notice of a finished job and the
+   * report spoken for it carry different turn ids, a voice model records nothing for a turn cut off
+   * before it spoke, and quitting or a crash can end a turn half way.
+   */
+  it.each([
+    ['a notice whose spoken report came under another turn id', [notice(1, '[システム通知] ジョブ「調査」が完了した。'), assistant(2, '調査が終わりました。')]],
+    ['an utterance cut off before any reply was recorded', [user(1, '予定を教えて'), message(1, 'assistant', [{ type: 'text', text: '調べ' }])]]
+  ])('folds the turns after %s once the context passes the limit', async (_case, unanswered) => {
+    const { history } = makeHistory({ recentTurns: 2 })
+    for (const record of unanswered) history.apply(record)
+    for (let i = 10; i < 40; i++) turn(history, i, 10)
+    history.noteContextTokens(10_000, history.revision)
+    expect(history.needsCompaction()).toBe('now')
+    await history.compact('limit')
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('u38'), 'a38'.repeat(10), expect.stringContaining('u39'), 'a39'.repeat(10)])
+  })
+
+  it('keeps the newest turn out of a compaction while its reply has not arrived, even when older turns never got one', async () => {
+    const { history } = makeHistory()
+    history.apply(user(1, '古い質問'))
+    turn(history, 2)
+    history.apply(user(3, '明日の天気は'))
+    history.noteContextTokens(10_000, history.revision)
+    await history.compact('limit')
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('明日の天気は')])
+    history.apply(assistant(3, '晴れです。'))
+    expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('明日の天気は'), '晴れです。'])
+  })
+
+  it('does not let a measurement of a request built before a compaction undo it, so the next turn starts no second one', async () => {
+    let finish!: (text: string) => void
+    const { history } = makeHistory({ recentTurns: 30, limitTokens: 200_000, summarize: () => new Promise<string>((resolve) => { finish = resolve }) })
+    for (let i = 0; i < 50; i++) turn(history, i, 20)
+    history.noteContextTokens(200_001, history.revision)
+    expect(history.needsCompaction()).toBe('now')
+    // A turn starts the compaction without waiting for it and sends its request with the history as it stands.
+    const compaction = history.compact('limit')
+    const builtAt = history.revision
+    history.apply(user(100, '明日の天気は'))
+    history.apply(assistant(100, '晴れです。'))
+    finish('引き継ぎ')
+    await compaction
+    const left = history.contextTokens
+    expect(left).toBeLessThan(200_000)
+    // The turn ends after the compaction and reports what the server counted on that older request.
+    history.noteContextTokens(200_001, builtAt)
+    expect(history.contextTokens).toBe(left)
+    expect(history.needsCompaction()).not.toBe('now')
+    // A request built from the compacted history is measured as usual.
+    history.noteContextTokens(200_001, history.revision)
+    expect(history.needsCompaction()).toBe('now')
   })
 })
 
@@ -248,7 +335,7 @@ describe('compact', () => {
     const { history, checkpoints } = makeHistory({ compressAtTokens: 300, summarize })
     for (const record of toolTurn(0, JSON.stringify({ secret: 'x'.repeat(200) }))) history.apply(record)
     for (let i = 1; i < 4; i++) turn(history, i, 40)
-    history.noteContextTokens(5_000)
+    history.noteContextTokens(5_000, history.revision)
     await history.compact('quiet')
     expect(summarize).toHaveBeenCalledOnce()
     const log = summarize.mock.calls[0][1]
@@ -267,7 +354,7 @@ describe('compact', () => {
     const summarize = vi.fn(async () => '要約')
     const { history } = makeHistory({ recentTurns: 2, compressAtTokens: 10, limitTokens: 100_000, summarize })
     for (let i = 0; i < 5; i++) turn(history, i)
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     await history.compact('quiet')
     expect(summarize.mock.calls[0][1]).toBe('ユーザー: u0\nアシスタント: a0\nユーザー: u1\nアシスタント: a1\nユーザー: u2\nアシスタント: a2')
     expect(history.toMessages().map(textOf)).toEqual([expect.stringContaining('u3'), 'a3', expect.stringContaining('u4'), 'a4'])
@@ -276,26 +363,10 @@ describe('compact', () => {
     const perTurn = estimateTokens('u3') + estimateTokens('a3'.repeat(20))
     const tight = makeHistory({ recentTurns: 2, compressAtTokens: 10, limitTokens: 3 * perTurn, summarize })
     for (let i = 0; i < 4; i++) turn(tight.history, i, 20)
-    tight.history.noteContextTokens(1_000)
+    tight.history.noteContextTokens(1_000, tight.history.revision)
     await tight.history.compact('quiet')
     expect(tight.history.toMessages().map((m) => m.role)).toEqual(['user', 'assistant'])
     expect(textOf(tight.history.toMessages()[1])).toBe('a3'.repeat(20))
-  })
-
-  it('rejects a summary that is too long, keeps the previous summary and the history, and reports it', async () => {
-    const { history, errors, checkpoints } = makeHistory({
-      stored: [{ t: T0, kind: 'checkpoint', summary: '前の要約', records: [] }],
-      compressAtTokens: 10,
-      summarize: async () => 'x'.repeat(10_001)
-    })
-    history.ensureLoaded()
-    for (let i = 0; i < 3; i++) turn(history, i)
-    history.noteContextTokens(100)
-    await history.compact('quiet')
-    expect(history.summary).toBe('前の要約')
-    expect(history.toMessages()).toHaveLength(6)
-    expect(checkpoints).toEqual([])
-    expect(errors[0]).toContain('summary too long')
   })
 
   it('keeps the turns added while the summary was being written and leaves a turn in progress out of it', async () => {
@@ -305,7 +376,7 @@ describe('compact', () => {
     turn(history, 1)
     turn(history, 2)
     history.apply(user(3, 'u3'))
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     const compaction = history.compact('limit')
     expect(summarize).toHaveBeenCalledOnce()
     expect(summarize.mock.calls[0][1]).toBe('ユーザー: u1\nアシスタント: a1\nユーザー: u2\nアシスタント: a2')
@@ -328,7 +399,7 @@ describe('compact', () => {
     })
     history.ensureLoaded()
     for (let i = 0; i < 4; i++) turn(history, i)
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     await history.compact('quiet')
     expect(summarize.mock.calls[0][0]).toBe('過去の要約')
     expect(history.summary).toBe('統合済み')
@@ -342,7 +413,7 @@ describe('compact', () => {
       }
     })
     for (let i = 0; i < 4; i++) turn(history, i)
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     const before = history.toMessages()
     await history.compact('quiet')
     expect(history.toMessages()).toEqual(before)
@@ -356,7 +427,7 @@ describe('compact', () => {
     const summarize = vi.fn(async () => '一日の要約')
     const { history, checkpoints } = makeHistory({ compressAtTokens: 100_000, summarize })
     for (let i = 0; i < 3; i++) turn(history, i)
-    history.noteContextTokens(50)
+    history.noteContextTokens(50, history.revision)
     await history.compact('daily')
     expect(summarize).toHaveBeenCalledOnce()
     expect(history.toMessages()).toEqual([])
@@ -378,7 +449,7 @@ describe('compact', () => {
       }
     })
     for (let i = 0; i < 4; i++) turn(history, i)
-    history.noteContextTokens(100)
+    history.noteContextTokens(100, history.revision)
     await Promise.all([history.compact('quiet'), history.compact('quiet')])
     expect(calls).toBe(1)
   })

@@ -26,8 +26,20 @@ export type ConversationRecord =
       notes?: string
       /** The ids of the memories shown in the note. They are not injected again while they are still in the raw recent history. */
       memoryIds?: string[]
+      /** The status of the agent jobs sent with the utterance. It is recorded only when it differs from the one the model read last. */
+      jobStatus?: string
     }
-  | { t: number; kind: 'notice'; turnId: number; notice: NoticeKind; text: string }
+  | {
+      t: number
+      kind: 'notice'
+      turnId: number
+      notice: NoticeKind
+      text: string
+      /** The note sent along with the notice, which the history appends after the text as it does for an utterance. */
+      notes?: string
+      /** The status of the agent jobs sent with the notice, recorded as for an utterance. */
+      jobStatus?: string
+    }
   | {
       t: number
       /**
