@@ -12,7 +12,7 @@ describe.skipIf(process.env.WEATHER_LIVE !== '1')('live connection to the Japan 
         while (next < regions.prefectures.length) {
           const p = regions.prefectures[next++]
           const location = resolveWeatherLocation(p.name)
-          if ('status' in location) throw new Error(location.hint)
+          if ('status' in location) throw new Error(location.status)
           const w = await fetchWeather(location, 'tomorrow', AbortSignal.timeout(30000))
           results.push({
             name: p.name,

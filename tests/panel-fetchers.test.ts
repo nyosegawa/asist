@@ -12,6 +12,7 @@ vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ uiLocale: 'ja-JP', conversationLocale: mocks.conversationLocale, region: mocks.region })
 }))
 vi.mock('../src/main/services/calendar', () => ({ searchCalendar: mocks.searchCalendar }))
+vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => ['/allowed'] }))
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
 
 type Fetch = ReturnType<typeof vi.fn>
@@ -54,6 +55,13 @@ describe('the requests a card makes for the conversation language and the region
     respond({ results: [{ name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
     for (const city of ['京都', '京都府', '京都市']) await fetchPanel('clock', { city })
     expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['Kyoto', 'Kyoto', 'Kyoto'])
+  })
+
+  it('looks up a city whose name is also a member of every object under that name', async () => {
+    const urls: string[] = []
+    respond({ results: [{ name: 'X', latitude: 0, longitude: 0, timezone: 'UTC' }] }, urls)
+    for (const city of ['constructor', 'toString']) await fetchPanel('clock', { city })
+    expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['constructor', 'toString'])
   })
 
   it('keeps the Japanese request of the clock card unchanged', async () => {
@@ -124,6 +132,22 @@ describe('a card that cannot be filled', () => {
   it('refuses a clock without a city in a message the screen words', async () => {
     respond({ results: [] }, [])
     await expect(fetchPanel('clock', { city: ' ' })).rejects.toSatisfy((err: Error) => readErrorText(err.message) !== null)
+  })
+
+  it('names the files it could not show in a message the screen words', async () => {
+    const error = (await fetchPanel('files', { paths: ['/elsewhere/report.pdf'] }).catch((err: unknown) => err)) as Error
+    const known = readErrorText(error.message)
+    expect(known).not.toBeNull()
+    expect(formatMessage(known!.message, 'en-US', known!.values)).toContain('report.pdf')
+  })
+
+  it('words a place the table of Japan does not resolve for the weather card, naming the place', async () => {
+    for (const location of ['東京タワー', '府中市']) {
+      const error = (await fetchPanel('weather', { location }).catch((err: unknown) => err)) as Error
+      const known = readErrorText(error.message)
+      expect(known, location).not.toBeNull()
+      expect(formatMessage(known!.message, 'en-US', known!.values)).toContain(location)
+    }
   })
 })
 

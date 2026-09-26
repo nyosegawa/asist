@@ -43,18 +43,24 @@ interface GeoResult {
   admin1?: string
 }
 
-/** Open-Meteo's geocoding only resolves English or local names, so a Japanese place name is translated first. */
-const JP_PLACES: Record<string, string> = {
-  東京: 'Tokyo', 大阪: 'Osaka', 京都: 'Kyoto', 名古屋: 'Nagoya', 札幌: 'Sapporo',
-  福岡: 'Fukuoka', 仙台: 'Sendai', 広島: 'Hiroshima', 横浜: 'Yokohama', 神戸: 'Kobe',
-  那覇: 'Naha', 沖縄: 'Naha', 金沢: 'Kanazawa', 新潟: 'Niigata', 静岡: 'Shizuoka',
-  岡山: 'Okayama', 熊本: 'Kumamoto', 鹿児島: 'Kagoshima', 長野: 'Nagano', 松本: 'Matsumoto',
-  ニューヨーク: 'New York', ロサンゼルス: 'Los Angeles', サンフランシスコ: 'San Francisco',
-  ロンドン: 'London', パリ: 'Paris', ベルリン: 'Berlin', ローマ: 'Rome',
-  シンガポール: 'Singapore', ソウル: 'Seoul', 北京: 'Beijing', 上海: 'Shanghai',
-  台北: 'Taipei', 香港: 'Hong Kong', バンコク: 'Bangkok', シドニー: 'Sydney',
-  ドバイ: 'Dubai', ホノルル: 'Honolulu', バンクーバー: 'Vancouver'
-}
+/**
+ * Open-Meteo's geocoding only resolves English or local names, so a Japanese place name is translated
+ * first. A Map, because the place name comes from the model and an object would also answer
+ * "constructor" or "toString" with a member of its prototype.
+ */
+const JP_PLACES = new Map(
+  Object.entries({
+    東京: 'Tokyo', 大阪: 'Osaka', 京都: 'Kyoto', 名古屋: 'Nagoya', 札幌: 'Sapporo',
+    福岡: 'Fukuoka', 仙台: 'Sendai', 広島: 'Hiroshima', 横浜: 'Yokohama', 神戸: 'Kobe',
+    那覇: 'Naha', 沖縄: 'Naha', 金沢: 'Kanazawa', 新潟: 'Niigata', 静岡: 'Shizuoka',
+    岡山: 'Okayama', 熊本: 'Kumamoto', 鹿児島: 'Kagoshima', 長野: 'Nagano', 松本: 'Matsumoto',
+    ニューヨーク: 'New York', ロサンゼルス: 'Los Angeles', サンフランシスコ: 'San Francisco',
+    ロンドン: 'London', パリ: 'Paris', ベルリン: 'Berlin', ローマ: 'Rome',
+    シンガポール: 'Singapore', ソウル: 'Seoul', 北京: 'Beijing', 上海: 'Shanghai',
+    台北: 'Taipei', 香港: 'Hong Kong', バンコク: 'Bangkok', シドニー: 'Sydney',
+    ドバイ: 'Dubai', ホノルル: 'Honolulu', バンクーバー: 'Vancouver'
+  })
+)
 
 async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult | null> {
   const data = await json<{ results?: GeoResult[] }>(
@@ -68,7 +74,7 @@ async function geocode(place: string, signal: AbortSignal): Promise<GeoResult> {
   const name = place.trim()
   // The suffix is dropped only after the name as given misses the table, or "京都" would be looked up as "京".
   const bare = name.replace(/(都|府|県|市)$/, '')
-  const result = await geocodeOnce(JP_PLACES[name] ?? JP_PLACES[bare] ?? bare, signal)
+  const result = await geocodeOnce(JP_PLACES.get(name) ?? JP_PLACES.get(bare) ?? bare, signal)
   if (result) return result
   throw new Error(errorText('panels.errors.placeNotFound', { place }))
 }
@@ -95,14 +101,22 @@ const REGION_CURRENCIES: Record<string, string> = {
   IT: 'EUR', KR: 'KRW', BR: 'BRL', MX: 'MXN', ES: 'EUR'
 }
 
-const fx: Fetcher = async (props, signal) => {
-  const base = String(props.base ?? 'USD').toUpperCase()
+/**
+ * The props a card is keyed and fetched with, once the main process has filled in what only it knows:
+ * an exchange rate asked for without the currency it is quoted in takes the region's. show_ tools make
+ * the key of the card from these, so asking again with that currency named lands on the same card.
+ */
+export function completePanelProps(type: string, props: Props): Props {
+  if (type !== 'fx' || props.quote != null) return props
   const home = region()
   const currency = REGION_CURRENCIES[home]
-  if (props.quote == null && !currency) {
-    throw new Error(errorText('panels.errors.currencyUnknown', { region: home }))
-  }
-  const quote = String(props.quote ?? currency).toUpperCase()
+  if (!currency) throw new Error(errorText('panels.errors.currencyUnknown', { region: home }))
+  return { ...props, quote: currency }
+}
+
+const fx: Fetcher = async (props, signal) => {
+  const base = String(props.base ?? 'USD').toUpperCase()
+  const quote = String(props.quote).toUpperCase()
   const data = await json<{ result: string; rates: Record<string, number>; time_last_update_utc: string }>(
     `https://open.er-api.com/v6/latest/${base}`,
     signal
@@ -232,11 +246,13 @@ const files: Fetcher = async (props) => {
       ? readFileItem(target, fileUrl)
       : { path: target, name: target.slice(target.lastIndexOf('/') + 1), kind: 'binary', sizeBytes: 0, error: t('files.errors.outsideRoots') }
   )
-  if (items.every((item) => item.error)) throw new Error(items.map((item) => `${item.name}: ${item.error}`).join(' / '))
+  if (items.every((item) => item.error)) {
+    throw new Error(errorText('panels.errors.filesUnreadable', { files: items.map((item) => `${item.name}: ${item.error}`).join(' / ') }))
+  }
   return { props: { ...props, paths, items }, source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length }) }
 }
 
-export const FETCHERS: Record<string, Fetcher> = {
+const FETCHERS: Record<string, Fetcher> = {
   calendar,
   mail,
   'mail-message': mailMessage,
@@ -255,5 +271,5 @@ export async function fetchPanel(
 ): Promise<Fetched> {
   const fetcher = FETCHERS[type]
   if (!fetcher) return { props }
-  return fetcher(props, withTimeoutSignal(signal, 12_000))
+  return fetcher(completePanelProps(type, props), withTimeoutSignal(signal, 12_000))
 }

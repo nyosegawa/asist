@@ -890,6 +890,32 @@ export const cardsWeather = defineMessages({
       'pt-BR': 'O dia mudou. Pergunte o tempo de novo.',
       'es-419': 'Cambió el día. Vuelve a preguntar por el clima.',
       'es-ES': 'El día ha cambiado. Vuelve a preguntar por el tiempo.'
+    },
+    placeAmbiguous: {
+      'ja-JP': '{place} という名前の市区町村が複数あります。都道府県名も付けて聞いてください。',
+      'en-US': 'More than one municipality is called {place}. Ask again with the prefecture.',
+      'fr-FR': "Plusieurs communes s'appellent {place}. Redemandez en précisant la préfecture.",
+      'de-DE': 'Mehrere Gemeinden heißen {place}. Fragen Sie noch einmal mit der Präfektur.',
+      'hi-IN': '{place} नाम की एक से ज़्यादा नगरपालिकाएँ हैं। प्रीफ़ेक्चर का नाम जोड़कर फिर से पूछें।',
+      'id-ID': 'Ada lebih dari satu kota bernama {place}. Tanyakan lagi dengan menyebut prefekturnya.',
+      'it-IT': 'Più comuni si chiamano {place}. Chiedi di nuovo indicando la prefettura.',
+      'ko-KR': '이름이 {place}인 시구정촌이 여러 곳 있습니다. 도도부현 이름을 함께 말해 다시 물어보십시오.',
+      'pt-BR': 'Há mais de um município chamado {place}. Pergunte de novo com o nome da província.',
+      'es-419': 'Hay más de un municipio llamado {place}. Vuelve a preguntar indicando la prefectura.',
+      'es-ES': 'Hay más de un municipio llamado {place}. Vuelve a preguntar indicando la prefectura.'
+    },
+    noForecastArea: {
+      'ja-JP': '{place} は気象庁の予報区域に入っていません。',
+      'en-US': 'The Japan Meteorological Agency has no forecast area for {place}.',
+      'fr-FR': "L'Agence météo du Japon n'a pas de zone de prévision pour {place}.",
+      'de-DE': 'Japans Wetterbehörde hat für {place} kein Vorhersagegebiet.',
+      'hi-IN': 'Japan Meteorological Agency का {place} के लिए कोई पूर्वानुमान क्षेत्र नहीं है।',
+      'id-ID': 'Badan Meteorologi Jepang tidak punya wilayah prakiraan untuk {place}.',
+      'it-IT': "L'Agenzia meteo giapponese non ha una zona di previsione per {place}.",
+      'ko-KR': '일본 기상청에는 {place}의 예보 구역이 없습니다.',
+      'pt-BR': 'A Agência Meteorológica do Japão não tem área de previsão para {place}.',
+      'es-419': 'La Agencia Meteorológica de Japón no tiene zona de pronóstico para {place}.',
+      'es-ES': 'La Agencia Meteorológica de Japón no tiene zona de previsión para {place}.'
     }
   }
 })

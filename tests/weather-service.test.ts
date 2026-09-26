@@ -8,7 +8,7 @@ vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.setti
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
 
 const location = resolveWeatherLocation('東京都')
-if ('status' in location) throw new Error(location.hint)
+if ('status' in location) throw new Error(location.status)
 const resolved = location
 beforeEach(() => {
   vi.resetModules()

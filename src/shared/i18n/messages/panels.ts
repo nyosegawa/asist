@@ -226,6 +226,19 @@ export const panels = defineMessages({
       'pt-BR': 'Nenhuma cidade foi indicada.',
       'es-419': 'No se indicó ninguna ciudad.',
       'es-ES': 'No se ha indicado ninguna ciudad.'
+    },
+    filesUnreadable: {
+      'ja-JP': 'どのファイルも表示できませんでした: {files}',
+      'en-US': 'None of the files could be shown: {files}',
+      'fr-FR': "Aucun fichier n'a pu être affiché : {files}",
+      'de-DE': 'Keine der Dateien ließ sich anzeigen: {files}',
+      'hi-IN': 'कोई भी फ़ाइल दिखाई नहीं जा सकी: {files}',
+      'id-ID': 'Tidak ada file yang bisa ditampilkan: {files}',
+      'it-IT': 'Impossibile mostrare i file: {files}',
+      'ko-KR': '파일을 하나도 표시하지 못했습니다: {files}',
+      'pt-BR': 'Nenhum arquivo pôde ser exibido: {files}',
+      'es-419': 'No se pudo mostrar ningún archivo: {files}',
+      'es-ES': 'No se ha podido mostrar ningún archivo: {files}'
     }
   }
 })

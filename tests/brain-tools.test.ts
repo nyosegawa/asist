@@ -44,7 +44,10 @@ vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.setti
 vi.mock('../src/main/services/memory', () => mocks.memory)
 vi.mock('../src/main/services/agent', () => mocks.agent)
 vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm }))
-vi.mock('../src/main/services/panel-fetchers', () => ({ fetchPanel: mocks.fetchPanel }))
+vi.mock('../src/main/services/panel-fetchers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/main/services/panel-fetchers')>()),
+  fetchPanel: mocks.fetchPanel
+}))
 vi.mock('../src/main/services/timers', () => mocks.timers)
 vi.mock('../src/main/services/user-local-data', () => ({ getLocalDataService: () => mocks.localData }))
 vi.mock('../src/main/services/user-tasks', () => ({ getTaskService: () => mocks.tasks }))
@@ -143,11 +146,38 @@ describe('brain tools registry', () => {
     expect(mocks.fetchPanel).toHaveBeenLastCalledWith('news', { topic }, expect.any(AbortSignal))
   })
 
-  it('leaves the quoted currency to the region when show_fx names only the base currency', async () => {
-    mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
-    const { executeClientTool } = await load()
-    await executeClientTool('show_fx', { base: 'USD' }, makeCtx().ctx)
-    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD' }, expect.any(AbortSignal))
+  it('quotes show_fx against the currency of the region when none is named, on the card of that pair', async () => {
+    mocks.settings.region = 'BR'
+    try {
+      const { executeClientTool } = await load()
+      const keys: string[] = []
+      for (const input of [{ base: 'USD' }, { base: 'USD', quote: 'BRL' }]) {
+        mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
+        const { ctx, events } = makeCtx()
+        await executeClientTool('show_fx', input, ctx)
+        expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD', quote: 'BRL' }, expect.any(AbortSignal))
+        const created = events.find((e) => e.type === 'panel' && e.event.op === 'create')
+        keys.push(created?.type === 'panel' ? created.event.key : '')
+      }
+      expect(keys[1]).toBe(keys[0])
+    } finally {
+      mocks.settings.region = 'JP'
+    }
+  })
+
+  it('tells the model, and puts up no card, when the region has no currency to quote against', async () => {
+    mocks.settings.region = 'AT'
+    try {
+      const { executeClientTool } = await load()
+      const { ctx, events } = makeCtx()
+      const result = await executeClientTool('show_fx', { base: 'USD' }, ctx)
+      expect(result.isError).toBe(true)
+      expect(result.content).toContain(ja('panels.errors.currencyUnknown', { region: 'AT' }))
+      expect(events).toEqual([])
+      expect(mocks.fetchPanel).not.toHaveBeenCalled()
+    } finally {
+      mocks.settings.region = 'JP'
+    }
   })
 
   it('turns invalid panel input into a failed tool result instead of failing the turn', async () => {
@@ -243,6 +273,14 @@ describe('brain tools registry', () => {
     const result = await executeClientTool('show_weather', { location: '東京都' }, ctx)
     expect(result.isError).toBe(true)
     expect(events).toEqual([])
+  })
+
+  it('tells the model why the weather could not be fetched, in the language of the conversation', async () => {
+    mocks.fetchPanel.mockRejectedValueOnce(new Error(errorText('cardsWeather.errors.unavailable')))
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('show_weather', { location: '東京都' }, makeCtx().ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toContain(ja('cardsWeather.errors.unavailable'))
   })
 
   it('returns the hits of recall with their dates, the strongest match first, and fails on an empty query', async () => {

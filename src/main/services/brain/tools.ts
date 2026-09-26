@@ -26,7 +26,7 @@ import {
 import { conversationLocale } from '../conversation-locale'
 import { t } from '../i18n'
 import * as agentRunner from '../agent'
-import { fetchPanel } from '../panel-fetchers'
+import { completePanelProps, fetchPanel } from '../panel-fetchers'
 import * as timers from '../timers'
 import { calendarTools } from './calendar-tools'
 import { taskTools } from './task-tools'
@@ -111,22 +111,27 @@ async function runPanelTool(
   if (!parsed.success) throw new ToolError(TEXTS.badInput(issueText(parsed.error.issues, language)))
   // A default the schema filled in may be a packed pair, so the fetcher and the card see one language.
   // Only a field the model left out can hold one; what it wrote may quote text from outside.
-  let props = Object.fromEntries(
+  const given = Object.fromEntries(
     Object.entries(parsed.data as Record<string, unknown>).map(([field, value]) => [
       field,
       field in input ? value : resolvePromptTexts(value, language)
     ])
   )
+  // What the model is told when the card cannot be filled, in the language of the conversation; a card
+  // that is already up shows the same error in the language of the interface.
+  const failure = (err: unknown): ToolError => new ToolError(TEXTS.panelFailed(detail(err, language)))
   if (type === 'weather') {
     signal.throwIfAborted()
-    const place = resolveWeatherCard(String(props.location))
-    if ('status' in place) return { ...place, hint: resolvePromptTexts(place.hint, language) }
-    const result = await fetchPanel(type, props, signal)
+    const place = resolveWeatherCard(String(given.location))
+    if ('status' in place) return { ...place, hint: place.hint[language] }
+    const result = await fetchPanel(type, given, signal).catch((err: unknown) => {
+      throw failure(err)
+    })
     signal.throwIfAborted()
     const weather = result.props.weather as WeatherData
     const key = weatherCardKeyOf(place.cardId, weather.targetDate)
     const previous =
-      typeof props.replacesLocation === 'string' ? resolveWeatherCard(props.replacesLocation) : null
+      typeof given.replacesLocation === 'string' ? resolveWeatherCard(given.replacesLocation) : null
     const replacesKey =
       previous && !('status' in previous)
         ? weatherCardKeyOf(previous.cardId, weather.targetDate)
@@ -135,6 +140,12 @@ async function runPanelTool(
       op: 'create', key, type, slot: entry.slot, props: result.props, state: 'ready', replacesKey
     } })
     return { shown: true, panel: type, data: weather }
+  }
+  let props: Record<string, unknown>
+  try {
+    props = completePanelProps(type, given)
+  } catch (err) {
+    throw failure(err)
   }
   const key = entry.key(props)
   const panelEvent = (event: PanelEvent): void =>
@@ -174,7 +185,7 @@ async function runPanelTool(
     return { shown: true, panel: type, data: result.data ?? result.props }
   } catch (err) {
     failPanel(err)
-    throw new ToolError(TEXTS.panelFailed(detail(err, language)))
+    throw failure(err)
   }
 }
 
