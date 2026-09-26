@@ -85,7 +85,6 @@ const api = {
   getStatus: vi.fn(async () => status),
   getSetupStatus: vi.fn(async () => ({
     services: status,
-    apiKeyConfigured: true,
     asr: {
       selectedModel: 'auto',
       resolvedModel: 'qwen3-asr-1.7b-mlx',

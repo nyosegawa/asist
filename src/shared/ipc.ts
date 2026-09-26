@@ -630,8 +630,6 @@ export interface AppStatus {
 /** What first-time setup shows about installation progress, as opposed to plain liveness. */
 export interface SetupStatus {
   services: AppStatus
-  /** Whether each provider of the configured models has a key that can be read. Whether it authenticates is `services.llm`. */
-  apiKeyConfigured: boolean
   asr: {
     selectedModel: AsrModel
     resolvedModel: ResolvedAsrModel

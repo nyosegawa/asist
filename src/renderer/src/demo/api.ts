@@ -545,7 +545,6 @@ export const mockApi: RendererApi = {
   onHotkeyMic: () => () => {},
   getSetupStatus: async () => ({
     services: await mockApi.getStatus(),
-    apiKeyConfigured: true,
     asr: {
       selectedModel: 'auto',
       resolvedModel: 'qwen3-asr-1.7b-mlx',
