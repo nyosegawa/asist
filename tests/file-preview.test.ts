@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ beforeAll(() => {
 })
 
 import { createTranslator } from '@shared/i18n'
-import { classifyFile, isPathAllowed, listDirectory, readFileItem } from '../src/main/services/file-preview'
+import { allowedPath, classifyFile, listDirectory, readFileItem } from '../src/main/services/file-preview'
 import { filesLayout, formatBytes, isHtmlPage, MAX_TEXT_BYTES } from '../src/shared/files'
 
 describe('isHtmlPage', () => {
@@ -37,32 +37,32 @@ describe('classifyFile', () => {
   })
 })
 
-describe('isPathAllowed, the path check of show_files', () => {
+describe('allowedPath, the path check of show_files, asist-file:// and Reveal in Finder', () => {
   const roots = ['/Users/x/asist-jobs', '/Users/x/repo']
 
   it('allows only paths under an allowed root', () => {
-    expect(isPathAllowed('/Users/x/asist-jobs/20260718-job/report.md', roots)).toBe(true)
-    expect(isPathAllowed('/Users/x/repo/src/index.ts', roots)).toBe(true)
-    expect(isPathAllowed('/Users/x/repo', roots)).toBe(true)
+    expect(allowedPath('/Users/x/asist-jobs/20260718-job/report.md', roots)).not.toBeNull()
+    expect(allowedPath('/Users/x/repo/src/index.ts', roots)).not.toBeNull()
+    expect(allowedPath('/Users/x/repo', roots)).not.toBeNull()
   })
 
   it('rejects paths outside the roots and sensitive paths', () => {
-    expect(isPathAllowed('/Users/x/.ssh/id_rsa', roots)).toBe(false)
-    expect(isPathAllowed('/etc/passwd', roots)).toBe(false)
+    expect(allowedPath('/Users/x/.ssh/id_rsa', roots)).toBeNull()
+    expect(allowedPath('/etc/passwd', roots)).toBeNull()
   })
 
   it('rejects traversal through `..`', () => {
-    expect(isPathAllowed('/Users/x/asist-jobs/../.ssh/id_rsa', roots)).toBe(false)
-    expect(isPathAllowed('/Users/x/repo/../../etc/passwd', roots)).toBe(false)
+    expect(allowedPath('/Users/x/asist-jobs/../.ssh/id_rsa', roots)).toBeNull()
+    expect(allowedPath('/Users/x/repo/../../etc/passwd', roots)).toBeNull()
   })
 
   it('rejects a directory whose name merely starts with an allowed root', () => {
-    expect(isPathAllowed('/Users/x/repo-evil/secret.txt', roots)).toBe(false)
+    expect(allowedPath('/Users/x/repo-evil/secret.txt', roots)).toBeNull()
   })
 
   it('rejects a relative path and an empty root', () => {
-    expect(isPathAllowed('report.md', roots)).toBe(false)
-    expect(isPathAllowed('/Users/x/repo/a.ts', [''])).toBe(false)
+    expect(allowedPath('report.md', roots)).toBeNull()
+    expect(allowedPath('/Users/x/repo/a.ts', [''])).toBeNull()
   })
 
   it('refuses a symbolic link inside a root that points outside it', () => {
@@ -71,7 +71,7 @@ describe('isPathAllowed, the path check of show_files', () => {
     mkdirSync(path.join(base, 'secret'))
     writeFileSync(path.join(base, 'secret', 'id_rsa'), 'key')
     symlinkSync(path.join(base, 'secret'), path.join(base, 'root', 'link'))
-    expect(isPathAllowed(path.join(base, 'root', 'link', 'id_rsa'), [path.join(base, 'root')])).toBe(false)
+    expect(allowedPath(path.join(base, 'root', 'link', 'id_rsa'), [path.join(base, 'root')])).toBeNull()
   })
 
   it('allows a path under a root that is itself reached through a symbolic link', () => {
@@ -79,8 +79,8 @@ describe('isPathAllowed, the path check of show_files', () => {
     mkdirSync(path.join(base, 'real'))
     writeFileSync(path.join(base, 'real', 'report.md'), '# report')
     symlinkSync(path.join(base, 'real'), path.join(base, 'alias'))
-    expect(isPathAllowed(path.join(base, 'real', 'report.md'), [path.join(base, 'alias')])).toBe(true)
-    expect(isPathAllowed(path.join(base, 'alias', 'not-yet.md'), [path.join(base, 'real')])).toBe(true)
+    expect(allowedPath(path.join(base, 'real', 'report.md'), [path.join(base, 'alias')])).not.toBeNull()
+    expect(allowedPath(path.join(base, 'alias', 'not-yet.md'), [path.join(base, 'real')])).not.toBeNull()
   })
 
   it('allows a file inside a root whose Japanese name is written in the other normalization form', () => {
@@ -88,23 +88,47 @@ describe('isPathAllowed, the path check of show_files', () => {
     mkdirSync(path.join(base, 'プロジェクト資料'.normalize('NFC')))
     writeFileSync(path.join(base, 'プロジェクト資料'.normalize('NFC'), 'report.pdf'), 'x')
     const written = path.join(base, 'プロジェクト資料'.normalize('NFD'), 'report.pdf')
-    expect(isPathAllowed(written, [path.join(base, 'プロジェクト資料'.normalize('NFC'))])).toBe(true)
-    expect(isPathAllowed(path.join(base, 'プロジェクト資料'.normalize('NFC'), 'report.pdf'), [path.join(base, 'プロジェクト資料'.normalize('NFD'))])).toBe(true)
+    expect(allowedPath(written, [path.join(base, 'プロジェクト資料'.normalize('NFC'))])).not.toBeNull()
+    expect(allowedPath(path.join(base, 'プロジェクト資料'.normalize('NFC'), 'report.pdf'), [path.join(base, 'プロジェクト資料'.normalize('NFD'))])).not.toBeNull()
   })
 
   it('allows a file inside a root when only the letter case differs, as the disk matches names', () => {
     const base = mkdtempSync(path.join(tmpdir(), 'asist-roots-'))
     mkdirSync(path.join(base, 'Reports'))
     writeFileSync(path.join(base, 'Reports', 'a.pdf'), 'x')
-    expect(isPathAllowed(path.join(base, 'reports', 'a.pdf'), [path.join(base, 'Reports')])).toBe(true)
-    expect(isPathAllowed(path.join(base, 'Reports-old', 'a.pdf'), [path.join(base, 'reports')])).toBe(false)
+    expect(allowedPath(path.join(base, 'reports', 'a.pdf'), [path.join(base, 'Reports')])).not.toBeNull()
+    expect(allowedPath(path.join(base, 'Reports-old', 'a.pdf'), [path.join(base, 'reports')])).toBeNull()
+  })
+
+  it('decides on the file the OS opens when a .. follows a symbolic link, and returns that file to read', () => {
+    const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-roots-')))
+    mkdirSync(path.join(base, 'root', 'docs'), { recursive: true })
+    mkdirSync(path.join(base, 'outside', 'sub'), { recursive: true })
+    writeFileSync(path.join(base, 'root', 'secret.txt'), 'inside')
+    writeFileSync(path.join(base, 'outside', 'secret.txt'), 'outside')
+    writeFileSync(path.join(base, 'root', 'report.md'), '# report')
+    symlinkSync(path.join(base, 'outside', 'sub'), path.join(base, 'root', 'link'))
+    const roots = [path.join(base, 'root')]
+    // As text, root/link/../secret.txt is root/secret.txt; the OS follows the link first and opens outside/secret.txt.
+    expect(allowedPath(path.join(base, 'root') + '/link/../secret.txt', roots)).toBeNull()
+    expect(allowedPath(path.join(base, 'root') + '/link/../missing.txt', roots)).toBeNull()
+    expect(allowedPath(path.join(base, 'root') + '/docs/../report.md', roots)).toBe(path.join(base, 'root', 'report.md'))
+    expect(allowedPath(path.join(base, 'root') + '/gone/../report.md', roots)).toBeNull()
+  })
+
+  it('returns the file as the disk spells it, which is the path that is read', () => {
+    const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-roots-')))
+    mkdirSync(path.join(base, 'Reports'))
+    writeFileSync(path.join(base, 'Reports', 'a.pdf'), 'x')
+    expect(allowedPath(path.join(base, 'reports', 'a.pdf'), [base])).toBe(path.join(base, 'Reports', 'a.pdf'))
+    expect(allowedPath(path.join(base, 'Reports', 'not-yet.pdf'), [base])).toBe(path.join(base, 'Reports', 'not-yet.pdf'))
   })
 
   it('allows every path when the root folder "/" is an allowed root', () => {
     const base = mkdtempSync(path.join(tmpdir(), 'asist-roots-'))
     writeFileSync(path.join(base, 'a.txt'), 'x')
-    expect(isPathAllowed(path.join(base, 'a.txt'), ['/'])).toBe(true)
-    expect(isPathAllowed('/etc/hosts', ['/'])).toBe(true)
+    expect(allowedPath(path.join(base, 'a.txt'), ['/'])).not.toBeNull()
+    expect(allowedPath('/etc/hosts', ['/'])).not.toBeNull()
   })
 })
 

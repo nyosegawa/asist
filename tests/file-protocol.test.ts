@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -47,6 +47,20 @@ describe('asist-file:// URLs and paths', () => {
     const page = fileUrl('/r/report.html')
     expect(filePathFromUrl(new URL('Q1%2C%20Q2.png', page).href)).toBe('/r/Q1, Q2.png')
     expect(filePathFromUrl(new URL('C%23.png', page).href)).toBe('/r/C#.png')
+  })
+
+  it('refuses a file outside the folder that an escaped .. reaches through a symbolic link', async () => {
+    const base = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
+    const root = path.join(base, 'root')
+    mkdirSync(root)
+    mkdirSync(path.join(base, 'outside', 'sub'), { recursive: true })
+    writeFileSync(path.join(base, 'outside', 'secret.txt'), 'outside')
+    writeFileSync(path.join(root, 'secret.txt'), 'inside')
+    symlinkSync(path.join(base, 'outside', 'sub'), path.join(root, 'link'))
+    // %2F keeps the .. inside one segment for the URL parser, and the path decodes to root/link/../secret.txt.
+    const response = await serve(root, `asist-file://${root}/link/..%2Fsecret.txt`)
+    expect(response.status).toBe(403)
+    expect((await serve(root, `asist-file://${root}/secret.txt`)).status).toBe(200)
   })
 
   it('serves a file whose name holds a # from the URL the files card is given', async () => {

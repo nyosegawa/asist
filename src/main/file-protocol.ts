@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { protocol } from 'electron'
-import { isPathAllowed } from './services/file-preview'
+import { allowedPath } from './services/file-preview'
 
 /**
  * Serves files under an allowed folder to the renderer as asist-file:///<absolute path>. The files card
@@ -124,8 +124,9 @@ export function parseRange(header: string | null, size: number): { start: number
 /** Has to be called after app.whenReady. allowedRoots is read per request, because a new job adds roots. */
 export function handleFileScheme(allowedRoots: () => string[]): void {
   protocol.handle(FILE_SCHEME, (request) => {
-    const filePath = filePathFromUrl(request.url)
-    if (!filePath || !isPathAllowed(filePath, allowedRoots())) return new Response('forbidden', { status: 403 })
+    const requested = filePathFromUrl(request.url)
+    const filePath = requested === null ? null : allowedPath(requested, allowedRoots())
+    if (filePath === null) return new Response('forbidden', { status: 403 })
     let stat: fs.Stats
     try {
       stat = fs.statSync(filePath)
