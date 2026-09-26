@@ -7,6 +7,7 @@ import {
   type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
+import { estimateTokens } from '@shared/token-estimate'
 import { completeText } from '../llm'
 import { conversationLocale } from '../conversation-locale'
 import { getSettings } from '../settings'
@@ -76,27 +77,42 @@ export const handoffSystem = (locale: ConversationLocale): string =>
 export const SUMMARY_MAX_TOKENS = 8192
 
 /**
- * How long the summary call may take, which has to let the output limit through on the slowest
- * conversation model. Claude Opus 5 at low effort starts after 2.8 seconds and then writes 59.6 tokens
- * a second (Artificial Analysis, the median of 72 hours, checked 2026-09-26); a summary at its Japanese
- * budget, about 4,900 tokens on Claude's tokenizer, takes it 85 seconds. The limit is counted at three
- * quarters of that speed, since half of the calls run slower than the median, and 3 seconds are added
- * for the first token.
+ * How long a summary of an input of this size may take. No turn waits for it, so the limit only has
+ * to end a call that hangs, and must never cut one that is still working. The time goes into reading
+ * the input and writing up to the output limit, thinking included, so both are counted:
+ *
+ * - Reading takes at most 0.324 seconds per 10,000 tokens, GPT-5.6 Sol's cost near 1M tokens; Claude
+ *   Opus 5 takes 0.218 at every length (Epoch AI, September 2026). estimateTokens counts Japanese about
+ *   a quarter lower than Claude's tokenizer does, which the gap between those two costs covers.
+ * - Writing goes at three quarters of 59.6 tokens a second, the median of the slowest model, Claude
+ *   Opus 5 at low effort (Artificial Analysis, over 72 hours, checked 2026-09-26), because half of the
+ *   calls run slower than a median. A summary at its Japanese budget, about 4,900 tokens on Claude,
+ *   takes 85 seconds at the median itself.
+ * - 3 seconds go before the first token, where that model takes 2.8 on a short input.
+ *
+ * A limit on the time between tokens would be no tighter: the adapters pass on no text while a model
+ * thinks, so the first gap would need the whole allowance for thinking, which only the output limit
+ * bounds.
  */
-export const SUMMARY_TIMEOUT_MS = (3 + Math.ceil(SUMMARY_MAX_TOKENS / (0.75 * 59.6))) * 1000
+export function summaryTimeoutMs(inputTokens: number): number {
+  return Math.ceil(3 + (inputTokens / 10_000) * 0.324 + SUMMARY_MAX_TOKENS / (0.75 * 59.6)) * 1000
+}
 
 /**
  * Merges an existing summary and the newer log into one handover summary, on the conversation model.
- * A summary more than twice as long as its budget means the rewrite failed, so it is refused and the
- * history keeps both the previous summary and the turns.
+ * A summary that did not end on its own, such as one cut off by the output limit before its last
+ * headings, or one more than twice as long as its budget, means the rewrite failed. It is refused, and
+ * the history keeps both the previous summary and the turns.
  */
 export async function summarizeHandoff(existingSummary: string, log: string): Promise<string> {
   const locale = conversationLocale()
   const template = promptText(locale, existingSummary ? HANDOFF_USER : HANDOFF_USER_FIRST)
   const user = fillPrompt(template, { existing: existingSummary, log })
-  const summary = (
-    await completeText(getSettings().conversationModel, locale, handoffSystem(locale), user, SUMMARY_MAX_TOKENS, AbortSignal.timeout(SUMMARY_TIMEOUT_MS), 'summary')
-  ).trim()
+  const system = handoffSystem(locale)
+  const signal = AbortSignal.timeout(summaryTimeoutMs(estimateTokens(system + user)))
+  const { text, stop } = await completeText(getSettings().conversationModel, locale, system, user, SUMMARY_MAX_TOKENS, signal, 'summary')
+  if (stop !== 'end') throw new Error(`summary did not end on its own: ${stop}`)
+  const summary = text.trim()
   if (!summary) throw new Error('summary is empty')
   const language = promptLanguage(locale)
   const length = summaryLength(language, summary)

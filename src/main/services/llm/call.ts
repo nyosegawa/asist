@@ -1,6 +1,6 @@
 import type { LlmPurpose } from '@shared/api-usage'
 import { llmCost } from '@shared/api-pricing'
-import { textOf, userText, type ConversationRequest, type ConversationStream, type JsonSchema } from '@shared/conversation'
+import { textOf, userText, type ConversationRequest, type ConversationStream, type JsonSchema, type StopReason } from '@shared/conversation'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { LLM_PROVIDER_INFO, type ConversationModel, type LlmProvider } from '@shared/llm-catalog'
@@ -56,6 +56,7 @@ export function streamConversation(request: ConversationRequest, purpose: LlmPur
   return stream
 }
 
+/** The text of a one-shot response and why it stopped: one cut off by the output limit still returns what it wrote. */
 export async function completeText(
   model: ConversationModel,
   locale: ConversationLocale,
@@ -64,7 +65,7 @@ export async function completeText(
   maxTokens: number,
   signal: AbortSignal,
   purpose: LlmPurpose
-): Promise<string> {
+): Promise<{ text: string; stop: StopReason }> {
   const stream = streamConversation({
     model,
     locale,
@@ -75,7 +76,8 @@ export async function completeText(
     messages: [userText(user)],
     signal
   }, purpose)
-  return textOf((await stream.final()).message)
+  const result = await stream.final()
+  return { text: textOf(result.message), stop: result.stop }
 }
 
 /** Nothing here validates the result: the provider's structured output is what makes it match the schema. */

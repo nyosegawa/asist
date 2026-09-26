@@ -113,7 +113,7 @@ vi.mock('../src/main/services/store', () => ({
 }))
 vi.mock('../src/main/services/llm', () => ({
   providerKey: () => mocks.key,
-  completeText: vi.fn(async () => ''),
+  completeText: vi.fn(async (): Promise<{ text: string; stop: StopReason }> => ({ text: '', stop: 'end' })),
   streamConversation: (request: { messages: ConversationMessage[]; system: Array<{ text: string }>; signal?: AbortSignal }) => {
     mocks.requests.push({ messages: structuredClone(request.messages), system: request.system })
     const script = mocks.rounds.shift()
@@ -504,7 +504,7 @@ describe('brain turn', () => {
     }
     history.noteContextTokens(LIMIT_TOKENS + 1, history.revision)
     let finishSummary!: (text: string) => void
-    const heldSummary = new Promise<string>((resolve) => { finishSummary = resolve })
+    const heldSummary = new Promise<{ text: string; stop: StopReason }>((resolve) => { finishSummary = (text) => resolve({ text, stop: 'end' }) })
     vi.mocked(completeText).mockReturnValueOnce(heldSummary)
     const input = kind === 'notice'
       ? { text: '作業が完了しました', notice: 'job-done' as const }
