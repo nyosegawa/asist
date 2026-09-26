@@ -1,5 +1,5 @@
 import { isBackgroundJob, isJobTerminal } from '@shared/job-status'
-import type { TurnPlaybackAckStatus } from '@shared/ipc'
+import type { AgentJob, TurnPlaybackAckStatus } from '@shared/ipc'
 import { errMessage } from '@shared/api-errors'
 import { PlaybackDeliveryTracker, type PlaybackDeliveryOutcome } from '@shared/playback-delivery'
 import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
@@ -7,8 +7,9 @@ import { marker } from '@shared/conversation-markers'
 import type { TurnHandle } from '@shared/turn-scheduler'
 import { conversationLocale } from '../conversation-locale'
 import * as agentRunner from '../agent'
-import { beginTurn, type TurnInput } from './index'
+import { beginTurn } from './index'
 import { conversationOwner, currentSpeechRoute, history, record, turnScheduler } from './session'
+import type { NoticeKind } from './conversation-log'
 import type { SpeechRoute } from './speech-route'
 
 /**
@@ -24,7 +25,9 @@ const MAX_JOB_REPORT_ATTEMPTS = 5
 const HISTORY_ROOM_POLL_MS = 5_000
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
-const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'noSummary' | 'noReason', PromptText>> = {
+const REPORT: Readonly<
+  Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'mergeUnchanged' | 'merged' | 'discarded' | 'noSummary' | 'noReason', PromptText>
+> = {
   done: {
     ja: `{notice} ジョブ「{title}」(jobId: {jobId})が完了した。結果の要約: {summary}{artifactNote}{mergeNote}`,
     en: `{notice} The job "{title}" (jobId: {jobId}) is done. A summary of the result: {summary}{artifactNote}{mergeNote}`
@@ -39,6 +42,8 @@ const REPORT: Readonly<Record<'done' | 'error' | 'artifacts' | 'mergePending' | 
     en: ` The changes are in a worktree, waiting to be taken in. The diff is on the job panel on screen. Ask whether to take them in or throw them away: merge_agent_job takes them in, discard_agent_job throws them away.`
   },
   mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
+  merged: { ja: ` 変更はすでに取り込んだ。`, en: ` The changes have already been taken in.` },
+  discarded: { ja: ` 変更は取り込まずに捨てた。`, en: ` The changes were thrown away without being taken in.` },
   noSummary: { ja: `要約なし`, en: `no summary` },
   noReason: { ja: `不明`, en: `unknown` }
 }
@@ -68,12 +73,13 @@ async function waitForIdle(): Promise<void> {
  * limit a turn only says that the history is being summarized, and that would pass for the report, so
  * the report waits for a summary that succeeds. It starts none itself: the turns and the idle
  * compaction do, and a report that did would call a summary that keeps failing, as while offline, back
- * to back.
+ * to back. An engine that owns the conversation takes the report without the history, so the wait ends
+ * when one starts.
  */
 async function waitForRoomInHistory(): Promise<void> {
   // A report can come before any turn has read the history, which looks empty until then.
   history.ensureLoaded()
-  while (history.needsCompaction() === 'block') await sleep(HISTORY_ROOM_POLL_MS)
+  while (!conversationOwner() && history.needsCompaction() === 'block') await sleep(HISTORY_ROOM_POLL_MS)
 }
 
 /**
@@ -116,6 +122,83 @@ async function reportDelivery(handle: TurnHandle, route: SpeechRoute): Promise<P
   return delivery
 }
 
+/** The notice a turn is given for a finished job, written from the job as it is and in the language the conversation is held in now. */
+export function reportNotice(job: AgentJob): { notice: NoticeKind; text: string } {
+  const locale = conversationLocale()
+  const artifacts = (job.artifacts ?? []).slice(-5)
+  const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
+  const mergeNote =
+    job.mergeState === 'pending'
+      ? promptText(locale, REPORT.mergePending)
+      : job.mergeState === 'merged'
+        ? promptText(locale, REPORT.merged)
+        : job.mergeState === 'discarded'
+          ? promptText(locale, REPORT.discarded)
+          : job.worktree && job.mergeState === 'unchanged'
+            ? promptText(locale, REPORT.mergeUnchanged)
+            : ''
+  const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
+  return job.status === 'done'
+    ? {
+        notice: 'job-done',
+        text: fillPrompt(promptText(locale, REPORT.done), {
+          ...values,
+          summary: (job.summary ?? promptText(locale, REPORT.noSummary)).slice(0, 500)
+        })
+      }
+    : {
+        notice: 'job-error',
+        text: fillPrompt(promptText(locale, REPORT.error), {
+          ...values,
+          summary: (job.summary ?? promptText(locale, REPORT.noReason)).slice(0, 200)
+        })
+      }
+}
+
+/**
+ * Reports a finished job once a turn can take it, and queues it again while it did not reach the
+ * user. User input can arrive between the wait and the start, and must not be taken over, so the loop
+ * keeps waiting until an idle-only start succeeds.
+ */
+async function deliverReport(jobId: string): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
+    await waitForIdle()
+    await waitForRoomInHistory()
+    // The report is written only now, after waits that can be long: the job may have been merged or
+    // discarded meanwhile, and an engine may have taken the conversation over.
+    const job = agentRunner.get(jobId)
+    if (!job) {
+      console.warn(`job report dropped, the job is gone: ${jobId}`)
+      reportedJobs.add(jobId)
+      return
+    }
+    const notice = reportNotice(job)
+    // An engine that owns the conversation, such as Gemini Live, is handed the notice and reports it in
+    // context. The notice is written to the conversation log here, while the wording of the report is
+    // recorded on that side from the output transcript.
+    const owner = conversationOwner()
+    if (owner) {
+      record({ kind: 'notice', turnId: turnScheduler.allocateTurnId(), notice: notice.notice, text: notice.text })
+      await owner.notify(notice.text)
+      reportedJobs.add(jobId)
+      return
+    }
+    const route = currentSpeechRoute()
+    const handle = beginTurn(notice, {}, 'interject', true, { route })
+    if (!handle) {
+      attempt--
+      continue
+    }
+    const outcome = await reportDelivery(handle, route)
+    if (outcome === 'started') {
+      reportedJobs.add(jobId)
+      return
+    }
+    console.warn(`job report was not played (${outcome}); retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`)
+  }
+  console.error(`job report could not be delivered after retries: ${jobId}`)
+}
+
 export function initJobReporting(): void {
   agentRunner.events.on('event', (event) => {
     if (event.type !== 'update') return
@@ -135,68 +218,10 @@ export function initJobReporting(): void {
       return
     }
     reportingJobs.add(job.id)
-    const locale = conversationLocale()
-    const artifacts = (job.artifacts ?? []).slice(-5)
-    const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
-    const mergeNote =
-      job.mergeState === 'pending'
-        ? promptText(locale, REPORT.mergePending)
-        : job.worktree && job.mergeState === 'unchanged'
-          ? promptText(locale, REPORT.mergeUnchanged)
-          : ''
-    const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
-    const notice: TurnInput =
-      job.status === 'done'
-        ? {
-            notice: 'job-done',
-            text: fillPrompt(promptText(locale, REPORT.done), {
-              ...values,
-              summary: (job.summary ?? promptText(locale, REPORT.noSummary)).slice(0, 500)
-            })
-          }
-        : {
-            notice: 'job-error',
-            text: fillPrompt(promptText(locale, REPORT.error), {
-              ...values,
-              summary: (job.summary ?? promptText(locale, REPORT.noReason)).slice(0, 200)
-            })
-          }
     // The notice is not read out verbatim: the LLM reports it in the flow of the conversation, and waits if speech is in progress.
     reportQueue = reportQueue
       .catch((error) => console.error('previous job report failed:', errMessage(error)))
-      .then(async () => {
-        // An engine that owns the conversation, such as Gemini Live, is handed the notice and reports
-        // it in context. The notice is written to the conversation log here, while the wording of the
-        // report is recorded on that side from the output transcript.
-        const owner = conversationOwner()
-        if (owner) {
-          record({ kind: 'notice', turnId: turnScheduler.allocateTurnId(), notice: notice.notice!, text: notice.text })
-          await owner.notify(notice.text)
-          reportedJobs.add(job.id)
-          return
-        }
-        // User input can arrive between the wait and the start, and must not be taken over, so the
-        // loop keeps waiting until an idle-only start succeeds.
-        for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
-          await waitForIdle()
-          await waitForRoomInHistory()
-          const route = currentSpeechRoute()
-          const handle = beginTurn(notice, {}, 'interject', true, { route })
-          if (!handle) {
-            attempt--
-            continue
-          }
-          const outcome = await reportDelivery(handle, route)
-          if (outcome === 'started') {
-            reportedJobs.add(job.id)
-            return
-          }
-          console.warn(
-            `job report was not played (${outcome}); retrying ${attempt}/${MAX_JOB_REPORT_ATTEMPTS}`
-          )
-        }
-        console.error(`job report could not be delivered after retries: ${job.id}`)
-      })
+      .then(() => deliverReport(job.id))
       .catch((error) => console.error('job report failed:', errMessage(error)))
       .finally(() => {
         reportingJobs.delete(job.id)

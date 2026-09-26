@@ -5,7 +5,7 @@ import path from 'node:path'
 import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
-import type { TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
+import type { AgentJob, TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
 import type { ConversationMessage, ConversationPart, ConversationResult, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
@@ -104,6 +104,8 @@ const mocks = vi.hoisted(() => ({
   ttsEngine: 'voicevox',
   /** Holds every synthesis until the turn is aborted, as a slow speech engine does. */
   holdSynthesis: false,
+  /** The agent jobs as the agent service keeps them. */
+  jobs: new Map<string, AgentJob>(),
   contextBlock: (): string | null => null,
   workClip: async (): Promise<unknown> => null
 }))
@@ -152,7 +154,7 @@ vi.mock('../src/main/services/agent', () => ({
   contextBlock: () => mocks.contextBlock(),
   findActive: () => undefined,
   start: vi.fn(),
-  get: () => undefined,
+  get: (id: string) => mocks.jobs.get(id),
   list: () => [],
   getLog: () => [],
   cancel: vi.fn(),
@@ -199,6 +201,15 @@ function runToDone(brain: Brain, text: string): Promise<number> {
     })
     const turnId = brain.startTurn(text)
   })
+}
+
+const FINISHED_JOB = { id: 'j1', title: '調査', status: 'done', summary: '完了した' } as AgentJob
+
+/** A job that has finished, as the agent service keeps it and announces it. */
+async function finishJob(job: AgentJob = FINISHED_JOB): Promise<void> {
+  mocks.jobs.set(job.id, job)
+  const agent = await import('../src/main/services/agent')
+  agent.events.emit('event', { type: 'update', job })
 }
 
 /** The renderer's side of the playback acknowledgement, fed with brain's events the way conversation.ts feeds it. */
@@ -259,6 +270,7 @@ describe('brain turn', () => {
     mocks.key = 'test-key'
     mocks.ttsEngine = 'voicevox'
     mocks.holdSynthesis = false
+    mocks.jobs = new Map()
     mocks.contextBlock = () => null
     mocks.workClip = async () => null
   })
@@ -594,7 +606,7 @@ describe('brain turn', () => {
     expect(textOf(history.toMessages().at(-1)!)).toBe(sentence)
   })
 
-  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports it once', async () => {
+  it('holds a job report at the hard limit, starting no summary and using up no attempt, until a summary succeeds, and then reports the job as it is by then, once', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     const { completeText } = await import('../src/main/services/llm')
     try {
@@ -617,10 +629,13 @@ describe('brain turn', () => {
       const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
       acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
       initJobReporting()
-      const agent = await import('../src/main/services/agent')
-      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+      const waitingForMerge = { ...FINISHED_JOB, worktree: { dir: '/w', repo: '/r', branch: 'b', base: 'c' }, mergeState: 'pending' } as AgentJob
+      await finishJob(waitingForMerge)
       await vi.advanceTimersByTimeAsync(60_000)
       expect(completeText).not.toHaveBeenCalled()
+      // The user throws the changes away from the job panel while the report waits.
+      const discarded = { ...waitingForMerge, mergeState: 'discarded' } as AgentJob
+      mocks.jobs.set('j1', discarded)
       // The idle compaction fails more times than a report has attempts.
       for (let i = 0; i < 6; i++) {
         await compactionJob.run()
@@ -631,6 +646,8 @@ describe('brain turn', () => {
       await compactionJob.run()
       await vi.advanceTimersByTimeAsync(10_000)
       expect(mocks.requests).toHaveLength(1)
+      const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+      expect(textOf(mocks.requests[0].messages.at(-1)!)).toBe(reportNotice(discarded).text)
       await vi.advanceTimersByTimeAsync(60_000)
       expect(mocks.requests).toHaveLength(1)
       expect(events.flatMap((e) => (e.type === 'segment' ? [e.segment.text] : []))).toEqual(['調査が終わりました。'])
@@ -638,6 +655,71 @@ describe('brain turn', () => {
       vi.mocked(completeText).mockImplementation(async () => ({ text: '', stop: 'end' }))
       vi.useRealTimers()
     }
+  })
+
+  /** A history at the hard limit, recorded the way the conversation records it. */
+  async function historyAtHardLimit(): Promise<void> {
+    const { history, record, HARD_LIMIT_TOKENS } = await import('../src/main/services/brain/session')
+    history.ensureLoaded()
+    for (let i = 0; i < 50; i++) {
+      record({ kind: 'user', turnId: 100 + i, text: `以前の質問${i}` })
+      record({ kind: 'assistant', turnId: 100 + i, text: `以前の回答${i}` })
+    }
+    history.noteContextTokens(HARD_LIMIT_TOKENS + 1, history.revision)
+  }
+
+  it('hands a report held at the hard limit to a voice engine that took the conversation over meanwhile', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      await historyAtHardLimit()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(60_000)
+      const { setConversationOwner } = await import('../src/main/services/brain/session')
+      const notify = vi.fn(async () => {})
+      setConversationOwner({ notify, say: async () => {} })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(notify).toHaveBeenCalledOnce()
+      expect(mocks.requests).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports nothing for a job that is gone by the time the history has room', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      await historyAtHardLimit()
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(60_000)
+      mocks.jobs.delete('j1')
+      const { completeText } = await import('../src/main/services/llm')
+      vi.mocked(completeText).mockResolvedValueOnce({ text: '以前の会話の引き継ぎ', stop: 'end' })
+      const { compactionJob } = await import('../src/main/services/maintenance')
+      await compactionJob.run()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.requests).toEqual([])
+      expect(readLog().filter((r) => r.kind === 'notice')).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('tells in the report whether the changes of a job were taken in, thrown away, or are still waiting, and asks only while they wait', async () => {
+    await loadBrain()
+    const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+    const worktree = { dir: '/w', repo: '/r', branch: 'b', base: 'c' }
+    const notices = (['pending', 'merged', 'discarded'] as const).map((mergeState) => reportNotice({ ...FINISHED_JOB, worktree, mergeState } as AgentJob).text)
+    expect(new Set([...notices, reportNotice(FINISHED_JOB).text]).size).toBe(4)
+    expect(notices.map((text) => text.includes('merge_agent_job'))).toEqual([true, false, false])
   })
 
   it('reports a finished job once when its turn takes longer to start speaking than the wait for playback', async () => {
@@ -654,8 +736,7 @@ describe('brain turn', () => {
       const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
       acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
       initJobReporting()
-      const agent = await import('../src/main/services/agent')
-      agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+      await finishJob()
       await vi.advanceTimersByTimeAsync(10 * 60_000)
       expect(mocks.requests).toHaveLength(1)
       expect(readLog().filter((r) => r.kind === 'notice')).toHaveLength(1)
@@ -1013,8 +1094,7 @@ describe('brain turn', () => {
     const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
     acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
     initJobReporting()
-    const agent = await import('../src/main/services/agent')
-    agent.events.emit('event', { type: 'update', job: { id: 'j1', title: '調査', status: 'done', summary: '完了した' } })
+    await finishJob()
     await vi.waitFor(() => expect(readLog().some((r) => r.kind === 'message')).toBe(true))
     // A report counted as not delivered goes out again at once, so a second request would have started by now.
     await new Promise((resolve) => setTimeout(resolve, 200))
