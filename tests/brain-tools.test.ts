@@ -165,14 +165,14 @@ describe('brain tools registry', () => {
     }
   })
 
-  it('tells the model, and puts up no card, when the region has no currency to quote against', async () => {
-    mocks.settings.region = 'AT'
+  it('tells the model, and puts up no card, when a region outside the list has no currency to quote against', async () => {
+    mocks.settings.region = 'XK'
     try {
       const { executeClientTool } = await load()
       const { ctx, events } = makeCtx()
       const result = await executeClientTool('show_fx', { base: 'USD' }, ctx)
       expect(result.isError).toBe(true)
-      expect(result.content).toContain(ja('panels.errors.currencyUnknown', { region: 'AT' }))
+      expect(result.content).toContain(ja('panels.errors.currencyUnknown', { region: 'XK' }))
       expect(events).toEqual([])
       expect(mocks.fetchPanel).not.toHaveBeenCalled()
     } finally {
@@ -199,6 +199,29 @@ describe('brain tools registry', () => {
     expect(result.content).toContain('HTTP 503')
     const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
     expect(patch).toMatchObject({ event: { state: 'error', error: 'open-meteo: HTTP 503' } })
+  })
+
+  it('words a card whose fetch ran past the time limit for the screen, and tells the model the tool timed out', async () => {
+    const { executeClientTool } = await load()
+    // Node's fetch rejects with the reason of the signal it was handed.
+    mocks.fetchPanel.mockImplementationOnce(
+      (_type: string, _props: Record<string, unknown>, signal: AbortSignal) =>
+        new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+    )
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { ctx, events } = makeCtx()
+      const task = executeClientTool('show_news', { topic: 'AI' }, ctx)
+      await vi.advanceTimersByTimeAsync(FETCHER_TIMEOUT_MS)
+      const result = await task
+      await task.completion
+      expect(result.isError).toBe(true)
+      const patch = events.find((e) => e.type === 'panel' && e.event.op === 'patch')
+      const shown = patch?.type === 'panel' && patch.event.op === 'patch' ? patch.event.error : undefined
+      expect(readErrorText(shown ?? '')).toEqual(readErrorText(errorText('panels.errors.timedOut')))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('hands the card the error with its key, for the screen to word, and tells the model in the language of the conversation', async () => {

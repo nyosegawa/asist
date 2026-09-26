@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
-import { errorText } from '@shared/i18n/error-text'
+import { errorText, readErrorText } from '@shared/i18n/error-text'
 
 const mocks = vi.hoisted(() => ({ conversationLocale: 'ja-JP' }))
 vi.mock('../src/main/services/settings', () => ({
@@ -19,6 +19,14 @@ describe('the text of a tool error for the model', () => {
 
     mocks.conversationLocale = 'fr-FR'
     expect(errMessage(new Error(errorText('settingsModels.preparation.startFailed', { model: 'Qwen3-TTS' })))).toBe('Impossible de démarrer Qwen3-TTS.')
+  })
+
+  it('gives a card a message of the screen for a time limit and for a ToolError, never the model\'s text', async () => {
+    const { cardError } = await import('../src/main/services/brain/tool-error-text')
+    const { ToolError } = await import('@shared/tool-registry')
+    for (const err of [new DOMException('show_news ran past 8000 ms', 'TimeoutError'), new ToolError({ ja: '見つからない', en: 'Not found' })]) {
+      expect(readErrorText(cardError(err)), err.name).not.toBeNull()
+    }
   })
 
   it('unpacks the two languages of a ToolError but keeps any other message as it is, however it starts', async () => {

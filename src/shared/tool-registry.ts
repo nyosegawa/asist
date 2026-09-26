@@ -353,8 +353,11 @@ export function executeTool<Ctx>(
 
   const timeout = new AbortController()
   const combined = AbortSignal.any([signal, timeout.signal])
+  // The reason reaches whatever the tool hands the signal to: fetch rejects with it, and a card shows
+  // what a fetch rejects with. So it is the platform's TimeoutError, and the model's text is written
+  // below from which signal ended the run.
   const timer = setTimeout(
-    () => timeout.abort(new ToolError(TEXTS.timedOut(def.name, def.timeoutMs / 1000))),
+    () => timeout.abort(new DOMException(`${def.name} ran past ${def.timeoutMs} ms`, 'TimeoutError')),
     def.timeoutMs
   )
   let rejectAbort!: (reason: unknown) => void
@@ -375,6 +378,7 @@ export function executeTool<Ctx>(
     }))
     .catch((err): ToolExecution => {
       if (signal.aborted) return failure(TEXTS.interrupted(def.name)[language])
+      if (timeout.signal.aborted) return failure(TEXTS.timedOut(def.name, def.timeoutMs / 1000)[language])
       if (err instanceof ToolError) return failure(resolvePromptTexts(err.message, language))
       return failure(TEXTS.failed(def.name, errMessage(err))[language])
     })

@@ -239,6 +239,32 @@ export const panels = defineMessages({
       'pt-BR': 'Nenhum arquivo pôde ser exibido: {files}',
       'es-419': 'No se pudo mostrar ningún archivo: {files}',
       'es-ES': 'No se ha podido mostrar ningún archivo: {files}'
+    },
+    timedOut: {
+      'ja-JP': '時間内に取得できませんでした。',
+      'en-US': 'It took too long to get the data.',
+      'fr-FR': 'La récupération des données a pris trop de temps.',
+      'de-DE': 'Das Abrufen der Daten hat zu lange gedauert.',
+      'hi-IN': 'डेटा लाने में बहुत ज़्यादा समय लगा।',
+      'id-ID': 'Pengambilan data terlalu lama.',
+      'it-IT': 'Il recupero dei dati ha richiesto troppo tempo.',
+      'ko-KR': '데이터를 가져오는 데 시간이 너무 오래 걸렸습니다.',
+      'pt-BR': 'A busca dos dados demorou demais.',
+      'es-419': 'Obtener los datos tardó demasiado.',
+      'es-ES': 'Obtener los datos ha tardado demasiado.'
+    },
+    reasonToAssistant: {
+      'ja-JP': '理由はアシスタントに伝えました。',
+      'en-US': 'The assistant has been told why.',
+      'fr-FR': "L'assistant en connaît la raison.",
+      'de-DE': 'Der Assistent kennt den Grund.',
+      'hi-IN': 'असिस्टेंट को कारण बता दिया गया है।',
+      'id-ID': 'Asisten sudah diberi tahu alasannya.',
+      'it-IT': "L'assistente conosce il motivo.",
+      'ko-KR': '이유는 어시스턴트에게 전달했습니다.',
+      'pt-BR': 'O assistente já sabe o motivo.',
+      'es-419': 'El asistente ya sabe el motivo.',
+      'es-ES': 'El asistente ya sabe el motivo.'
     }
   }
 })

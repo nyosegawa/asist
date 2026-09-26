@@ -1,4 +1,5 @@
 import type { PromptLanguage } from '@shared/conversation-locale'
+import { errorText } from '@shared/i18n/error-text'
 import { ToolError, resolvePromptTexts } from '@shared/tool-registry'
 import { conversationLocale } from '../conversation-locale'
 import { errorMessageIn } from '../i18n'
@@ -25,5 +26,12 @@ export const issueText = (issues: readonly { message: string }[], language: Prom
 /**
  * The error a card shows, which is the error's own message with its key still in it: the screen words
  * it in the language of the interface, which need not be the language the model is told the failure in.
+ * Two errors carry no such message. A time limit, the tool's or the fetch's own, ends a fetch with the
+ * platform's TimeoutError, whose message is English; and a ToolError holds the model's two languages,
+ * of which the screen has none, while its reason goes to the model anyway.
  */
-export const cardError = (err: unknown): string => (err instanceof Error ? err.message : String(err))
+export const cardError = (err: unknown): string => {
+  if (err instanceof Error && err.name === 'TimeoutError') return errorText('panels.errors.timedOut')
+  if (err instanceof ToolError) return errorText('panels.errors.reasonToAssistant')
+  return err instanceof Error ? err.message : String(err)
+}
