@@ -177,13 +177,24 @@ const EXACT_DIFF = ['--no-color', '--no-ext-diff', '--no-textconv', '--no-relati
 const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
 
 /**
- * The configuration of every command that reads the index or the files of a working tree ASIST commits as it
- * is on disk. With core.ignoreStat in the repository's configuration, git marks each file it checks out or
- * adds as assume-unchanged and stops looking at it, so ASIST's own add would hide the files again, and a
- * fsmonitor hook that misses an event hides a changed file from status. A job whose edit is hidden settles as
- * unchanged, and its worktree is removed with the edit. Both settings only spare git a look at the files.
+ * The options of every command that reads the files of a working tree to tell what changed on disk: the job's
+ * worktree before it is committed, and the user's working tree before a merge. The repository's configuration
+ * can let git skip the files. core.ignoreStat makes git mark each file it checks out or adds as
+ * assume-unchanged and stop looking at it, so ASIST's own add would hide the files again; a fsmonitor hook
+ * that misses an event hides a changed or a new file; and core.checkStat=minimal or core.trustctime=false
+ * leave out the ctime, so an edit in place that keeps the size and puts the mtime back, as `touch -r`,
+ * `cp -p` and `rsync -a` do, looks unchanged. A job whose edit is hidden settles as unchanged and its
+ * worktree is removed with the edit, and a fast-forward over an edit of the user's that is hidden overwrites
+ * it. With --no-optional-locks, status does not write the index it refreshed, so a read changes neither the
+ * user's index nor the job's.
  */
-const ON_DISK = ['-c', 'core.ignoreStat=false', '-c', 'core.fsmonitor=false']
+const ON_DISK = [
+  '--no-optional-locks',
+  '-c', 'core.ignoreStat=false',
+  '-c', 'core.fsmonitor=false',
+  '-c', 'core.checkStat=default',
+  '-c', 'core.trustctime=true'
+]
 
 function onDisk(dir: string, args: string[], options: GitOptions = {}): string {
   return git(dir, [...ON_DISK, ...args], options)
@@ -200,19 +211,19 @@ const nulTerminated = (paths: Iterable<string>): string => [...paths].map((file)
 
 /**
  * Whether anything is at a path of the index of dir, a link or an empty folder included, without following a
- * link at its end. A folder is looked at once for all the paths under it, since a sparse worktree leaves out
- * most of the files: for the 99,900 files left out of a checkout of 100 out of 100,000, an lstat of each took
- * 108 ms and this takes 6 ms (Apple M5, 2026-09-27).
+ * link at its end. Any failure of lstat counts as absent, as it does when git decides which files a sparse
+ * checkout leaves out; a symbolic link that loops where a folder was, or a folder without search permission,
+ * would otherwise stop every settle and review. A folder is looked at once for all the paths under it, since
+ * a sparse worktree leaves out most of the files: for the 99,900 files left out of a checkout of 100 out of
+ * 100,000, an lstat of each took 108 ms and this takes 6 ms (Apple M5, 2026-09-27).
  */
 function presenceIn(dir: string): (file: string) => boolean {
   const folders = new Map<string, boolean>([['.', true]])
   const present = (file: string): boolean => {
     try {
       return fs.lstatSync(path.join(dir, file), { throwIfNoEntry: false }) !== undefined
-    } catch (error) {
-      // A file in place of a parent folder leaves nothing at the path.
-      if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return false
-      throw error
+    } catch {
+      return false
     }
   }
   const folder = (name: string): boolean => {
@@ -226,50 +237,100 @@ function presenceIn(dir: string): (file: string) => boolean {
   return (file) => folder(path.posix.dirname(file)) && present(file)
 }
 
+/** The flags that keep git from looking at files on disk, by the entries that lose them. */
+interface HidingFlags {
+  assumeUnchanged: string[]
+  skipWorktree: string[]
+}
+
+/** What revealFiles found in the index: the flags it cleared, and the files the sparse checkout leaves out. */
+interface Revealed extends HidingFlags {
+  leftOut: string[]
+}
+
+/** The first few of paths, for a message. */
+const named = (paths: string[]): string => paths.slice(0, 5).join(', ') + (paths.length > 5 ? ', …' : '')
+
 /**
- * Clears what keeps status and add from looking at a file of dir on disk, in the index of dir alone, and
- * refuses an index in which an absent file cannot be told apart from a deleted one.
- *
- * Assume-unchanged is only a hint that spares git a look at the file, so it goes from every entry.
- * Skip-worktree is also how a sparse checkout marks the files it leaves out: clearing it from those that are
- * absent would stage the deletion of everything outside the checkout, and refusing it would stop every job in
- * a sparse repository. In a sparse worktree it therefore goes only from the files that are present, as git
- * itself does unless sparse.expectFilesOutsideOfPatterns is set. A sparse checkout never leaves out a file its
- * patterns include, so an absent one there that has the flag was either deleted behind the flag or left out
- * by patterns changed without being reapplied, and it is refused. In a worktree that is not sparse nothing
- * but the agent sets the flag, and it goes from every entry.
- *
- * In a worktree of 100,000 files this added 14 ms to the 128 ms of a status, and 64 ms to the 12 ms of one
- * in a sparse checkout of 100 of them. The first call after core.ignoreStat had marked all 100,000 took a
- * median of 422 ms (bundled git 2.55, Apple M5, 2026-09-27).
+ * The absent files with skip-worktree that no sparse checkout of dir leaves out: all of them when dir has no
+ * sparse checkout or no patterns to read, and otherwise those its patterns include. git skips a sparse
+ * checkout whose file of patterns is gone, and check-rules then fails.
  */
-function clearHidingFlags(dir: string): void {
-  const assumed = new Set<string>()
+function notLeftOut(dir: string, absent: string[]): string[] {
+  if (git(dir, ['config', '--type=bool', '--default=false', 'core.sparseCheckout']).trim() !== 'true') return absent
+  if (!fs.existsSync(path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'info/sparse-checkout']).trim()))) return absent
+  return git(dir, ['sparse-checkout', 'check-rules', '-z'], { ...WHOLE, input: nulTerminated(absent) }).split('\0').filter(Boolean)
+}
+
+/**
+ * The flags of the index env names that keep status and add from looking at a file of dir on disk, cleared in
+ * that index, which is a copy: a read never writes the job's index, and a commit clears them in it only as
+ * it brings it up to the commit. It refuses an index in which an absent file cannot be told apart from a
+ * deleted one.
+ *
+ * A file that is present counts as it is, so both flags go from it. Assume-unchanged is only a hint that
+ * spares git a look at the file, so it goes from an absent file as well, which then counts as deleted.
+ * Skip-worktree never goes from an absent file, which never counts as deleted: the flag is also how a sparse
+ * checkout marks the files it leaves out, and clearing it would stage the deletion of everything outside the
+ * checkout. An absent file that the sparse checkout leaves out is unchanged. Any other absent file with the
+ * flag was either deleted behind it or never checked out, because the agent or the user turned the sparse
+ * checkout off or changed its patterns without reapplying them, and it is refused.
+ *
+ * Reading a worktree of 100,000 files this way, on a copy of its index, took 144 ms against 113 ms for a
+ * status alone, and 84 ms against 13 ms in a sparse checkout of 100 of them. While core.ignoreStat keeps all
+ * 100,000 marked, until the first commit clears them in the index, it took 309 ms (bundled git 2.55,
+ * Apple M5, 2026-09-27).
+ */
+function revealFiles(dir: string, env: NodeJS.ProcessEnv): Revealed {
+  const assumeUnchanged: string[] = []
   const skipped = new Set<string>()
   // With -v, ls-files tags an entry with skip-worktree S, and writes the tag in lower case when the entry is
   // assume-unchanged. An unmerged entry is tagged M whatever its flags, and add replaces all its stages with
   // the file on disk.
-  for (const entry of onDisk(dir, ['ls-files', '-v', '-z'], WHOLE).split('\0')) {
+  for (const entry of onDisk(dir, ['ls-files', '-v', '-z'], { ...WHOLE, env }).split('\0')) {
     const tag = entry[0]
-    if (tag === 'h' || tag === 's') assumed.add(entry.slice(2))
+    if (tag === 'h' || tag === 's') assumeUnchanged.push(entry.slice(2))
     if (tag === 'S' || tag === 's') skipped.add(entry.slice(2))
   }
-  let cleared = [...skipped]
-  if (skipped.size > 0 && git(dir, ['config', '--type=bool', '--default=false', 'core.sparseCheckout']).trim() === 'true') {
-    const present = presenceIn(dir)
-    const absent: string[] = []
-    cleared = []
-    for (const file of skipped) (present(file) ? cleared : absent).push(file)
-    const included = absent.length === 0
-      ? []
-      : git(dir, ['sparse-checkout', 'check-rules', '-z'], { ...WHOLE, input: nulTerminated(absent) }).split('\0').filter(Boolean)
-    if (included.length > 0) {
-      const named = included.slice(0, 5).join(', ') + (included.length > 5 ? ', …' : '')
-      throw new Error(errorText('jobs.worktree.sparseMissing', { paths: named, dir }))
-    }
+  const present = presenceIn(dir)
+  const skipWorktree: string[] = []
+  const absent: string[] = []
+  for (const file of skipped) (present(file) ? skipWorktree : absent).push(file)
+  const unexplained = absent.length === 0 ? [] : notLeftOut(dir, absent)
+  if (unexplained.length > 0) throw new Error(errorText('jobs.worktree.skippedMissing', { paths: named(unexplained), dir }))
+  const revealed = { assumeUnchanged, skipWorktree, leftOut: absent }
+  clearFlags(dir, revealed, env)
+  return revealed
+}
+
+function clearFlags(dir: string, flags: HidingFlags, env?: NodeJS.ProcessEnv): void {
+  if (flags.assumeUnchanged.length > 0) {
+    onDisk(dir, ['update-index', '-z', '--no-assume-unchanged', '--stdin'], { env, input: nulTerminated(flags.assumeUnchanged) })
   }
-  if (assumed.size > 0) onDisk(dir, ['update-index', '-z', '--no-assume-unchanged', '--stdin'], { input: nulTerminated(assumed) })
-  if (cleared.length > 0) onDisk(dir, ['update-index', '-z', '--no-skip-worktree', '--stdin'], { input: nulTerminated(cleared) })
+  if (flags.skipWorktree.length > 0) {
+    onDisk(dir, ['update-index', '-z', '--no-skip-worktree', '--stdin'], { env, input: nulTerminated(flags.skipWorktree) })
+  }
+}
+
+/**
+ * Runs read with a copy of dir's index, in a folder of its own, named by GIT_INDEX_FILE in the environment it
+ * is given. The copy keeps the time the index was written: git takes a file changed since then within the
+ * same second for possibly changed, and a copy made later would make such a file look unchanged.
+ */
+function withIndexCopy<T>(dir: string, read: (env: NodeJS.ProcessEnv) => T): T {
+  const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
+  const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
+  try {
+    const copy = path.join(scratch, 'index')
+    if (fs.existsSync(index)) {
+      fs.copyFileSync(index, copy)
+      const { atime, mtime } = fs.statSync(index)
+      fs.utimesSync(copy, atime, mtime)
+    }
+    return read({ GIT_INDEX_FILE: copy })
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true })
+  }
 }
 
 /**
@@ -280,25 +341,32 @@ function clearHidingFlags(dir: string): void {
  * hook of the repository runs and ASIST holds no lock of the repository between git's commands: git commit
  * runs prepare-commit-msg even with --no-verify, and a lock left by a crash would stop every later commit.
  * The index is brought up to the commit by git itself once the branch has moved, and when that fails the
- * branch goes back, so that a commit that fails leaves the index and the branch as they were.
+ * branch goes back. A commit that fails therefore leaves the branch as it was and every entry of the index
+ * with what it had staged; the entries may only have lost the flags that hid their files on disk.
  */
 export function commitAll(dir: string, message: string): boolean {
-  clearHidingFlags(dir)
-  if (onDisk(dir, ['status', '--porcelain', ...EXACT_STATUS], WHOLE).trim() === '') return false
-  const head = hasHead(dir) ? headCommit(dir) : null
-  const index = path.resolve(dir, git(dir, ['rev-parse', '--git-path', 'index']).trim())
-  const scratch = fs.mkdtempSync(path.join(tmpdir(), 'asist-index-'))
-  try {
-    const staging = path.join(scratch, 'index')
-    if (fs.existsSync(index)) fs.copyFileSync(index, staging)
-    const env = { GIT_INDEX_FILE: staging }
+  return withIndexCopy(dir, (env) => {
+    const revealed = revealFiles(dir, env)
+    if (onDisk(dir, ['status', '--porcelain', ...EXACT_STATUS], { ...WHOLE, env }).trim() === '') return false
+    const head = hasHead(dir) ? headCommit(dir) : null
     onDisk(dir, ADD_ALL, { env })
     const tree = onDisk(dir, ['write-tree'], { env }).trim()
+    if (head && revealed.leftOut.length > 0) {
+      // add replaces the entries under a path with a file or a link the agent put there, so a file where a
+      // folder the sparse checkout leaves out belongs would delete the files that are not checked out.
+      const deleted = new Set(git(dir, ['diff-tree', '-r', '-z', '--name-only', '--diff-filter=D', head, tree], WHOLE).split('\0'))
+      const replaced = revealed.leftOut.filter((file) => deleted.has(file))
+      if (replaced.length > 0) throw new Error(errorText('jobs.worktree.leftOutReplaced', { paths: named(replaced), dir }))
+    }
+    const bringIndexUp = (): void => {
+      clearFlags(dir, revealed)
+      onDisk(dir, ADD_ALL)
+    }
     if (head && tree === git(dir, ['rev-parse', `${head}^{tree}`]).trim()) {
       // Nothing is left to commit, but the index can still disagree with HEAD: a change staged and then
       // undone on disk, or a commit whose index was never brought up to it before a crash. Left so, the
       // job would never count as settled.
-      onDisk(dir, ADD_ALL)
+      bringIndexUp()
       return false
     }
     const commit = git(dir, [
@@ -306,15 +374,13 @@ export function commitAll(dir: string, message: string): boolean {
     ]).trim()
     git(dir, ['update-ref', '-m', message, 'HEAD', commit, head ?? ''])
     try {
-      onDisk(dir, ADD_ALL)
+      bringIndexUp()
     } catch (error) {
       git(dir, head ? ['update-ref', 'HEAD', head, commit] : ['update-ref', '-d', 'HEAD', commit])
       throw error
     }
     return true
-  } finally {
-    fs.rmSync(scratch, { recursive: true, force: true })
-  }
+  })
 }
 
 interface RawEntry {
@@ -456,8 +522,10 @@ function submodulePaths(dir: string): Map<string, string> {
  * inside submodules, whose changes no commit of dir carries and which submodulesWithWork finds instead.
  */
 export function isSettled(dir: string): boolean {
-  clearHidingFlags(dir)
-  return onDisk(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], WHOLE).trim() === ''
+  return withIndexCopy(dir, (env) => {
+    revealFiles(dir, env)
+    return onDisk(dir, ['status', '--porcelain', '--untracked-files=normal', '--ignore-submodules=all'], { ...WHOLE, env }).trim() === ''
+  })
 }
 
 /**
@@ -582,7 +650,10 @@ export function mergeNoFf(repo: string, branch: string, message: string): MergeO
   return { ok: true }
 }
 
-/** Whether the working tree has no uncommitted change, which a merge requires. */
+/**
+ * Whether the working tree has no uncommitted change, which a merge requires. A fast-forward overwrites a
+ * changed file that git takes for unchanged without a word, so this reads the files as they are on disk.
+ */
 export function isClean(repo: string): boolean {
-  return git(repo, ['status', '--porcelain']).trim() === ''
+  return onDisk(repo, ['status', '--porcelain']).trim() === ''
 }

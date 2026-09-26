@@ -431,6 +431,7 @@ describe('git service with an isolated worktree', () => {
     /** The paths the job's commit changed against base, with the kind of each change. */
     const committed = (wt: string, base: string): string[] => run(wt, ['diff', '--name-status', '--no-renames', base, 'HEAD']).split('\n').filter(Boolean)
     const userIndex = (): Buffer => fs.readFileSync(path.join(repo, '.git', 'index'))
+    const worktreeIndex = (wt: string): Buffer => fs.readFileSync(path.resolve(wt, run(wt, ['rev-parse', '--git-path', 'index'])))
 
     it('commits an edit that core.ignoreStat hid, sees a later one, and leaves the index of the repository as it was', () => {
       run(repo, ['config', 'core.ignoreStat', 'true'])
@@ -454,8 +455,7 @@ describe('git service with an isolated worktree', () => {
     it.each([
       ['--assume-unchanged', 'edit'],
       ['--assume-unchanged', 'delete'],
-      ['--skip-worktree', 'edit'],
-      ['--skip-worktree', 'delete']
+      ['--skip-worktree', 'edit']
     ])('commits a change the agent hid with update-index %s in a worktree that is not sparse: %s', (flag, change) => {
       const base = git.headCommit(repo)
       const wt = path.join(root, 'wt')
@@ -466,6 +466,72 @@ describe('git service with an isolated worktree', () => {
       expect(git.commitAll(wt, 'asist: job')).toBe(true)
       expect(committed(wt, base)).toEqual([change === 'edit' ? 'M\ta.txt' : 'D\ta.txt'])
       expect(git.isSettled(wt)).toBe(true)
+    })
+
+    it('refuses a file the agent removed behind skip-worktree, which cannot be told from one never checked out, and leaves the index as it was', () => {
+      const base = git.headCommit(repo)
+      const wt = path.join(root, 'wt')
+      git.worktreeAdd(repo, wt, 'asist/hidden')
+      run(wt, ['update-index', '--skip-worktree', 'a.txt'])
+      fs.rmSync(path.join(wt, 'a.txt'))
+      const before = worktreeIndex(wt)
+      const refusal = errorText('jobs.worktree.skippedMissing', { paths: 'a.txt', dir: wt })
+      expect(() => git.commitAll(wt, 'asist: job')).toThrow(refusal)
+      expect(() => git.isSettled(wt)).toThrow(refusal)
+      expect(git.headCommit(wt)).toBe(base)
+      expect(worktreeIndex(wt).equals(before)).toBe(true)
+    })
+
+    it('reads a worktree whose index core.ignoreStat marked without writing that index, even while another git holds its lock', () => {
+      run(repo, ['config', 'core.ignoreStat', 'true'])
+      const wt = path.join(root, 'wt')
+      git.worktreeAdd(repo, wt, 'asist/ignore-stat')
+      fs.writeFileSync(path.join(wt, 'a.txt'), 'edited by the agent\n')
+      const before = worktreeIndex(wt)
+      expect(git.isSettled(wt)).toBe(false)
+      expect(worktreeIndex(wt).equals(before)).toBe(true)
+      const lock = `${path.resolve(wt, run(wt, ['rev-parse', '--git-path', 'index']))}.lock`
+      fs.writeFileSync(lock, '')
+      expect(git.isSettled(wt)).toBe(false)
+      fs.rmSync(lock)
+    })
+
+    it.each(['core.checkStat=minimal', 'core.trustctime=false'])('commits an edit in place that keeps the size and puts the mtime back although %s leaves out the ctime', async (setting) => {
+      const [name, value] = setting.split('=')
+      run(repo, ['config', name, value])
+      const base = git.headCommit(repo)
+      const wt = path.join(root, 'wt')
+      git.worktreeAdd(repo, wt, 'asist/stat')
+      const file = path.join(wt, 'a.txt')
+      const earlier = new Date(Date.now() - 3_600_000)
+      fs.utimesSync(file, earlier, earlier)
+      run(wt, ['update-index', '--refresh'])
+      // git compares the ctime to the second, so the edit comes in a later second than the one the index recorded.
+      await new Promise((resolve) => setTimeout(resolve, 1_050 - (Date.now() % 1_000)))
+      fs.writeFileSync(file, 'HELLO\n')
+      fs.utimesSync(file, earlier, earlier)
+      expect(git.commitAll(wt, 'asist: job')).toBe(true)
+      expect(committed(wt, base)).toEqual(['M\ta.txt'])
+    })
+
+    it('reads the working tree of the repository before a merge without writing its index', () => {
+      const before = userIndex()
+      // A file whose stat changed without its content is one git refreshes and writes to the index.
+      const later = new Date(Date.now() + 3_600_000)
+      fs.utimesSync(path.join(repo, 'a.txt'), later, later)
+      expect(git.isClean(repo)).toBe(true)
+      expect(userIndex().equals(before)).toBe(true)
+    })
+
+    it('sees an edit in the working tree of the repository that a fsmonitor hook missed, so that no merge overwrites it', () => {
+      const hook = path.join(root, 'fsmonitor')
+      fs.writeFileSync(hook, '#!/bin/sh\nprintf "token-1\\0"\n', { mode: 0o755 })
+      run(repo, ['config', 'core.fsmonitor', hook])
+      run(repo, ['status', '--porcelain'])
+      run(repo, ['status', '--porcelain'])
+      fs.writeFileSync(path.join(repo, 'a.txt'), 'the user\'s edit\n')
+      expect(run(repo, ['status', '--porcelain'])).toBe('')
+      expect(git.isClean(repo)).toBe(false)
     })
 
     it('commits an edit that a fsmonitor hook which missed it hides from status', () => {
@@ -497,6 +563,29 @@ describe('git service with an isolated worktree', () => {
         expect(fs.existsSync(path.join(wt, 'docs'))).toBe(false)
         return { wt, base: git.headCommit(repo) }
       }
+      /** The same, with the sparse checkout in the repository's shared configuration, as git set it up before worktree configuration. */
+      const sharedSparseWorktree = (): { wt: string; base: string } => {
+        for (const file of ['src/a.txt', 'src/b.txt', 'docs/x.txt', 'docs/y.txt', 'docs/deep/z.txt']) {
+          fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true })
+          fs.writeFileSync(path.join(repo, file), `${file}\n`)
+        }
+        run(repo, ['add', '-A'])
+        run(repo, [...ID, 'commit', '-q', '-m', 'tree'])
+        run(repo, ['config', 'core.sparseCheckout', 'true'])
+        fs.mkdirSync(path.join(repo, '.git', 'info'), { recursive: true })
+        fs.writeFileSync(path.join(repo, '.git', 'info', 'sparse-checkout'), '/*\n!/*/\n/src/\n')
+        run(repo, ['read-tree', '-mu', 'HEAD'])
+        const wt = path.join(root, 'wt')
+        git.worktreeAdd(repo, wt, 'asist/sparse')
+        expect(fs.existsSync(path.join(wt, 'docs'))).toBe(false)
+        return { wt, base: git.headCommit(repo) }
+      }
+      /** The user turns the shared sparse checkout off in the repository's own working tree. */
+      const turnSharedSparseOff = (): void => {
+        run(repo, ['config', 'core.sparseCheckout', 'false'])
+        run(repo, ['read-tree', '-mu', 'HEAD'])
+      }
+      const LEFT_OUT = 'docs/deep/z.txt, docs/x.txt, docs/y.txt'
 
       it.each([
         [false, 'docs/x.txt', 'M'],
@@ -531,12 +620,69 @@ describe('git service with an isolated worktree', () => {
         expect(committed(wt, base)).toEqual(['M\tdocs/x.txt'])
       })
 
+      it.each(['the agent turns it off in the worktree', 'the user turns it off for the repository'])('refuses the files a sparse checkout left out once %s, instead of deleting them', (who) => {
+        let wt: string
+        let base: string
+        if (who.startsWith('the agent')) {
+          ;({ wt, base } = sparseWorktree())
+          run(wt, ['config', '--worktree', 'core.sparseCheckout', 'false'])
+        } else {
+          ;({ wt, base } = sharedSparseWorktree())
+          turnSharedSparseOff()
+        }
+        fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
+        expect(() => git.commitAll(wt, 'asist: job')).toThrow(errorText('jobs.worktree.skippedMissing', { paths: LEFT_OUT, dir: wt }))
+        expect(git.headCommit(wt)).toBe(base)
+      })
+
+      it('refuses the review of a settled job while its sparse checkout is off, without changing its index, and settles it once it is on again', () => {
+        const { wt, base } = sharedSparseWorktree()
+        fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
+        expect(git.commitAll(wt, 'asist: job')).toBe(true)
+        turnSharedSparseOff()
+        const before = worktreeIndex(wt)
+        expect(() => git.isSettled(wt)).toThrow(errorText('jobs.worktree.skippedMissing', { paths: LEFT_OUT, dir: wt }))
+        expect(worktreeIndex(wt).equals(before)).toBe(true)
+        run(repo, ['config', 'core.sparseCheckout', 'true'])
+        expect(git.isSettled(wt)).toBe(true)
+        expect(committed(wt, base)).toEqual(['M\tsrc/a.txt'])
+      })
+
+      it('refuses the files left out when the file of the sparse checkout\'s patterns is gone, since git then skips the sparse checkout', () => {
+        const { wt, base } = sparseWorktree()
+        fs.rmSync(path.resolve(wt, run(wt, ['rev-parse', '--git-path', 'info/sparse-checkout'])))
+        fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
+        expect(() => git.commitAll(wt, 'asist: job')).toThrow(errorText('jobs.worktree.skippedMissing', { paths: LEFT_OUT, dir: wt }))
+        expect(git.headCommit(wt)).toBe(base)
+      })
+
+      it('counts the files of a folder left out that cannot be searched as left out, as git does', () => {
+        const { wt, base } = sparseWorktree()
+        fs.mkdirSync(path.join(wt, 'docs'), { mode: 0o000 })
+        try {
+          fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
+          expect(git.commitAll(wt, 'asist: job')).toBe(true)
+          expect(committed(wt, base)).toEqual(['M\tsrc/a.txt'])
+        } finally {
+          fs.chmodSync(path.join(wt, 'docs'), 0o755)
+        }
+      })
+
+      it.each(['a link that points to itself', 'a file'])('refuses %s where a folder left out belongs, which a commit would put in place of the files left out', (thing) => {
+        const { wt, base } = sparseWorktree()
+        if (thing === 'a file') fs.writeFileSync(path.join(wt, 'docs'), 'written by the agent\n')
+        else fs.symlinkSync('docs', path.join(wt, 'docs'))
+        fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
+        expect(() => git.commitAll(wt, 'asist: job')).toThrow(errorText('jobs.worktree.leftOutReplaced', { paths: LEFT_OUT, dir: wt }))
+        expect(git.headCommit(wt)).toBe(base)
+      })
+
       it('refuses a file inside the checkout that is absent behind skip-worktree, which cannot be told from one never checked out', () => {
         const { wt, base } = sparseWorktree()
         run(wt, ['update-index', '--skip-worktree', 'src/b.txt'])
         fs.rmSync(path.join(wt, 'src', 'b.txt'))
         fs.writeFileSync(path.join(wt, 'src', 'a.txt'), 'edited by the agent\n')
-        const refusal = errorText('jobs.worktree.sparseMissing', { paths: 'src/b.txt', dir: wt })
+        const refusal = errorText('jobs.worktree.skippedMissing', { paths: 'src/b.txt', dir: wt })
         expect(() => git.commitAll(wt, 'asist: job')).toThrow(refusal)
         expect(() => git.isSettled(wt)).toThrow(refusal)
         expect(git.headCommit(wt)).toBe(base)

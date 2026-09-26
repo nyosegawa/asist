@@ -567,6 +567,23 @@ it('merges an edit that core.ignoreStat in the repository hid, and refuses the m
   expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('changed\n')
 })
 
+it('refuses to merge over an uncommitted edit of the user\'s that a fsmonitor hook missed, and keeps the edit', async () => {
+  // A hook that answers every query with a fresh token and no changed path, as one that lost its events does.
+  const hook = path.join(mocks.root, 'fsmonitor')
+  fs.writeFileSync(hook, '#!/bin/sh\nprintf "token-1\\0"\n', { mode: 0o755 })
+  git(repo, 'config', 'core.fsmonitor', hook)
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'changed by the job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  git(repo, 'status', '--porcelain')
+  git(repo, 'status', '--porcelain')
+  fs.writeFileSync(path.join(repo, 'tracked.txt'), 'the user\'s edit\n')
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.dirtyRepo'))
+  expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('the user\'s edit\n')
+})
+
 describe('a repository with a sparse checkout of src/', () => {
   let before = ''
   beforeEach(() => {
@@ -602,7 +619,7 @@ describe('a repository with a sparse checkout of src/', () => {
     fs.writeFileSync(path.join(dir, 'src', 'a.txt'), 'edited inside\n')
     mocks.launch.mock.calls[0][2].onExit(0)
     expect(agent.get(job.id)?.mergeState).toBe('error')
-    const reason = ja('jobs.worktree.settleFailed', { detail: ja('jobs.worktree.sparseMissing', { paths: 'src/b.txt', dir }) })
+    const reason = ja('jobs.worktree.settleFailed', { detail: ja('jobs.worktree.skippedMissing', { paths: 'src/b.txt', dir }) })
     expect(agent.getLog(job.id).some(({ event }) => event.kind === 'stderr' && event.text === reason)).toBe(true)
     expect(fs.existsSync(dir)).toBe(true)
     git(dir, 'sparse-checkout', 'reapply')
