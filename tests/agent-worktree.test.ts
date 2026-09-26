@@ -551,6 +551,83 @@ it('discards a job waiting to be merged whose worktree was deleted by hand and p
   expect(git(repo, 'branch', '--list', branch)).toBe('')
 })
 
+it('merges an edit that core.ignoreStat in the repository hid, and refuses the merge while a file differs from the review', async () => {
+  git(repo, 'config', 'core.ignoreStat', 'true')
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'changed\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
+  const review = agent.diff(job.id)
+  expect(review.patch).toContain('+changed')
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'changed after the review\n')
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.worktree.uncommitted'))
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'changed\n')
+  agent.merge(job.id, review)
+  expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('changed\n')
+})
+
+it('refuses to merge over an uncommitted edit of the user\'s that a fsmonitor hook missed, and keeps the edit', async () => {
+  // A hook that answers every query with a fresh token and no changed path, as one that lost its events does.
+  const hook = path.join(mocks.root, 'fsmonitor')
+  fs.writeFileSync(hook, '#!/bin/sh\nprintf "token-1\\0"\n', { mode: 0o755 })
+  git(repo, 'config', 'core.fsmonitor', hook)
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'changed by the job\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  git(repo, 'status', '--porcelain')
+  git(repo, 'status', '--porcelain')
+  fs.writeFileSync(path.join(repo, 'tracked.txt'), 'the user\'s edit\n')
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.dirtyRepo'))
+  expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('the user\'s edit\n')
+})
+
+describe('a repository with a sparse checkout of src/', () => {
+  let before = ''
+  beforeEach(() => {
+    for (const file of ['src/a.txt', 'src/b.txt', 'docs/x.txt', 'docs/y.txt']) {
+      fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true })
+      fs.writeFileSync(path.join(repo, file), `${file}\n`)
+    }
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', 'tree')
+    git(repo, 'sparse-checkout', 'set', '--cone', 'src')
+    before = git(repo, 'rev-parse', 'HEAD')
+  })
+
+  it('merges the edits of a job inside the checkout and outside it, and deletes none of the files it leaves out', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('修正する', { cwd: repo })
+    const { dir } = agent.get(job.id)!.worktree!
+    fs.writeFileSync(path.join(dir, 'src', 'a.txt'), 'edited inside\n')
+    fs.mkdirSync(path.join(dir, 'docs'))
+    fs.writeFileSync(path.join(dir, 'docs', 'x.txt'), 'edited outside\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    mergeReviewed(agent, job.id)
+    expect(git(repo, 'diff', '--name-status', before, 'HEAD')).toBe('M\tdocs/x.txt\nM\tsrc/a.txt')
+    expect(git(repo, 'show', 'HEAD:docs/x.txt')).toBe('edited outside')
+  })
+
+  it('keeps the worktree of a job with a file inside the checkout absent behind skip-worktree, and settles it once the file is checked out again', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('修正する', { cwd: repo })
+    const { dir } = agent.get(job.id)!.worktree!
+    git(dir, 'update-index', '--skip-worktree', 'src/b.txt')
+    fs.rmSync(path.join(dir, 'src', 'b.txt'))
+    fs.writeFileSync(path.join(dir, 'src', 'a.txt'), 'edited inside\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.mergeState).toBe('error')
+    const reason = ja('jobs.worktree.settleFailed', { detail: ja('jobs.worktree.skippedMissing', { paths: 'src/b.txt', dir }) })
+    expect(agent.getLog(job.id).some(({ event }) => event.kind === 'stderr' && event.text === reason)).toBe(true)
+    expect(fs.existsSync(dir)).toBe(true)
+    git(dir, 'sparse-checkout', 'reapply')
+    mergeReviewed(agent, job.id)
+    expect(git(repo, 'diff', '--name-status', before, 'HEAD')).toBe('M\tsrc/a.txt')
+  })
+})
+
 describe('a repository with a submodule', () => {
   beforeEach(() => {
     const sub = path.join(mocks.root, 'sub')
