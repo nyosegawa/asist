@@ -32,8 +32,9 @@ import type { TranscriptRole } from './transcripts'
  * records the utterances it is handed and its own replies, and the screen shows brain's text. What the
  * voice says besides is content-free by its instructions, and nothing marks where its reading of one
  * reply ends and the next begins, so its transcript could not be put under the right turn. The input
- * transcript is shown on screen while the user speaks, one line per utterance, and every utterance
- * reaches brain: the one a delegation takes, together with those before it that no delegation took.
+ * transcript is shown on screen while the user speaks, one line per utterance. A turn the engine starts
+ * hands brain its own input together with the utterances before it that no delegation took, unless they
+ * are older than a quiet session stays open or were said before a stop.
  *
  * A session is append-only and starts blank when it is reopened, so the recent history is handed over as
  * the initial context every time it opens.
