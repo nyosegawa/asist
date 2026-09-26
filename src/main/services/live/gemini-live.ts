@@ -108,6 +108,15 @@ const READ_ALOUD: PromptText = {
 const OPEN_TIMEOUT_MS = 15_000
 /** How long a resumption handle is reused. The provider allows two hours, and this leaves a margin. */
 const RESUMPTION_TTL_MS = 100 * 60_000
+/**
+ * How much of the session's audio a memory shown to it is assumed to stay in its context. The sliding
+ * window cuts the oldest turns once the context passes its trigger and keeps half of it (SlidingWindow
+ * in @google/genai), without saying when. Five minutes of audio is about 9,600 tokens at the 32 tokens a
+ * second Gemini counts for audio, inside that half for a context of 32,000 tokens or more. A memory shown
+ * earlier may have been cut, and a note shows it again when an utterance calls for it, which costs a
+ * repeated note at most.
+ */
+const SESSION_MEMORY_AUDIO_SECONDS = 5 * 60
 const INPUT_MIME = 'audio/pcm;rate=16000'
 const OUTPUT_RATE = 24_000
 
@@ -136,12 +145,12 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
    */
   private readonly order = new ToolCallOrder()
   /**
-   * The memories the context of the current session holds, from the notes and the recall results sent
-   * to it, which a note does not show again. A session that opens blank is seeded with the transcript,
-   * which carries neither, so it holds none of them whatever earlier sessions were shown. A resumed
-   * session keeps its context, and the set with it.
+   * The memories sent to the current session in its notes and recall results, each with the session's
+   * audio seconds when it was sent, which a note does not show again while they are recent. A session
+   * that opens blank is seeded with the transcript, which carries neither, so it holds none of them
+   * whatever earlier sessions were shown. A resumed session keeps its context, and the memories with it.
    */
-  private sessionMemoryIds = new Set<string>()
+  private sessionMemories = new Map<string, number>()
 
   constructor(
     info: LiveEngineInfo,
@@ -211,7 +220,7 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
     // A session that could not be resumed opens blank, so the recent history is sent as its context.
     if (!resume) {
       this.seedHistory(session)
-      this.sessionMemoryIds = new Set()
+      this.sessionMemories = new Map()
     }
     owned.ready = true
   }
@@ -355,7 +364,17 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         }
       ]
     })
-    for (const memoryId of memoryIdsInToolResult(name, execution)) this.sessionMemoryIds.add(memoryId)
+    this.memoriesSent(memoryIdsInToolResult(name, execution))
+  }
+
+  private memoriesSent(ids: readonly string[]): void {
+    for (const id of ids) this.sessionMemories.set(id, this.inputSeconds + this.outputSeconds)
+  }
+
+  /** The memories the session can still be assumed to hold. */
+  private memoriesHeld(): Set<string> {
+    const now = this.inputSeconds + this.outputSeconds
+    return new Set([...this.sessionMemories].flatMap(([id, at]) => (now - at < SESSION_MEMORY_AUDIO_SECONDS ? [id] : [])))
   }
 
   protected override working(): boolean {
@@ -400,11 +419,11 @@ export class GeminiLiveEngine extends LiveEngineBase implements ConversationOwne
         const note = buildMemoryInjection(memories, {
           locale: conversationLocale(),
           memoryBlock: this.deps.memoryBlock(),
-          excludeIds: this.sessionMemoryIds
+          excludeIds: this.memoriesHeld()
         })
         if (!note) return
         session.sendClientContent({ turns: [{ role: 'user', parts: [{ text: note.text }] }], turnComplete: false })
-        for (const memoryId of note.ids) this.sessionMemoryIds.add(memoryId)
+        this.memoriesSent(note.ids)
         this.deps.recordNote(turnId, note.text, note.ids)
       })
       .catch((err) => console.error('gemini-live memory injection failed:', errMessage(err)))
