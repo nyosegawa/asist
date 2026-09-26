@@ -306,10 +306,11 @@ describe('documents', () => {
   })
 
   it('refuses on every OS a name Windows cannot give a file, so that the memory folder opens on either', () => {
-    for (const name of ['CON', 'con', 'Nul', 'aux.txt', 'PRN.tar.gz', 'COM1', 'lpt9', 'COM¹']) {
+    for (const name of ['CON', 'con', 'Nul', 'aux.txt', 'PRN.tar.gz', 'COM1', 'lpt9', 'COM¹', 'CONIN$', 'conout$.md']) {
       expect(() => parseMemoryPageInput({ name }), name).toThrow(errorText('memory.errors.nameReserved'))
     }
-    expect(() => parseMemoryPageInput({ name: 'メモ.' })).toThrow(errorText('memory.errors.nameCharacters'))
+    expect(() => parseMemoryPageInput({ name: 'Dr.' })).toThrow(errorText('memory.errors.nameEnd'))
+    expect(parseMemoryPageInput({ name: 'Dr. Tanaka' })).toEqual({ name: 'Dr. Tanaka' })
     for (const name of ['CONSOLE', 'COM0', 'LPT10', 'nul-results', 'con 1', 'Auxiliary']) {
       expect(parseMemoryPageInput({ name })).toEqual({ name })
     }

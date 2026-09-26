@@ -1172,6 +1172,32 @@ export const memory = defineMessages({
       'pt-BR': 'O Windows não permite este nome para um arquivo, então ele não pode ser o nome de uma página.',
       'es-419': 'Windows no permite este nombre para un archivo, así que no puede ser el nombre de una página.',
       'es-ES': 'Windows no permite este nombre para un archivo, así que no puede usarse como nombre de página.'
+    },
+    nameEnd: {
+      'ja-JP': 'ページの名前の最後には、点(.)や空白を使えません。',
+      'en-US': 'A page name cannot end with a dot or a space.',
+      'fr-FR': "Le nom d'une page ne peut pas se terminer par un point ou une espace.",
+      'de-DE': 'Ein Seitenname darf nicht mit einem Punkt oder einem Leerzeichen enden.',
+      'hi-IN': 'पेज का नाम बिंदु (.) या स्पेस पर खत्म नहीं हो सकता।',
+      'id-ID': 'Nama halaman tidak boleh diakhiri titik atau spasi.',
+      'it-IT': 'Il nome di una pagina non può finire con un punto o uno spazio.',
+      'ko-KR': '페이지 이름은 마침표(.)나 공백으로 끝날 수 없습니다.',
+      'pt-BR': 'O nome de uma página não pode terminar com ponto ou espaço.',
+      'es-419': 'El nombre de una página no puede terminar en punto ni en espacio.',
+      'es-ES': 'El nombre de una página no puede terminar en punto ni en espacio.'
+    },
+    pageNamesRefused: {
+      'ja-JP': 'ファイルの名前として使えないページの名前があるため、取り込みませんでした:\n{files}',
+      'en-US': 'Some page names cannot be used as file names, so the changes were not merged:\n{files}',
+      'fr-FR': "Certains noms de page ne peuvent pas servir de noms de fichier, les modifications n'ont donc pas été fusionnées :\n{files}",
+      'de-DE': 'Einige Seitennamen lassen sich nicht als Dateinamen verwenden, daher wurden die Änderungen nicht übernommen:\n{files}',
+      'hi-IN': 'कुछ पेज के नाम फ़ाइल के नाम के तौर पर इस्तेमाल नहीं हो सकते, इसलिए बदलाव मर्ज नहीं किए गए:\n{files}',
+      'id-ID': 'Ada nama halaman yang tidak bisa dipakai sebagai nama file, jadi perubahannya tidak digabungkan:\n{files}',
+      'it-IT': 'Alcuni nomi di pagina non si possono usare come nomi di file, quindi le modifiche non sono state integrate:\n{files}',
+      'ko-KR': '파일 이름으로 쓸 수 없는 페이지 이름이 있어 병합하지 않았습니다:\n{files}',
+      'pt-BR': 'Alguns nomes de página não podem ser usados como nomes de arquivo, por isso as alterações não foram mescladas:\n{files}',
+      'es-419': 'Algunos nombres de página no se pueden usar como nombres de archivo, así que los cambios no se fusionaron:\n{files}',
+      'es-ES': 'Algunos nombres de página no se pueden usar como nombres de archivo, así que los cambios no se han fusionado:\n{files}'
     }
   }
 })

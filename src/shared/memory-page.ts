@@ -9,9 +9,11 @@ import {
   SUMMARY_HEADING,
   documentIssues,
   instructionBody,
+  pageNameIssue,
   parsePage,
   writtenInJapanese,
   type DocumentIssue,
+  type PageNameIssue,
   type ParsedPage
 } from '../../resources/skills/memory-format.mjs'
 
@@ -148,22 +150,29 @@ export const DOCUMENT_FILE = /^(instruction\.md|me\.md|user\.md|pages\/[^/\\]+\.
 
 const MAX_PAGE_NAME_LENGTH = 60
 
-/** The names Windows keeps for devices. No file there can take one, whatever extension follows it. */
-const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(\..*)?$/i
+const PAGE_NAME_ERRORS = {
+  characters: 'memory.errors.nameCharacters',
+  end: 'memory.errors.nameEnd',
+  reserved: 'memory.errors.nameReserved'
+} as const satisfies Record<PageNameIssue, string>
 
-/**
- * The input for a new page. The name becomes the file name, so a name that cannot be a file name on
- * macOS or on Windows is rejected on both, and a memory folder opens on either. Windows drops a dot or a
- * space at the end of a name, and trim has already removed the spaces.
- */
+/** Why a page's name, its file name without .md, cannot be used, or null when it can. */
+export function pageNameError(name: string): string | null {
+  const issue = pageNameIssue(name)
+  return issue ? errorText(PAGE_NAME_ERRORS[issue]) : null
+}
+
+/** The input for a new page. The name becomes the file name. */
 export const memoryPageInputSchema = z.strictObject({
   name: z
     .string()
     .trim()
     .min(1, errorText('memory.errors.nameEmpty'))
     .max(MAX_PAGE_NAME_LENGTH, errorText('memory.errors.nameTooLong', { limit: MAX_PAGE_NAME_LENGTH }))
-    .refine((name) => !/[/\\:*?"<>|]/.test(name) && !name.startsWith('.') && !name.endsWith('.'), errorText('memory.errors.nameCharacters'))
-    .refine((name) => !WINDOWS_DEVICE_NAME.test(name), errorText('memory.errors.nameReserved'))
+    .superRefine((name, context) => {
+      const message = pageNameError(name)
+      if (message) context.addIssue({ code: 'custom', message })
+    })
 })
 
 export function documentKindOf(file: string): MemoryDocumentKind | null {

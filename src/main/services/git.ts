@@ -602,12 +602,14 @@ export interface DiffEntry {
   path: string
   /** The git file mode after the change, such as 100644, 120000 for a symbolic link, or 000000 for a deletion. */
   mode: string
+  /** Whether the path did not exist at base. */
+  added: boolean
 }
 
 /** Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an addition. */
 export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
   return rawEntries(git(repo, ['diff', ...EXACT_DIFF, '--raw', '-z', '--no-renames', base, commit], WHOLE))
-    .map((entry) => ({ path: entry.path, mode: entry.newMode }))
+    .map((entry) => ({ path: entry.path, mode: entry.newMode, added: entry.oldMode === '000000' }))
 }
 
 /**
