@@ -6,21 +6,20 @@ import {
   type ConfiguredApiModel
 } from '@shared/api-key-validation'
 import type { JsonSchema } from '@shared/conversation'
-import type { LlmPurpose } from '@shared/api-usage'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type ConversationModel, type LlmProvider } from '@shared/llm-catalog'
+import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
 import { errorText } from '@shared/i18n/error-text'
 import type { ApiKeyState, AppSettings } from '@shared/ipc'
 import { t } from '../i18n'
-import { conversationLocale } from '../conversation-locale'
 import { SecretUnreadableError } from '../encrypted-secrets'
 import { getSettings } from '../settings'
 import { providerKey, type ProviderKeys } from './keys'
-import { ADAPTERS, completeJson, completeText } from './call'
+import { ADAPTERS, completeJson } from './call'
 
 /**
- * Validation of the configured conversation model and bridge model, plus the lightweight
- * one-shot calls. A configuration is only persisted once each configured model has been fetched from
- * the real API with that provider's key, so a configuration that cannot run is never stored.
+ * Validation of the configured conversation model and bridge model, plus the lightweight one-shot
+ * JSON call on the bridge model. A configuration is only persisted once each configured model has
+ * been fetched from the real API with that provider's key, so a configuration that cannot run is
+ * never stored.
  */
 
 export { providerKey, saveProviderKey } from './keys'
@@ -170,17 +169,6 @@ export async function configuredApiKeyAvailable(): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-export async function quickText(
-  system: string,
-  user: string,
-  maxTokens = 600,
-  signal?: AbortSignal,
-  model: ConversationModel = getSettings().bridgeModel,
-  purpose: LlmPurpose = 'bridge'
-): Promise<string> {
-  return completeText(model, conversationLocale(), system, user, maxTokens, withTimeoutSignal(signal, 30_000), purpose)
 }
 
 /**

@@ -67,8 +67,8 @@ export function setConversationOwner(next: ConversationOwner | null): void {
 export const COMPRESS_AT_TOKENS = 100_000
 export const LIMIT_TOKENS = 200_000
 /**
- * Above this the compaction runs synchronously before the turn. It guards against replaying a long
- * log that has no checkpoint, and stays well below the 1M API window.
+ * Above this no turn is sent until a compaction brings the context down. It guards against replaying
+ * a long log that has no checkpoint, and stays well below the 1M API window.
  */
 export const HARD_LIMIT_TOKENS = 800_000
 /** How many of the most recent turns stay raw through a compaction, so that card ids, paths and the thread of the conversation survive. */

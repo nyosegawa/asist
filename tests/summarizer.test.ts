@@ -1,15 +1,29 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { StopReason } from '@shared/conversation'
+import { effortOptions, type ConversationModel } from '@shared/llm-catalog'
+
+type Completion = { text: string; stop: StopReason }
+const written = (text: string): Completion => ({ text, stop: 'end' })
 
 const mocks = vi.hoisted(() => ({
-  quickText: vi.fn(async () => 'SUMMARY'),
-  conversationLocale: 'ja-JP' as 'ja-JP' | 'ko-KR' | 'en-US'
+  completeText: vi.fn(
+    async (_model: unknown, _locale: string, _system: string, _user: string, _maxTokens: number, _signal: AbortSignal, _purpose: string): Promise<Completion> =>
+      ({ text: 'SUMMARY', stop: 'end' })
+  ),
+  conversationLocale: 'ja-JP' as 'ja-JP' | 'ko-KR' | 'en-US',
+  conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' } as ConversationModel
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
-vi.mock('../src/main/services/llm', () => ({ quickText: mocks.quickText }))
+vi.mock('../src/main/services/llm', () => ({ completeText: mocks.completeText }))
 vi.mock('../src/main/services/settings', () => ({
-  getSettings: () => ({ conversationLocale: mocks.conversationLocale, conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' } })
+  getSettings: () => ({ conversationLocale: mocks.conversationLocale, conversationModel: mocks.conversationModel })
 }))
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 /** The handover summary is read back into the next conversation, so it is written in the language that conversation is held in. */
 describe('the handover summary', () => {
@@ -25,7 +39,7 @@ describe('the handover summary', () => {
     mocks.conversationLocale = 'ko-KR'
     const { summarizeHandoff } = await import('../src/main/services/brain/summarizer')
     await summarizeHandoff('OLD', 'LOG')
-    const [system, user] = mocks.quickText.mock.calls[0] as unknown as [string, string]
+    const [, , system, user] = mocks.completeText.mock.calls[0]
     expect(system).toContain('bullet points in Korean')
     expect(user).toContain('OLD')
     expect(user).toContain('LOG')
@@ -49,7 +63,7 @@ describe('the handover summary', () => {
     const unitsPerSentence = language === 'ja' ? sentence.length : sentence.trim().split(/\s+/).length
     const ofLength = (units: number): string => sentence.repeat(Math.floor(units / unitsPerSentence)).trim()
     const compactWith = async (summary: string): Promise<string> => {
-      mocks.quickText.mockResolvedValueOnce(summary)
+      mocks.completeText.mockResolvedValueOnce(written(summary))
       const history = new ConversationHistory({
         recentTurns: 0,
         compressAtTokens: 0,
@@ -69,5 +83,79 @@ describe('the handover summary', () => {
     }
     expect(await compactWith(ofLength(budget))).toBe(ofLength(budget))
     expect(await compactWith(ofLength(10 * budget))).toBe('')
+  })
+
+  it.each([
+    { provider: 'anthropic', id: 'claude-opus-5', effort: 'max' },
+    { provider: 'openai', id: 'gpt-5.6-sol', effort: 'high' },
+    { provider: 'anthropic', id: 'claude-haiku-4-5' }
+  ] as ConversationModel[])('writes a summary on $id at the shallowest depth it takes, with room for one twice its budget', async (configured) => {
+    mocks.conversationLocale = 'ja-JP'
+    mocks.conversationModel = configured
+    try {
+      const { SUMMARY_BUDGET, summarizeHandoff } = await import('../src/main/services/brain/summarizer')
+      await summarizeHandoff('', 'LOG')
+      const [model, , , , maxTokens] = mocks.completeText.mock.lastCall!
+      expect(model).toEqual({ ...configured, effort: effortOptions(configured)[0] })
+      // Twice the Japanese budget in Claude's tokens, at 1.028 characters a token (Legalscape, September 2026), before any thinking.
+      expect(maxTokens).toBeGreaterThan(Math.ceil((2 * SUMMARY_BUDGET.ja) / 1.028))
+    } finally {
+      mocks.conversationModel = { provider: 'anthropic', id: 'claude-sonnet-5' }
+    }
+  })
+
+  it('refuses a summary the output limit cut off before its last headings, and keeps the one before it', async () => {
+    mocks.conversationLocale = 'ja-JP'
+    const { summarizeHandoff } = await import('../src/main/services/brain/summarizer')
+    const { ConversationHistory } = await import('../src/main/services/brain/history')
+    const history = new ConversationHistory({
+      recentTurns: 0,
+      compressAtTokens: 0,
+      limitTokens: 0,
+      hardLimitTokens: 1_000_000,
+      load: () => [{ t: 0, kind: 'checkpoint', summary: '1. 話題と進捗\n- 旅行\n5. 約束と具体データ\n- 10月3日出発', records: [] }],
+      saveCheckpoint: () => {},
+      summarize: summarizeHandoff,
+      locale: () => 'ja-JP',
+      onError: () => {}
+    })
+    history.ensureLoaded()
+    history.apply({ t: 1, kind: 'user', turnId: 1, text: '窓側の席にして' })
+    history.apply({ t: 2, kind: 'assistant', turnId: 1, text: '窓側にしました。' })
+    mocks.completeText.mockResolvedValueOnce({ text: '1. 話題と進捗\n- 旅行\n2. 決まったこと\n- 窓側の席', stop: 'max_tokens' })
+    await history.compact('quiet')
+    expect(history.summary).toContain('10月3日出発')
+    expect(history.turnCount).toBe(1)
+  })
+
+  it('lets the summary of a long log run as long as the slowest conversation model takes to read it and write up to its output limit', async () => {
+    mocks.conversationLocale = 'ja-JP'
+    vi.useFakeTimers()
+    // AbortSignal.timeout runs on Node's own timers, which fake timers do not reach, so it is rebuilt on setTimeout.
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const controller = new AbortController()
+      setTimeout(() => controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError')), ms)
+      return controller.signal
+    })
+    // Claude Opus 5 at low effort starts after 2.8 seconds, reads 10,000 tokens in 0.218 seconds (Epoch AI,
+    // September 2026) and writes 59.6 tokens a second (Artificial Analysis, checked 2026-09-26).
+    const takesMs = (input: string, maxTokens: number): number => 2800 + (input.length / 4 / 10_000) * 218 + (maxTokens / 59.6) * 1000
+    mocks.completeText.mockImplementationOnce(
+      (_model, _locale, system, user, maxTokens, signal) =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => resolve(written('SUMMARY')), takesMs(system + user, maxTokens))
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer)
+            reject(signal.reason)
+          })
+        })
+    )
+    const { summarizeHandoff } = await import('../src/main/services/brain/summarizer')
+    // About 800,000 tokens of log, close to the hard limit of the context.
+    const summary = summarizeHandoff('', 'User: book the window seat on the third\n'.repeat(80_000))
+    const outcome = summary.then(() => 'written', () => 'cut off')
+    const [, , system, user, maxTokens] = mocks.completeText.mock.lastCall!
+    await vi.advanceTimersByTimeAsync(takesMs(system + user, maxTokens))
+    expect(await outcome).toBe('written')
   })
 })

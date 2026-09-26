@@ -22,7 +22,11 @@ const QUIET_MS = 5 * 60_000
 export const compactionJob: MaintenanceJob = {
   name: 'compaction',
   conditions: { quietMs: QUIET_MS },
-  due: () => history.needsCompaction() !== 'none',
+  // After a start no turn may have read the log yet, and an unread history looks empty.
+  due: () => {
+    history.ensureLoaded()
+    return history.needsCompaction() !== 'none'
+  },
   run: () => history.compact('quiet')
 }
 

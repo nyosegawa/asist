@@ -49,13 +49,16 @@ export interface ConversationMessage {
   native?: NativeOutput
 }
 
+/** The layers of the system prompt in the order they are sent, from the one that changes least often. */
+export const SYSTEM_LAYER_NAMES = ['base', 'memory', 'summary'] as const
+
 /**
  * One layer of the system prompt. Providers with prompt cache breakpoints place one after each layer.
  * No layer changes from turn to turn: the messages are cached behind the system prompt, so such a
  * layer would send the whole history again on every turn.
  */
 export interface SystemLayer {
-  name: 'base' | 'memory' | 'summary'
+  name: (typeof SYSTEM_LAYER_NAMES)[number]
   text: string
 }
 
@@ -115,7 +118,11 @@ export type SearchEvent =
 export interface ConversationResult {
   message: ConversationMessage
   stop: StopReason
-  usage: RoundUsage
+  /**
+   * Null when the response ended but its usage never arrived, which only a provider that sends the
+   * usage after the finish reason, Cerebras, can do. Nothing stands in for it.
+   */
+  usage: RoundUsage | null
   /**
    * A provider-side tool (web search) has not returned its result within this response. The next user
    * message must hold tool results only: added text makes the API treat the search as abandoned.

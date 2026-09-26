@@ -4,7 +4,7 @@ import { PlaybackDeliveryTracker } from '@shared/playback-delivery'
 describe('PlaybackDeliveryTracker', () => {
   it('resolves only the matching turn acknowledgement', async () => {
     const tracker = new PlaybackDeliveryTracker()
-    const delivery = tracker.expect(7, 1_000)
+    const delivery = tracker.expect(7)
 
     expect(tracker.acknowledge(8, 'started')).toBe(false)
     expect(tracker.acknowledge(7, 'started')).toBe(true)
@@ -12,17 +12,22 @@ describe('PlaybackDeliveryTracker', () => {
     expect(tracker.acknowledge(7, 'interrupted')).toBe(false)
   })
 
-  it('distinguishes an unplayed interruption from a timeout', async () => {
+  it('distinguishes an unplayed interruption from a timeout, and counts the timeout only from when it is given', async () => {
     vi.useFakeTimers()
     try {
       const tracker = new PlaybackDeliveryTracker()
-      const interrupted = tracker.expect(1, 1_000)
+      const interrupted = tracker.expect(1)
       tracker.acknowledge(1, 'interrupted')
       await expect(interrupted).resolves.toBe('interrupted')
 
-      const timedOut = tracker.expect(2, 1_000)
+      let outcome: string | null = null
+      void tracker.expect(2).then((result) => (outcome = result))
+      // A turn that takes long before it speaks has not failed to deliver.
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(outcome).toBeNull()
+      tracker.expire(2, 1_000)
       await vi.advanceTimersByTimeAsync(1_000)
-      await expect(timedOut).resolves.toBe('timeout')
+      expect(outcome).toBe('timeout')
     } finally {
       vi.useRealTimers()
     }
