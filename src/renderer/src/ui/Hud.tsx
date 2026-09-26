@@ -13,7 +13,6 @@ import { useLiveStore, useSettingsStore, useTurnStore } from '@/state/stores'
 function LiveHud(): React.JSX.Element {
   const t = useT()
   const live = useLiveStore()
-  const routerNote = useTurnStore((s) => s.routerNote)
   const minutes = live.usage ? live.usage.sessionSeconds / 60 : null
   const metrics: Array<{ key: string; label: string; value: string | null; big?: boolean }> = [
     { key: 'connection', label: t('hud.live.title'), value: t(`hud.connection.${live.connection}`) },
@@ -31,14 +30,23 @@ function LiveHud(): React.JSX.Element {
             <span className={`hud-value${m.value === null ? ' is-empty' : ''}${m.big ? ' is-big' : ''}`}>{m.value ?? '—'}</span>
           </div>
         ))}
-        <div className="hud-metric is-router">
-          <span className="hud-label">{t('hud.metrics.router')}</span>
-          <span className="hud-value is-router" title={routerNote}>
-            {routerNote}
-          </span>
-        </div>
+        <RouterMetric />
       </div>
       <div className="hud-bar" aria-hidden />
+    </div>
+  )
+}
+
+/** What the latest turn's routing did. Before the first turn there is nothing to say, as for a latency not yet measured. */
+function RouterMetric(): React.JSX.Element {
+  const t = useT()
+  const routerNote = useTurnStore((s) => s.routerNote)
+  return (
+    <div className="hud-metric is-router">
+      <span className="hud-label">{t('hud.metrics.router')}</span>
+      <span className={`hud-value is-router${routerNote ? '' : ' is-empty'}`} title={routerNote || undefined}>
+        {routerNote || '—'}
+      </span>
     </div>
   )
 }
@@ -80,7 +88,6 @@ export function Hud(): React.JSX.Element {
 function CascadeHud(): React.JSX.Element {
   const t = useT()
   const timings = useTurnStore((s) => s.timings)
-  const routerNote = useTurnStore((s) => s.routerNote)
   const total = STAGES.reduce((sum, s) => sum + (timings[s.key] ?? 0), 0)
 
   return (
@@ -99,12 +106,7 @@ function CascadeHud(): React.JSX.Element {
             </div>
           )
         })}
-        <div className="hud-metric is-router">
-          <span className="hud-label">{t('hud.metrics.router')}</span>
-          <span className="hud-value is-router" title={routerNote}>
-            {routerNote}
-          </span>
-        </div>
+        <RouterMetric />
       </div>
 
       <div className="hud-bar">

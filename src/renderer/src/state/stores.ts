@@ -60,6 +60,7 @@ interface TurnState {
   activeTurnId: number
   /** Measurements of the latest turn, as shown in the HUD. */
   timings: TurnTimings
+  /** What the HUD says about the routing of the latest turn, empty until the first turn. */
   routerNote: string
   setPhase: (phase: Phase) => void
   setMic: (micState: TurnState['micState'], progress?: number) => void
@@ -77,7 +78,7 @@ export const useTurnStore = create<TurnState>((set) => ({
   partial: '',
   activeTurnId: -1,
   timings: {},
-  routerNote: 'idle',
+  routerNote: '',
   setPhase: (phase) => set({ phase }),
   setMic: (micState, progress = 0) => set({ micState, micProgress: progress }),
   setPartial: (partial) => set({ partial }),

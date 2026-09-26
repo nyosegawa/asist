@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Archive, ChevronDown, ChevronRight, CornerUpLeft, MailOpen, Paperclip, Reply, ReplyAll, Star, Trash2, X } from 'lucide-react'
+import { errorText } from '@shared/i18n/error-text'
 import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailMessage, type MailReply } from '@shared/mail'
 import { useMailStore, useToastStore } from '@/state/stores'
 import { fullTime, sizeLabel } from './format'
@@ -128,7 +129,7 @@ export function Reader({
     setBusy(true)
     try {
       const result = await window.api.mailReplySend({ reply: form.settled, body: form.text })
-      if (!result.saved) throw new Error(t('mail.composer.notSent'))
+      if (!result.saved) throw new Error(errorText('mail.composer.notSent'))
       toast({ kind: 'ok', title: t('mail.done.reply'), body: result.summary })
       setReply(null)
     } catch (err) {

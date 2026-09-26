@@ -56,9 +56,7 @@ it('permission denial does not enable integration and is shown as an error', asy
       .click()
   )
   expect(saveSettings).not.toHaveBeenCalled()
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-    '拒否'
-  )
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe(createTranslator('ja-JP')('settingsCalendar.authorization.denied'))
 })
 it('keeps reading and writing selections separate and excludes read-only destinations', async () => {
   requestAccess.mockResolvedValue(status)
