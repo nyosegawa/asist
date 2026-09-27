@@ -60,7 +60,8 @@ If the first-time setup or "Integrations" in the settings says the key couldn't 
 
 On Windows, speech recognition on your computer needs an NVIDIA GPU. When there is none it can use, "Listening" in the first-time setup and "Voice" in the settings show the reason in place of the model.
 
-- If it says no NVIDIA GPU was found, or that the GPU is too old, Qwen3-ASR cannot run on this computer. It needs a GeForce RTX 20 or GTX 16 generation GPU or later. Use Whisper running in the browser for speech recognition, or choose [GPT-Live or Gemini Live](/en/docs/settings/voice-engine/) as the voice engine.
+- If your computer has an NVIDIA GPU but it says none was found, the driver may be older than 580: drivers before 580 put `nvidia-smi`, which ASIST uses to look for the GPU, somewhere else. Update the driver and start ASIST again.
+- If your computer has no NVIDIA GPU, or it says the GPU is too old, Qwen3-ASR cannot run on this computer. It needs a GeForce RTX 20 or GTX 16 generation GPU or later. Use Whisper running in the browser for speech recognition, or choose [GPT-Live or Gemini Live](/en/docs/settings/voice-engine/) as the voice engine.
 - If it says the NVIDIA driver is too old, update the driver to version 580 or later and start ASIST again. ASIST checks the GPU and the driver when it starts.
 
 ## Agent jobs don't start

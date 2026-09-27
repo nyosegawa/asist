@@ -37,7 +37,7 @@ The speech recognition and speech models are downloaded into the standard Huggin
 API keys and mail passwords saved in the settings are encrypted with Electron's safeStorage and are never written as plain text. If encryption isn't available, ASIST doesn't save them and shows an error instead. How the encryption key is protected differs by OS.
 
 - On macOS, the key is kept in the keychain. If an app other than ASIST tries to read it, macOS asks you first.
-- On Windows, the key is encrypted with DPAPI, tied to your Windows user account, and kept in `Local State` in the folder of settings and data. Any program running as the same Windows user can decrypt this key and take out the saved keys. It protects them only when the files alone reach another user or another computer.
+- On Windows, the key is encrypted with DPAPI, tied to your Windows user account, and kept in `Local State` in the folder of settings and data. Any program running as the same Windows user can decrypt this key and take out the saved keys. What this encryption prevents is someone reading them when only the files reach another user or another computer.
 
 Child processes such as the Agent CLI, the Python workers and the speech engines receive no provider's API key.
 

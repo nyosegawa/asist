@@ -13,4 +13,4 @@ Open the settings with the gear icon in the Dock. The list of pages is on the le
 
 ## About
 
-The last page, "About", shows the version of ASIST, the licenses, and a list of the models and outside data ASIST uses. Each row of the list shows the provider, the license and a link to the provider's page. On a Mac it also shows the update status, and once a new version has finished downloading, "Restart now" switches to it. Updating on Windows is covered in [Updating and uninstalling](/en/docs/start/update/).
+The last page, "About", shows the version of ASIST, the update status, the licenses, and a list of the models and outside data ASIST uses. Each row of the list shows the provider, the license and a link to the provider's page. Once a new version has finished downloading, "Restart now" switches to it. Updating on Windows is covered in [Updating and uninstalling](/en/docs/start/update/).

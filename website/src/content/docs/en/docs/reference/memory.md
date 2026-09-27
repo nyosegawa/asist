@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Each prepared model stays resident in a process of its own. The table below is for a Mac: the values are the physical footprint from `vmmap --summary`, measured 30 seconds after launch on an M5 (32GB).
+Each prepared model stays resident in a process of its own. The table below gives the physical footprint from `vmmap --summary`, measured 30 seconds after launch on an M5 Mac (32GB).
 
 | Process | Model | Memory | Runs when | Measured on |
 |---|---|---|---|---|
