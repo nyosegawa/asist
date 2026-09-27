@@ -561,6 +561,32 @@ export const setup = defineMessages({
         'pt-BR': 'Escolha uma forma de falar.',
         'es-419': 'Elige una forma de hablar.',
         'es-ES': 'Elige una forma de hablar.'
+      },
+      chooseLive: {
+        'ja-JP': '使う音声モデルを選んでください。',
+        'en-US': 'Choose a voice model.',
+        'fr-FR': 'Choisissez un modèle vocal.',
+        'de-DE': 'Wählen Sie ein Sprachmodell.',
+        'hi-IN': 'एक वॉइस मॉडल चुनें।',
+        'id-ID': 'Pilih model suara.',
+        'it-IT': 'Scegli un modello vocale.',
+        'ko-KR': '사용할 음성 모델을 선택하십시오.',
+        'pt-BR': 'Escolha um modelo de voz.',
+        'es-419': 'Elige un modelo de voz.',
+        'es-ES': 'Elige un modelo de voz.'
+      },
+      enterLiveKey: {
+        'ja-JP': '{engine} に使う {provider} の API キーを入れてください。',
+        'en-US': 'Enter your {provider} API key for {engine}.',
+        'fr-FR': 'Saisissez votre clé API {provider} pour {engine}.',
+        'de-DE': 'Geben Sie Ihren API-Schlüssel von {provider} für {engine} ein.',
+        'hi-IN': '{engine} के लिए {provider} की अपनी API कुंजी डालें।',
+        'id-ID': 'Masukkan kunci API {provider} Anda untuk {engine}.',
+        'it-IT': 'Inserisci la tua chiave API di {provider} per {engine}.',
+        'ko-KR': '{engine}에 쓸 {provider} API 키를 입력하십시오.',
+        'pt-BR': 'Digite a sua chave de API de {provider} para {engine}.',
+        'es-419': 'Escribe tu clave de API de {provider} para {engine}.',
+        'es-ES': 'Introduce tu clave de API de {provider} para {engine}.'
       }
     },
     listening: {
@@ -1124,6 +1150,86 @@ export const setup = defineMessages({
       'pt-BR': 'Você pode mudar isso depois, na página Voz dos ajustes.',
       'es-419': 'Puedes cambiar esto más adelante en la página Voz de Configuración.',
       'es-ES': 'Elijas lo que elijas, puedes cambiarlo más adelante en la página “Voz” de Ajustes.'
+    },
+    live: {
+      title: {
+        'ja-JP': '音声モデルとリアルタイムで話す',
+        'en-US': 'Talk in real time with a voice model',
+        'fr-FR': 'Parler en temps réel avec un modèle vocal',
+        'de-DE': 'In Echtzeit mit einem Sprachmodell sprechen',
+        'hi-IN': 'वॉइस मॉडल से रीयल-टाइम में बात करें',
+        'id-ID': 'Bicara secara real-time dengan model suara',
+        'it-IT': 'Parlare in tempo reale con un modello vocale',
+        'ko-KR': '음성 모델과 실시간으로 말하기',
+        'pt-BR': 'Falar em tempo real com um modelo de voz',
+        'es-419': 'Hablar en tiempo real con un modelo de voz',
+        'es-ES': 'Hablar en tiempo real con un modelo de voz'
+      },
+      detail: {
+        'ja-JP': 'GPT-Live か Gemini Live が聞き取りと読み上げを受け持ちます。準備するのは API キーとマイクの許可だけです。',
+        'en-US': 'GPT-Live or Gemini Live listens and speaks. All you prepare is an API key and the microphone permission.',
+        'fr-FR': "GPT-Live ou Gemini Live écoute et parle. Il suffit de préparer une clé API et l'autorisation du microphone.",
+        'de-DE': 'GPT-Live oder Gemini Live hört zu und spricht. Vorzubereiten sind nur ein API-Schlüssel und die Erlaubnis für das Mikrofon.',
+        'hi-IN': 'GPT-Live या Gemini Live सुनता और बोलता है। आपको बस एक API कुंजी और माइक्रोफ़ोन की इजाज़त तैयार करनी है।',
+        'id-ID': 'GPT-Live atau Gemini Live yang mendengarkan dan berbicara. Yang perlu disiapkan hanya kunci API dan izin mikrofon.',
+        'it-IT': 'GPT-Live o Gemini Live ascolta e parla. Servono solo una chiave API e il permesso per il microfono.',
+        'ko-KR': 'GPT-Live 또는 Gemini Live가 듣고 말합니다. 준비할 것은 API 키와 마이크 권한뿐입니다.',
+        'pt-BR': 'O GPT-Live ou o Gemini Live ouve e fala. Você só prepara uma chave de API e a permissão do microfone.',
+        'es-419': 'GPT-Live o Gemini Live escucha y habla. Solo necesitas preparar una clave de API y el permiso del micrófono.',
+        'es-ES': 'GPT-Live o Gemini Live escucha y habla. Solo hay que preparar una clave de API y el permiso del micrófono.'
+      },
+      engineGroup: {
+        'ja-JP': '音声モデル',
+        'en-US': 'Voice model',
+        'fr-FR': 'Modèle vocal',
+        'de-DE': 'Sprachmodell',
+        'hi-IN': 'वॉइस मॉडल',
+        'id-ID': 'Model suara',
+        'it-IT': 'Modello vocale',
+        'ko-KR': '음성 모델',
+        'pt-BR': 'Modelo de voz',
+        'es-419': 'Modelo de voz',
+        'es-ES': 'Modelo de voz'
+      },
+      note: {
+        'ja-JP': 'どちらも声は各社のもので、話した音声は各社に送られます。声はあとから設定の「会話」で変えられます。',
+        'en-US': "Both speak in the provider's own voices, and what you say is sent to the provider. You can change the voice later on the Conversation page in Settings.",
+        'fr-FR': 'Les deux parlent avec les voix du fournisseur, et ce que vous dites lui est envoyé. Vous pourrez changer de voix plus tard sur la page Conversation des réglages.',
+        'de-DE': 'Beide sprechen mit den Stimmen des Anbieters, und was Sie sagen, wird an ihn gesendet. Die Stimme können Sie später auf der Seite „Gespräch“ in den Einstellungen ändern.',
+        'hi-IN': 'दोनों में आवाज़ प्रोवाइडर की होती है, और आपकी कही बात प्रोवाइडर को भेजी जाती है। आवाज़ आप बाद में सेटिंग्ज़ के "बातचीत" पेज पर बदल सकते हैं।',
+        'id-ID': 'Keduanya memakai suara milik penyedia, dan ucapan Anda dikirim ke penyedia itu. Suaranya bisa Anda ganti nanti di halaman Percakapan pada Pengaturan.',
+        'it-IT': 'Entrambi parlano con le voci del provider, e quello che dici viene inviato al provider. La voce si può cambiare più tardi nella pagina «Conversazione» delle impostazioni.',
+        'ko-KR': "둘 다 제공업체의 목소리로 말하며, 말한 음성은 제공업체로 보내집니다. 목소리는 나중에 설정의 '대화'에서 바꿀 수 있습니다.",
+        'pt-BR': 'Os dois falam com as vozes do provedor, e o que você diz é enviado a ele. Você pode mudar a voz depois, na página Conversa dos ajustes.',
+        'es-419': 'Ambos hablan con las voces del proveedor, y lo que dices se envía a ese proveedor. Puedes cambiar la voz más adelante en la página Conversación de Configuración.',
+        'es-ES': 'Ambos hablan con las voces del proveedor, y lo que dices se envía a ese proveedor. Puedes cambiar la voz más adelante en la página “Conversación” de Ajustes.'
+      },
+      keyNeeded: {
+        'ja-JP': '{engine} には {provider} の API キーが要ります。',
+        'en-US': '{engine} needs your {provider} API key.',
+        'fr-FR': '{engine} a besoin de votre clé API {provider}.',
+        'de-DE': '{engine} braucht Ihren API-Schlüssel von {provider}.',
+        'hi-IN': '{engine} के लिए {provider} की API कुंजी चाहिए।',
+        'id-ID': '{engine} memerlukan kunci API {provider} Anda.',
+        'it-IT': '{engine} richiede la tua chiave API di {provider}.',
+        'ko-KR': '{engine}에는 {provider} API 키가 필요합니다.',
+        'pt-BR': '{engine} precisa da sua chave de API de {provider}.',
+        'es-419': '{engine} necesita tu clave de API de {provider}.',
+        'es-ES': '{engine} necesita tu clave de API de {provider}.'
+      },
+      keyVerified: {
+        'ja-JP': '{engine} は、検証済みの {provider} のキーで動きます。',
+        'en-US': '{engine} will use the {provider} key you already verified.',
+        'fr-FR': '{engine} utilisera la clé {provider} déjà vérifiée.',
+        'de-DE': '{engine} verwendet den bereits geprüften Schlüssel von {provider}.',
+        'hi-IN': '{engine} पहले से जाँची हुई {provider} की कुंजी से चलेगा।',
+        'id-ID': '{engine} akan memakai kunci {provider} yang sudah terverifikasi.',
+        'it-IT': '{engine} userà la chiave di {provider} già verificata.',
+        'ko-KR': '이미 검증한 {provider} 키를 {engine}에서 사용합니다.',
+        'pt-BR': '{engine} vai usar a chave de {provider} já verificada.',
+        'es-419': '{engine} usará la clave de {provider} que ya verificaste.',
+        'es-ES': '{engine} usará la clave de {provider} que ya has verificado.'
+      }
     }
   },
   listening: {
@@ -2496,6 +2602,32 @@ export const setup = defineMessages({
       'pt-BR': 'Página Integrações dos ajustes',
       'es-419': 'Página Integraciones de Configuración',
       'es-ES': 'Página “Integraciones” de Ajustes'
+    },
+    liveEngine: {
+      'ja-JP': '声のエンジン',
+      'en-US': 'Voice engine',
+      'fr-FR': 'Moteur vocal',
+      'de-DE': 'Sprach-Engine',
+      'hi-IN': 'वॉइस इंजन',
+      'id-ID': 'Mesin suara',
+      'it-IT': 'Motore vocale',
+      'ko-KR': '음성 엔진',
+      'pt-BR': 'Motor de voz',
+      'es-419': 'Motor de voz',
+      'es-ES': 'Motor de voz'
+    },
+    liveEngineValue: {
+      'ja-JP': '{engine}、声は {voice}',
+      'en-US': '{engine} (voice: {voice})',
+      'fr-FR': '{engine} (voix : {voice})',
+      'de-DE': '{engine} (Stimme: {voice})',
+      'hi-IN': '{engine} (आवाज़: {voice})',
+      'id-ID': '{engine} (suara: {voice})',
+      'it-IT': '{engine} (voce: {voice})',
+      'ko-KR': '{engine} (목소리: {voice})',
+      'pt-BR': '{engine} (voz: {voice})',
+      'es-419': '{engine} (voz: {voice})',
+      'es-ES': '{engine} (voz: {voice})'
     }
   },
   completion: {
