@@ -67,6 +67,11 @@ const api = {
     status = { ...status, llmKeys: { ...status.llmKeys, [provider]: 'verified' } }
     return status
   }),
+  // As in main, the key already held for the provider is checked against the API and then reads as verified.
+  verifySavedApiKey: vi.fn(async (provider: string) => {
+    status = { ...status, llmKeys: { ...status.llmKeys, [provider]: 'verified' } }
+    return status
+  }),
   saveSettings: vi.fn(async (patch: Partial<AppSettings>) => {
     settings = { ...settings, ...patch }
     if (patch.conversationModel) status = { ...status, llm: verifiedKeys.has(patch.conversationModel.provider) }
@@ -161,7 +166,9 @@ beforeEach(async () => {
     ttsEngine: 'voicevox',
     asrModel: 'auto',
     micAutoStart: false,
-    localAsrEnabled: false
+    localAsrEnabled: false,
+    gptLive: { model: 'gpt-live-1', voice: 'marin' },
+    geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' }
   } as unknown as AppSettings
   status = {
     llm: false,
@@ -389,8 +396,8 @@ describe('first-run setup with a live engine', () => {
     await verifyKey(ja)
     await press(ja('setup.next'))
   }
-  /** Walks from the speaking screen through the microphone and the extras to the summary and presses start. */
-  const finishFromSpeaking = async (): Promise<void> => {
+  /** Walks from the speaking screen through the microphone and the extras to the summary. */
+  const toSummary = async (): Promise<void> => {
     await press(ja('setup.next'))
     expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.mic.title'))
     await press(ja('setup.mic.check'))
@@ -398,6 +405,9 @@ describe('first-run setup with a live engine', () => {
     await press(ja('setup.next'))
     await flush()
     await press(ja('setup.next'))
+  }
+  const finishFromSpeaking = async (): Promise<void> => {
+    await toSummary()
     await press(ja('setup.start'))
   }
 
@@ -454,13 +464,62 @@ describe('first-run setup with a live engine', () => {
     expect(button(ja('setup.next')).disabled).toBe(false)
   })
 
-  it('finishes with GPT-Live as the voice engine and turns the microphone on through it', async () => {
+  it('checks a key saved in an earlier session when its engine is chosen, instead of asking for it again', async () => {
+    status = { ...status, llmKeys: { ...status.llmKeys, openai: 'saved' } }
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gpt-live').click())
+    await flush()
+
+    expect(api.verifySavedApiKey).toHaveBeenCalledWith('openai')
+    expect(api.saveApiKey).not.toHaveBeenCalledWith('openai', expect.anything())
+    expect(container.querySelector('#su-key')).toBeNull()
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('lets a key set in the environment be verified again after a failed check, since a typed key cannot replace it', async () => {
+    status = { ...status, llmKeys: { ...status.llmKeys, google: 'saved' } }
+    api.verifySavedApiKey.mockRejectedValueOnce(new Error('offline'))
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gemini-live').click())
+    await flush()
+    expect(container.querySelector('.su-warn')?.textContent).toBe(ja('setup.model.savedKeyFailed'))
+    expect(button(ja('setup.next')).disabled).toBe(true)
+
+    // Main refuses to save a typed key while the environment holds one, so the recheck is the way on.
+    await press(ja('setup.model.verifySavedKey'))
+    expect(api.verifySavedApiKey).toHaveBeenCalledTimes(2)
+    expect(api.verifySavedApiKey).toHaveBeenLastCalledWith('google')
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('opens the reading step, which the live engine skipped, when the microphone is refused and the user switches to typing', async () => {
+    api.requestMicPermission.mockResolvedValueOnce(false)
     await toSpeaking()
     await press(live)
     await act(async () => engine('gpt-live').click())
     await typeKey('sk-live')
     await press(ja('setup.model.verifyAndSave'))
-    await finishFromSpeaking()
+    await press(ja('setup.next'))
+    await press(ja('setup.mic.check'))
+    await press(ja('setup.mic.switchToTyping'))
+
+    expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.tts.title'))
+    expect(stepStates()).toMatchObject({ [ja('setup.steps.tts.label')]: 'current', [ja('setup.steps.mic.label')]: 'skipped' })
+  })
+
+  it('finishes with GPT-Live as the voice engine and turns the microphone on through it', async () => {
+    settings = { ...settings, gptLive: { model: 'gpt-live-1', voice: 'cedar' } } as AppSettings
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gpt-live').click())
+    await typeKey('sk-live')
+    await press(ja('setup.model.verifyAndSave'))
+    await toSummary()
+    // The summary names the voice the settings hold, which the settings screen may have changed before.
+    expect(container.querySelector('.su-summary')?.textContent).toContain(ja('setup.summary.liveEngineValue', { engine: 'GPT-Live', voice: 'cedar' }))
+    await press(ja('setup.start'))
 
     expect(api.completeSetup).toHaveBeenCalledWith({
       voiceMode: 'gpt-live',

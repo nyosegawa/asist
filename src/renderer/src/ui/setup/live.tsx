@@ -23,7 +23,8 @@ export function LiveEngineChoice({
   apiKey,
   onApiKey,
   busy,
-  onVerify
+  onVerify,
+  onRecheck
 }: {
   engine: LiveEngine | null
   onEngine: (engine: LiveEngine) => void
@@ -34,6 +35,8 @@ export function LiveEngineChoice({
   onApiKey: (value: string) => void
   busy: boolean
   onVerify: () => void
+  /** Verifies the key main already holds for the provider, saved earlier or set in the environment. */
+  onRecheck: () => void
 }): React.JSX.Element {
   const t = useT()
   const info = engine ? LIVE_ENGINE_INFO[engine] : null
@@ -67,7 +70,7 @@ export function LiveEngineChoice({
         ) : (
           <>
             <p className="su-hint">{t('setup.speaking.live.keyNeeded', { engine: info.label, provider })}</p>
-            <ApiKeyField provider={info.provider} keyConfigured={keyConfigured} apiKey={apiKey} onApiKey={onApiKey} busy={busy} onVerify={onVerify} />
+            <ApiKeyField provider={info.provider} keyConfigured={keyConfigured} apiKey={apiKey} onApiKey={onApiKey} busy={busy} onVerify={onVerify} onRecheck={onRecheck} />
           </>
         ))}
     </>

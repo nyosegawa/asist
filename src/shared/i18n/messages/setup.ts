@@ -1192,7 +1192,7 @@ export const setup = defineMessages({
         'es-ES': 'Modelo de voz'
       },
       note: {
-        'ja-JP': 'どちらも声は各社のもので、話した音声は各社に送られます。声はあとから設定の「会話」で変えられます。',
+        'ja-JP': 'どちらも提供元の声で話し、話した音声は提供元に送られます。声はあとから設定の「会話」で変えられます。',
         'en-US': "Both speak in the provider's own voices, and what you say is sent to the provider. You can change the voice later on the Conversation page in Settings.",
         'fr-FR': 'Les deux parlent avec les voix du fournisseur, et ce que vous dites lui est envoyé. Vous pourrez changer de voix plus tard sur la page Conversation des réglages.',
         'de-DE': 'Beide sprechen mit den Stimmen des Anbieters, und was Sie sagen, wird an ihn gesendet. Die Stimme können Sie später auf der Seite „Gespräch“ in den Einstellungen ändern.',
@@ -1245,16 +1245,16 @@ export const setup = defineMessages({
           'es-ES': 'Escucha y habla, mientras que el modelo de conversación decide qué responder y ejecuta las herramientas. Se cobra por el tiempo que la sesión está abierta (0,05 $ por minuto).'
         },
         geminiLive: {
-          'ja-JP': '聞き取り、考え、ツールを呼び、読み上げます。音声の入出力の分数で課金されます(入力 1分 $0.005、出力 1分 $0.018)。',
+          'ja-JP': '聞き取り、考え、ツールを呼び、読み上げます。入力と出力の音声の長さに応じて課金されます(入力 1分 $0.005、出力 1分 $0.018)。',
           'en-US': 'Listens, decides, calls the tools and speaks. Billed for the minutes of audio in and out ($0.005 in, $0.018 out per minute).',
-          'fr-FR': "Écoute, décide, appelle les outils et lit la réponse. Les minutes d'audio entrant et sortant sont facturées (0,005 $ en entrée, 0,018 $ en sortie).",
-          'de-DE': 'Hört zu, entscheidet, ruft die Werkzeuge auf und spricht. Abgerechnet werden die Minuten ein- und ausgehendes Audio (0,005 $ ein, 0,018 $ aus).',
+          'fr-FR': "Écoute, décide, appelle les outils et lit la réponse. Les minutes d'audio entrant et sortant sont facturées (0,005 $ la minute en entrée, 0,018 $ la minute en sortie).",
+          'de-DE': 'Hört zu, entscheidet, ruft die Werkzeuge auf und spricht. Abgerechnet wird die Dauer des gesendeten und empfangenen Audios (0,005 $ pro Minute für die Eingabe, 0,018 $ pro Minute für die Ausgabe).',
           'hi-IN': 'सुनता है, तय करता है, टूल चलाता है और बोलता है। आने और जाने वाली आवाज़ के मिनटों का शुल्क लगता है (आने पर $0.005, जाने पर $0.018 प्रति मिनट)।',
-          'id-ID': 'Mendengarkan, memutuskan, memanggil tool, dan berbicara. Ditagih per menit audio yang masuk dan keluar ($0,005 masuk, $0,018 keluar).',
-          'it-IT': 'Ascolta, decide, chiama gli strumenti e legge la risposta. Il costo è calcolato sui minuti di audio in entrata e in uscita ($0,005 in entrata, $0,018 in uscita).',
+          'id-ID': 'Mendengarkan, memutuskan, memanggil tool, dan berbicara. Ditagih per menit audio yang masuk dan keluar ($0,005 per menit masuk, $0,018 per menit keluar).',
+          'it-IT': 'Ascolta, decide, chiama gli strumenti e legge la risposta. Il costo è calcolato sui minuti di audio in entrata e in uscita ($0,005 al minuto in entrata, $0,018 al minuto in uscita).',
           'ko-KR': '듣고, 생각하고, 도구를 부르고, 읽어줍니다. 음성 입출력의 분 단위로 요금이 매겨집니다(입력 1분 $0.005, 출력 1분 $0.018).',
-          'pt-BR': 'Ouve, decide, chama as ferramentas e fala. A cobrança é pelos minutos de áudio de entrada e de saída (US$ 0,005 na entrada e US$ 0,018 na saída).',
-          'es-419': 'Escucha, decide, llama a las herramientas y habla. Se cobra por los minutos de audio de entrada y de salida ($0.005 de entrada, $0.018 de salida).',
+          'pt-BR': 'Ouve, decide, chama as ferramentas e fala. A cobrança é pelos minutos de áudio de entrada e de saída (US$ 0,005 por minuto na entrada e US$ 0,018 por minuto na saída).',
+          'es-419': 'Escucha, decide, llama a las herramientas y habla. Se cobra por los minutos de audio de entrada y de salida ($0.005 por minuto de entrada, $0.018 por minuto de salida).',
           'es-ES': 'Escucha, decide, llama a las herramientas y habla. Se cobra por los minutos de audio de entrada y de salida (0,005 $ la entrada y 0,018 $ la salida, por minuto).'
         }
       }
@@ -2645,7 +2645,7 @@ export const setup = defineMessages({
       'es-ES': 'Motor de voz'
     },
     liveEngineValue: {
-      'ja-JP': '{engine}、声は {voice}',
+      'ja-JP': '{engine}(声: {voice})',
       'en-US': '{engine} (voice: {voice})',
       'fr-FR': '{engine} (voix : {voice})',
       'de-DE': '{engine} (Stimme: {voice})',
