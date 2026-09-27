@@ -35,15 +35,18 @@ const view = (): ReturnType<typeof useViewStore.getState> => useViewStore.getSta
 const settingsPage = (page: SettingsPage): DemoView => ({ open: () => view().openApp({ app: 'settings', page }) })
 
 /**
- * The integrations page of a machine whose calendar is Google's, signed in or not. Signing in from the
- * page succeeds at once, and signing out goes back to the page without an account.
+ * The integrations page of a machine whose calendar is Google's: signed in, signed out, or holding a sign-in
+ * another build saved. Signing in from the page succeeds at once, and signing out goes back to the page
+ * without an account.
  */
-const googleCalendarSettings = (signedIn: boolean): DemoView => ({
+const googleCalendarSettings = (signIn: 'signedIn' | 'signedOut' | 'unreadable'): DemoView => ({
   prepare: (api) => {
     const capabilities = api.getPlatformCapabilities
     api.getPlatformCapabilities = async () => ({ ...(await capabilities()), calendar: 'google' })
     const signedOut: CalendarStatus = { authorization: 'notDetermined', calendars: [], account: null }
-    let status = signedIn ? DEMO_GOOGLE_CALENDAR_STATUS : signedOut
+    const signedIn = signIn === 'signedIn'
+    let status: CalendarStatus =
+      signIn === 'signedIn' ? DEMO_GOOGLE_CALENDAR_STATUS : signIn === 'unreadable' ? { ...signedOut, authorization: 'unreadable' } : signedOut
     api.calendarStatus = async () => status
     api.calendarRequestAccess = async () => (status = DEMO_GOOGLE_CALENDAR_STATUS)
     api.calendarSignOut = async () => (status = signedOut)
@@ -144,8 +147,9 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   'settings/memory': settingsPage('memory'),
   'settings/agent': settingsPage('agent'),
   'settings/integrations': settingsPage('integrations'),
-  'settings/integrations/google': googleCalendarSettings(true),
-  'settings/integrations/google-signed-out': googleCalendarSettings(false),
+  'settings/integrations/google': googleCalendarSettings('signedIn'),
+  'settings/integrations/google-signed-out': googleCalendarSettings('signedOut'),
+  'settings/integrations/google-unreadable': googleCalendarSettings('unreadable'),
   'settings/models': settingsPage('models'),
   'settings/usage': settingsPage('usage'),
   'settings/about': settingsPage('about'),

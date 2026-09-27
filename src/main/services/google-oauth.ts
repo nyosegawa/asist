@@ -139,6 +139,8 @@ async function openLoopback(state: string, page: (signedIn: boolean) => string, 
   const timer = setTimeout(() => settle.reject(new Error(errorText('calendar.errors.googleSignInTimedOut', { minutes: Math.round(timeoutMs / 60_000) }))), timeoutMs)
   const abort = (): void => settle.reject(signal.reason)
   signal.addEventListener('abort', abort, { once: true })
+  // A sign-out or a newer sign-in may have come while the server was starting to listen.
+  if (signal.aborted) abort()
   return {
     uri: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     arrival,
@@ -151,6 +153,23 @@ async function openLoopback(state: string, page: (signedIn: boolean) => string, 
   }
 }
 
+/**
+ * The error code of a failed token request, which is also logged: redirect_uri_mismatch, invalid_client
+ * and the like tell what to fix in the Google Cloud project. The body never carries a token.
+ */
+async function googleError(response: Response, request: string): Promise<string | null> {
+  const body = (await response.json().catch(() => null)) as { error?: unknown } | null
+  const code = typeof body?.error === 'string' ? body.error : null
+  console.warn(`Google token ${request} failed: HTTP ${response.status} ${code ?? '(no error code)'}`)
+  return code
+}
+
+async function tokenOf(response: Response): Promise<z.infer<typeof tokenSchema>> {
+  const token = tokenSchema.safeParse(await response.json().catch(() => null))
+  if (!token.success) throw new Error(errorText('calendar.errors.googleBadResponse'), { cause: token.error })
+  return token.data
+}
+
 export class GoogleAuth {
   private access: { token: string; expiresAt: number } | null = null
   private refreshing: Promise<string> | null = null
@@ -161,9 +180,18 @@ export class GoogleAuth {
     return (this.deps.now ?? Date.now)()
   }
 
-  /** Throws SecretUnreadableError when the saved sign-in was encrypted by another build and cannot be read. */
-  signedIn(): boolean {
-    return this.deps.tokens.get('refreshToken') !== null
+  /**
+   * Whether a sign-in is saved. `unreadable` is one that another build encrypted, as when a run from the
+   * repository and the installed app share userData but not the key of safeStorage; it can only be
+   * replaced by a new sign-in or dropped by a sign-out.
+   */
+  signInState(): 'signedIn' | 'signedOut' | 'unreadable' {
+    try {
+      return this.deps.tokens.get('refreshToken') === null ? 'signedOut' : 'signedIn'
+    } catch (error) {
+      if (error instanceof SecretUnreadableError) return 'unreadable'
+      throw error
+    }
   }
 
   /** A valid access token, renewed with the saved refresh token when the one in memory is about to expire. */
@@ -180,6 +208,12 @@ export class GoogleAuth {
     if (this.access?.token === token) this.access = null
   }
 
+  /** Forgets a saved sign-in whose fresh access token Google still refuses, which only a new sign-in mends. */
+  signedOutByGoogle(): GoogleSignedOut {
+    this.forget()
+    return new GoogleSignedOut()
+  }
+
   private async refresh(): Promise<string> {
     const refreshToken = this.deps.tokens.get('refreshToken')
     if (refreshToken === null) throw new GoogleSignedOut()
@@ -190,16 +224,16 @@ export class GoogleAuth {
       client_secret: this.deps.client.secret
     })
     if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as { error?: unknown } | null
+      const body = await googleError(response, 'refresh')
       // Google answers invalid_grant when the user took the access back, when the password changed, and when
       // a sign-in made while the app is in testing passes its seven days. Only a new sign-in helps then.
-      if (response.status === 400 && body?.error === 'invalid_grant') {
+      if (response.status === 400 && body === 'invalid_grant') {
         this.forget()
         throw new GoogleSignedOut()
       }
       throw new Error(errorText('calendar.errors.googleRequestFailed', { status: response.status }))
     }
-    const token = tokenSchema.parse(await response.json())
+    const token = await tokenOf(response)
     this.access = { token: token.access_token, expiresAt: this.now() + token.expires_in * 1000 }
     return token.access_token
   }
@@ -230,10 +264,11 @@ export class GoogleAuth {
         // Google returns a refresh token only on a consent it shows, so a second sign-in would otherwise get none.
         prompt: 'consent'
       }).toString()
+      controller.signal.throwIfAborted()
       await this.deps.openBrowser(url.href)
       const { code, answer } = await loopback.arrival
       try {
-        await this.exchange(code, verifier, loopback.uri)
+        await this.exchange(code, verifier, loopback.uri, controller.signal)
       } catch (error) {
         answer(false)
         throw error
@@ -245,7 +280,11 @@ export class GoogleAuth {
     }
   }
 
-  private async exchange(code: string, verifier: string, redirectUri: string): Promise<void> {
+  /**
+   * Trades the code for tokens. The request is not aborted halfway, since Google may already have granted
+   * the tokens; a sign-out or a newer sign-in that came meanwhile has the new grant revoked instead of saved.
+   */
+  private async exchange(code: string, verifier: string, redirectUri: string, signal: AbortSignal): Promise<void> {
     const response = await this.post(GOOGLE_TOKEN_URL, {
       grant_type: 'authorization_code',
       code,
@@ -254,9 +293,16 @@ export class GoogleAuth {
       client_id: this.deps.client.id,
       client_secret: this.deps.client.secret
     })
-    if (!response.ok) throw new Error(errorText('calendar.errors.googleSignInFailed'))
-    const token = tokenSchema.parse(await response.json())
+    if (!response.ok) {
+      await googleError(response, 'code exchange')
+      throw new Error(errorText('calendar.errors.googleSignInFailed'))
+    }
+    const token = await tokenOf(response)
     if (!token.refresh_token) throw new Error(errorText('calendar.errors.googleSignInFailed'))
+    if (signal.aborted) {
+      await this.revoke(token.refresh_token)
+      throw signal.reason
+    }
     // The consent page lets the user leave out any of the scopes, and the calendar needs both.
     const granted = new Set((token.scope ?? '').split(' '))
     if (!GOOGLE_CALENDAR_SCOPES.every((scope) => granted.has(scope))) {

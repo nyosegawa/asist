@@ -36,11 +36,21 @@ const eventSchema = z.object({
   eventType: z.string().optional()
 })
 type GoogleEvent = z.infer<typeof eventSchema>
+const eventStatusSchema = z.object({ status: z.string().optional() })
+
+/**
+ * An event Google returned, or null for a cancelled one. A cancelled occurrence of a repeating event can
+ * come without its start and end, so the status is read before the rest.
+ */
+function liveEvent(value: unknown): GoogleEvent | null {
+  if (parseGoogle(eventStatusSchema, value).status === 'cancelled') return null
+  return parseGoogle(eventSchema, value)
+}
 const eventsPageSchema = z.object({
   summary: z.string(),
   timeZone: z.string(),
   accessRole: z.string(),
-  items: z.array(eventSchema),
+  items: z.array(z.unknown()),
   nextPageToken: z.string().optional()
 })
 const calendarEntrySchema = z.object({
@@ -157,6 +167,19 @@ interface Request {
   body?: unknown
   ifMatch?: string
   signal?: AbortSignal
+  /** A write, which the calendar must be told apart from an unknown result when nothing was sent. */
+  write?: boolean
+}
+
+/** A write that failed before it was sent, which therefore saved nothing. */
+const unsent = (error: unknown): unknown =>
+  error instanceof Error ? new CalendarWriteRejected(error.message, { cause: error }) : error
+
+/** Google's JSON read by the schema, or a failure for the user when it does not have the form ASIST reads. */
+function parseGoogle<T>(schema: z.ZodType<T>, value: unknown): T {
+  const parsed = schema.safeParse(value)
+  if (!parsed.success) throw new Error(errorText('calendar.errors.googleBadResponse'), { cause: parsed.error })
+  return parsed.data
 }
 
 export interface GoogleCalendarDependencies {
@@ -171,13 +194,19 @@ export class GoogleCalendarBackend implements CalendarBackend {
 
   /**
    * One request of the API. A 401 means Google refused the access token before doing anything, so the
-   * request is sent once more with a renewed one, a write included.
+   * request is sent once more with a renewed one, a write included. When the renewed one is refused too,
+   * the saved sign-in is dropped, so that the status and a new sign-in agree that there is none.
    */
   private async call(path: string, request: Request = {}): Promise<Response> {
     const url = new URL(`${API}${path}`)
     for (const [name, value] of request.query ?? []) url.searchParams.append(name, value)
     const send = async (): Promise<{ response: Response; token: string }> => {
-      const token = await this.deps.auth.accessToken()
+      let token: string
+      try {
+        token = await this.deps.auth.accessToken()
+      } catch (error) {
+        throw request.write ? unsent(error) : error
+      }
       try {
         const response = await this.deps.fetch(url, {
           method: request.method ?? 'GET',
@@ -198,15 +227,16 @@ export class GoogleCalendarBackend implements CalendarBackend {
     if (first.response.status !== 401) return first.response
     this.deps.auth.forgetAccessToken(first.token)
     const second = await send()
-    if (second.response.status === 401) throw new GoogleSignedOut()
-    return second.response
+    if (second.response.status !== 401) return second.response
+    const signedOut = this.deps.auth.signedOutByGoogle()
+    throw request.write ? unsent(signedOut) : signedOut
   }
 
   /** The JSON of a read, or its failure as an error for the user. */
   private async read<T>(path: string, schema: z.ZodType<T>, request: Request, notFound: Refusal): Promise<T> {
     const response = await this.call(path, request)
     if (!response.ok) throw new Error(await failure(response, notFound))
-    return schema.parse(await response.json())
+    return parseGoogle(schema, await response.json().catch(() => null))
   }
 
   private async calendarList(signal?: AbortSignal): Promise<z.infer<typeof calendarEntrySchema>[]> {
@@ -228,7 +258,8 @@ export class GoogleCalendarBackend implements CalendarBackend {
   /** Signed out, or signed in with the account's calendars. A saved sign-in Google no longer accepts reads as signed out. */
   async status(signal?: AbortSignal): Promise<CalendarStatus> {
     try {
-      if (!this.deps.auth.signedIn()) return { authorization: 'notDetermined', calendars: [], account: null }
+      const state = this.deps.auth.signInState()
+      if (state !== 'signedIn') return { authorization: state === 'unreadable' ? 'unreadable' : 'notDetermined', calendars: [], account: null }
       const entries = await this.calendarList(signal)
       // The id of the primary calendar is the address of the account.
       const account = entries.find((entry) => entry.primary)?.id ?? null
@@ -243,8 +274,9 @@ export class GoogleCalendarBackend implements CalendarBackend {
     }
   }
 
+  /** Signs in unless a readable sign-in is saved; one another build saved is replaced. */
   async requestAccess(): Promise<CalendarStatus> {
-    if (this.deps.auth.signedIn()) return this.status()
+    if (this.deps.auth.signInState() === 'signedIn') return this.status()
     try {
       await this.deps.auth.signIn()
     } catch (error) {
@@ -289,7 +321,7 @@ export class GoogleCalendarBackend implements CalendarBackend {
       )
       const calendar = { id: calendarId, title: page.summary, timeZone: page.timeZone, writable: accessWrites(page.accessRole) }
       // A working location is a place for the day that Google shows apart from the events.
-      events.push(...page.items.filter((item) => item.status !== 'cancelled' && item.eventType !== 'workingLocation').map((item) => toCalendarEvent(item, calendar)))
+      for (const item of page.items.map(liveEvent)) if (item && item.eventType !== 'workingLocation') events.push(toCalendarEvent(item, calendar))
       pageToken = page.nextPageToken
     } while (pageToken)
     return events
@@ -299,17 +331,17 @@ export class GoogleCalendarBackend implements CalendarBackend {
     const key = parseEventKey(eventId)
     const path = `/calendars/${encodeURIComponent(key.calendarId)}`
     const [item, entry] = await Promise.all([
-      this.read(`${path}/events/${encodeURIComponent(key.eventId)}`, eventSchema, { signal }, 'calendar.errors.eventNotFound'),
+      this.read(`${path}/events/${encodeURIComponent(key.eventId)}`, z.unknown(), { signal }, 'calendar.errors.eventNotFound').then(liveEvent),
       this.read(`/users/me/calendarList/${encodeURIComponent(key.calendarId)}`, calendarEntrySchema, { signal }, 'calendar.errors.calendarNotFound')
     ])
-    if (item.status === 'cancelled') throw new Error(errorText('calendar.errors.eventNotFound'))
+    if (!item) throw new Error(errorText('calendar.errors.eventNotFound'))
     return toCalendarEvent(item, { id: entry.id, title: entry.summary, timeZone: entry.timeZone, writable: accessWrites(entry.accessRole) })
   }
 
   async write(change: CalendarWrite): Promise<CalendarEvent> {
     if (change.operation === 'create') {
       const saved = await this.send(`/calendars/${encodeURIComponent(change.calendar.id)}/events`, { method: 'POST', body: googleEventBody(change.event, false) })
-      return toCalendarEvent(eventSchema.parse(await saved.json()), { ...change.calendar, timeZone: change.event.timeZone })
+      return toCalendarEvent(parseGoogle(eventSchema, await saved.json()), { ...change.calendar, timeZone: change.event.timeZone })
     }
     const { before } = change
     const key = parseEventKey(before.id)
@@ -320,7 +352,7 @@ export class GoogleCalendarBackend implements CalendarBackend {
       return before
     }
     const saved = await this.send(path, { method: 'PATCH', ifMatch: before.revision, body: googleEventBody(change.event, true) })
-    return toCalendarEvent(eventSchema.parse(await saved.json()), {
+    return toCalendarEvent(parseGoogle(eventSchema, await saved.json()), {
       id: before.calendarId,
       title: before.calendarTitle,
       timeZone: change.event.timeZone,
@@ -333,13 +365,7 @@ export class GoogleCalendarBackend implements CalendarBackend {
    * a 5xx or a lost connection leaves it unknown whether the event was saved.
    */
   private async send(path: string, request: Request): Promise<Response> {
-    let response: Response
-    try {
-      response = await this.call(path, request)
-    } catch (error) {
-      if (error instanceof GoogleSignedOut) throw new CalendarWriteRejected(error.message)
-      throw error
-    }
+    const response = await this.call(path, { ...request, write: true })
     if (response.ok) return response
     if (response.status >= 500) throw new Error(errorText('calendar.errors.googleRequestFailed', { status: response.status }))
     throw new CalendarWriteRejected(await failure(response, 'calendar.errors.eventNotFound'))

@@ -170,6 +170,19 @@ export const settingsCalendar = defineMessages({
       'pt-BR': 'O acesso ao calendário está permitido.',
       'es-419': 'El acceso al calendario está concedido.',
       'es-ES': 'El acceso al calendario está permitido.'
+    },
+    unreadable: {
+      'ja-JP': '保存した Google のログインを読めません。ログアウトするか、もう一度ログインしてください。',
+      'en-US': "The saved Google sign-in can't be read. Sign out, or sign in again.",
+      'fr-FR': 'La connexion Google enregistrée est illisible. Déconnectez-vous ou reconnectez-vous.',
+      'de-DE': 'Die gespeicherte Google-Anmeldung kann nicht gelesen werden. Melden Sie sich ab oder erneut an.',
+      'hi-IN': 'सेव किया गया Google साइन इन पढ़ा नहीं जा सकता। साइन आउट करें या फिर से साइन इन करें।',
+      'id-ID': 'Proses masuk Google yang tersimpan tidak bisa dibaca. Keluar, atau masuk lagi.',
+      'it-IT': "L'accesso a Google salvato non è leggibile. Esci o accedi di nuovo.",
+      'ko-KR': '저장한 Google 로그인을 읽을 수 없습니다. 로그아웃하거나 다시 로그인하십시오.',
+      'pt-BR': 'Não é possível ler o login do Google salvo. Saia ou entre de novo.',
+      'es-419': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.',
+      'es-ES': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.'
     }
   },
   access: {

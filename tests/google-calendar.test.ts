@@ -15,16 +15,20 @@ afterAll(() => rmSync(mocks.userData, { recursive: true, force: true }))
 
 import { CalendarService } from '../src/main/services/calendar-service'
 import { GoogleCalendarBackend, googleEventKey, toCalendarEvent } from '../src/main/services/google-calendar'
-import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_URL, GOOGLE_TOKEN_URL, GoogleAuth, type GoogleTokenId } from '../src/main/services/google-oauth'
-import type { EncryptedSecretStore } from '../src/main/services/encrypted-secrets'
+import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_URL, GOOGLE_TOKEN_URL, GoogleAuth, SignInReplaced, type GoogleTokenId } from '../src/main/services/google-oauth'
+import { SecretUnreadableError, type EncryptedSecretStore } from '../src/main/services/encrypted-secrets'
 import { googleSignInPage } from '../src/main/services/google-sign-in-page'
 
 const API = 'https://www.googleapis.com/calendar/v3'
 
-function memoryTokens(refreshToken: string | null = 'refresh-1'): EncryptedSecretStore<GoogleTokenId> & { value: string | null } {
+/** A token store in memory. `unreadable` stands for a token another build encrypted. */
+function memoryTokens(refreshToken: string | null | 'unreadable' = 'refresh-1'): EncryptedSecretStore<GoogleTokenId> & { value: string | null } {
   const store = {
     value: refreshToken,
-    get: () => store.value,
+    get: () => {
+      if (store.value === 'unreadable') throw new SecretUnreadableError('unreadable')
+      return store.value
+    },
     set: (_id: GoogleTokenId, secret: string) => {
       store.value = secret
     },
@@ -41,7 +45,7 @@ interface Call {
   headers: Record<string, string>
   body: string
 }
-type Route = (call: Call) => Response | undefined
+type Route = (call: Call) => Response | Promise<Response> | undefined
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -58,7 +62,7 @@ function fakeGoogle(...routes: Route[]): { fetch: typeof fetch; calls: Call[]; a
     }
     calls.push(call)
     for (const route of routes) {
-      const response = route(call)
+      const response = await route(call)
       if (response) return response
     }
     throw new Error(`no route for ${call.method} ${call.url.href}`)
@@ -120,8 +124,12 @@ describe('signing in to Google', () => {
 
   /** Signs in, answering the browser's return with what `redirect` builds from the URL ASIST opened. */
   async function signIn(redirect: (authorize: URL) => string, ...routes: Route[]) {
+    return signInWith(memoryTokens(null), redirect, ...routes)
+  }
+
+  async function signInWith(tokens: ReturnType<typeof memoryTokens>, redirect: (authorize: URL) => string, ...routes: Route[]) {
     const google = fakeGoogle(...routes)
-    const context = backendWith(google, memoryTokens(null))
+    const context = backendWith(google, tokens)
     let returned: Response | null = null
     context.openBrowser.mockImplementation(async (url: string) => {
       // The browser comes back to the loopback server, which is on this computer.
@@ -134,6 +142,10 @@ describe('signing in to Google', () => {
     await vi.waitFor(() => expect(returned).not.toBeNull())
     return { ...context, google, error: result, page: returned! }
   }
+
+  const returnsCode = (authorize: URL): string =>
+    `${authorize.searchParams.get('redirect_uri')}/?code=the-code&state=${authorize.searchParams.get('state')}`
+  const revokes: Route = (call) => (call.url.href === GOOGLE_REVOKE_URL ? new Response('', { status: 200 }) : undefined)
 
   const exchanges: Route = (call) =>
     call.url.href === GOOGLE_TOKEN_URL && new URLSearchParams(call.body).get('grant_type') === 'authorization_code'
@@ -192,6 +204,78 @@ describe('signing in to Google', () => {
     expect(new URLSearchParams(google.calls[1].body).get('token')).toBe('partial')
     expect(tokens.value).toBeNull()
   })
+
+  it('replaces a saved sign-in that this build cannot read, which the status shows as unreadable', async () => {
+    const tokens = memoryTokens('unreadable')
+    const { backend } = backendWith(fakeGoogle(), tokens)
+    expect(await backend.status()).toEqual({ authorization: 'unreadable', calendars: [], account: null })
+    const { error } = await signInWith(tokens, returnsCode, exchanges)
+    expect(error).toBeNull()
+    expect(tokens.value).toBe('refresh-new')
+  })
+
+  it('drops an unreadable sign-in on sign-out without asking Google to revoke what it cannot read', async () => {
+    const tokens = memoryTokens('unreadable')
+    const google = fakeGoogle()
+    const { backend } = backendWith(google, tokens)
+    expect(await backend.signOut()).toEqual({ authorization: 'notDetermined', calendars: [], account: null })
+    expect(tokens.value).toBeNull()
+    expect(google.calls).toHaveLength(0)
+  })
+
+  it('revokes and does not save the grant of a sign-in that a sign-out overtook during the code exchange', async () => {
+    let finishExchange!: () => void
+    const slowExchange: Route = (call) =>
+      call.url.href === GOOGLE_TOKEN_URL
+        ? new Promise((resolve) => (finishExchange = () => resolve(exchanges(call)!)))
+        : undefined
+    const tokens = memoryTokens(null)
+    const google = fakeGoogle(slowExchange, revokes)
+    const { auth, openBrowser } = backendWith(google, tokens)
+    openBrowser.mockImplementation(async (url: string) => void globalThis.fetch(returnsCode(new URL(url))))
+    const signingIn = auth.signIn().catch((error: unknown) => error)
+    await vi.waitFor(() => expect(finishExchange).toBeDefined())
+    await auth.signOut()
+    finishExchange()
+    expect(await signingIn).toBeInstanceOf(SignInReplaced)
+    expect(tokens.value).toBeNull()
+    const revoked = google.calls.filter((call) => call.url.href === GOOGLE_REVOKE_URL)
+    expect(revoked.map((call) => new URLSearchParams(call.body).get('token'))).toEqual(['refresh-new'])
+  })
+
+  it('gives up waiting for the browser after the time limit and closes the loopback server', async () => {
+    const google = fakeGoogle()
+    const openBrowser = vi.fn(async () => undefined)
+    const auth = new GoogleAuth({ client: { id: 'c', secret: 's' }, tokens: memoryTokens(null), fetch: google.fetch, openBrowser, page: googleSignInPage, signInTimeoutMs: 60 })
+    await expect(auth.signIn()).rejects.toThrow(errorText('calendar.errors.googleSignInTimedOut', { minutes: 0 }))
+    const redirect = new URL(openBrowser.mock.calls[0][0]).searchParams.get('redirect_uri')!
+    await expect(globalThis.fetch(redirect)).rejects.toThrow()
+  })
+
+  it('ends a sign-in replaced by a newer one without an error, the newer one signing in', async () => {
+    const tokens = memoryTokens(null)
+    const google = fakeGoogle(exchanges, calendarList)
+    const { backend, openBrowser } = backendWith(google, tokens)
+    const opened: string[] = []
+    openBrowser.mockImplementation(async (url: string) => void opened.push(url))
+    const first = backend.requestAccess()
+    await vi.waitFor(() => expect(opened).toHaveLength(1))
+    const second = backend.requestAccess()
+    await vi.waitFor(() => expect(opened).toHaveLength(2))
+    // The first request's browser tab was closed; the second comes back.
+    await globalThis.fetch(returnsCode(new URL(opened[1])))
+    expect(await second).toMatchObject({ authorization: 'fullAccess' })
+    expect(await first).toMatchObject({ authorization: expect.any(String) })
+    expect(tokens.value).toBe('refresh-new')
+  })
+
+  it('opens no browser for a sign-in stopped while its loopback server was starting', async () => {
+    const { auth, openBrowser } = backendWith(fakeGoogle(), memoryTokens(null))
+    const signingIn = auth.signIn().catch((error: unknown) => error)
+    await auth.signOut()
+    expect(await signingIn).toBeInstanceOf(SignInReplaced)
+    expect(openBrowser).not.toHaveBeenCalled()
+  })
 })
 
 describe('the Google sign-in over time', () => {
@@ -215,6 +299,17 @@ describe('the Google sign-in over time', () => {
     await expect(backend.events(['me@example.com'], '2026-09-15T00:00:00+09:00', '2026-09-16T00:00:00+09:00')).rejects.toThrow(
       errorText('calendar.errors.googleSignedOut')
     )
+  })
+
+  it('forgets a sign-in whose renewed access token Google still refuses, so that a new sign-in can start', async () => {
+    const google = fakeGoogle(refreshes, (call) => (call.url.href.startsWith(API) ? new Response('', { status: 401 }) : undefined))
+    const { backend, auth, tokens, openBrowser } = backendWith(google)
+    expect(await backend.status()).toMatchObject({ authorization: 'notDetermined' })
+    expect(auth.signInState()).toBe('signedOut')
+    expect(tokens.value).toBeNull()
+    void backend.requestAccess().catch(() => undefined)
+    await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledOnce())
+    await auth.signOut()
   })
 
   it('signs out by revoking the refresh token at Google and forgetting it', async () => {
@@ -286,33 +381,67 @@ describe('the Google calendar through CalendarService', () => {
     return { service: new CalendarService({ settings: () => settings, backend, confirm }), confirm }
   }
 
-  it('reads the status with one request and the calendar screen with one request per chosen calendar', async () => {
+  // The daily quota of the project cannot be raised, so one use reads at most the status and one page of
+  // events per chosen calendar, whatever else the reading does.
+  it('reads the calendar screen with no more than the status and one request per chosen calendar', async () => {
     const google = fakeGoogle(refreshes, calendarList, eventsOf('me@example.com', [timed]), eventsOf('team@group.calendar.google.com', []))
     const { service } = serviceWith(google)
     expect(await service.status()).toMatchObject({ authorization: 'fullAccess', account: 'me@example.com' })
-    expect(google.api()).toHaveLength(1)
     const events = await service.list({ start: '2026-08-31T00:00:00+09:00', end: '2026-10-12T00:00:00+09:00' })
     expect(events.map((event) => event.title)).toEqual(['打合せ'])
-    const reads = google.api().slice(1)
-    expect(reads.map((call) => decodeURIComponent(call.url.pathname))).toEqual([
-      '/calendar/v3/calendars/me@example.com/events',
-      '/calendar/v3/calendars/team@group.calendar.google.com/events'
-    ])
-    expect(reads[0].url.searchParams.get('singleEvents')).toBe('true')
-    // The access token is renewed once for the process, at the token endpoint, which the Calendar API's quota does not count.
-    expect(google.calls.filter((call) => call.url.href === GOOGLE_TOKEN_URL)).toHaveLength(1)
+    expect(google.api().length).toBeLessThanOrEqual(1 + settings.readCalendarIds.length)
   })
 
-  it('changes an event after the confirmation with four requests, the last one conditional on the approved ETag', async () => {
+  it('asks Google for the occurrences of repeating events, not their rules', async () => {
+    const google = fakeGoogle(refreshes, eventsOf('me@example.com', []), eventsOf('team@group.calendar.google.com', []))
+    const { service } = serviceWith(google)
+    await service.list({ start: '2026-09-14T00:00:00+09:00', end: '2026-09-21T00:00:00+09:00' })
+    for (const call of google.api()) expect(call.url.searchParams.get('singleEvents')).toBe('true')
+  })
+
+  it('follows the pages of a long calendar and keeps every event', async () => {
+    const pages: Route = (call) => {
+      if (!call.url.pathname.endsWith('/events') || call.method !== 'GET') return undefined
+      const second = call.url.searchParams.get('pageToken') === 'page-2'
+      const item = { ...timed, id: second ? 'ev-b' : 'ev-a', summary: second ? '二つ目' : '一つ目' }
+      return json({ summary: 'me@example.com', timeZone: 'Asia/Tokyo', accessRole: 'owner', items: [item], ...(second ? {} : { nextPageToken: 'page-2' }) })
+    }
+    const { backend } = backendWith(fakeGoogle(refreshes, pages))
+    const events = await backend.events(['me@example.com'], '2026-09-14T00:00:00+09:00', '2026-09-21T00:00:00+09:00')
+    expect(events.map((event) => event.title).sort()).toEqual(['一つ目', '二つ目'])
+  })
+
+  it('sends a request again once with a renewed access token when Google refuses the first with 401', async () => {
+    let refused = false
+    const expiredOnce: Route = (call) => {
+      if (!call.url.href.startsWith(API) || refused) return undefined
+      refused = true
+      return new Response('', { status: 401 })
+    }
+    const google = fakeGoogle(expiredOnce, refreshes, calendarList, (call) =>
+      call.method === 'POST' && call.url.href.startsWith(API) ? json({ ...timed, id: 'new' }) : undefined
+    )
+    const { service } = serviceWith(google)
+    await expect(service.change({ operation: 'create', event: fields }, new AbortController().signal)).resolves.toMatchObject({ saved: true })
+    expect(google.calls.filter((call) => call.url.href === GOOGLE_TOKEN_URL)).toHaveLength(2)
+    expect(google.api().filter((call) => call.method === 'POST')).toHaveLength(1)
+  })
+
+  it('reads nothing but sends no write before the confirmation, and one conditional write after it', async () => {
     const google = fakeGoogle(refreshes, calendarList, getsEvent, getsCalendar, (call) =>
       call.method === 'PATCH' ? json({ ...timed, etag: '"3001"', summary: fields.title, start: { dateTime: fields.start, timeZone: 'Asia/Tokyo' }, end: { dateTime: fields.end, timeZone: 'Asia/Tokyo' } }) : undefined
     )
     const { service, confirm } = serviceWith(google)
+    confirm.mockImplementation(async () => {
+      expect(google.api().filter((call) => call.method !== 'GET')).toHaveLength(0)
+      return true
+    })
     const result = await service.change({ operation: 'update', eventId: googleEventKey('me@example.com', 'ev1'), event: fields }, new AbortController().signal)
     expect(confirm).toHaveBeenCalledOnce()
     expect(result).toMatchObject({ saved: true, event: { title: fields.title, revision: '"3001"' } })
-    expect(google.api()).toHaveLength(4)
-    const patch = google.api()[3]
+    const writes = google.api().filter((call) => call.method !== 'GET')
+    expect(writes).toHaveLength(1)
+    const patch = writes[0]
     expect(patch.headers['if-match']).toBe('"3000"')
     expect(JSON.parse(patch.body)).toMatchObject({ start: { dateTime: fields.start, timeZone: 'Asia/Tokyo', date: null } })
   })
@@ -359,5 +488,44 @@ describe('the Google calendar through CalendarService', () => {
     const post = google.api().find((call) => call.method === 'POST')!
     expect(decodeURIComponent(post.url.pathname)).toBe('/calendar/v3/calendars/me@example.com/events')
     expect(JSON.parse(post.body)).toMatchObject({ summary: '休暇', start: { date: '2026-09-15' }, end: { date: '2026-09-16' } })
+  })
+
+  it('reports a write whose access token could not be renewed as refused, since nothing was sent', async () => {
+    let now = Date.parse('2026-09-15T00:00:00Z')
+    let renewals = 0
+    const renewsOnce: Route = (call) => {
+      if (call.url.href !== GOOGLE_TOKEN_URL) return undefined
+      renewals += 1
+      return renewals === 1 ? refreshes(call) : new Response('', { status: 503 })
+    }
+    const google = fakeGoogle(renewsOnce, calendarList)
+    const { backend } = backendWith(google, memoryTokens(), () => now)
+    const confirm = vi.fn(async () => {
+      // The access token expires while the confirmation is open.
+      now += 2 * 3600_000
+      return true
+    })
+    const service = new CalendarService({ settings: () => settings, backend, confirm })
+    const error = await service.change({ operation: 'create', event: fields }, new AbortController().signal).catch((e: Error) => e)
+    expect((error as Error).message).toBe(errorText('calendar.errors.googleRequestFailed', { status: 503 }))
+    expect(google.api().filter((call) => call.method !== 'GET')).toHaveLength(0)
+  })
+
+  it('finds no event in a cancelled occurrence Google returns without its times', async () => {
+    const cancelled: Route = (call) =>
+      call.method === 'GET' && call.url.pathname.includes('/events/') ? json({ id: 'ev1_20260915T010000Z', etag: '"9"', status: 'cancelled', recurringEventId: 'ev1' }) : undefined
+    const { backend } = backendWith(fakeGoogle(refreshes, getsCalendar, cancelled))
+    await expect(backend.event(googleEventKey('me@example.com', 'ev1_20260915T010000Z'))).rejects.toThrow(errorText('calendar.errors.eventNotFound'))
+  })
+
+  it('refuses to change one occurrence of a repeating event before asking for the confirmation', async () => {
+    const occurrence: Route = (call) =>
+      call.method === 'GET' && call.url.pathname.includes('/events/') ? json({ ...timed, id: 'ev1_20260915T010000Z', recurringEventId: 'ev1' }) : undefined
+    const google = fakeGoogle(refreshes, calendarList, getsCalendar, occurrence)
+    const { service, confirm } = serviceWith(google)
+    await expect(
+      service.change({ operation: 'delete', eventId: googleEventKey('me@example.com', 'ev1_20260915T010000Z') }, new AbortController().signal)
+    ).rejects.toThrow(errorText('calendar.errors.locked'))
+    expect(confirm).not.toHaveBeenCalled()
   })
 })

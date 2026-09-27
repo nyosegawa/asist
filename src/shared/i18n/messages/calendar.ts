@@ -721,6 +721,19 @@ export const calendar = defineMessages({
       'pt-BR': 'Você não entrou na sua conta do Google.',
       'es-419': 'No iniciaste sesión en Google.',
       'es-ES': 'No has iniciado sesión en Google.'
+    },
+    unreadable: {
+      'ja-JP': '保存した Google のログインを読めません。ログアウトするか、もう一度ログインしてください。',
+      'en-US': "The saved Google sign-in can't be read. Sign out, or sign in again.",
+      'fr-FR': 'La connexion Google enregistrée est illisible. Déconnectez-vous ou reconnectez-vous.',
+      'de-DE': 'Die gespeicherte Google-Anmeldung kann nicht gelesen werden. Melden Sie sich ab oder erneut an.',
+      'hi-IN': 'सेव किया गया Google साइन इन पढ़ा नहीं जा सकता। साइन आउट करें या फिर से साइन इन करें।',
+      'id-ID': 'Proses masuk Google yang tersimpan tidak bisa dibaca. Keluar, atau masuk lagi.',
+      'it-IT': "L'accesso a Google salvato non è leggibile. Esci o accedi di nuovo.",
+      'ko-KR': '저장한 Google 로그인을 읽을 수 없습니다. 로그아웃하거나 다시 로그인하십시오.',
+      'pt-BR': 'Não é possível ler o login do Google salvo. Saia ou entre de novo.',
+      'es-419': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.',
+      'es-ES': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.'
     }
   },
   card: {
@@ -1719,17 +1732,17 @@ export const calendar = defineMessages({
       'es-ES': 'El cifrado no está disponible en este ordenador, así que no se puede guardar el inicio de sesión de Google.'
     },
     tokenUnreadable: {
-      'ja-JP': '保存した Google のログインを読めません。ログアウトしてから、もう一度ログインしてください。',
-      'en-US': "The saved Google sign-in can't be read. Sign out, then sign in again.",
-      'fr-FR': 'La connexion Google enregistrée est illisible. Déconnectez-vous, puis reconnectez-vous.',
-      'de-DE': 'Die gespeicherte Google-Anmeldung kann nicht gelesen werden. Melden Sie sich ab und dann erneut an.',
-      'hi-IN': 'सेव किया गया Google साइन इन पढ़ा नहीं जा सकता। साइन आउट करें, फिर से साइन इन करें।',
-      'id-ID': 'Proses masuk Google yang tersimpan tidak bisa dibaca. Keluar, lalu masuk lagi.',
-      'it-IT': "L'accesso a Google salvato non è leggibile. Esci e poi accedi di nuovo.",
-      'ko-KR': '저장한 Google 로그인을 읽을 수 없습니다. 로그아웃한 뒤 다시 로그인하십시오.',
-      'pt-BR': 'Não é possível ler o login do Google salvo. Saia e entre de novo.',
-      'es-419': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión y vuelve a iniciarla.',
-      'es-ES': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión y vuelve a iniciarla.'
+      'ja-JP': '保存した Google のログインを読めません。ログアウトするか、もう一度ログインしてください。',
+      'en-US': "The saved Google sign-in can't be read. Sign out, or sign in again.",
+      'fr-FR': 'La connexion Google enregistrée est illisible. Déconnectez-vous ou reconnectez-vous.',
+      'de-DE': 'Die gespeicherte Google-Anmeldung kann nicht gelesen werden. Melden Sie sich ab oder erneut an.',
+      'hi-IN': 'सेव किया गया Google साइन इन पढ़ा नहीं जा सकता। साइन आउट करें या फिर से साइन इन करें।',
+      'id-ID': 'Proses masuk Google yang tersimpan tidak bisa dibaca. Keluar, atau masuk lagi.',
+      'it-IT': "L'accesso a Google salvato non è leggibile. Esci o accedi di nuovo.",
+      'ko-KR': '저장한 Google 로그인을 읽을 수 없습니다. 로그아웃하거나 다시 로그인하십시오.',
+      'pt-BR': 'Não é possível ler o login do Google salvo. Saia ou entre de novo.',
+      'es-419': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.',
+      'es-ES': 'No se puede leer el inicio de sesión de Google guardado. Cierra sesión o vuelve a iniciarla.'
     },
     tokenFileUnreadable: {
       'ja-JP': '{file} を読めません: {reason}',
@@ -1756,6 +1769,19 @@ export const calendar = defineMessages({
       'pt-BR': 'O conteúdo de {file} está corrompido. Apague o arquivo e entre de novo no Google.',
       'es-419': 'El contenido de {file} está dañado. Borra el archivo y vuelve a iniciar sesión en Google.',
       'es-ES': 'El contenido de {file} está dañado. Borra el archivo y vuelve a iniciar sesión en Google.'
+    },
+    googleBadResponse: {
+      'ja-JP': 'Google から読めない形の応答が返りました。',
+      'en-US': 'Google returned an answer ASIST cannot read.',
+      'fr-FR': "Google a renvoyé une réponse qu'ASIST ne sait pas lire.",
+      'de-DE': 'Google hat eine Antwort geliefert, die ASIST nicht lesen kann.',
+      'hi-IN': 'Google ने ऐसा जवाब लौटाया जिसे ASIST पढ़ नहीं सकता।',
+      'id-ID': 'Google mengembalikan jawaban yang tidak bisa dibaca ASIST.',
+      'it-IT': 'Google ha restituito una risposta che ASIST non sa leggere.',
+      'ko-KR': 'Google이 ASIST가 읽을 수 없는 응답을 반환했습니다.',
+      'pt-BR': 'O Google retornou uma resposta que o ASIST não consegue ler.',
+      'es-419': 'Google devolvió una respuesta que ASIST no puede leer.',
+      'es-ES': 'Google ha devuelto una respuesta que ASIST no puede leer.'
     }
   },
   google: {

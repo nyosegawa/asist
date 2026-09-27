@@ -69,6 +69,8 @@ export function CalendarSettings({ settings }: { settings: AppSettings }): React
     status?.authorization === 'fullAccess' &&
     !status.calendars.some((item) => item.id === calendar.writeCalendarId && item.writable)
   const granted = status?.authorization === 'fullAccess'
+  // A sign-in another build saved can be dropped, as well as replaced by signing in again.
+  const canSignOut = granted || status?.authorization === 'unreadable'
   const refresh = (
     <Btn tone="quiet" disabled={busy} onClick={() => void run(async () => setStatus(await window.api.calendarStatus()))}>
       {t('settingsCalendar.refreshList')}
@@ -97,19 +99,22 @@ export function CalendarSettings({ settings }: { settings: AppSettings }): React
                 ? t('settingsCalendar.checkingAccess')
                 : granted
                   ? status.account ?? undefined
-                  : t('settingsCalendar.google.signedOutHint')
+                  : status.authorization === 'unreadable'
+                    ? t('settingsCalendar.authorization.unreadable')
+                    : t('settingsCalendar.google.signedOutHint')
           }
         >
           <Chip tone={granted ? 'ok' : status ? 'warn' : 'dim'}>
             {granted ? t('settingsCalendar.google.signedIn') : status ? t('settingsCalendar.google.notSignedIn') : t('settingsCalendar.checking')}
           </Chip>
-          {granted ? (
-            <Btn tone="quiet" disabled={busy} onClick={() => void run(async () => setStatus(await window.api.calendarSignOut()))}>
-              {t('settingsCalendar.google.signOut')}
-            </Btn>
-          ) : (
+          {!granted && (
             <Btn tone="primary" disabled={busy || !status} onClick={signIn}>
               {t('settingsCalendar.google.signIn')}
+            </Btn>
+          )}
+          {canSignOut && (
+            <Btn tone="quiet" disabled={busy} onClick={() => void run(async () => setStatus(await window.api.calendarSignOut()))}>
+              {t('settingsCalendar.google.signOut')}
             </Btn>
           )}
         </Row>

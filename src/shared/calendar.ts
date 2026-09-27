@@ -23,7 +23,9 @@ export const calendarStatusSchema = z.object({
     'denied',
     'restricted',
     'writeOnly',
-    'fullAccess'
+    'fullAccess',
+    // A Google sign-in is saved but another build encrypted it, so this one cannot read it.
+    'unreadable'
   ]),
   calendars: z.array(calendarAccountSchema),
   /** The Google account signed in. EventKit has none, since it reads every account added to macOS. */

@@ -68,7 +68,7 @@ ASIST_CALENDAR_BACKEND=google
 
 クライアント ID とシークレットは、`electron.vite.config.ts` がビルドのときに main プロセスへ埋め込みます。`npm run dev` では起動するときの `.env` を、`npm run dist:mac` などでは実行したシェルの環境変数か `.env` を読みます。CI では、アプリを作る `build` と `build-windows` の job にだけ、リポジトリの secret から同じ名前で渡します。クライアントがないまま `ASIST_CALENDAR_BACKEND=google` で起動すると、起動はそのことを伝えるエラーで止まります。`ASIST_CALENDAR_BACKEND` は起動するときに読むので、ビルドし直さずに切り替えられます。
 
-ログインの refresh token は、API キーと同じく safeStorage で暗号化して `userData/google-calendar.json` に保存します。開発版とインストールしたアプリでは macOS の鍵が違うので、一方でログインしたものはもう一方では読めません。読めないときは、ログアウトしてからログインし直します。アプリが審査の前の「テスト中」のあいだは、Google がログインを7日で切るので、そのあとは設定から再びログインします。
+ログインの refresh token は、API キーと同じく safeStorage で暗号化して `userData/google-calendar.json` に保存します。開発版とインストールしたアプリでは macOS の鍵が違うので、一方でログインしたものはもう一方では読めません。設定には読めないことが出るので、ログインし直すか、ログアウトします。アプリが審査の前の「テスト中」のあいだは、Google がログインを7日で切るので、そのあとは設定から再びログインします。
 
 ## CI
 

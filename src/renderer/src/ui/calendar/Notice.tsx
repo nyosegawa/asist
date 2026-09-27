@@ -8,7 +8,8 @@ const ACCESS_HINT = {
   notDetermined: 'calendar.access.notDetermined',
   denied: 'calendar.access.denied',
   restricted: 'calendar.access.restricted',
-  writeOnly: 'calendar.access.writeOnly'
+  writeOnly: 'calendar.access.writeOnly',
+  unreadable: 'calendar.access.unreadable'
 } as const satisfies Record<Exclude<CalendarStatus['authorization'], 'fullAccess'>, MessageKey>
 
 /**
@@ -51,11 +52,11 @@ export function Notice({
       </div>
     )
   if (!status) return <div className="cal-notice">{t('calendar.notice.checking')}</div>
-  // Google is either signed in or not; signing in happens in the browser.
+  // Google is signed in or not, or holds a sign-in this build cannot read, which a new sign-in replaces.
   if (status.authorization !== 'fullAccess' && platformCapabilities().calendar === 'google')
     return (
       <div className="cal-notice">
-        <p>{t('calendar.access.googleSignedOut')}</p>
+        <p>{t(status.authorization === 'unreadable' ? 'calendar.access.unreadable' : 'calendar.access.googleSignedOut')}</p>
         <button className={button} onClick={onRequestAccess}>
           {t('calendar.notice.signIn')}
         </button>

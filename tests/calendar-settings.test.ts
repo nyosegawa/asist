@@ -133,6 +133,17 @@ describe('with Google Calendar', () => {
     expect(saveSettings).not.toHaveBeenCalled()
   })
 
+  it('offers both a sign-out and a new sign-in for a saved sign-in this build cannot read', async () => {
+    calendarStatus.mockResolvedValue({ authorization: 'unreadable', calendars: [], account: null })
+    signOut.mockResolvedValue(signedOut)
+    await act(async () => root.render(React.createElement(Harness)))
+    expect(container.textContent).toContain(t('settingsCalendar.authorization.unreadable'))
+    expect(button(t('settingsCalendar.google.signIn')).disabled).toBe(false)
+    await act(async () => button(t('settingsCalendar.google.signOut')).click())
+    expect(signOut).toHaveBeenCalledOnce()
+    expect(container.textContent).toContain(t('settingsCalendar.google.signedOutHint'))
+  })
+
   it('shows only the latest of two sign-ins when the first is replaced', async () => {
     calendarStatus.mockResolvedValue(signedOut)
     let finishFirst!: (value: unknown) => void
