@@ -16,7 +16,9 @@ import { localDate, type UsageDay } from '@shared/api-usage'
 import { SettingsDialog } from '../src/renderer/src/ui/SettingsDialog'
 import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
-import { asrModelSpec } from '@shared/asr-models'
+import { asrModelSpec, offeredAsrModels } from '@shared/asr-models'
+import { CREDITS } from '@shared/credits'
+import type { PlatformCapabilities, SpeechRuntime } from '@shared/platform'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
@@ -114,6 +116,7 @@ const api = {
   embeddingPrepare: vi.fn(async () => ({ ok: true, message: '' })),
   onSetupProgress: vi.fn((_callback: (p: SetupProgress) => void) => () => {}),
   openExternal: vi.fn(async () => {}),
+  appVersion: vi.fn(async () => '1.0.0'),
   folderChoose: vi.fn(async (_startAt?: string): Promise<string | null> => null),
   apiUsage: vi.fn(async (): Promise<UsageDay[]> => [
     {
@@ -936,5 +939,39 @@ describe('the global hotkey on the voice page', () => {
     await act(async () => {})
     const row = [...view.querySelectorAll('.st-row')].find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsVoice.mic.hotkey'))
     expect(row?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsVoice.mic.hotkeyFailed', { hotkey: '⌥Space' }))
+  })
+})
+
+describe('the models the about page credits', () => {
+  const row = (view: HTMLElement, label: string): Element | undefined =>
+    [...view.querySelectorAll('.st-row')].find((one) => one.querySelector('.st-row-label')?.textContent === label)
+  const builds = (runtime: SpeechRuntime) => offeredAsrModels(runtime).map((model) => asrModelSpec(runtime, model)!)
+  const about = async (capabilities: PlatformCapabilities): Promise<HTMLElement> => {
+    setCapabilities(capabilities)
+    const view = await render()
+    await act(async () => nav(view, 'about').click())
+    return view
+  }
+
+  afterEach(() => setCapabilities(MACOS))
+
+  it.each([
+    ['a Mac', MACOS, 'mlx', 'cuda'],
+    ['Windows with an NVIDIA GPU', WINDOWS, 'cuda', 'mlx']
+  ] as const)('credits on %s the speech recognition models of its own runtime and not those of the other', async (_machine, capabilities, runtime, other) => {
+    const view = await about(capabilities)
+    for (const build of builds(runtime)) {
+      const credit = row(view, build.label)
+      expect(credit?.querySelector('.st-row-hint')?.textContent).toBe(t(`settingsAbout.use.asr.${runtime}`))
+      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${build.id}`)
+    }
+    for (const build of builds(other)) expect(row(view, build.label)).toBeUndefined()
+  })
+
+  it('credits no local speech recognition model on Windows without a GPU, and still the Whisper that runs in the window', async () => {
+    const view = await about(WINDOWS_WITHOUT_GPU)
+    for (const build of [...builds('mlx'), ...builds('cuda')]) expect(row(view, build.label)).toBeUndefined()
+    const whisperInWindow = CREDITS.find((credit) => credit.id === 'asrWhisperOnnx')!
+    expect(row(view, whisperInWindow.name)?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.asrWhisperOnnx'))
   })
 })

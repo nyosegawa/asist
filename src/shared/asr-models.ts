@@ -152,10 +152,10 @@ export function isAsrModel(value: unknown): value is AsrModel {
 }
 
 /** The models a runtime offers with its build of each, in the order the screens list them. */
-const offered = (runtime: SpeechRuntime): Array<[ResolvedAsrModel, AsrModelSpec]> =>
+export const offeredAsrBuilds = (runtime: SpeechRuntime): Array<[ResolvedAsrModel, AsrModelSpec]> =>
   Object.entries(ASR_RUNTIME_MODELS[runtime].models) as Array<[ResolvedAsrModel, AsrModelSpec]>
 
-export const offeredAsrModels = (runtime: SpeechRuntime): ResolvedAsrModel[] => offered(runtime).map(([model]) => model)
+export const offeredAsrModels = (runtime: SpeechRuntime): ResolvedAsrModel[] => offeredAsrBuilds(runtime).map(([model]) => model)
 
 /** The runtime's build of a model, or null when the runtime does not offer that model. */
 export const asrModelSpec = (runtime: SpeechRuntime, model: ResolvedAsrModel): AsrModelSpec | null =>
@@ -197,7 +197,7 @@ export interface AsrModelChoice {
  * under its plain name, so that the choice shows what the setting holds rather than another model.
  */
 export function asrModelChoices(runtime: SpeechRuntime, selected: AsrModel): AsrModelChoice[] {
-  const choices = offered(runtime).map(([id, spec]) => ({ id, label: spec.label, offered: true }))
+  const choices = offeredAsrBuilds(runtime).map(([id, spec]) => ({ id, label: spec.label, offered: true }))
   if (selected === 'auto' || asrModelSpec(runtime, selected)) return choices
   return [...choices, { id: selected, label: ASR_MODEL_NAMES[selected], offered: false }]
 }
