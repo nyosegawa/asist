@@ -36,10 +36,10 @@ Windows の worker(`resources/cuda_asr_worker.py`)は、このやりとりをそ
   - cu130 を選ぶ理由は、RTX 20 から RTX 50 まで(compute capability 7.5〜12.0)を1つで扱えるからです。cu126 は RTX 50 を扱えず、torch 2.15 で無くなります。
 - **モデル。** Apache-2.0、BF16 です。リビジョンを固定します。
 
-| モデル | リビジョン | 大きさ | VRAM の見込み(未計測) |
+| モデル | リビジョン | 大きさ | VRAM(RTX 2080 の fp16 で実測) |
 |---|---|---|---|
-| `Qwen/Qwen3-ASR-1.7B-hf` | `bcd2b5b7f32b480ab5790554cfa8347f246a14f3` | 4.08 GB | 5〜6 GB |
-| `Qwen/Qwen3-ASR-0.6B-hf` | `7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c` | 1.57 GB | 約 2.5 GB |
+| `Qwen/Qwen3-ASR-1.7B-hf` | `bcd2b5b7f32b480ab5790554cfa8347f246a14f3` | 4.08 GB | 3.9 GB |
+| `Qwen/Qwen3-ASR-0.6B-hf` | `7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c` | 1.57 GB | 1.6 GB |
 
 - **精度。** Mac のモデル(MLX の 8bit)より、Windows のモデル(BF16)のほうが量子化しない分だけ精度が高いはずです。同じ Qwen3-ASR なので、日本語の聞き取りの傾向は揃います。
 
@@ -63,7 +63,7 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
   - `get_device_capability` が 7.5 以上であること
   - 満たさなければ、理由を付けて `fatal` を出します。
   - VRAM の空きは先に確かめません。足りなければモデルを読むところで失敗し、`fatal` になります。先に確かめるなら、しきい値を M5-5 の実測で決めます。
-- **型の選び方。** compute capability が 8.0 以上なら bf16 を、7.5(RTX 20)なら fp16 を使います。fp16 で精度が崩れないかは未確認なので、RTX 20 の結果を M5-5 で見て、崩れるなら RTX 20 を対象から外します。
+- **型の選び方。** compute capability が 8.0 以上なら bf16 を、7.5(RTX 20)なら fp16 を使います。RTX 2080 の fp16 は fp32 と同じ文字を返したので、RTX 20 も対象にします(実測は ADR 0021)。
 - **Mac での確かめ方。** 開発のときだけ、同じ worker を Mac の CPU(float32)で動かせます。MPS では動かしません。
   - 2026-09-27 に、Apple M5 の Mac の CPU で 0.6B を動かしました。4.0 秒の音声に約 1.0 秒、2.5 秒の音声に約 0.5 秒かかり、起動は約 2 秒でした。
   - `say -v Kyoko` の「今日の東京の天気を教えて。」はそのまま書き起こせました。「歯医者の予約」は「配車の予約」になりました。
@@ -116,12 +116,9 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 - **モデルの推奨。** VRAM の量からモデルの推奨を決めます。しきい値は M5-5 の実測で決め、仮に 8 GB 以上で 1.7B とします。
 - **2回目の確かめ。** worker も起動時に同じことを確かめ、違えば `fatal` にします。ドライバーを入れ替えた直後などに、2つの結果が食い違うことがあるためです。
 
-### 先に一度だけ試すこと
+### MLX の CUDA を試した結果
 
-- **MLX の CUDA。** MLX には Windows 向けの CUDA の wheel があります(`mlx-cuda-13` 0.32.2)。`mlx-audio==0.4.7` と一緒に Windows 向けに解決できることも確かめました。
-- **動いた場合。** Mac と同じ worker とモデル(MLX の 8bit)をそのまま使えます。そうなれば、実行環境の違いは lock ファイルだけになります。
-- **不安な点。** ただし、MLX の公式の説明では、CUDA のバックエンドは Linux だけとなっています。
-- **確かめ方。** M5-5 の最初に1時間だけ試します。動き、速さも十分なら、transformers の案と比べて ADR で選びます。
+MLX の Windows 向けの CUDA の wheel(`mlx-cuda-13` 0.32.2)と `mlx-audio==0.4.7` は入り、GPU も見えました。しかし、最初の GPU の計算で 0xC06D007E(遅延読み込みの DLL が見つからない)で落ち、CUDA の DLL のフォルダを足しても同じでした(2026-09-27)。そのため、transformers の案にしました(ADR 0021)。
 
 ## マイクとエコーキャンセル
 
