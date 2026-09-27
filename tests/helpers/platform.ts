@@ -1,18 +1,47 @@
-import { deriveCapabilities, type Machine, type PlatformCapabilities } from '@shared/platform'
+import { nvidiaGpuSupport } from '@shared/nvidia-gpu'
+import { deriveCapabilities, type PlatformCapabilities } from '@shared/platform'
 
-const machine = (platform: string, arch: string, micCancelsEcho: boolean): Machine => ({
-  platform,
-  arch,
-  totalMemoryBytes: 32 * 1024 ** 3,
-  micCancelsEcho: () => micCancelsEcho
+const GIB = 1024 ** 3
+
+/** nvidia-smi is run only on Windows, so a Mac that asked for it would be a defect. */
+const noNvidiaSmi = (): never => {
+  throw new Error('nvidia-smi is not run on a Mac')
+}
+
+/** The microphone check is run only on Windows, so a Mac that asked for it would be a defect. */
+const noMicCheck = (): never => {
+  throw new Error('the microphone check is not run on a Mac')
+}
+
+/** The capabilities of a 32 GB Apple Silicon Mac. */
+export const MACOS = deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 32 * GIB, nvidiaGpu: noNvidiaSmi, micCancelsEcho: noMicCheck })
+
+/**
+ * An x64 Windows PC with an 8 GB RTX 2080, the machine the CUDA runtime was measured on, whose microphone
+ * Windows does not cancel the echo on, so that it captures through getUserMedia.
+ */
+export const WINDOWS = deriveCapabilities({
+  platform: 'win32',
+  arch: 'x64',
+  totalMemoryBytes: 32 * GIB,
+  nvidiaGpu: () => nvidiaGpuSupport('NVIDIA GeForce RTX 2080, 8192, 591.86, 7.5'),
+  micCancelsEcho: () => false
+})
+
+/** An x64 Windows PC where nvidia-smi could not run, so that it has no local speech models. */
+export const WINDOWS_WITHOUT_GPU = deriveCapabilities({
+  platform: 'win32',
+  arch: 'x64',
+  totalMemoryBytes: 32 * GIB,
+  nvidiaGpu: () => nvidiaGpuSupport(null),
+  micCancelsEcho: () => false
 })
 
 /**
- * The capabilities of a 32 GB Apple Silicon Mac and of an x64 Windows PC whose microphone Windows does not
- * cancel the echo on, which captures through getUserMedia.
+ * The fixture of the system the tests run on, for tests that run its real git or uv. Main's own
+ * capabilities would run nvidia-smi and open the real microphone on Windows.
  */
-export const MACOS = deriveCapabilities(machine('darwin', 'arm64', true))
-export const WINDOWS = deriveCapabilities(machine('win32', 'x64', false))
+export const HOST = process.platform === 'win32' ? WINDOWS : MACOS
 
 let current: PlatformCapabilities = MACOS
 

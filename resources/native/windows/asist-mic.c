@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <avrt.h>
 #include <audioclient.h>
+#include <audiopolicy.h>
 #include <mmdeviceapi.h>
 #include <mmreg.h>
 #include <stdarg.h>
@@ -49,6 +50,12 @@
 #define MAX_CHANGE_LIMIT 32
 /** 100 ms in the 100 ns units of REFERENCE_TIME; in event mode the engine still signals every period. */
 #define BUFFER_DURATION 1000000
+/**
+ * How long capture waits for the engine's event before it reads the stream anyway. An invalidated stream,
+ * after a format change or a Bluetooth profile switch, may never signal again, and only a read reports
+ * AUDCLNT_E_DEVICE_INVALIDATED.
+ */
+#define READ_TIMEOUT_MS 2000
 
 /**
  * The GUIDs of the interfaces and the class this program uses. The values are those of the Windows SDK
@@ -61,6 +68,8 @@ static const IID NOTIFICATION_INTERFACE = {0x7991EEC9, 0x7E89, 0x4D85, {0x83, 0x
 static const IID UNKNOWN_INTERFACE = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 static const IID AUDIO_CLIENT2_INTERFACE = {0x726778CD, 0xF60A, 0x4EDA, {0x82, 0xDE, 0xE4, 0x76, 0x10, 0xCD, 0x78, 0xAA}};
 static const IID CAPTURE_CLIENT_INTERFACE = {0xC8ADBD64, 0xE71E, 0x48A0, {0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17}};
+static const IID SESSION_CONTROL_INTERFACE = {0xF4B1A599, 0x7266, 0x4319, {0xA8, 0xCA, 0xE7, 0x0A, 0xCB, 0x11, 0xE8, 0xCD}};
+static const IID SESSION_CONTROL2_INTERFACE = {0xBFB7FF88, 0x7239, 0x4FC9, {0x8F, 0xA2, 0x07, 0xC9, 0x50, 0xBE, 0x9C, 0x6D}};
 
 /** PKEY_Device_FriendlyName of functiondiscoverykeys_devpkey.h, whose definition no library carries either. */
 static const PROPERTYKEY FRIENDLY_NAME = {{0xA45C254E, 0xDF1C, 0x4EFD, {0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0}}, 14};
@@ -417,8 +426,30 @@ static HRESULT drain(Capture *capture, HANDLE out)
     }
 }
 
+/**
+ * Opts the stream's session out of the ducking Windows applies while a communications stream runs, which
+ * by default lowers every other sound, the spoken reply included, by 80%. The macOS helper turns the same
+ * ducking off. A failure leaves capture working with the other sounds lowered, so it is only logged.
+ */
+static void keep_other_sounds(Capture *capture)
+{
+    IAudioSessionControl *session = NULL;
+    IAudioSessionControl2 *session2 = NULL;
+    HRESULT hr = IAudioClient2_GetService(capture->client, &SESSION_CONTROL_INTERFACE, (void **)&session);
+    if (SUCCEEDED(hr)) {
+        hr = IAudioSessionControl_QueryInterface(session, &SESSION_CONTROL2_INTERFACE, (void **)&session2);
+        IAudioSessionControl_Release(session);
+    }
+    if (SUCCEEDED(hr)) {
+        hr = IAudioSessionControl2_SetDuckingPreference(session2, TRUE);
+        IAudioSessionControl2_Release(session2);
+    }
+    if (FAILED(hr)) say("other sounds are lowered while %s is on (0x%08lx)", capture->microphone, (unsigned long)hr);
+}
+
 static int start_capture(Capture *capture, HANDLE ready)
 {
+    keep_other_sounds(capture);
     HRESULT hr = IAudioClient2_SetEventHandle(capture->client, ready);
     if (SUCCEEDED(hr)) hr = IAudioClient2_Start(capture->client);
     if (FAILED(hr)) {
@@ -559,7 +590,7 @@ static int capture_until_stopped(IMMDeviceEnumerator *enumerator, int limit, ULO
     events[1] = default_changed;
     events[2] = ready;
     for (;;) {
-        DWORD signalled = WaitForMultipleObjects(3, events, FALSE, INFINITE);
+        DWORD signalled = WaitForMultipleObjects(3, events, FALSE, READ_TIMEOUT_MS);
         if (signalled == WAIT_OBJECT_0) {
             status = EXIT_OK;
             break;
@@ -570,7 +601,7 @@ static int capture_until_stopped(IMMDeviceEnumerator *enumerator, int limit, ULO
             status = EXIT_DEVICE_CHANGED;
             break;
         }
-        if (signalled != WAIT_OBJECT_0 + 2) {
+        if (signalled != WAIT_OBJECT_0 + 2 && signalled != WAIT_TIMEOUT) {
             say("waiting for audio failed with error %lu", GetLastError());
             status = EXIT_NO_DEVICE;
             break;

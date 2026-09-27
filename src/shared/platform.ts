@@ -1,5 +1,6 @@
 import type { MessageKey } from './i18n'
 import { errorText } from './i18n/error-text'
+import type { NvidiaGpuSupport, NvidiaGpuUnavailable } from './nvidia-gpu'
 
 /**
  * What this OS and this machine can run, decided once in the main process and handed to the renderer
@@ -9,15 +10,23 @@ import { errorText } from './i18n/error-text'
 
 export type OsFamily = 'macos' | 'windows'
 
-/** The Python environment the local speech recognition and Qwen3-TTS run in on this machine. */
-export type SpeechRuntime = 'mlx'
+/**
+ * The Python environment the local speech models run in on this machine: MLX on an Apple Silicon Mac,
+ * and torch built for CUDA on Windows with an NVIDIA GPU, which runs only the speech recognition.
+ */
+export type SpeechRuntime = 'mlx' | 'cuda'
 
-/** Why this machine cannot run the local speech models, which the screens show in place of the choice. */
-export type SpeechRuntimeUnavailable = 'unsupported-os'
+/**
+ * Why this machine cannot run the local speech models, which the screens show in place of the choice.
+ * Only Windows can lack them, and only for want of a GPU the CUDA runtime runs on.
+ */
+export type SpeechRuntimeUnavailable = NvidiaGpuUnavailable
 
 /** The sentence the screens show, and an error carries, for each reason. */
 export const SPEECH_RUNTIME_UNAVAILABLE_TEXT = {
-  'unsupported-os': 'speechRecognition.unavailable.unsupportedOs'
+  'no-nvidia-gpu': 'speechRecognition.unavailable.noNvidiaGpu',
+  'gpu-too-old': 'speechRecognition.unavailable.gpuTooOld',
+  'driver-too-old': 'speechRecognition.unavailable.driverTooOld'
 } as const satisfies Record<SpeechRuntimeUnavailable, MessageKey>
 
 export interface PlatformCapabilities {
@@ -26,7 +35,11 @@ export interface PlatformCapabilities {
    * thing each OS does differently, such as where the agent CLIs are installed. No feature is gated on it.
    */
   os: OsFamily
-  /** The runtime of the local speech models with the memory it has, or why there is none. */
+  /**
+   * The runtime of the local speech models with the memory the models are loaded into, or why there is
+   * none. The memory is the Mac's own on mlx, which the models share with every other app, and the GPU's
+   * on cuda; each runtime's model table decides its recommendation from that number alone.
+   */
   speechRuntime: { kind: SpeechRuntime; memoryGb: number } | { kind: null; reason: SpeechRuntimeUnavailable }
   /**
    * The native microphone helper, which captures with the echo of everything the machine plays cancelled:
@@ -43,6 +56,8 @@ export interface Machine {
   platform: string
   arch: string
   totalMemoryBytes: number
+  /** Asked only on Windows, where it runs nvidia-smi. */
+  nvidiaGpu: () => NvidiaGpuSupport
   /**
    * Whether the Windows microphone helper finds echo cancellation on for the default microphone, which main
    * answers by running the helper's check. It is asked on Windows alone: every macOS the app supports has
@@ -55,7 +70,7 @@ export interface Machine {
  * The capabilities of a machine. Only Apple Silicon Macs and x64 Windows are built for; any other
  * combination fails, because a guess at what it can run would show features that then fail.
  */
-export function deriveCapabilities({ platform, arch, totalMemoryBytes, micCancelsEcho }: Machine): PlatformCapabilities {
+export function deriveCapabilities({ platform, arch, totalMemoryBytes, nvidiaGpu, micCancelsEcho }: Machine): PlatformCapabilities {
   if (platform === 'darwin' && arch === 'arm64') {
     return {
       os: 'macos',
@@ -66,9 +81,10 @@ export function deriveCapabilities({ platform, arch, totalMemoryBytes, micCancel
     }
   }
   if (platform === 'win32' && arch === 'x64') {
+    const gpu = nvidiaGpu()
     return {
       os: 'windows',
-      speechRuntime: { kind: null, reason: 'unsupported-os' },
+      speechRuntime: gpu.usable ? { kind: 'cuda', memoryGb: gpu.memoryGb } : { kind: null, reason: gpu.reason },
       nativeMic: micCancelsEcho(),
       calendar: false,
       // On a Windows 11 machine with PowerToys, Copilot and Claude running (2026-09-27), Alt+Space and
