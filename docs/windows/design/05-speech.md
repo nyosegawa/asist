@@ -61,10 +61,12 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 - **起動時の確かめ。** `ready` を出す前に、次のことを確かめます。
   - `torch.cuda.is_available()`
   - `get_device_capability` が 7.5 以上であること
-  - VRAM の空き
   - 満たさなければ、理由を付けて `fatal` を出します。
+  - VRAM の空きは先に確かめません。足りなければモデルを読むところで失敗し、`fatal` になります。先に確かめるなら、しきい値を M5-5 の実測で決めます。
 - **型の選び方。** compute capability が 8.0 以上なら bf16 を、7.5(RTX 20)なら fp16 を使います。fp16 で精度が崩れないかは未確認なので、RTX 20 の結果を M5-5 で見て、崩れるなら RTX 20 を対象から外します。
-- **Mac での確かめ方。** Mac の CPU(と MPS)でも同じ worker が動きます。そのため、M5-3 で、やりとりの形と日本語の結果を Mac で確かめられます。
+- **Mac での確かめ方。** 開発のときだけ、同じ worker を Mac の CPU(float32)で動かせます。MPS では動かしません。
+  - 2026-09-27 に、Apple M5 の Mac の CPU で 0.6B を動かしました。4.0 秒の音声に約 1.0 秒、2.5 秒の音声に約 0.5 秒かかり、起動は約 2 秒でした。
+  - `say -v Kyoko` の「今日の東京の天気を教えて。」はそのまま書き起こせました。「歯医者の予約」は「配車の予約」になりました。
 
 ### lock ファイル
 
@@ -79,7 +81,7 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 
 - **コンパイル。** `uv pip compile --only-binary :all: --generate-hashes --python-version 3.12 --python-platform x86_64-pc-windows-msvc` でコンパイルします。できたファイルは、いまの `installRequirements`(`--require-hashes -r`)でそのままインストールできます。Mac の上で、`--dry-run` で確かめました。
 - **使わない書き方。** `--extra-index-url` をファイルに書くのはやめます。uv が numpy や jinja2 まで PyTorch の入手先から取ってしまうためです。
-- **ダウンロードの大きさ。** 合わせて約 2.05 GB(torch が 1.99 GB)です。これにモデルの 1.6〜4.1 GB が加わります。セットアップの画面に大きさを出します。
+- **ダウンロードの大きさ。** 合わせて約 2.04 GB(torch が 1.99 GB、ほかの 34 個が 46 MB)です。これにモデルの 1.6〜4.1 GB が加わります。セットアップの画面に大きさを出します。
 
 ### 実行環境(`speech-runtime.ts`)
 
