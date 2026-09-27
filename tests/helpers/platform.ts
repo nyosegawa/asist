@@ -1,8 +1,18 @@
-import { deriveCapabilities, type PlatformCapabilities } from '@shared/platform'
+import { deriveCapabilities, type Machine, type PlatformCapabilities } from '@shared/platform'
 
-/** The capabilities of a 32 GB Apple Silicon Mac and of an x64 Windows PC. */
-export const MACOS = deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 32 * 1024 ** 3 })
-export const WINDOWS = deriveCapabilities({ platform: 'win32', arch: 'x64', totalMemoryBytes: 32 * 1024 ** 3 })
+const machine = (platform: string, arch: string, micCancelsEcho: boolean): Machine => ({
+  platform,
+  arch,
+  totalMemoryBytes: 32 * 1024 ** 3,
+  micCancelsEcho: () => micCancelsEcho
+})
+
+/**
+ * The capabilities of a 32 GB Apple Silicon Mac and of an x64 Windows PC whose microphone Windows does not
+ * cancel the echo on, which captures through getUserMedia.
+ */
+export const MACOS = deriveCapabilities(machine('darwin', 'arm64', true))
+export const WINDOWS = deriveCapabilities(machine('win32', 'x64', false))
 
 let current: PlatformCapabilities = MACOS
 

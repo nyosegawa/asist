@@ -1,5 +1,6 @@
 import os from 'node:os'
 import { deriveCapabilities, type PlatformCapabilities } from '@shared/platform'
+import { windowsMicCancelsEcho } from './mic-helper'
 
 let capabilities: PlatformCapabilities | null = null
 
@@ -9,6 +10,11 @@ let capabilities: PlatformCapabilities | null = null
  * with its reason.
  */
 export function platformCapabilities(): PlatformCapabilities {
-  capabilities ??= deriveCapabilities({ platform: process.platform, arch: process.arch, totalMemoryBytes: os.totalmem() })
+  capabilities ??= deriveCapabilities({
+    platform: process.platform,
+    arch: process.arch,
+    totalMemoryBytes: os.totalmem(),
+    micCancelsEcho: windowsMicCancelsEcho
+  })
   return capabilities
 }

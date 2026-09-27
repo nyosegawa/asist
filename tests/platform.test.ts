@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
 import { deriveCapabilities, hotkeyLabel } from '@shared/platform'
 
 const GIB = 1024 ** 3
+const unasked = (): boolean => {
+  throw new Error('the microphone check runs on Windows alone')
+}
 
 describe('what a machine can run', () => {
-  it('gives an Apple Silicon Mac the MLX runtime with its memory, the native microphone, the calendar and Alt+Space', () => {
-    expect(deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * GIB })).toEqual({
+  it('gives an Apple Silicon Mac the MLX runtime with its memory, the native microphone without a check, the calendar and Alt+Space', () => {
+    expect(deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: 16 * GIB, micCancelsEcho: unasked })).toEqual({
       os: 'macos',
       speechRuntime: { kind: 'mlx', memoryGb: 16 },
       nativeMic: true,
@@ -16,13 +19,13 @@ describe('what a machine can run', () => {
   })
 
   it('counts the memory in whole GB the way the recommendations read it', () => {
-    const memory = (bytes: number) => deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: bytes }).speechRuntime
+    const memory = (bytes: number) => deriveCapabilities({ platform: 'darwin', arch: 'arm64', totalMemoryBytes: bytes, micCancelsEcho: unasked }).speechRuntime
     expect(memory(15.7 * GIB)).toEqual({ kind: 'mlx', memoryGb: 16 })
     expect(memory(0.2 * GIB)).toEqual({ kind: 'mlx', memoryGb: 1 })
   })
 
-  it('gives x64 Windows no local speech runtime, with the reason, and none of the Mac-only helpers', () => {
-    expect(deriveCapabilities({ platform: 'win32', arch: 'x64', totalMemoryBytes: 32 * GIB })).toEqual({
+  it('gives x64 Windows no local speech runtime, with the reason, and no calendar', () => {
+    expect(deriveCapabilities({ platform: 'win32', arch: 'x64', totalMemoryBytes: 32 * GIB, micCancelsEcho: () => false })).toEqual({
       os: 'windows',
       speechRuntime: { kind: null, reason: 'unsupported-os' },
       nativeMic: false,
@@ -31,12 +34,20 @@ describe('what a machine can run', () => {
     })
   })
 
+  it('gives x64 Windows the native microphone exactly when its check finds echo cancellation on, asking once', () => {
+    for (const cancelsEcho of [true, false]) {
+      const micCancelsEcho = vi.fn(() => cancelsEcho)
+      expect(deriveCapabilities({ platform: 'win32', arch: 'x64', totalMemoryBytes: 32 * GIB, micCancelsEcho }).nativeMic).toBe(cancelsEcho)
+      expect(micCancelsEcho).toHaveBeenCalledOnce()
+    }
+  })
+
   it.each([
     ['darwin', 'x64'],
     ['win32', 'arm64'],
     ['linux', 'x64']
   ])('refuses %s on %s, which the app is not built for', (platform, arch) => {
-    expect(() => deriveCapabilities({ platform, arch, totalMemoryBytes: 16 * GIB })).toThrow(
+    expect(() => deriveCapabilities({ platform, arch, totalMemoryBytes: 16 * GIB, micCancelsEcho: unasked })).toThrow(
       errorText('app.startup.unsupportedPlatform', { platform, arch })
     )
   })

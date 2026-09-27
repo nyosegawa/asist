@@ -28,7 +28,11 @@ export interface PlatformCapabilities {
   os: OsFamily
   /** The runtime of the local speech models with the memory it has, or why there is none. */
   speechRuntime: { kind: SpeechRuntime; memoryGb: number } | { kind: null; reason: SpeechRuntimeUnavailable }
-  /** The echo-cancelling native microphone helper (macOS voice processing). */
+  /**
+   * The native microphone helper, which captures with the echo of everything the machine plays cancelled:
+   * voice processing on macOS, the communications echo canceller on Windows. Without it the renderer
+   * captures through getUserMedia.
+   */
   nativeMic: boolean
   calendar: boolean
   /** The Electron accelerator of the global hotkey; the label on the screen is derived from it. */
@@ -39,13 +43,19 @@ export interface Machine {
   platform: string
   arch: string
   totalMemoryBytes: number
+  /**
+   * Whether the Windows microphone helper finds echo cancellation on for the default microphone, which main
+   * answers by running the helper's check. It is asked on Windows alone: every macOS the app supports has
+   * voice processing.
+   */
+  micCancelsEcho: () => boolean
 }
 
 /**
  * The capabilities of a machine. Only Apple Silicon Macs and x64 Windows are built for; any other
  * combination fails, because a guess at what it can run would show features that then fail.
  */
-export function deriveCapabilities({ platform, arch, totalMemoryBytes }: Machine): PlatformCapabilities {
+export function deriveCapabilities({ platform, arch, totalMemoryBytes, micCancelsEcho }: Machine): PlatformCapabilities {
   if (platform === 'darwin' && arch === 'arm64') {
     return {
       os: 'macos',
@@ -59,7 +69,7 @@ export function deriveCapabilities({ platform, arch, totalMemoryBytes }: Machine
     return {
       os: 'windows',
       speechRuntime: { kind: null, reason: 'unsupported-os' },
-      nativeMic: false,
+      nativeMic: micCancelsEcho(),
       calendar: false,
       // On a Windows 11 machine with PowerToys, Copilot and Claude running (2026-09-27), Alt+Space and
       // Ctrl+Alt+Space were already taken, as were Ctrl+Win+Space and Win+Shift+Space, which switch the
