@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
-import { keyReadable, type SetupProgress, type SetupStatus } from '@shared/ipc'
+import { keyReadable, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
 import type { AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
 import { qwenTtsRuns, ttsEngineRuns } from '@shared/tts-models'
@@ -312,11 +312,11 @@ export function SetupWizard(): React.JSX.Element | null {
     setFinishing(true)
     setError('')
     try {
-      const voiceMode = mode === 'voice' && listening ? listening : 'text'
+      const voiceMode: SetupVoiceMode = mode === 'voice' && listening ? listening : mode === 'live' && live ? live : 'text'
       // Text-only use turns the TTS engine off, so a reply is neither synthesized nor played and
       // appears as text alone.
       if (mode === 'text-only' && settings.ttsEngine !== 'none') await saveSettings({ ttsEngine: 'none' })
-      if (mode === 'voice') await verifyMicrophoneCapture()
+      if (mode === 'voice' || mode === 'live') await verifyMicrophoneCapture()
       if (voiceMode === 'local') {
         await voiceController.prepareLocalAsr(({ progress }) => setLocalProgress(progress))
         setLocalReady(true)
@@ -324,6 +324,7 @@ export function SetupWizard(): React.JSX.Element | null {
       }
       const systemTtsVerified =
         mode === 'text-only' ||
+        mode === 'live' ||
         settings.ttsEngine !== 'system' ||
         (typeof window.speechSynthesis?.speak === 'function' && typeof window.SpeechSynthesisUtterance === 'function')
       if (!systemTtsVerified) throw new Error(errorText(osMessageKey('voice.speech.systemUnavailable', capabilities.os)))

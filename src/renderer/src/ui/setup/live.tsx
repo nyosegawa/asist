@@ -5,10 +5,10 @@ import { LIVE_ENGINE_INFO, type LiveEngine } from '@shared/voice-engine'
 import { Chip } from '../settings/primitives'
 import { ApiKeyField } from './api-key-field'
 
-/** The two live engines in the order the setup offers them, each with the note the settings show for it. */
-const LIVE_ENGINES: Array<{ id: LiveEngine; hint: Extract<MessageKey, `voiceEngines.${string}.hint`> }> = [
-  { id: 'gpt-live', hint: 'voiceEngines.gptLive.hint' },
-  { id: 'gemini-live', hint: 'voiceEngines.geminiLive.hint' }
+/** The two live engines in the order the setup offers them. The card already names the engine, so its note does not. */
+const LIVE_ENGINES: Array<{ id: LiveEngine; hint: Extract<MessageKey, `setup.speaking.live.engines.${string}`> }> = [
+  { id: 'gpt-live', hint: 'setup.speaking.live.engines.gptLive' },
+  { id: 'gemini-live', hint: 'setup.speaking.live.engines.geminiLive' }
 ]
 
 /**

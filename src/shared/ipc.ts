@@ -32,7 +32,7 @@ import type { AppSettings, SettingsPatch } from './settings'
 export type { AppSettings } from './settings'
 import type { ConversationModel, LlmProvider } from './llm-catalog'
 export type { ConversationModel, LlmProvider } from './llm-catalog'
-import type { VoiceEngine } from './voice-engine'
+import type { LiveEngine, VoiceEngine } from './voice-engine'
 export type { VoiceEngine } from './voice-engine'
 
 /**
@@ -719,7 +719,8 @@ export interface WindowControlColors {
 /** The global hotkey: off in the settings, registered with the OS, or refused because another application holds it. */
 export type HotkeyStatus = 'off' | 'registered' | 'failed'
 
-export type SetupVoiceMode = 'server' | 'local' | 'text'
+/** How setup finishes: speech recognized by the server or in the browser, typed text, or a live engine that listens and speaks itself. */
+export type SetupVoiceMode = 'server' | 'local' | 'text' | LiveEngine
 
 /** The choices the renderer re-checked just before the finish button. The main process validates the external services again. */
 export interface CompleteSetupRequest {

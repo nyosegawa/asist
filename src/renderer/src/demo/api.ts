@@ -60,6 +60,7 @@ import { mergeSettings } from '@shared/settings'
 import { recommendQwenTts } from '@shared/tts-models'
 import { asrDownloadGb, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
 import { demoCapabilities } from './platform'
+import { isLiveEngine } from '@shared/voice-engine'
 
 /**
  * Demo mode: the mock used where window.api (preload) does not exist, that is, in a plain browser. Only
@@ -586,6 +587,7 @@ export const mockApi: RendererApi = {
   completeSetup: async (request) => {
     Object.assign(settings, {
       onboardingVersion: 1,
+      voiceEngine: isLiveEngine(request.voiceMode) ? request.voiceMode : 'cascade',
       localAsrEnabled: request.voiceMode === 'local',
       micAutoStart: request.voiceMode === 'text' ? false : request.micAutoStart
     })

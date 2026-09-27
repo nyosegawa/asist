@@ -9,6 +9,7 @@ import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stor
 import { voiceController } from '../src/renderer/src/voice/VoiceController'
 import { liveVoice } from '../src/renderer/src/voice/LiveVoice'
 import { asrDownloadGb, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
+import { isLiveEngine } from '@shared/voice-engine'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, platformCapabilities, setCapabilities } from './helpers/platform'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
@@ -74,9 +75,14 @@ const api = {
     if (patch.ttsEngine) status = { ...status, ttsEngine: patch.ttsEngine, tts: patch.ttsEngine === 'system' }
     return settings
   }),
-  // As in main, the microphone at launch is kept only for a way of talking that listens.
-  completeSetup: vi.fn(async (request: { voiceMode: string; micAutoStart: boolean }) =>
-    ({ ...settings, onboardingVersion: 1, micAutoStart: request.voiceMode !== 'text' && request.micAutoStart })),
+  // As in main, the microphone at launch is kept only for a way of talking that listens, and a live
+  // engine handed over as the voice mode becomes the voice engine.
+  completeSetup: vi.fn(async (request: { voiceMode: string; micAutoStart: boolean }) => ({
+    ...settings,
+    onboardingVersion: 1,
+    voiceEngine: isLiveEngine(request.voiceMode) ? request.voiceMode : 'cascade',
+    micAutoStart: request.voiceMode !== 'text' && request.micAutoStart
+  })),
   onSetupProgress: vi.fn((listener: (progress: SetupProgress) => void) => {
     progressListener = listener
     return () => {}
@@ -341,7 +347,8 @@ describe('first-run setup', () => {
     expect(container.querySelector('.st-progress-label')?.textContent).toContain('576.3 / 1974 MB')
   })
 
-  it('turns the microphone on at the end of a voice setup through the gate every other switch uses, for the engine the settings choose', async () => {
+  it('turns the microphone on at the end of a voice setup through the gate every other switch uses, for the engine the setup saved', async () => {
+    // An engine left from before is replaced by the way of talking chosen here.
     settings = { ...settings, voiceEngine: 'gpt-live' } as AppSettings
     status = { ...status, asr: true, tts: true }
     await render()
@@ -360,8 +367,125 @@ describe('first-run setup', () => {
     await press(ja('setup.start'))
 
     expect(api.completeSetup).toHaveBeenCalledWith(expect.objectContaining({ voiceMode: 'server', micAutoStart: true }))
+    expect(voiceController.enable).toHaveBeenCalledOnce()
+    expect(liveVoice.enable).not.toHaveBeenCalled()
+  })
+})
+
+describe('first-run setup with a live engine', () => {
+  const live = ja('setup.speaking.live.title')
+  const engine = (id: string): HTMLButtonElement => container.querySelector<HTMLButtonElement>(`.su-provider[data-engine="${id}"]`)!
+  const typeKey = async (value: string): Promise<void> => {
+    const input = container.querySelector<HTMLInputElement>('#su-key')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  /** Verifies the Anthropic key on the model screen and opens the speaking screen. */
+  const toSpeaking = async (): Promise<void> => {
+    await render()
+    await toModel(ja)
+    await verifyKey(ja)
+    await press(ja('setup.next'))
+  }
+  /** Walks from the speaking screen through the microphone and the extras to the summary and presses start. */
+  const finishFromSpeaking = async (): Promise<void> => {
+    await press(ja('setup.next'))
+    expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.mic.title'))
+    await press(ja('setup.mic.check'))
+    await act(async () => container.querySelector<HTMLInputElement>('.su-check input')!.click())
+    await press(ja('setup.next'))
+    await flush()
+    await press(ja('setup.next'))
+    await press(ja('setup.start'))
+  }
+
+  it('skips listening and reading but keeps the microphone', async () => {
+    await toSpeaking()
+    await press(live)
+    expect(stepStates()).toMatchObject({
+      [ja('setup.steps.listening.label')]: 'skipped',
+      [ja('setup.steps.tts.label')]: 'skipped',
+      [ja('setup.steps.mic.label')]: 'todo'
+    })
+  })
+
+  it('keeps the next button disabled until the key of the chosen engine is verified', async () => {
+    await toSpeaking()
+    await press(live)
+    // The model screen verified Anthropic, which neither engine runs on, so none is chosen for the user.
+    expect(engine('gpt-live').getAttribute('aria-checked')).toBe('false')
+    expect(engine('gemini-live').getAttribute('aria-checked')).toBe('false')
+    expect(button(ja('setup.next')).disabled).toBe(true)
+
+    await act(async () => engine('gpt-live').click())
+    expect(button(ja('setup.next')).disabled).toBe(true)
+    await typeKey('sk-live')
+    await press(ja('setup.model.verifyAndSave'))
+
+    expect(api.saveApiKey).toHaveBeenLastCalledWith('openai', 'sk-live')
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('keeps the next button disabled when the key is refused', async () => {
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gemini-live').click())
+    api.saveApiKey.mockRejectedValueOnce(new Error('unauthenticated'))
+    await typeKey('AIza-refused')
+    await press(ja('setup.model.verifyAndSave'))
+
+    expect(container.querySelector('.su-error')?.textContent).toContain('unauthenticated')
+    expect(button(ja('setup.next')).disabled).toBe(true)
+  })
+
+  it('chooses the engine whose provider the model screen verified and asks for no key', async () => {
+    await render()
+    await toModel(ja)
+    await act(async () => container.querySelector<HTMLButtonElement>('.su-provider[data-provider="openai"]')!.click())
+    await typeKey('sk-test')
+    await press(ja('setup.model.verifyAndSave'))
+    await press(ja('setup.next'))
+    await press(live)
+
+    expect(engine('gpt-live').getAttribute('aria-checked')).toBe('true')
+    expect(container.querySelector('#su-key')).toBeNull()
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('finishes with GPT-Live as the voice engine and turns the microphone on through it', async () => {
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gpt-live').click())
+    await typeKey('sk-live')
+    await press(ja('setup.model.verifyAndSave'))
+    await finishFromSpeaking()
+
+    expect(api.completeSetup).toHaveBeenCalledWith({
+      voiceMode: 'gpt-live',
+      micAutoStart: true,
+      microphoneVerified: true,
+      localAsrVerified: true,
+      systemTtsVerified: true
+    })
+    expect(useSettingsStore.getState().settings?.voiceEngine).toBe('gpt-live')
     expect(liveVoice.enable).toHaveBeenCalledOnce()
     expect(voiceController.enable).not.toHaveBeenCalled()
+  })
+
+  it('finishes with Gemini Live as the voice engine without preparing any recognition model', async () => {
+    vi.mocked(voiceController.prepareLocalAsr).mockClear()
+    await toSpeaking()
+    await press(live)
+    await act(async () => engine('gemini-live').click())
+    await typeKey('AIza-live')
+    await press(ja('setup.model.verifyAndSave'))
+    await finishFromSpeaking()
+
+    expect(api.completeSetup).toHaveBeenCalledWith(expect.objectContaining({ voiceMode: 'gemini-live', microphoneVerified: true }))
+    expect(useSettingsStore.getState().settings?.voiceEngine).toBe('gemini-live')
+    expect(voiceController.prepareLocalAsr).not.toHaveBeenCalled()
   })
 })
 
