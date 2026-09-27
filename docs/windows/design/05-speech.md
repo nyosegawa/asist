@@ -86,13 +86,17 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 
 - **コンパイル。** `uv pip compile --only-binary :all: --generate-hashes --python-version 3.12 --python-platform x86_64-pc-windows-msvc` でコンパイルします。できたファイルは、いまの `installRequirements`(`--require-hashes -r`)でそのままインストールできます。Mac の上で、`--dry-run` で確かめました。
 - **使わない書き方。** `--extra-index-url` をファイルに書くのはやめます。uv が numpy や jinja2 まで PyTorch の入手先から取ってしまうためです。
-- **ダウンロードの大きさ。** 合わせて約 2.04 GB(torch が 1.99 GB、ほかの 34 個が 46 MB)です。これにモデルの 1.6〜4.1 GB が加わります。セットアップの画面に大きさを出します。
+- **ダウンロードの大きさ。** 合わせて約 2.04 GB(torch が 1.99 GB、ほかの 34 個が 46 MB)です。これにモデルの 1.58 GB(0.6B)か 4.09 GB(1.7B)が加わります。
+  - セットアップの聞き取りの手順は、実行環境とモデルのうちまだ無い分の大きさを出します(M5-6)。何も無いときは、1.7B で約 6.1 GB、0.6B で約 3.6 GB です。
+  - Mac の MLX の lock は約 0.13 GB なので、Mac の同じ表示は、Qwen3-ASR で約 2.6 GB、Whisper で約 1.8 GB です(それまでは固定の「2GB ほど」でした)。
+  - 大きさは 2026-09-27 に、PyPI と download.pytorch.org が lock の wheel について返す大きさと、Hugging Face の API が固定したリビジョンについて返す大きさを足して求めました。uv が一度だけ取得する Python は含みません。
 
 ### 実行環境(`speech-runtime.ts`)
 
 - **環境を作る場所と中身。**
   - `speech-runtime.ts` は、capabilities が示す実行環境の値を読み、その環境を作って worker を動かします。
   - macOS では `userData/mlx-audio-runtime` に環境を作り、その環境で ASR の worker と Qwen3-TTS の worker を動かします。
+  - Windows では `userData/cuda-speech-runtime` に環境を作り、ASR の worker だけを動かします。`cuda` の表を足し、Windows のアプリに worker と lock を入れました(M5-6)。Windows の実機ではまだ動かしていません。
 
   | | `mlx` | `cuda` |
   |---|---|---|
@@ -105,7 +109,7 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 
 - **共通のまま使える処理。** Hugging Face の固定したリビジョンの取得(`hf_snapshot.py`)と、「全部のファイルがそろったら入ったとみなす」判定(`modelInstalled`)は、そのまま使えます。
   - Windows の huggingface_hub は、シンボリックリンクを作れないとき、`snapshots` にファイルを写します。そのため、この判定は動きます。
-  - ダウンロードの進み具合の数え方は、M5-6 で確かめます。
+  - ダウンロードの進み具合は、`blobs` のファイルに加えて、`snapshots` の中のリンクでない普通のファイルも数えます。huggingface_hub は、リンクを作れないときにダウンロードを終えたファイルを `blobs` から `snapshots` へ移すので(1.29 の `_create_symlink` で確かめました)、`blobs` だけを数えると、ファイルが1つ終わるたびに進み具合が戻るためです。
 - **モデルの置き場所。**
   - main が `~/.cache/huggingface/hub` に決め、ダウンロードと worker の Python に `HF_HUB_CACHE` で渡します(M5-1)。
   - この場所は huggingface_hub の既定と同じです。Windows の既定も `%USERPROFILE%\.cache\huggingface\hub` なので、同じ組み立てで合います。
@@ -115,8 +119,9 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 ### GPU を調べる(`gpu.ts`)
 
 - **調べ方。** `nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader,nounits` を起動します。
+- **調べる時。** main が起動したときに1回だけ、capabilities を決めるところで起動します(M5-6)。そのため、ドライバーや GPU を替えたときは、ASIST を起動し直すと反映されます。「ドライバーが古い」の文も、更新してから起動し直すように書いています。
 - **場所。** `nvidia-smi.exe` は、いまのドライバーでは `C:\Windows\System32` にあります。
-- **無いときや失敗したとき。** 見つからないときや失敗したときは、capabilities の `speechRuntime` を「NVIDIA の GPU が無い」にします。
+- **無いときや失敗したとき。** 見つからないときや失敗したときは、capabilities の `speechRuntime` を「NVIDIA の GPU が無い」にします。理由は、セットアップの聞き取りの手順、設定の「声」のモデルの行、「モデル」の音声認識のカードに出ます。
 - **使えないときの理由。** ドライバーのバージョンが 580 より前なら「ドライバーが古い」、compute capability が 7.5 より前なら「GPU が古い」にします。
 - **モデルの推奨。** VRAM が 6 GB 以上なら 1.7B を、それより少なければ 0.6B を勧めます。1.7B は、上の実測の 4.1 GB と CUDA のコンテキストの 0.5 GB を合わせると、対象で最も小さい 4 GB の GPU(GTX 1650 など)に収まりません。6 GB の GPU なら、デスクトップとほかのアプリに約 1.4 GB が残ります。
 - **2回目の確かめ。** worker も起動時に同じことを確かめ、違えば `fatal` にします。ドライバーを入れ替えた直後などに、2つの結果が食い違うことがあるためです。
