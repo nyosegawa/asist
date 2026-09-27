@@ -10,14 +10,13 @@ import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
 import { pythonEnv } from './child-env'
 import { downloadPinnedFile } from './onnx-runtime'
-import { platformCapabilities } from './platform'
 import { resourcePath } from './resource-path'
 import { createEnvironment, environmentCurrent, installRequirements, recordEnvironment, venvPython } from './uv'
 
 /**
  * The lifecycle of the MaAI turn-taking worker, vap_worker.py.
  *
- * It is built like mlx-asr: uv creates a dedicated Python environment, the models are fetched at a
+ * It is built like local-asr: uv creates a dedicated Python environment, the models are fetched at a
  * pinned revision and verified by sha256, and audio is streamed to a worker that stays resident. The
  * worker takes 16 kHz stereo, with the user on channel 0 and the assistant's TTS on channel 1, and
  * returns, for every 80 ms frame, the probabilities of holding the turn, of an aizuchi being due, of the
@@ -61,7 +60,8 @@ const AUX_CONTEXT_SEC = 5
  * The thread count torch and ONNX Runtime use inside the worker. At 2 the spin-waiting kept the CPU at
  * about 77% continuously, which delayed the renderer's Silero VAD and DeepFilterNet enough for
  * utterances to be dropped. At 1 it sits at about 50% and inference takes about 31 ms per frame, inside
- * the 80 ms budget.
+ * the 80 ms budget. On a Core i9-9900K under Windows 11 (2026-09-27), 12 s of audio fed at real time took
+ * a median of 59.8 ms per frame and at most 66.7 ms.
  */
 const VAP_WORKER_THREADS = 1
 
@@ -182,7 +182,6 @@ function missingModels(): ModelFile[] {
 }
 
 export function runtimeInstalled(): boolean {
-  if (!platformCapabilities().cpuSidecars) return false
   if (!fs.existsSync(pythonPath())) return false
   if (process.env.ASIST_VAP_PYTHON?.trim()) return true
   return environmentCurrent(runtimeDir(), STAMP)
@@ -415,9 +414,6 @@ export function prepare(
 async function prepareOnce(
   onProgress: (progress: SetupProgress) => void
 ): Promise<{ ok: boolean; message: string }> {
-  if (!platformCapabilities().cpuSidecars) {
-    return { ok: false, message: t('settingsModels.preparation.unsupported', { feature: t('settingsModels.features.turnTaking') }) }
-  }
   const controller = new AbortController()
   prepareController = controller
   const progress = (message: string): void =>

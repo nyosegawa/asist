@@ -9,7 +9,7 @@
 | 聞き取り(ブラウザの中) | Whisper small(Transformers.js) | 同じ |
 | live のエンジン | GPT-Live、Gemini Live | 同じ |
 | 読み上げ | VOICEVOX、AivisSpeech、Qwen3-TTS(MLX)、システムの声 | VOICEVOX、AivisSpeech、システムの声。Qwen3-TTS は第2段階 |
-| 相槌の分類器、記憶の検索、MaAI | CPU の Python worker | 同じ(CPU) |
+| 相槌の分類器、記憶の検索、MaAI | CPU の Python worker | 同じ(CPU)。Core i9-9900K で準備と実行を確かめました(下の実測) |
 
 ## 聞き取り: Windows の Qwen3-ASR
 
@@ -36,10 +36,15 @@ Windows の worker(`resources/cuda_asr_worker.py`)は、このやりとりをそ
   - cu130 を選ぶ理由は、RTX 20 から RTX 50 まで(compute capability 7.5〜12.0)を1つで扱えるからです。cu126 は RTX 50 を扱えず、torch 2.15 で無くなります。
 - **モデル。** Apache-2.0、BF16 です。リビジョンを固定します。
 
-| モデル | リビジョン | 大きさ | VRAM(RTX 2080 の fp16 で実測) |
+| モデル | リビジョン | 大きさ | VRAM(RTX 2080、fp16 で実測) |
 |---|---|---|---|
-| `Qwen/Qwen3-ASR-1.7B-hf` | `bcd2b5b7f32b480ab5790554cfa8347f246a14f3` | 4.08 GB | 3.9 GB |
+| `Qwen/Qwen3-ASR-1.7B-hf` | `bcd2b5b7f32b480ab5790554cfa8347f246a14f3` | 4.08 GB | 3.9 GB(確保は 4.1 GB) |
 | `Qwen/Qwen3-ASR-0.6B-hf` | `7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c` | 1.57 GB | 1.6 GB |
+
+- **VRAM の測り方。** 2026-09-27 に、torch 2.14.0+cu130 と transformers 5.17.0 で測りました。CUDA のコンテキストが、これとは別に約 0.5 GB を使います。
+- **設定の値。** 設定には、実行環境に依らないモデルの名前(`qwen3-asr-1.7b` など)を保存します。どの実行環境でどのリポジトリを使うかは `asr-models.ts` の表で決めます。
+- **Whisper は出さない。** CUDA の worker は Qwen3-ASR しか動かさないので、CUDA の実行環境では Whisper を選べません。
+- **その実行環境に無いモデルが保存されているとき。** Mac の設定の Whisper を Windows で読んだときなどです。別のモデルに差し替えず、そのモデルを「使えない」と表示して、選び直してもらいます。差し替えると、利用者の知らないうちに聞き取りの質が変わり、選んでいない数 GB のモデルをダウンロードすることになるためです。`auto` は、その実行環境の推奨に決まるので、この問題は起きません。
 
 - **精度。** Mac のモデル(MLX の 8bit)より、Windows のモデル(BF16)のほうが量子化しない分だけ精度が高いはずです。同じ Qwen3-ASR なので、日本語の聞き取りの傾向は揃います。
 
@@ -86,9 +91,8 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 ### 実行環境(`speech-runtime.ts`)
 
 - **環境を作る場所と中身。**
-  - いまの `mlx-runtime.ts` は、`userData/mlx-audio-runtime` に環境を作ります。
-  - その環境で、ASR の worker と Qwen3-TTS の worker を動かします。
-  - これを、実行環境の値を受け取る形にします。
+  - `speech-runtime.ts` は、capabilities が示す実行環境の値を読み、その環境を作って worker を動かします。
+  - macOS では `userData/mlx-audio-runtime` に環境を作り、その環境で ASR の worker と Qwen3-TTS の worker を動かします。
 
   | | `mlx` | `cuda` |
   |---|---|---|
@@ -103,9 +107,10 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
   - Windows の huggingface_hub は、シンボリックリンクを作れないとき、`snapshots` にファイルを写します。そのため、この判定は動きます。
   - ダウンロードの進み具合の数え方は、M5-6 で確かめます。
 - **モデルの置き場所。**
-  - `mlx-runtime.ts:51` は、モデルの置き場所を `~/.cache/huggingface/hub` と決め打ちしています。
-  - Windows の huggingface_hub の既定も `%USERPROFILE%\.cache\huggingface\hub` なので、同じ組み立てで合います。
-  - それでも、`HF_HOME` を worker に渡して場所を決めるほうが確実です。どちらにするかは M5-1 で決めます。
+  - main が `~/.cache/huggingface/hub` に決め、ダウンロードと worker の Python に `HF_HUB_CACHE` で渡します(M5-1)。
+  - この場所は huggingface_hub の既定と同じです。Windows の既定も `%USERPROFILE%\.cache\huggingface\hub` なので、同じ組み立てで合います。
+  - 渡す理由は、ASIST を起動した環境に `HF_HOME` や `HF_HUB_CACHE` があると、Python がそちらにダウンロードし、main が見に行く場所と食い違うためです。
+  - `HF_HOME` は渡しません。渡すと、`hf auth login` で保存したトークンの場所まで変わるためです。
 
 ### GPU を調べる(`gpu.ts`)
 
@@ -113,7 +118,7 @@ text = processor.decode(out[:, inputs["input_ids"].shape[1]:], return_format="tr
 - **場所。** `nvidia-smi.exe` は、いまのドライバーでは `C:\Windows\System32` にあります。
 - **無いときや失敗したとき。** 見つからないときや失敗したときは、capabilities の `speechRuntime` を「NVIDIA の GPU が無い」にします。
 - **使えないときの理由。** ドライバーのバージョンが 580 より前なら「ドライバーが古い」、compute capability が 7.5 より前なら「GPU が古い」にします。
-- **モデルの推奨。** VRAM の量からモデルの推奨を決めます。しきい値は M5-5 の実測で決め、仮に 8 GB 以上で 1.7B とします。
+- **モデルの推奨。** VRAM が 6 GB 以上なら 1.7B を、それより少なければ 0.6B を勧めます。1.7B は、上の実測の 4.1 GB と CUDA のコンテキストの 0.5 GB を合わせると、対象で最も小さい 4 GB の GPU(GTX 1650 など)に収まりません。6 GB の GPU なら、デスクトップとほかのアプリに約 1.4 GB が残ります。
 - **2回目の確かめ。** worker も起動時に同じことを確かめ、違えば `fatal` にします。ドライバーを入れ替えた直後などに、2つの結果が食い違うことがあるためです。
 
 ### MLX の CUDA を試した結果
@@ -166,9 +171,8 @@ MLX の Windows 向けの CUDA の wheel(`mlx-cuda-13` 0.32.2)と `mlx-audio==0.
 
 ## CPU の Python worker(記憶の検索、相槌の分類器、MaAI)
 
-- **いまの作り。** どれも CPU で動く作りで、macOS に固有なのは次の3つだけです。
-  - 動く条件の判定
-  - venv の Python の場所
-  - lock ファイル
-- **Windows で要る手当て。** [04-bundled-tools.md](04-bundled-tools.md) の手当て(`venvPython`、`PYTHONUTF8`、`os.nice`、lock ファイル)をすれば動く見込みです。
-- **MaAI の時間。** MaAI は、Apple Silicon で 80ms のフレームあたり 31ms です(`vap.ts:59-65`)。Windows の x64 の CPU では測り直します(M5-9)。
+- **作り。** どれも CPU で動く作りで、macOS に固有だったのは、動く条件の判定、venv の Python の場所、lock ファイルの3つでした。[04-bundled-tools.md](04-bundled-tools.md) の手当て(`venvPython`、`PYTHONUTF8`、`os.nice`、lock ファイル)をして、3つとも Windows で動きました。動く条件の判定は、どの OS でも動くので無くしました。
+- **MaAI の時間。** MaAI の推論は、80ms のフレームあたり、Apple Silicon で 31ms、Windows の Core i9-9900K で中央値 59.8ms です。どちらも 80ms に収まります。
+- **Windows での実測(2026-09-27)。** Windows 11、Core i9-9900K(8スレッド)で、ASIST のコード(`npm run dev`)から、アプリの IPC を通して準備しました。準備の時間は、約 1.5MB/s の回線でのダウンロードを含みます。
+  - 準備の時間は、相槌の分類器が58秒、記憶の検索が59秒、MaAI が171秒でした。
+  - MaAI の worker は CPU で起動しました(`worker ready (cpu, 12.5Hz)`)。12秒の音声を実時間で流すと、80ms のフレームあたりの推論は、中央値 59.8ms、90パーセンタイル 63.8ms、最大 66.7ms でした。

@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Play } from 'lucide-react'
 import type { HotkeyStatus, TtsEngine } from '@shared/ipc'
-import type { AsrModel } from '@shared/asr-models'
+import { asrModelChoices, type AsrModel } from '@shared/asr-models'
 import { HoloSwitch } from '@/components/ui/switch'
 import { speechPlayer } from '@/voice/SpeechPlayer'
 import { useToastStore } from '@/state/stores'
 import { QWEN_TTS_VOICES, ttsEngineRuns, type QwenTtsVoice } from '@shared/tts-models'
-import { SPEECH_RUNTIME_UNAVAILABLE_TEXT, hotkeyLabel, openingAizuchiRuns } from '@shared/platform'
+import { SPEECH_RUNTIME_UNAVAILABLE_TEXT, hotkeyLabel } from '@shared/platform'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { ttsEngineLabel, isExternalTts, ttsNeedsPreparation, type SettingsContext } from '../context'
 import { useSpeakerOptions } from '../speaker-options'
@@ -48,9 +48,6 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   const features = conversationFeatures(settings.conversationLocale)
   const capabilities = platformCapabilities()
   const speechRuntime = capabilities.speechRuntime
-  // The aizuchi that opens a turn, and its frequency, need the classifier; the ones while the user
-  // speaks are clips.
-  const openingAizuchi = openingAizuchiRuns(settings.conversationLocale, capabilities)
   // The engines this machine runs that can read the conversation language. A saved engine that is not
   // among them, which a change of language or settings brought from another machine leaves behind,
   // shows as no selection until one is picked.
@@ -63,6 +60,8 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   const engineUsable = engines.includes(engine)
   const speakers = useSpeakerOptions(engineUsable, engine)
   const asrReady = setup?.asr?.ready === true
+  const asrChoices = speechRuntime.kind === null ? [] : asrModelChoices(speechRuntime.kind, settings.asrModel)
+  const selectionOffered = asrChoices.every((choice) => choice.offered)
   const vapReady = vap?.runtimeInstalled === true && vap.modelsInstalled
   // True when the selected engine cannot be reached or its model is not prepared; the OS's own speech
   // synthesis needs no preparation and never counts as missing.
@@ -206,9 +205,11 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
             <Row
               label={t('settingsVoice.recognition.model')}
               hint={
-                setup?.asr
-                  ? t('settingsVoice.recognition.modelHint', { memoryGb: setup.asr.totalMemoryGb, model: setup.asr.label, reason: asrRecommendationReason(t, setup.asr) })
-                  : t('settingsVoice.recognition.checking')
+                !selectionOffered
+                  ? t('speechRecognition.errors.unknownModel')
+                  : setup?.asr
+                    ? t('settingsVoice.recognition.modelHint', { memoryGb: setup.asr.totalMemoryGb, model: setup.asr.label, reason: asrRecommendationReason(t, setup.asr) })
+                    : t('settingsVoice.recognition.checking')
               }
             >
               <Chip tone={asrReady ? 'ok' : 'warn'}>{asrReady ? t('common.ready') : t('common.notReady')}</Chip>
@@ -225,8 +226,11 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
                 }}
               >
                 <option value="auto">{t('settingsVoice.recognition.automatic')}</option>
-                <option value="qwen3-asr-1.7b-mlx">Qwen3-ASR 1.7B 8-bit MLX</option>
-                <option value="whisper-large-v3-turbo-mlx">Whisper large-v3-turbo MLX</option>
+                {asrChoices.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
               </select>
             </Row>
             {!asrReady && (
@@ -256,18 +260,14 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
         <Row label={t('settingsVoice.response.bargeIn')} hint={t('settingsVoice.response.bargeInHint')}>
           <HoloSwitch checked={settings.bargeIn} onCheckedChange={(v) => set({ bargeIn: v })} />
         </Row>
-        {openingAizuchi && (
-          <Row label={t('settingsVoice.response.aizuchi')} hint={t('settingsVoice.response.aizuchiHint')}>
-            <HoloSwitch checked={settings.aizuchi} onCheckedChange={(v) => set({ aizuchi: v })} />
-          </Row>
-        )}
         {features.aizuchi && (
-          <Row label={t('settingsVoice.response.listeningAizuchi')} hint={t('settingsVoice.response.listeningAizuchiHint')}>
-            <HoloSwitch checked={settings.listeningAizuchi} onCheckedChange={(v) => set({ listeningAizuchi: v })} />
-          </Row>
-        )}
-        {openingAizuchi && (
           <>
+            <Row label={t('settingsVoice.response.aizuchi')} hint={t('settingsVoice.response.aizuchiHint')}>
+              <HoloSwitch checked={settings.aizuchi} onCheckedChange={(v) => set({ aizuchi: v })} />
+            </Row>
+            <Row label={t('settingsVoice.response.listeningAizuchi')} hint={t('settingsVoice.response.listeningAizuchiHint')}>
+              <HoloSwitch checked={settings.listeningAizuchi} onCheckedChange={(v) => set({ listeningAizuchi: v })} />
+            </Row>
             <Row label={t('settingsVoice.response.aizuchiRate')}>
               <input
                 type="range"
@@ -327,7 +327,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
               </Row>
             </>
           )}
-          {capabilities.cpuSidecars && features.maai && (
+          {features.maai && (
             <Row
               label={t('settingsVoice.mic.turnTaking')}
               hint={
