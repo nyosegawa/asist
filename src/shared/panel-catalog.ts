@@ -393,6 +393,6 @@ export const PANEL_CATALOG: PanelCatalogEntry[] = [
 
 export const catalogByType = new Map(PANEL_CATALOG.map((e) => [e.type, e]))
 
-/** Whether this machine can show a card of the type: the calendar card needs the calendar of the OS. */
+/** Whether this machine can show a card of the type: the calendar card needs a calendar to read. */
 export const panelAvailable = (type: string, capabilities: Pick<PlatformCapabilities, 'calendar'>): boolean =>
-  type !== 'calendar' || capabilities.calendar
+  type !== 'calendar' || capabilities.calendar !== null

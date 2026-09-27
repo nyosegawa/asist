@@ -261,7 +261,7 @@ export function toolRegistry(locale: ConversationLocale = conversationLocale()):
     agentTool(locale),
     ...taskTools(language),
     ...noteTools(language),
-    ...(capabilities.calendar ? calendarTools(locale) : []),
+    ...(capabilities.calendar !== null ? calendarTools(locale) : []),
     ...mailTools(language),
     ...jobTools(locale),
     ...projectTools(language),

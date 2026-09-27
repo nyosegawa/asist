@@ -25,7 +25,9 @@ export const calendarStatusSchema = z.object({
     'writeOnly',
     'fullAccess'
   ]),
-  calendars: z.array(calendarAccountSchema)
+  calendars: z.array(calendarAccountSchema),
+  /** The Google account signed in. EventKit has none, since it reads every account added to macOS. */
+  account: z.string().nullable()
 })
 export type CalendarStatus = z.infer<typeof calendarStatusSchema>
 export const calendarEventSchema = z.object({

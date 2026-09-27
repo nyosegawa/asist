@@ -1,6 +1,7 @@
 import type { MessageKey } from '@shared/i18n'
 import type { CalendarStatus } from '@shared/calendar'
 import { useT } from '@/i18n'
+import { platformCapabilities } from '@/platform'
 
 /** `fullAccess` is left out: the notice that carries a hint is drawn only while access is missing. */
 const ACCESS_HINT = {
@@ -50,6 +51,16 @@ export function Notice({
       </div>
     )
   if (!status) return <div className="cal-notice">{t('calendar.notice.checking')}</div>
+  // Google is either signed in or not; signing in happens in the browser.
+  if (status.authorization !== 'fullAccess' && platformCapabilities().calendar === 'google')
+    return (
+      <div className="cal-notice">
+        <p>{t('calendar.access.googleSignedOut')}</p>
+        <button className={button} onClick={onRequestAccess}>
+          {t('calendar.notice.signIn')}
+        </button>
+      </div>
+    )
   if (status.authorization !== 'fullAccess')
     return (
       <div className="cal-notice">
