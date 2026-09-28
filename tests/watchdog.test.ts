@@ -7,7 +7,8 @@ import { EMBEDDING_MODEL } from '@shared/memory-embedding'
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   settings: { aizuchi: true, vapEnabled: true, conversationLocale: 'ja-JP', voiceEngine: 'cascade', uiLocale: 'en-US' },
-  startEmbedding: vi.fn(async () => false)
+  startEmbedding: vi.fn(async () => false),
+  ttsAnswered: vi.fn()
 }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -17,7 +18,7 @@ vi.mock('electron', () => ({ app: {
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/asr', () => ({ available: async () => true, revive: async () => true }))
 vi.mock('../src/main/services/tts', () => ({ available: async () => true, ensureEngine: async () => true }))
-vi.mock('../src/main/services/aizuchi', () => ({ rebuild: vi.fn() }))
+vi.mock('../src/main/services/aizuchi', () => ({ ttsAnswered: mocks.ttsAnswered }))
 vi.mock('../src/main/services/memory', () => ({ startEmbeddingIfEnabled: mocks.startEmbedding }))
 
 function fakeChild(script: string) {
@@ -49,6 +50,7 @@ beforeEach(async () => {
   mocks.settings.aizuchi = true
   mocks.settings.vapEnabled = true
   mocks.startEmbedding.mockClear()
+  mocks.ttsAnswered.mockClear()
   children = []
   mocks.spawn.mockReset().mockImplementation((_python: string, args: string[]) => {
     const child = fakeChild(args[0])
@@ -82,6 +84,14 @@ async function classifierReady(child: Child): Promise<void> {
 }
 
 describe('the watchdog', () => {
+  it('tells the aizuchi bank that the TTS answers from its first check on, not only after it saw the TTS down', async () => {
+    watchdog.start(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mocks.ttsAnswered).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.ttsAnswered).toHaveBeenCalledTimes(2)
+  })
+
   it('starts the aizuchi classifier again after a timeout stopped it', async () => {
     watchdog.start(() => {})
     await vi.advanceTimersByTimeAsync(10)

@@ -123,6 +123,35 @@ describe('aizuchi bank rebuild', () => {
   })
 })
 
+describe('aizuchi bank built while the TTS does not answer', () => {
+  it('is built again with audio once the TTS answers, as when the engine was spawned but did not serve HTTP yet', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.engineUp = false
+    const aizuchi = await import('../src/main/services/aizuchi')
+    expect((await aizuchi.getBank()).every((clip) => clip.audio === null)).toBe(true)
+    expect(warned).toHaveBeenCalled()
+    const changed = vi.fn()
+    aizuchi.events.on('changed', changed)
+
+    mocks.engineUp = true
+    aizuchi.ttsAnswered()
+
+    expect(changed).toHaveBeenCalledOnce()
+    expect((await aizuchi.getBank()).every((clip) => clip.audio === audioFor(1))).toBe(true)
+  })
+
+  it('keeps a bank that already has audio when the TTS answers', async () => {
+    const aizuchi = await import('../src/main/services/aizuchi')
+    await aizuchi.getBank()
+    const changed = vi.fn()
+    aizuchi.events.on('changed', changed)
+
+    aizuchi.ttsAnswered()
+
+    expect(changed).not.toHaveBeenCalled()
+  })
+})
+
 describe('aizuchi bank outside Japanese', () => {
   it('builds nothing, because the clips are Japanese interjections', async () => {
     mocks.locale = 'en-US'
