@@ -1,10 +1,9 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { sendTypedMessage } from '@/conversation'
+import { sendTypedMessage, typedTextFits } from '@/conversation'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 import { speechPlayer } from '@/voice/SpeechPlayer'
-import { useFeedStore, useSettingsStore, useTurnStore, type FeedLine } from '@/state/stores'
-import { LIVE_TEXT_MAX_LENGTH, isLiveEngine } from '@shared/voice-engine'
+import { useFeedStore, useTurnStore, type FeedLine } from '@/state/stores'
 
 /** The conversation feed in the center, with the partial recognition, the karaoke subtitles and the text input. */
 
@@ -109,10 +108,15 @@ export function Feed(): React.JSX.Element {
   const lines = useFeedStore((s) => s.lines)
   const partial = useTurnStore((s) => s.partial)
   const micState = useTurnStore((s) => s.micState)
-  const live = useSettingsStore((s) => (s.settings ? isLiveEngine(s.settings.voiceEngine) : false))
   const karaoke = useKaraoke()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [input, setInput] = useState('')
+  // Text the conversation refuses stays in the box for the user to shorten.
+  const send = (): void => {
+    if (!typedTextFits(input)) return
+    void sendTypedMessage(input)
+    setInput('')
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -150,8 +154,7 @@ export function Feed(): React.JSX.Element {
         className="flex gap-2 px-3 pb-2"
         onSubmit={(e) => {
           e.preventDefault()
-          void sendTypedMessage(input)
-          setInput('')
+          send()
         }}
       >
         <input
@@ -161,11 +164,9 @@ export function Feed(): React.JSX.Element {
             // The Enter that confirms a conversion in the Japanese IME must not send the message.
             if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
               e.preventDefault()
-              void sendTypedMessage(input)
-              setInput('')
+              send()
             }
           }}
-          maxLength={live ? LIVE_TEXT_MAX_LENGTH : undefined}
           placeholder={micState === 'on' ? t('conversation.inputWhileListening') : t('conversation.input')}
           className="flex-1 rounded-full border border-holo-line bg-(--ui-field) px-4 py-2 text-sm text-holo-text backdrop-blur placeholder:text-holo-dim focus:border-holo-cyan/50 focus:outline-none"
         />

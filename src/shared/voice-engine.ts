@@ -26,9 +26,9 @@ export type LiveEngine = Exclude<VoiceEngine, 'cascade'>
 export const isLiveEngine = (value: string): value is LiveEngine => value !== 'cascade' && (VOICE_ENGINES as readonly string[]).includes(value)
 
 /**
- * The longest typed text a live engine is handed, in UTF-16 code units, as both `String.length` and the
- * input's `maxLength` count. A cascade turn has no such limit: the conversation model is bounded only by
- * its context window, which the history's compaction already watches.
+ * The longest typed text a live engine is handed, in UTF-16 code units as `String.length` counts them.
+ * Longer text is refused, never cut. A cascade turn has no such limit: the conversation model is bounded
+ * only by its context window, which the history's compaction already watches.
  */
 export const LIVE_TEXT_MAX_LENGTH = 4000
 
