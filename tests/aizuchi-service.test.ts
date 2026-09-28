@@ -108,6 +108,21 @@ describe('aizuchi voice cache', () => {
   })
 })
 
+describe('aizuchi bank rebuild', () => {
+  it('tells the renderer once the bank of the old settings is gone, and the bank it then asks for is built from the new ones', async () => {
+    const aizuchi = await import('../src/main/services/aizuchi')
+    expect((await aizuchi.getBank()).every((clip) => clip.audio === audioFor(1))).toBe(true)
+    const reloaded: Array<Promise<Awaited<ReturnType<typeof aizuchi.getBank>>>> = []
+    aizuchi.events.on('changed', () => reloaded.push(aizuchi.getBank()))
+
+    mocks.speaker = 7
+    aizuchi.rebuild()
+
+    expect(reloaded).toHaveLength(1)
+    expect((await reloaded[0]).every((clip) => clip.audio === audioFor(7))).toBe(true)
+  })
+})
+
 describe('aizuchi bank outside Japanese', () => {
   it('builds nothing, because the clips are Japanese interjections', async () => {
     mocks.locale = 'en-US'

@@ -144,6 +144,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   mailEvents.on('event', (event) => send(IpcChannel.MailEvent, event))
   confirmEvents.on('event', (event) => send(IpcChannel.ConfirmEvent, event))
   appUpdateEvents.on('changed', (state) => send(IpcChannel.AppUpdateChanged, state))
+  aizuchi.events.on('changed', () => send(IpcChannel.AizuchiBankChanged, null))
   live.events.on('audio', (samples) => send(IpcChannel.LiveAudio, samples))
   live.events.on('event', (event) => send(IpcChannel.LiveEvent, event))
   timers.init()

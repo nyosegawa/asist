@@ -45,11 +45,6 @@ function openingPolicy(): { aizuchi: boolean; bridge: boolean } {
   if (!settings || !settings.aizuchi || settings.ttsEngine === 'none') return { aizuchi: false, bridge: false }
   return { aizuchi: conversationFeatures(settings.conversationLocale).aizuchi, bridge: true }
 }
-/** Reloads the clips for the conversation language, which drops them where that language has no aizuchi. */
-function reloadAizuchiBank(): void {
-  const settings = useSettingsStore.getState().settings
-  if (settings) void loadAizuchiBank(settings.conversationLocale)
-}
 /** The configured voice engine. A live engine takes the microphone and the typed text instead of the voice pipeline and brain. */
 const voiceEngine = (): VoiceEngine => useSettingsStore.getState().settings?.voiceEngine ?? 'cascade'
 const liveMode = (): boolean => isLiveEngine(voiceEngine())
@@ -149,13 +144,6 @@ async function initializeConversation(): Promise<void> {
   voiceController.handleAsrStatus(bootStatus.asr)
   useSettingsStore.subscribe(({ settings }, { settings: before }) => {
     applySettings()
-    if (settings && before && (
-      settings.ttsEngine !== before.ttsEngine ||
-      settings.voicevoxSpeaker !== before.voicevoxSpeaker ||
-      settings.aivisSpeaker !== before.aivisSpeaker ||
-      settings.qwenTtsVoice !== before.qwenTtsVoice ||
-      settings.conversationLocale !== before.conversationLocale
-    )) reloadAizuchiBank()
     if (settings && before && stopsLiveEngine(before, settings) &&
       (voiceController.current !== 'off' || liveVoice.current !== 'off')) {
       voiceController.disable()
@@ -168,14 +156,13 @@ async function initializeConversation(): Promise<void> {
     }
   })
 
-  reloadAizuchiBank()
+  window.api.onAizuchiBankChanged(() => void loadAizuchiBank())
+  void loadAizuchiBank()
 
-  // The aizuchi bank is synthesized by the TTS service, so it is loaded again once TTS recovers.
   window.api.onStatusChanged((status) => {
     const prev = useStatusStore.getState().status
     useStatusStore.getState().apply(status)
     voiceController.handleAsrStatus(status.asr)
-    if (prev && !prev.tts && status.tts) reloadAizuchiBank()
     if (prev && (prev.asr !== status.asr || prev.tts !== status.tts)) {
       const parts: string[] = []
       if (prev.asr !== status.asr) {

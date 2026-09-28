@@ -2,6 +2,7 @@ import { app } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
+import mitt from 'mitt'
 import type { AizuchiClip } from '@shared/ipc'
 import { AIZUCHI_BANK, type AizuchiDef } from '@shared/aizuchi-bank'
 import { pickWeightedClip } from '@shared/aizuchi-clips'
@@ -48,6 +49,12 @@ function cacheFile(def: AizuchiDef, voice: Exclude<tts.TtsVoice, { engine: 'syst
   return `${CACHE_VERSION}-${hash}.wav`
 }
 
+/**
+ * `changed` goes out each time the bank is thrown away, and the renderer asks for the new one. Main alone
+ * decides which settings and which engine events change the clips.
+ */
+export const events = mitt<{ changed: void }>()
+
 let bank: AizuchiClip[] | null = null
 let building: Promise<AizuchiClip[]> | null = null
 let generation = 0
@@ -86,6 +93,7 @@ export function rebuild(): void {
   bank = null
   building = null
   getBank().catch((error) => console.error('aizuchi bank failed:', error))
+  events.emit('changed')
 }
 
 interface BundledManifest {

@@ -778,6 +778,7 @@ export const IpcChannel = {
   TimerCancel: 'timer-cancel',
   TimerEvent: 'timer-event',
   AizuchiBank: 'aizuchi-bank',
+  AizuchiBankChanged: 'aizuchi-bank-changed',
   BridgePlan: 'bridge-plan',
   BridgeClip: 'bridge-synthesize',
   AizuchiClassify: 'aizuchi-classify',
@@ -957,6 +958,8 @@ export interface RendererApi {
 
   /** The bank of aizuchi synthesized at startup. */
   aizuchiBank(): Promise<AizuchiClip[]>
+  /** Main threw the bank away, after a change of the voice or the language or when TTS came back, and a new one is on its way. */
+  onAizuchiBankChanged(callback: () => void): () => void
   /** The look-ahead on a fast model. It is called on every update of the partial transcript, and the last result before the utterance ends is used. */
   bridgePlan(input: { text: string; lastAssistantText: string }): Promise<BridgePlan>
   /** Synthesizes the bridge phrase. */
