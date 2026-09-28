@@ -158,7 +158,7 @@ describe('the UI', () => {
     expect([...missing]).toEqual([])
   })
 
-  it('writes no colour in a script, so what a canvas draws changes with the theme', () => {
+  it('writes no quoted hex colour and no functional colour notation with numbers in a renderer script', () => {
     const literal = /['"`]#[\da-f]{3,8}['"`]|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*\d/gi
     const found = filesUnder(RENDERER, ['.ts', '.tsx']).flatMap((file) =>
       [...readFileSync(file, 'utf8').matchAll(literal)].map((match) => `${path.relative(RENDERER, file)} ${match[0]}`)

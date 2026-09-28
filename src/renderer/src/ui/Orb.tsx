@@ -107,10 +107,15 @@ export function Orb({ size = 240 }: { size?: number }): React.JSX.Element {
     const c = S / 2
 
     let palette = readPalette()
-    const theme = new MutationObserver(() => (palette = readPalette()))
+    let bars = palette.bars.idle
+    // The rest of the UI switches theme at once, so the waveform jumps too rather than fading from the
+    // old theme's colours.
+    const theme = new MutationObserver(() => {
+      palette = readPalette()
+      bars = palette.bars[phaseRef.current]
+    })
     theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     let energy = MODES.idle.energy
-    let bars = palette.bars.idle
     let lastT = performance.now()
     let lastDraw = 0
     let lastNod = 0
