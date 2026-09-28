@@ -96,7 +96,8 @@ export class VoiceController {
   readonly events: Emitter<VoiceEvents> = mitt<VoiceEvents>()
 
   private microphone = new MicInput()
-  private recognition = new AsrBackend({
+  /** Which speech recognition transcribes. The setup demo replaces its preparation of the in-browser Whisper. */
+  readonly recognition = new AsrBackend({
     onProgress: (progress) => this.events.emit('progress', progress),
     onServerLost: () => this.stopPartialLoop()
   })
