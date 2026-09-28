@@ -1,0 +1,130 @@
+name: Windows release
+
+# scripts/release.mjs runs this once it has made the draft release of a version with the Mac files, and publishes
+# the release only after this has put the Windows installer beside them. The installer needs no signing key, so
+# it is built here rather than on the Mac, which cannot build the Windows helpers. A draft has no git tag yet, so
+# the commit it was made from is checked out.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag of the draft release, v followed by the version in package.json
+        required: true
+        type: string
+      commit:
+        description: Full SHA of the commit the draft release was made from
+        required: true
+        type: string
+
+run-name: Windows installer for ${{ inputs.tag }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+# The token that can write releases reaches only the steps that run gh. The checkout does not keep it in
+# .git/config, and the steps that run npm, whose packages run their own install scripts, never see it.
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag }}
+      COMMIT: ${{ inputs.commit }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # Users' apps read the latest published release, so a release that is already published is never changed
+      # under them, and an installer built from another commit than the Mac files is never put beside them.
+      - name: Check that the release is a draft made from the commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release=$(gh release view "$TAG" --json isDraft,targetCommitish --jq '"\(.isDraft) \(.targetCommitish)"')
+          if [ "$release" != "true $COMMIT" ]; then
+            echo "::error::$TAG must be a draft release made from $COMMIT; found (draft, commit): $release"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-app
+      - name: Check that package.json has the version of the tag
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::package.json at $COMMIT has version $version, not the version of $TAG"
+            exit 1
+          fi
+      # electron.vite.config.ts embeds the Maps key into the renderer and Google's OAuth client into main at
+      # build time, and an empty secret would ship map cards that never load and a calendar that cannot sign in.
+      - name: Check that the build secrets are set
+        shell: bash
+        env:
+          RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY: ${{ secrets.RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY }}
+          ASIST_GOOGLE_CLIENT_ID: ${{ secrets.ASIST_GOOGLE_CLIENT_ID }}
+          ASIST_GOOGLE_CLIENT_SECRET: ${{ secrets.ASIST_GOOGLE_CLIENT_SECRET }}
+        run: |
+          for name in RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY ASIST_GOOGLE_CLIENT_ID ASIST_GOOGLE_CLIENT_SECRET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::the repository secret $name is not set"
+              exit 1
+            fi
+          done
+      - run: npm run build
+        env:
+          RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY: ${{ secrets.RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY }}
+          ASIST_GOOGLE_CLIENT_ID: ${{ secrets.ASIST_GOOGLE_CLIENT_ID }}
+          ASIST_GOOGLE_CLIENT_SECRET: ${{ secrets.ASIST_GOOGLE_CLIENT_SECRET }}
+      # The GitHub publish setting is given only here, so that electron-builder writes app-update.yml into this
+      # installer alone and latest.yml beside it. Publishing is off: the files go to the draft in a later step.
+      - name: Build the installer
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPOSITORY: ${{ github.event.repository.name }}
+        run: |
+          npx electron-builder --win nsis --x64 --publish never \
+            -c.win.publish.provider=github -c.win.publish.owner="$OWNER" -c.win.publish.repo="$REPOSITORY"
+      - name: Check that the installer looks for updates and latest.yml lists it
+        shell: bash
+        run: |
+          version="${TAG#v}"
+          grep -qx "repo: ${GH_REPO#*/}" dist/win-unpacked/resources/app-update.yml
+          grep -qx "version: $version" dist/latest.yml
+          grep -qx "path: ASIST-Setup-x64.exe" dist/latest.yml
+          ls -l dist/ASIST-Setup-x64.exe dist/ASIST-Setup-x64.exe.blockmap
+      # The app ships MinGit, and GPL-2.0 asks for the source of Git to be offered from the same place as the
+      # installer. The first line of the stamp is the Git for Windows version that was put into the app.
+      - name: Download the source of the bundled Git for Windows
+        id: git
+        shell: bash
+        run: |
+          version=$(head -n 1 resources/git/VERSION)
+          file="git-for-windows-$version.tar.gz"
+          curl -fsSL -o "dist/$file" "https://github.com/git-for-windows/git/archive/refs/tags/v$version.tar.gz"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+      - name: Upload the installer to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GIT_VERSION: ${{ steps.git.outputs.version }}
+          GIT_FILE: ${{ steps.git.outputs.file }}
+        run: |
+          if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" != true ]; then
+            echo "::error::$TAG was published while the installer was built; nothing is uploaded to it"
+            exit 1
+          fi
+          gh release upload "$TAG" --clobber dist/ASIST-Setup-x64.exe dist/ASIST-Setup-x64.exe.blockmap dist/latest.yml "dist/$GIT_FILE"
+          note="The Windows app includes MinGit $GIT_VERSION (GPL-2.0) from Git for Windows. $GIT_FILE is the source of its Git."
+          body=$(gh release view "$TAG" --json body --jq .body)
+          if [[ "$body" != *"$GIT_FILE"* ]]; then
+            printf '%s\n\n%s\n' "$note" "$body" > "$RUNNER_TEMP/notes.md"
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
