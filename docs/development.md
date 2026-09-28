@@ -156,10 +156,10 @@ npm run promo:thumbnail      # YouTube のサムネイルを promotions/launch-v
 署名の証明書を指定して実行します。アプリは `dist/` に出ます。
 
 ```bash
-CSC_NAME="Developer ID Application: ..." npm run dist:mac
+CSC_NAME="<氏名> (<Team ID>)" npm run dist:mac
 ```
 
-証明書には、配布するバージョンと同じ Developer ID Application を使います。macOS はマイクとカレンダーの許可を署名に結び付けるので、別の証明書で署名したアプリに入れ替えると、許可がやり直しになります。アプリはライブラリの検証を有効にしているので、自己署名の証明書で署名すると、アプリ本体と Electron Framework の Team ID が一致せず、起動した直後に終了します。`CSC_NAME` を省くと electron-builder がキーチェーンから証明書を選ぶので、自己署名の証明書があるときは必ず指定します。
+証明書には、配布するバージョンと同じ Developer ID Application を使います。macOS はマイクとカレンダーの許可を署名に結び付けるので、別の証明書で署名したアプリに入れ替えると、許可がやり直しになります。アプリはライブラリの検証を有効にしているので、自己署名の証明書で署名すると、アプリ本体と Electron Framework の Team ID が一致せず、起動した直後に終了します。`CSC_NAME` には、`security find-identity -v -p codesigning` に出る名前から「Developer ID Application: 」を除いた部分を渡します。前置きを付けると electron-builder は止まり、付けなければ Developer ID Application の証明書を自分で選びます。`CSC_NAME` を省くと electron-builder がキーチェーンから証明書を選ぶので、自己署名の証明書があるときは必ず指定します。
 
 このビルドは dmg も zip も作らないので、自動更新の設定(`app-update.yml`)を持たず、リリースから自分を更新しません。
 

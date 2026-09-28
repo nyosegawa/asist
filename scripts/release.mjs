@@ -12,7 +12,8 @@ import { download } from './resources/shared.mjs'
  * and the source of the git that ships inside the app, which GPL-2.0 asks to be offered from the same
  * place as the binary.
  *
- * Environment: CSC_NAME (the Developer ID Application identity; without it, the only one in the keychain)
+ * Environment: CSC_NAME (the name after "Developer ID Application: " of the signing identity; without it, the
+ * only such identity in the keychain)
  * and APPLE_KEYCHAIN_PROFILE (the notarytool profile; asist-notary without it).
  */
 
@@ -53,11 +54,15 @@ function digest(file, algorithm, encoding) {
   return createHash(algorithm).update(fs.readFileSync(file)).digest(encoding)
 }
 
+/**
+ * electron-builder refuses a name that starts with "Developer ID Application:" and picks that kind of
+ * certificate itself, so the identity is named by what follows it.
+ */
 function developerIdIdentity() {
   if (process.env.CSC_NAME) return process.env.CSC_NAME
   const identities = read('security', ['find-identity', '-v', '-p', 'codesigning'])
     .split('\n')
-    .map((line) => /"(Developer ID Application: [^"]+)"/.exec(line)?.[1])
+    .map((line) => /"Developer ID Application: ([^"]+)"/.exec(line)?.[1])
     .filter(Boolean)
   const unique = [...new Set(identities)]
   if (unique.length !== 1) {
