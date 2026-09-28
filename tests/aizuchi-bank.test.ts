@@ -9,7 +9,10 @@ beforeEach(() => {
   load.mockReset()
   vi.stubGlobal('window', { api: { aizuchiBank: load } })
 })
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
 
 describe('renderer aizuchi voice changes', () => {
   it('plays no aizuchi of the previous voice while the newly selected voice is loading', async () => {
@@ -28,6 +31,7 @@ describe('renderer aizuchi voice changes', () => {
   })
 
   it.each(['success', 'error'] as const)('keeps the current voice when a late %s of an older request arrives', async (outcome) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const bank = await import('../src/renderer/src/voice/aizuchi-bank')
     let resolve!: (clips: AizuchiClip[]) => void
     let reject!: (error: Error) => void
@@ -40,6 +44,16 @@ describe('renderer aizuchi voice changes', () => {
     else reject(new Error('old failure'))
     await old
     expect(bank.pickListeningClip()?.audio).toBe('selected')
+  })
+
+  it('reports a bank that fails to load and plays no aizuchi', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const bank = await import('../src/renderer/src/voice/aizuchi-bank')
+    const failure = new Error('no pre-rendered aizuchi clip')
+    load.mockRejectedValueOnce(failure)
+    await bank.loadAizuchiBank('ja-JP')
+    expect(logged).toHaveBeenCalledWith(expect.any(String), failure)
+    expect(bank.pickListeningClip()).toBeNull()
   })
 })
 

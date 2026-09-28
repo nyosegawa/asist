@@ -77,14 +77,14 @@ describe('aizuchi voice cache', () => {
     expect(mocks.speaker).toBeNull()
 
     mocks.speaker = 0
-    aizuchi.invalidate()
+    aizuchi.rebuild()
     const explicit = await aizuchi.getBank()
     expect(explicit.every((clip) => clip.audio === audioFor(0))).toBe(true)
 
     // Going back to automatic selection reuses the files already synthesized for the resolved speaker 1.
     const synthesized = mocks.synthesize.mock.calls.length
     mocks.speaker = null
-    aizuchi.invalidate()
+    aizuchi.rebuild()
     const reloaded = await aizuchi.getBank()
     expect(reloaded).toEqual(automatic)
     expect(mocks.synthesize).toHaveBeenCalledTimes(synthesized)
@@ -98,7 +98,7 @@ describe('aizuchi voice cache', () => {
     await vi.waitFor(() => expect(mocks.resolveVoice).toHaveBeenCalledTimes(1))
 
     mocks.speaker = 42
-    aizuchi.invalidate()
+    aizuchi.rebuild()
     const current = await aizuchi.getBank()
     expect(current.every((clip) => clip.audio === audioFor(42))).toBe(true)
     release({ engine: 'aivisspeech', speaker: 1 })
@@ -125,7 +125,7 @@ describe('aizuchi bank outside Japanese', () => {
     expect(await aizuchi.getBank()).toEqual([])
 
     mocks.locale = 'ja-JP'
-    aizuchi.invalidate()
+    aizuchi.rebuild()
     const bank = await aizuchi.getBank()
     expect(bank.length).toBeGreaterThan(0)
     expect(bank.every((clip) => clip.audio === audioFor(1))).toBe(true)
@@ -176,5 +176,16 @@ describe('aizuchi bank with Qwen3-TTS', () => {
     await shipClips(['うん。'])
     const aizuchi = await import('../src/main/services/aizuchi')
     await expect(aizuchi.getBank()).rejects.toThrow('no pre-rendered aizuchi clip')
+  })
+
+  it('logs a rebuild that fails, which nothing waits for, instead of leaving the rejection unhandled', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.engine = 'qwen3tts'
+    await shipClips(['うん。'])
+    const aizuchi = await import('../src/main/services/aizuchi')
+    aizuchi.rebuild()
+    await vi.waitFor(() => expect(logged).toHaveBeenCalledWith('aizuchi bank failed:', expect.objectContaining({
+      message: expect.stringContaining('no pre-rendered aizuchi clip')
+    })))
   })
 })

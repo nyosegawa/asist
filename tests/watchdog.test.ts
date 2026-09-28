@@ -17,7 +17,7 @@ vi.mock('electron', () => ({ app: {
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/asr', () => ({ available: async () => true, revive: async () => true }))
 vi.mock('../src/main/services/tts', () => ({ available: async () => true, ensureEngine: async () => true }))
-vi.mock('../src/main/services/aizuchi', () => ({ invalidate: vi.fn(), getBank: vi.fn() }))
+vi.mock('../src/main/services/aizuchi', () => ({ rebuild: vi.fn() }))
 vi.mock('../src/main/services/memory', () => ({ startEmbeddingIfEnabled: mocks.startEmbedding }))
 
 function fakeChild(script: string) {

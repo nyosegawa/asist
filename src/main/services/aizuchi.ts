@@ -76,11 +76,16 @@ export async function randomClip(category: AizuchiClip['category']): Promise<Aiz
   return pickWeightedClip(clips)
 }
 
-/** Makes the next getBank synthesize again, after the TTS settings change. */
-export function invalidate(): void {
+/**
+ * Throws the bank away and builds it again from the current settings, after the TTS settings change or
+ * the engine comes back. Nothing waits for the build, so a failure, such as shipped clips that do not
+ * cover the bank, is logged here instead of being lost.
+ */
+export function rebuild(): void {
   generation += 1
   bank = null
   building = null
+  getBank().catch((error) => console.error('aizuchi bank failed:', error))
 }
 
 interface BundledManifest {

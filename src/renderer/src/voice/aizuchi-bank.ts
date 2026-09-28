@@ -17,8 +17,8 @@ let loadGeneration = 0
 
 /**
  * Called at startup, on a speaker change, when the conversation language changes and when TTS
- * recovers. While it fails, no aizuchi plays, and a language without aizuchi keeps the bank empty
- * without asking the main process to build one.
+ * recovers. While it fails, the conversation goes on with no aizuchi, and a language without aizuchi
+ * keeps the bank empty without asking the main process to build one.
  */
 export async function loadAizuchiBank(locale: ConversationLocale): Promise<void> {
   const generation = ++loadGeneration
@@ -28,8 +28,8 @@ export async function loadAizuchiBank(locale: ConversationLocale): Promise<void>
   try {
     const clips = await window.api.aizuchiBank()
     if (generation === loadGeneration) bank = clips
-  } catch {
-    /* Continue without aizuchi. */
+  } catch (error) {
+    console.error('aizuchi bank failed to load:', error)
   }
 }
 

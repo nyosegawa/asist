@@ -52,10 +52,7 @@ export function start(onChange: (snap: HealthSnapshot) => void): void {
       const snap: HealthSnapshot = { asr: asrUp, tts: ttsUp }
       if (!last || last.asr !== snap.asr || last.tts !== snap.tts) {
         // Aizuchi clips built while TTS was down have audio=null, so the bank is rebuilt once it is back.
-        if (last && !last.tts && snap.tts) {
-          aizuchi.invalidate()
-          void aizuchi.getBank()
-        }
+        if (last && !last.tts && snap.tts) aizuchi.rebuild()
         if (last) {
           console.log(
             `watchdog: asr ${last.asr}→${snap.asr}, tts ${last.tts}→${snap.tts}`
