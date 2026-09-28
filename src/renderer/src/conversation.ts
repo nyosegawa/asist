@@ -1,4 +1,3 @@
-import { isJobTerminal } from '@shared/job-status'
 import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ipc'
 import { isSelfEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
 import { conversationFeatures } from '@shared/conversation-locale'
@@ -17,14 +16,14 @@ import { BridgePlanner } from '@/voice/bridge-plan'
 import { AizuchiClassifierFeed } from '@/voice/aizuchi-classify'
 import {
   useFeedStore,
-  useJobStore,
   useLiveStore,
   usePanelStore,
   useSettingsStore,
   useStatusStore,
   useToastStore,
-  useTurnStore, useTaskStore, useNoteStore, useMailStore } from '@/state/stores'
-import { useConfirmStore } from '@/state/confirm'
+  useTurnStore
+} from '@/state/stores'
+import { startStoreSync } from '@/state/store-sync'
 import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
 import { displayError, errorMessageOf } from '@/display-error'
 import { platformCapabilities } from '@/platform'
@@ -337,69 +336,8 @@ async function initializeConversation(): Promise<void> {
 
   window.api.onTurnEvent((event) => handleTurnEvent(event))
   startMiniAppReports()
-  window.api.onTasksChanged((tasks) => useTaskStore.getState().apply(tasks))
-  void useTaskStore.getState().load()
-  window.api.onNotesChanged((notes) => useNoteStore.getState().apply(notes))
-  void useNoteStore.getState().load()
-  // Mail status is copied into the store, while a fetch or a change bumps a generation so the views
-  // and the cards load again. A draft that was sent or discarded has its card closed.
-  window.api.onMailEvent((event) => {
-    if (event.type === 'status') useMailStore.getState().apply(event.status)
-    else if (event.type === 'drafts') {
-      const alive = new Set(event.drafts.map((draft) => `mail-draft:${draft.id}`))
-      useMailStore.getState().applyDrafts(event.drafts)
-      for (const panel of usePanelStore.getState().panels) {
-        if (panel.type === 'mail-draft' && !alive.has(panel.key)) usePanelStore.getState().apply({ op: 'dismiss', key: panel.key })
-      }
-    } else useMailStore.getState().bump()
-  })
-  void useMailStore.getState().refresh()
-  void useMailStore.getState().loadDrafts()
-  // Confirmations that main asks for are answered in the app's own sheet. A page that loads while main
-  // already waits, after a reload or a crash of the renderer, missed their open events, so it asks for
-  // them once it listens; a request that opens in between arrives both ways and is queued once.
-  window.api.onConfirmEvent((event) => {
-    if (event.type === 'open') {
-      useConfirmStore.getState().open(event.request)
-      return
-    }
-    const held = useConfirmStore.getState().queue.some((request) => request.id === event.id && request.holdsConversation)
-    useConfirmStore.getState().close(event.id)
-    if (held) resumeHeldTurn()
-  })
-  for (const request of await window.api.confirmPending()) useConfirmStore.getState().open(request)
-
+  await startStoreSync({ onHeldConfirmationClosed: resumeHeldTurn })
   window.api.onHotkeyMic(() => void enableMic())
-
-  window.api.onPanelEvent((event) => {
-    usePanelStore.getState().apply(event)
-  })
-
-  window.api.onJobEvent((event) => {
-    const previousStatus = event.type === 'update'
-      ? useJobStore.getState().jobs.find((job) => job.id === event.job.id)?.status
-      : undefined
-    useJobStore.getState().apply(event)
-    if (event.type === 'update' && isJobTerminal(event.job.status) && previousStatus !== event.job.status) {
-      const kind = event.job.status === 'done' ? 'ok' : event.job.status === 'error' ? 'error' : 'info'
-      useToastStore.getState().push({
-        kind,
-        title: translate(
-          event.job.status === 'done'
-            ? 'conversation.job.done'
-            : event.job.status === 'error'
-              ? 'conversation.job.error'
-              : 'conversation.job.cancelled'
-        ),
-        body: event.job.title
-      })
-      // The agent-job card reads its body from the store, but it is patched anyway so that the card
-      // does not stay on a stale render.
-      usePanelStore.getState().apply(
-        { op: 'patch', key: `job:${event.job.id}`, props: { jobId: event.job.id } }
-      )
-    }
-  })
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)
@@ -434,7 +372,6 @@ async function initializeConversation(): Promise<void> {
     turnMetrics.playbackIdle(turnId)
   })
 
-  void useJobStore.getState().load()
   feed.append({ role: 'sys', text: '', message: { key: 'conversation.start' } })
   startMicAtLaunch()
 
