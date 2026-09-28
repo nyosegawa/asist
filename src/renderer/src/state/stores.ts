@@ -381,7 +381,13 @@ export const useJobStore = create<JobState>((set) => ({
     }),
   load: async () => set({ jobs: await window.api.jobList() }),
   loadLog: async (id) => {
-    const log = await window.api.jobLog(id)
+    let log: JobLogLine[]
+    try {
+      log = await window.api.jobLog(id)
+    } catch (error) {
+      useToastStore.getState().push({ kind: 'error', title: translate('jobs.log.loadFailed'), body: displayError(error) })
+      return
+    }
     set((s) => ({ logs: { ...s.logs, [id]: log } }))
   }
 }))

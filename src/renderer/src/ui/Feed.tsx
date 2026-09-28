@@ -3,7 +3,8 @@ import { sendTypedMessage } from '@/conversation'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 import { speechPlayer } from '@/voice/SpeechPlayer'
-import { useFeedStore, useTurnStore, type FeedLine } from '@/state/stores'
+import { useFeedStore, useSettingsStore, useTurnStore, type FeedLine } from '@/state/stores'
+import { LIVE_TEXT_MAX_LENGTH, isLiveEngine } from '@shared/voice-engine'
 
 /** The conversation feed in the center, with the partial recognition, the karaoke subtitles and the text input. */
 
@@ -108,6 +109,7 @@ export function Feed(): React.JSX.Element {
   const lines = useFeedStore((s) => s.lines)
   const partial = useTurnStore((s) => s.partial)
   const micState = useTurnStore((s) => s.micState)
+  const live = useSettingsStore((s) => (s.settings ? isLiveEngine(s.settings.voiceEngine) : false))
   const karaoke = useKaraoke()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [input, setInput] = useState('')
@@ -163,6 +165,7 @@ export function Feed(): React.JSX.Element {
               setInput('')
             }
           }}
+          maxLength={live ? LIVE_TEXT_MAX_LENGTH : undefined}
           placeholder={micState === 'on' ? t('conversation.inputWhileListening') : t('conversation.input')}
           className="flex-1 rounded-full border border-holo-line bg-(--ui-field) px-4 py-2 text-sm text-holo-text backdrop-blur placeholder:text-holo-dim focus:border-holo-cyan/50 focus:outline-none"
         />

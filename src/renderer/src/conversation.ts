@@ -323,6 +323,9 @@ async function initializeConversation(): Promise<void> {
   voiceController.events.on('error', (message) =>
     toasts.push({ kind: 'error', title: translate('voice.micFailed'), body: message })
   )
+  voiceController.events.on('maaiUnavailable', () =>
+    toasts.push({ kind: 'info', title: translate('voice.maaiUnavailable.title'), body: translate('voice.maaiUnavailable.body') })
+  )
 
   liveVoice.events.on('state', (state) => {
     const t = useTurnStore.getState()
