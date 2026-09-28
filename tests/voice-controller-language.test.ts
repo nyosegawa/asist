@@ -38,7 +38,7 @@ interface VoiceInternals {
   captureStartedAt: number
   lastPartial: string
   lastBackchannelAt: number
-  mic: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }
+  microphone: { mic: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> } }
   vad: unknown
   transcribeWithRecovery: (audio: Float32Array) => Promise<string>
   enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: 'early' | 'extended' | 'fixed'): void
@@ -103,7 +103,7 @@ describe('MaAI by conversation language', () => {
     controller.nativeMicPreferred = false
     controller.vapEnabled = true
     controller.conversationLocale = locale
-    internals(controller).mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    internals(controller).microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
     await controller.enable()
     controller.disable()
   }
@@ -127,7 +127,7 @@ describe('MaAI that does not start', () => {
     controller.nativeMicPreferred = false
     controller.vapEnabled = true
     controller.conversationLocale = 'ja-JP'
-    internals(controller).mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    internals(controller).microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
     return controller
   }
 

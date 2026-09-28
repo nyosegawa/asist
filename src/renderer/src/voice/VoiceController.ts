@@ -13,12 +13,10 @@ import { classifyOverlap } from '@shared/user-backchannel'
 import { ECHO_TAIL_MS } from '@shared/self-echo'
 import { errorText } from '@shared/i18n/error-text'
 import { whisperLanguageName } from '@shared/asr-models'
-import { MicCapture, StreamResampler } from './MicCapture'
+import { MicInput } from './MicInput'
 import { VapAudio } from './VapAudio'
-import { NativeMicSource } from './NativeMic'
 import { VadSegmenter, type VadUtterance } from './VadSegmenter'
 import { SileroVad } from './SileroVad'
-import { DfnDenoiser } from './DfnDenoiser'
 import { AsrEngine, type AsrProgress } from './AsrEngine'
 import { speechPlayer } from './SpeechPlayer'
 import { conversationLocale } from '@/conversation-locale'
@@ -98,12 +96,7 @@ type VoiceEvents = {
 export class VoiceController {
   readonly events: Emitter<VoiceEvents> = mitt<VoiceEvents>()
 
-  private mic = new MicCapture()
-  /** Capture through the native microphone helper, which cancels the echo. If it is unavailable, mic takes over. */
-  private nativeMic = new NativeMicSource()
-  /** DeepFilterNet noise suppression. Unavailable or backed up, it passes the audio through unsuppressed. */
-  private dfn = new DfnDenoiser()
-  private nativeActive = false
+  private microphone = new MicInput()
   private asr = new AsrEngine()
   private vad: VadSegmenter
   /** Tells noise from voice. Where it is unavailable, the energy VAD runs alone. */
@@ -219,7 +212,7 @@ export class VoiceController {
       // Native capture through Apple's VPIO cancels the echo in the OS and attenuates the
       // microphone further during double talk, so a boost on top of that would put an
       // interrupting voice out of reach of the threshold.
-      this.vad.thresholdBoost = this.nativeActive ? 1 : 3
+      this.vad.thresholdBoost = this.microphone.native ? 1 : 3
       // The listening aizuchi answers the capture in progress. Muting would throw that capture
       // away, and it is not the assistant taking the floor either.
       if (segment.clip === 'listening') return
@@ -461,20 +454,16 @@ export class VoiceController {
         this.vad.push(frame)
         if (this.usesMaai()) this.vapAudio.pushUser(frame)
       }
-      this.nativeActive = false
-      if (this.nativeMicPreferred) {
-        const nativeActive = await this.startNativeCapture(feed)
-        if (!current()) return
-        this.nativeActive = nativeActive
-      }
-      if (!this.nativeActive) {
-        // A microphone that goes away is looked for again, as when the native helper dies; with
-        // none left, enable fails and reports it.
-        await this.mic.start(feed, () => void this.recover())
-        // Each start releases its own resources. Calling the shared stop from an older start
-        // would also stop a recording that an off-then-on cycle has already begun.
-        if (!current()) return
-      }
+      // A helper that dies or a microphone that goes away rebuilds capture: native is tried again,
+      // getUserMedia takes over if that fails, and with no microphone left enable fails and reports it.
+      await this.microphone.start(
+        { native: this.nativeMicPreferred, noiseSuppression: this.noiseSuppression },
+        feed,
+        () => void this.recover()
+      )
+      // Each start releases its own resources. Calling the shared stop from an older start would
+      // also stop a recording that an off-then-on cycle has already begun.
+      if (!current()) return
       this.settleState()
       if (this.backend === 'local') void this.probeUpgrade()
     } catch (err) {
@@ -482,31 +471,6 @@ export class VoiceController {
       this.events.emit('error', displayError(err))
       this.disable()
     }
-  }
-
-  /**
-   * Tries to capture through the native microphone helper. On success the 48 kHz frames go to 16 kHz,
-   * through DeepFilterNet first where the settings ask for it, and on to feed. If it cannot start
-   * it returns false and the caller switches to getUserMedia.
-   */
-  private async startNativeCapture(feed: (frame: Float32Array) => void): Promise<boolean> {
-    if (typeof window.api.micNativeStart !== 'function') return false
-    const resampler = new StreamResampler(48_000, 16_000)
-    const deliver = (chunk: Float32Array): void => {
-      const frame = resampler.process(chunk)
-      if (frame.length > 0) feed(frame)
-    }
-    let pipeline: (frame: Float32Array) => void = deliver
-    if (this.noiseSuppression) {
-      // Until the model has loaded, and if it fails, the audio arrives unsuppressed.
-      void this.dfn.init()
-      this.dfn.reset()
-      this.dfn.onOutput = deliver
-      pipeline = (frame) => this.dfn.push(frame)
-    }
-    // A helper that dies rebuilds capture: native is tried again, and getUserMedia takes over if
-    // that fails.
-    return this.nativeMic.start(pipeline, () => void this.recover())
   }
 
   /** Moves up to the server if it comes up later, even while local is in use. */
@@ -538,12 +502,9 @@ export class VoiceController {
     this.overlap = 'none'
     this.captureIsBackchannel = false
     speechPlayer.unduck()
-    this.nativeMic.stop()
-    this.dfn.dispose()
-    this.nativeActive = false
+    this.microphone.stop()
     this.vapAudio.reset()
     this.vapState = null
-    this.mic.stop()
     this.vad.reset()
     this.silero.dispose()
     if (this.backend === 'local' || this.localWorkInFlight > 0) {
