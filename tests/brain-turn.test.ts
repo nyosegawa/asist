@@ -1233,6 +1233,35 @@ describe('brain turn', () => {
   })
 
   it.each([
+    ['ja-JP', 'en-US', true],
+    ['en-US', 'ja-JP', false]
+  ] as const)('covers a slow tool with the work clip only when the language the turn started in (%s) has backchannels, whatever it is switched to (%s)', async (start, switched, plays) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
+    try {
+      mocks.conversationLocale = start
+      mocks.workClip = async () => ({ text: 'えーっと', category: 'work', weight: 1, audio: 'AAAA' })
+      let finishFetch!: () => void
+      mocks.fetchPanel.mockImplementation(() => new Promise((resolve) => { finishFetch = () => resolve(weatherPanel) }))
+      mocks.rounds.push(async (round) => {
+        mocks.conversationLocale = switched
+        round.toolUse('t1', 'show_weather', { location: '東京都' })
+        return { stop: 'tool_calls' }
+      })
+      mocks.rounds.push(async (round) => { round.text('晴天です。'); return {} })
+      const { brain, events } = await loadBrain()
+      const handle = brain.beginTurn({ text: '東京の天気' }, {}, 'user', false)!
+      await vi.waitFor(() => expect(finishFetch).toBeDefined())
+      await vi.advanceTimersByTimeAsync(3000)
+      finishFetch()
+      await handle.completion
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(events.some((e) => e.type === 'segment' && e.segment.text === 'えーっと')).toBe(plays)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
     ['a turn the user started', 'user'],
     ['a turn GPT-Live handed over', 'live']
   ] as const)('keeps %s open while its confirmation waits through the next words, and takes those up once the approved job has started', async (_name, origin) => {

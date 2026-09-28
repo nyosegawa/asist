@@ -357,8 +357,9 @@ async function runTurn(
   }
 
   // A filler that keeps the pause alive while a search or a tool takes long. It plays a pre-synthesized
-  // aizuchi clip as is, at most once per turn. With a voice model in front, that side fills the pause.
-  let fillerPlayed = route.kind === 'live'
+  // aizuchi clip as is, at most once per turn. The clips are Japanese backchannels, so they play only in a
+  // turn whose language has them. With a voice model in front, that side fills the pause.
+  let fillerPlayed = route.kind === 'live' || !conversationFeatures(locale).aizuchi
   const playWorkFiller = (sourceSignal: AbortSignal): void => {
     if (fillerPlayed || sourceSignal.aborted) return
     fillerPlayed = true
