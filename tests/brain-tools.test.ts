@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationLocale } from '@shared/conversation-locale'
-import type { TurnEvent } from '@shared/ipc'
+import type { JobDiff, TurnEvent } from '@shared/ipc'
 import type { ToolContext, ToolOptions } from '../src/main/services/brain/tools'
 import { PANEL_CATALOG } from '@shared/panel-catalog'
 import { taskSummary } from '@shared/tasks'
@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     isGitRepo: vi.fn(() => false),
     startIsolated: vi.fn(() => ({ id: 'w1', title: 'fix', cwd: '/ws/wt', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } })),
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
-    diff: vi.fn(() => ({ commit: 'reviewed', base: 'merge-base', into: 'hotfix', stat: 'README.md | 2 +-', patch: '', submodules: [] as string[] })),
+    diff: vi.fn((): JobDiff => ({ commit: 'reviewed', base: 'merge-base', into: 'hotfix', stat: 'README.md | 2 +-', patch: '', submodules: [], blocked: null })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
     discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-', submodules: [] as string[] }))
   },
@@ -663,6 +663,14 @@ describe('brain tools registry', () => {
     expect(detail.logTail.join('\n')).toContain('ログの一行')
   })
 
+  it('tells the model in its language why a job waiting to be merged cannot be merged by ASIST', async () => {
+    mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'pending', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: null, stat: 'README.md | 2 +-', patch: '', submodules: [], blocked: errorText('jobs.merging.detached') })
+    const { executeClientTool } = await load()
+    const result = await executeClientTool('get_agent_job', { jobId: 'w1' }, makeCtx().ctx)
+    expect(JSON.parse(result.content).review).toMatchObject({ into: null, blocked: ja('jobs.merging.detached') })
+  })
+
   it('does not ask about discarding a job the agent service would refuse, such as one already merged, and tells the model why', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'merged' } as never)
     mocks.agent.discardPreview.mockImplementationOnce(() => {
@@ -687,7 +695,8 @@ describe('brain tools registry', () => {
 
   it('refuses to merge a job that touched submodules before asking the user about it', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: 'vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'] })
+    const blocked = errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x', dir: '/ws/wt' })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: 'vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'], blocked })
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
@@ -698,7 +707,7 @@ describe('brain tools registry', () => {
 
   it('refuses to merge a job with nothing to merge before asking the user about it', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: '', patch: '', submodules: [] })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: '', patch: '', submodules: [], blocked: errorText('jobs.merging.noChanges', { id: 'w1' }) })
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)

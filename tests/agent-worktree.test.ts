@@ -368,6 +368,7 @@ it('refuses to merge while the repository is in the middle of a bisect, and keep
   git(repo, 'bisect', 'start', 'HEAD', 'HEAD~2')
   const review = agent.diff(job.id)
   expect(review.into).toBeNull()
+  expect(review.blocked).toBe(errorText('jobs.merging.detached'))
   expect(review.stat).toContain('new.txt')
   expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.detached'))
   git(repo, 'bisect', 'reset')

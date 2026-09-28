@@ -129,12 +129,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
           ? t('jobs.card.merge.path', { branch: worktree.branch, into: diff.into, repo: worktree.repo })
           : `${worktree.branch} → ${worktree.repo}`}
       </p>
-      {diff && diff.into === null && <p className="aj-text">{t('jobs.merging.detached')}</p>}
-      {diff && diff.submodules.length > 0 && (
-        <p className="aj-text">
-          {t('jobs.merging.submodules', { paths: diff.submodules.join(', '), branch: worktree.branch, dir: worktree.dir })}
-        </p>
-      )}
+      {diff?.blocked && <p className="aj-text">{displayError(diff.blocked)}</p>}
       {diff && (
         <pre className="aj-diff">
           {diff.stat || t('jobs.card.merge.noDiff')}
@@ -150,7 +145,7 @@ function MergeControls({ job }: { job: AgentJob }): React.JSX.Element {
         {!conflict && (
           <Action
             tone="primary"
-            disabled={busy || !diff?.stat || diff.submodules.length > 0}
+            disabled={busy || !diff || diff.blocked !== null}
             // The diff on the card is out of date once another branch is checked out or the merge base has
             // moved, and main refuses the merge then, so the card shows the current one beside the reason.
             onClick={() => diff && act(() => window.api.jobMerge(job.id, { commit: diff.commit, base: diff.base, into: diff.into }), loadDiff)}
