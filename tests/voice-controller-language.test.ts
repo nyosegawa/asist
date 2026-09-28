@@ -40,7 +40,7 @@ interface VoiceInternals {
   lastBackchannelAt: number
   microphone: { mic: { start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> } }
   vad: unknown
-  transcribeWithRecovery: (audio: Float32Array) => Promise<string>
+  recognition: { transcribe: (audio: Float32Array) => Promise<string> }
   enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: 'early' | 'extended' | 'fixed'): void
   maybeBackchannel(): void
 }
@@ -198,11 +198,11 @@ describe('the list of Whisper hallucinations by conversation language', () => {
     controller.conversationLocale = locale
     state.state = 'listening'
     state.captureGeneration = 1
-    state.transcribeWithRecovery = vi.fn(async () => text)
+    state.recognition.transcribe = vi.fn(async () => text)
     const utterances: string[] = []
     controller.events.on('utterance', (event) => utterances.push(event.text))
     state.enqueueUtterance(new Float32Array([0.1]), 300, 'fixed')
-    await vi.waitFor(() => expect(state.transcribeWithRecovery).toHaveBeenCalled())
+    await vi.waitFor(() => expect(state.recognition.transcribe).toHaveBeenCalled())
     await Promise.resolve()
     await Promise.resolve()
     return utterances
