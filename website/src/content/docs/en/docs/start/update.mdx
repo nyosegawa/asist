@@ -9,25 +9,11 @@ import { Tabs, TabItem } from '@astrojs/starlight/components'
 
 ## Updating
 
-<Tabs syncKey="os">
-<TabItem label="macOS">
-
-ASIST checks the GitHub Releases for a new version when it opens, and every 6 hours while it is open. If there is one, it downloads it in the background and installs it the next time you quit ASIST. It never restarts on its own while you are talking or while a job is running.
+ASIST checks the GitHub Releases for a new version when it opens, and every 6 hours while it is open. If there is one, it downloads it in the background and installs it the next time you quit ASIST. It never restarts on its own while you are talking or while a job is running. This is the same on a Mac and on Windows.
 
 To install the update right away, click "Restart now" under "About" in the settings. The current version and the update status also appear there.
 
-</TabItem>
-<TabItem label="Windows">
-
-ASIST for Windows does not download new versions by itself. When a new version is out, install it as follows.
-
-1. Right-click the ASIST icon in the notification area of the taskbar and click "Quit".
-2. Download the new `ASIST Setup <version>.exe` from [Releases](https://github.com/nyosegawa/asist/releases/latest) and open it. Get past the SmartScreen warning as in [Installation](/en/docs/start/install/).
-
-Installing over the previous version keeps your settings and data in `%APPDATA%\asist`.
-
-</TabItem>
-</Tabs>
+On Windows, closing the window does not quit ASIST. When you right-click the ASIST icon in the notification area of the taskbar and click "Quit", the installer installs the new version without showing a window. When you click "Restart now", ASIST opens again once the new version is installed. Your settings and data in `%APPDATA%\asist` stay as they are.
 
 If a released version has a problem, a fixed version with a higher number is released. There is no way to go back to an earlier version.
 
