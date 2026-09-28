@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { GIT_SOURCE } from './resources/git-macos.mjs'
+import { download } from './resources/shared.mjs'
 
 /*
  * Builds the version in package.json from main, signs it with Developer ID, notarizes it and publishes it
@@ -18,14 +20,6 @@ const REPOSITORY = 'nyosegawa/asist'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dist = path.join(root, 'dist')
 
-/** The version and the digest of the git tarball that scripts/build-git.sh compiles. */
-export function gitSourceOf(buildScript) {
-  const version = /^version="([^"]+)"$/m.exec(buildScript)?.[1]
-  const sha256 = /^sha256="([0-9a-f]{64})"$/m.exec(buildScript)?.[1]
-  if (!version || !sha256) throw new Error('scripts/build-git.sh has no version or sha256 line')
-  return { version, sha256, file: `git-${version}.tar.xz`, url: `https://www.kernel.org/pub/software/scm/git/git-${version}.tar.xz` }
-}
-
 /**
  * Rewrites the digest of one file listed in latest-mac.yml. Stapling the notarization ticket to the dmg
  * changes its bytes after electron-builder wrote the file.
@@ -37,8 +31,8 @@ export function withFileDigest(yml, url, sha512, size) {
   return yml.replace(entry, `$1${sha512}$2${size}`)
 }
 
-function gitNote(git, version) {
-  return `The app includes Git ${git.version} (GPL-2.0). ${git.file} is its source, compiled by [scripts/build-git.sh](https://github.com/${REPOSITORY}/blob/v${version}/scripts/build-git.sh).`
+function gitNote(version) {
+  return `The app includes Git ${GIT_SOURCE.version} (GPL-2.0). ${GIT_SOURCE.file} is its source, compiled by [scripts/resources/git-macos.mjs](https://github.com/${REPOSITORY}/blob/v${version}/scripts/resources/git-macos.mjs).`
 }
 
 function run(command, args, options = {}) {
@@ -106,7 +100,7 @@ function checkApp(app) {
   if (!fs.existsSync(path.join(app, 'Contents/Resources/app-update.yml'))) fail(`${app} has no app-update.yml`)
 }
 
-function main() {
+async function main() {
   const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
   const tag = `v${version}`
   checkSource(tag)
@@ -140,18 +134,16 @@ function main() {
   const yml = fs.readFileSync(feed, 'utf8')
   fs.writeFileSync(feed, withFileDigest(yml, path.basename(dmg), digest(dmg, 'sha512', 'base64'), fs.statSync(dmg).size))
 
-  const git = gitSourceOf(fs.readFileSync(path.join(root, 'scripts/build-git.sh'), 'utf8'))
-  const gitTarball = path.join(dist, git.file)
-  run('curl', ['-fsSL', '-o', gitTarball, git.url])
-  if (digest(gitTarball, 'sha256', 'hex') !== git.sha256) fail(`${git.file} does not match the sha256 in scripts/build-git.sh`)
+  const gitTarball = path.join(dist, GIT_SOURCE.file)
+  await download(GIT_SOURCE.url, gitTarball, GIT_SOURCE.sha256)
 
   // The release stays a draft until every file is in place, since electron-updater reads the latest
   // published release and would find it without latest-mac.yml.
   const commit = read('git', ['rev-parse', 'HEAD'])
   run('gh', ['release', 'create', tag, '--repo', REPOSITORY, '--target', commit, '--title', `ASIST ${version}`,
-    '--notes', gitNote(git, version), '--generate-notes', '--draft', dmg, zip, `${zip}.blockmap`, feed, gitTarball])
+    '--notes', gitNote(version), '--generate-notes', '--draft', dmg, zip, `${zip}.blockmap`, feed, gitTarball])
   run('gh', ['release', 'edit', tag, '--repo', REPOSITORY, '--draft=false', '--latest'])
   console.log(`released ${tag}: https://github.com/${REPOSITORY}/releases/tag/${tag}`)
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main()
+if (import.meta.url === pathToFileURL(process.argv[1]).href) await main()

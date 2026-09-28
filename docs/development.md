@@ -200,7 +200,7 @@ xcrun notarytool store-credentials asist-notary --apple-id <Apple ID> --team-id 
 npm run release
 ```
 
-`npm run release` は、main が origin/main と同じで変更が無いことと、そのバージョンがまだ出ていないことを確かめます。次に、地図のキー(`RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY`)があることと `npm audit --omit=dev` を確かめてから、dmg と zip をビルドして署名と公証をし、Gatekeeper が受け付けることを確かめます。そのうえで、dmg(`ASIST-arm64.dmg`。名前にバージョンを含めないので、`releases/latest/download/ASIST-arm64.dmg` がいつも最新を指します)、zip、`latest-mac.yml`、同梱した git のソース(`scripts/build-git.sh` のバージョンの tarball)を Release に置きます。証明書を選ぶ `CSC_NAME` と、notarytool のプロファイルを選ぶ `APPLE_KEYCHAIN_PROFILE`(省くと `asist-notary`)で、どちらも変えられます。
+`npm run release` は、main が origin/main と同じで変更が無いことと、そのバージョンがまだ出ていないことを確かめます。次に、地図のキー(`RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY`)があることと `npm audit --omit=dev` を確かめてから、dmg と zip をビルドして署名と公証をし、Gatekeeper が受け付けることを確かめます。そのうえで、dmg(`ASIST-arm64.dmg`。名前にバージョンを含めないので、`releases/latest/download/ASIST-arm64.dmg` がいつも最新を指します)、zip、`latest-mac.yml`、同梱した git のソース(`scripts/resources/git-macos.mjs` のバージョンの tarball)を Release に置きます。証明書を選ぶ `CSC_NAME` と、notarytool のプロファイルを選ぶ `APPLE_KEYCHAIN_PROFILE`(省くと `asist-notary`)で、どちらも変えられます。
 
 出したバージョンに問題があったときは、Release を消したり前のバージョンに戻したりせず、番号を上げて直したバージョンを出します。自動更新は、今のバージョンより新しい番号のバージョンだけを入れるからです。
 
