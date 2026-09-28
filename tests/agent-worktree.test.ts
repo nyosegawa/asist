@@ -29,10 +29,16 @@ const mergeReviewed = (agent: Agent, id: string): void => {
 }
 
 /** Calls merge_agent_job as the conversation model does, after the review it read gave the commit. */
+/** Runs merge_agent_job, with a failure in the Japanese the model reads rather than packed in both languages. */
 const mergeThroughTool = async (id: string, commit: string): Promise<unknown> => {
   const { jobTools } = await import('../src/main/services/brain/job-tools')
+  const { ToolError, resolvePromptTexts } = await import('@shared/tool-registry')
   const tool = jobTools('ja-JP').find((definition) => definition.name === 'merge_agent_job')!
-  return tool.run({ jobId: id, commit }, {} as never, new AbortController().signal)
+  try {
+    return await tool.run({ jobId: id, commit }, {} as never, new AbortController().signal)
+  } catch (err) {
+    throw err instanceof ToolError ? new Error(resolvePromptTexts(err.message, 'ja')) : err
+  }
 }
 
 /** A job that touched submodules waits with its worktree, and no merge of it changes the user's branch. */
