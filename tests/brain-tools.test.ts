@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ConversationLocale } from '@shared/conversation-locale'
 import type { TurnEvent } from '@shared/ipc'
+import type { ToolContext, ToolOptions } from '../src/main/services/brain/tools'
 import { PANEL_CATALOG } from '@shared/panel-catalog'
 import { taskSummary } from '@shared/tasks'
 import { FETCHER_TIMEOUT_MS, LOCAL_TIMEOUT_MS, resolvePromptTexts } from '@shared/tool-registry'
@@ -59,7 +61,22 @@ vi.mock('../src/main/services/user-local-data', () => ({ getLocalDataService: ()
 vi.mock('../src/main/services/user-tasks', () => ({ getTaskService: () => mocks.tasks }))
 vi.mock('../src/main/services/project-index', () => mocks.projects)
 
-const load = () => import('../src/main/services/brain/tools')
+/**
+ * The tools module, with every call given the conversation language a turn would read from the settings
+ * at the moment of the call.
+ */
+async function load() {
+  const module = await import('../src/main/services/brain/tools')
+  const locale = (): ConversationLocale => mocks.settings.conversationLocale as ConversationLocale
+  return {
+    ...module,
+    tools: () => module.tools(locale()),
+    toolRegistry: (of: ConversationLocale = locale()) => module.toolRegistry(of),
+    toolGuide: (options?: ToolOptions) => module.toolGuide(locale(), options),
+    executeClientTool: (name: string, input: Record<string, unknown>, ctx: ToolContext, onAsk?: () => boolean) =>
+      module.executeClientTool(name, input, ctx, locale(), onAsk)
+  }
+}
 
 function makeCtx(): { ctx: { turnId: number; signal: AbortSignal; emit: (e: TurnEvent) => void }; events: TurnEvent[] } {
   const events: TurnEvent[] = []

@@ -4,7 +4,6 @@ import {
   CONVERSATION_LANGUAGE_NAMES,
   promptLanguage,
   type ConversationLocale,
-  type PromptLanguage,
   type PromptText
 } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
@@ -17,8 +16,7 @@ import {
   type ToolDefinition
 } from '@shared/tool-registry'
 import { getSettings } from '../settings'
-import { tConversation } from '../i18n'
-import { conversationLocale } from '../conversation-locale'
+import { translatorIn } from '../i18n'
 import * as agentRunner from '../agent'
 import * as memory from '../memory'
 import * as projectIndex from '../project-index'
@@ -158,7 +156,7 @@ export function agentTool(locale: ConversationLocale): Def {
           ? agentRunner.startIsolated(prompt, { ...options, cwd: options.cwd! })
           : agentRunner.start(prompt, { ...options, readonly: access.readonly })
       } catch (err) {
-        throw new ToolError(TEXTS.startFailed(detail(err, language)))
+        throw new ToolError(TEXTS.startFailed(detail(err, locale)))
       }
       showJobCard(ctx, job.id)
       if (access.isolate) {
@@ -187,7 +185,8 @@ const ABSOLUTE_PATH = new RegExp(
   String.raw`(?:(?<![\w./:~-])/|(?<=^|[\s"'「『(（\[【<])(?:[A-Za-z]:[\\/]|\\\\[^\s\\/]+\\(?=[^\s\\/])))[^\s"'、。()（）「」『』【】]+`
 )
 
-export function projectTools(language: PromptLanguage): Def[] {
+export function projectTools(locale: ConversationLocale): Def[] {
+  const language = promptLanguage(locale)
   return [
     {
       name: 'resolve_project',
@@ -222,7 +221,7 @@ export function projectTools(language: PromptLanguage): Def[] {
         const candidates = projectIndex.resolve(name).map((c) => ({
           name: c.entry.name,
           path: c.entry.path,
-          lastUsed: new Date(c.entry.lastUsedAt).toLocaleDateString(conversationLocale())
+          lastUsed: new Date(c.entry.lastUsedAt).toLocaleDateString(locale)
         }))
         // When the index has nothing, a path written in the memories serves as another name for the place.
         if (candidates.length === 0) {
@@ -275,7 +274,7 @@ export function projectTools(language: PromptLanguage): Def[] {
           const entry = projectIndex.register(name, path)
           return { registered: true, name: entry.name, path: entry.path }
         } catch (err) {
-          throw new ToolError(TEXTS.registerFailed(detail(err, language)))
+          throw new ToolError(TEXTS.registerFailed(detail(err, locale)))
         }
       }
     }
@@ -318,7 +317,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         const job = requireJob(input)
         const logTail = foldJobLog(agentRunner.getLog(job.id))
           .slice(-15)
-          .map((row) => `[${row.kind}] ${rowText(row, tConversation)}`)
+          .map((row) => `[${row.kind}] ${rowText(row, translatorIn(locale))}`)
         let review: JobDiff | undefined
         let reviewUnavailable: string | undefined
         if (job.mergeState === 'pending') {
@@ -327,7 +326,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           try {
             review = agentRunner.diff(job.id)
           } catch (err) {
-            reviewUnavailable = detail(err, language)
+            reviewUnavailable = detail(err, locale)
           }
         }
         return {
@@ -409,7 +408,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         try {
           job = await agentRunner.continueJob(parent.id, prompt, signal)
         } catch (err) {
-          throw new ToolError(TEXTS.continueFailed(detail(err, language)))
+          throw new ToolError(TEXTS.continueFailed(detail(err, locale)))
         }
         showJobCard(ctx, job.id)
         return { started: true, jobId: job.id, title: job.title, parentId: parent.id }
@@ -459,7 +458,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           }
           if (!review.stat) throw new Error(errorText('jobs.merging.noChanges', { id: job.id }))
         } catch (err) {
-          throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
+          throw new ToolError(TEXTS.mergeFailed(detail(err, locale)))
         }
         if (!(await confirmMerge({ title: job.title, repo: job.worktree!.repo, into }, review, signal))) {
           return { merged: false, declined: true, jobId: job.id, note: TEXTS.mergeDeclined[language] }
@@ -468,7 +467,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         try {
           merged = agentRunner.merge(job.id, review)
         } catch (err) {
-          throw new ToolError(TEXTS.mergeFailed(detail(err, language)))
+          throw new ToolError(TEXTS.mergeFailed(detail(err, locale)))
         }
         if (merged.mergeState === 'conflict') throw new ToolError(TEXTS.mergeConflict)
         return { merged: true, jobId: job.id, repo: merged.worktree?.repo }
@@ -495,7 +494,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         try {
           target = agentRunner.discardPreview(job.id)
         } catch (err) {
-          throw new ToolError(TEXTS.discardFailed(detail(err, language)))
+          throw new ToolError(TEXTS.discardFailed(detail(err, locale)))
         }
         if (!(await confirmDiscard(job.title, target, signal))) {
           return { discarded: false, declined: true, jobId: job.id, note: TEXTS.discardDeclined[language] }
@@ -503,7 +502,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
         try {
           agentRunner.discard(job.id)
         } catch (err) {
-          throw new ToolError(TEXTS.discardFailed(detail(err, language)))
+          throw new ToolError(TEXTS.discardFailed(detail(err, locale)))
         }
         return { discarded: true, jobId: job.id }
       }
