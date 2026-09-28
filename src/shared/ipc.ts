@@ -548,7 +548,10 @@ export type JobDiff = MergeVerdict & {
   base: string
   stat: string
   patch: string
-  /** The submodules the job touched, which keep ASIST from merging it (see `AgentJob.worktree.submodules`). */
+  /**
+   * The submodules the job touched and those whose folders in the worktree may hold work now, which keep
+   * ASIST from merging it (see `AgentJob.worktree.submodules`).
+   */
   submodules: string[]
 }
 

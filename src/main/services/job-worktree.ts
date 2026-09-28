@@ -71,14 +71,6 @@ export function mergeBase(worktree: Worktree, commit: string): string {
   return base
 }
 
-/**
- * The submodules that keep a job from being merged by ASIST: those the changes a merge counted from `base`
- * would bring in touch, and those the job changed inside their own folders, as found when it settled.
- */
-function touchedSubmodules(worktree: Worktree, base: string, commit: string): string[] {
-  return sortedUnique([...(worktree.submodules ?? []), ...git.submoduleEntryChanges(worktree.repo, base, commit)])
-}
-
 /** Acts only while the commit that was shown still matches the current branch and worktree. */
 export function assertWorktreeReview(job: AgentJob, commit: string): void {
   const worktree = job.worktree
@@ -94,28 +86,38 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
 }
 
 /**
- * Whether ASIST merges the job's commit into the branch checked out in `into` from `base`. It refuses a
- * detached HEAD, a job that touched any of `submodules`, which the user merges or discards, and one with
- * nothing to merge.
+ * Whether ASIST merges the job's commit into the branch checked out in `into` from `base`, decided the same
+ * way for a review and for the merge itself, so that nothing shown as mergeable is refused once the user has
+ * approved it. It refuses a detached HEAD; a job that touched submodules, which the user merges or discards;
+ * one with nothing to merge; and a repository with uncommitted changes, which the merge would mix with the
+ * job's. The submodules are those the changes a merge counted from `base` would bring in touch, and those
+ * whose folders in the worktree may hold work, looked into on every call: the merge removes the worktree and
+ * whatever work appeared in them since the job settled.
  */
-function mergeVerdict(job: AgentJob, into: string | null, base: string, commit: string, submodules: string[]): MergeVerdict {
+function mergeVerdict(job: AgentJob, into: string | null, base: string, commit: string): MergeVerdict & { submodules: string[] } {
   const worktree = job.worktree!
+  const submodules = sortedUnique([
+    ...(worktree.submodules ?? []),
+    ...git.submoduleEntryChanges(worktree.repo, base, commit),
+    ...git.submodulesWithWork(worktree.dir)
+  ])
   // A merge into a detached HEAD moves only HEAD: the work is left to a reflog once the branch is checked
   // out again, as after a bisect, while the job's branch and worktree are already deleted.
-  if (into === null) return { into, blocked: errorText('jobs.merging.detached') }
+  if (into === null) return { into, submodules, blocked: errorText('jobs.merging.detached') }
   if (submodules.length > 0) {
-    return { into, blocked: errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir }) }
+    const blocked = errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir })
+    return { into, submodules, blocked }
   }
-  if (!git.hasChanges(worktree.repo, base, commit)) return { into, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
-  return { into, blocked: null }
+  if (!git.hasChanges(worktree.repo, base, commit)) return { into, submodules, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
+  if (!git.isClean(worktree.repo)) return { into, submodules, blocked: errorText('jobs.merging.dirtyRepo') }
+  return { into, submodules, blocked: null }
 }
 
 /**
  * Refuses a merge that is not the one the review showed: into another branch or commit than the one checked
  * out then, or of more than the diff counted from its base. A branch cut from the same commit keeps the
  * merge base, so the base alone would let the merge land where the user did not approve it. It also refuses
- * every merge that mergeVerdict blocks. The submodules are looked into again, since the merge removes the
- * worktree and whatever work appeared in them since it settled.
+ * every merge that mergeVerdict blocks.
  */
 export function assertMergeable(job: AgentJob, reviewed: ReviewedMerge): void {
   const worktree = job.worktree!
@@ -124,28 +126,24 @@ export function assertMergeable(job: AgentJob, reviewed: ReviewedMerge): void {
   if (into !== null && (into !== reviewed.into || mergeBase(worktree, commit) !== base)) {
     throw new Error(errorText('jobs.merging.baseChanged'))
   }
-  const submodules = sortedUnique([...touchedSubmodules(worktree, base, commit), ...git.submodulesWithWork(worktree.dir)])
-  const { blocked } = mergeVerdict(job, into, base, commit, submodules)
+  const { blocked } = mergeVerdict(job, into, base, commit)
   if (blocked !== null) throw new Error(blocked)
 }
 
 /**
- * The diff a merge would bring in, counted from the merge base it names, the submodules the job touched, and
- * why ASIST would refuse to merge it, if it would. The submodules are those found when the job settled and
- * those the diff touches, since the merge looks into them again anyway.
+ * The diff a merge would bring in, counted from the merge base it names, the submodules that keep the job
+ * from being merged by ASIST, and why ASIST would refuse to merge it, if it would.
  */
 export function readWorktreeDiff(job: AgentJob): JobDiff {
   const commit = job.worktree?.commit ?? ''
   assertWorktreeReview(job, commit)
   const worktree = job.worktree!
   const base = mergeBase(worktree, commit)
-  const submodules = touchedSubmodules(worktree, base, commit)
   return {
     commit,
     base,
     stat: git.diffStat(worktree.repo, base, commit),
     patch: git.diffPatch(worktree.repo, base, commit),
-    submodules,
-    ...mergeVerdict(job, git.checkedOut(worktree.repo), base, commit, submodules)
+    ...mergeVerdict(job, git.checkedOut(worktree.repo), base, commit)
   }
 }

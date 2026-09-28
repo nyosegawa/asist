@@ -583,6 +583,7 @@ it('refuses to merge over an uncommitted edit of the user\'s that a fsmonitor ho
   git(repo, 'status', '--porcelain')
   git(repo, 'status', '--porcelain')
   fs.writeFileSync(path.join(repo, 'tracked.txt'), 'the user\'s edit\n')
+  expect(agent.diff(job.id).blocked).toBe(errorText('jobs.merging.dirtyRepo'))
   expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.dirtyRepo'))
   expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('the user\'s edit\n')
 })
@@ -775,17 +776,20 @@ describe('a repository with a submodule', () => {
     expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('fixed\n')
   })
 
-  it('reads the submodules it found when the job settled rather than looking into them for every review', async () => {
+  it('shows a review as blocked by work that appeared in a submodule of the worktree after the job settled, as the merge refuses it', async () => {
+    const head = git(repo, 'rev-parse', 'HEAD')
     const agent = await import('../src/main/services/agent')
-    const operations = await import('../src/main/services/git')
     const job = agent.startIsolated('直す', { cwd: repo })
-    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written by the agent\n')
     fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
     mocks.launch.mock.calls[0][2].onExit(0)
-    const look = vi.spyOn(operations, 'submodulesWithWork')
-    expect(agent.diff(job.id).submodules).toEqual(['vendor/sub'])
-    expect(agent.diff(job.id).submodules).toEqual(['vendor/sub'])
-    expect(look).not.toHaveBeenCalled()
+    expect(agent.diff(job.id).blocked).toBeNull()
+    fs.writeFileSync(path.join(job.cwd, 'vendor', 'sub', 'patch.txt'), 'written after the job settled\n')
+    expect(agent.diff(job.id).blocked).toBe(
+      errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch: job.worktree!.branch, dir: job.worktree!.dir })
+    )
+    await expect(mergeThroughTool(job.id, agent.diff(job.id).commit)).rejects.toThrow(ja('jobs.merging.submodules', { paths: 'vendor/sub', branch: job.worktree!.branch, dir: job.worktree!.dir }))
+    expect(mocks.requestConfirm).not.toHaveBeenCalled()
+    expectRefused(agent, job.id, ['vendor/sub'], head)
   })
 
   it.each(['all', 'dirty', 'untracked'])('does not merge a job that changed a submodule whose ignore setting is %s, and keeps its worktree', async (mode) => {
