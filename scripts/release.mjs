@@ -120,8 +120,25 @@ function checkSource(tag) {
   if (read('git', ['status', '--porcelain'])) fail('the working tree has changes')
   run('git', ['fetch', 'origin', 'main'])
   if (read('git', ['rev-parse', 'HEAD']) !== read('git', ['rev-parse', 'origin/main'])) fail('main is not the same as origin/main')
-  const existing = spawnSync('gh', ['release', 'view', tag, '--repo', REPOSITORY], { cwd: root, stdio: 'ignore' })
-  if (existing.status === 0) fail(`${tag} is already released; raise the version in package.json`)
+  const existing = spawnSync('gh', ['release', 'view', tag, '--repo', REPOSITORY, '--json', 'isDraft,targetCommitish'], { cwd: root, encoding: 'utf8' })
+  if (existing.status === 0) fail(existingRelease(tag, JSON.parse(existing.stdout)))
+  if (existing.stderr.trim() !== 'release not found') fail(`could not ask GitHub whether ${tag} exists: ${existing.stderr.trim()}`)
+}
+
+/**
+ * Why a release of tag cannot start, given what gh found under that tag. gh finds a draft as well, and a draft
+ * is what a release leaves when it stopped after creating it, typically in the Windows workflow; no user has
+ * seen it, so it is finished or deleted rather than the version raised.
+ */
+export function existingRelease(tag, { isDraft, targetCommitish }) {
+  if (!isDraft) return `${tag} is already released; raise the version in package.json`
+  return [
+    `a draft release of ${tag}, made from ${targetCommitish}, is left from a release that stopped. Either finish it:`,
+    `    gh workflow run ${WINDOWS_WORKFLOW} --repo ${REPOSITORY} --ref main -f tag=${tag} -f commit=${targetCommitish}`,
+    `  wait for that run, check that the draft has the Windows files and publish it:`,
+    `    gh release edit ${tag} --repo ${REPOSITORY} --draft=false --latest`,
+    `  or delete it and run npm run release again: gh release delete ${tag} --repo ${REPOSITORY}`
+  ].join('\n')
 }
 
 /**

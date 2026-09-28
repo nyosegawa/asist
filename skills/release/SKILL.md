@@ -63,13 +63,15 @@ npm run release > /tmp/asist-release.log 2>&1
 - A keychain dialog asking for the login password on behalf of codesign means the key has not been allowed
   for codesign yet: the user types the password and presses 「常に許可」 (Always Allow).
 - Once the draft release with the Mac files exists, the script dispatches `windows-release.yml` with the tag
-  and the commit and waits for it with `gh run watch --exit-status`. The job checks that the release is a
-  draft made from that commit and that `package.json` has the tag's version, builds the NSIS installer on
-  windows-latest with the three repository secrets (`RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY`,
-  `ASIST_GOOGLE_CLIENT_ID`, `ASIST_GOOGLE_CLIENT_SECRET`), and uploads `ASIST-Setup-x64.exe`, its blockmap,
-  `latest.yml` and `git-for-windows-<version>.tar.gz`. The unpacked Windows build takes about 3 minutes in CI
-  (2026-09-28); the installer adds its compression, and the job stops after 60 minutes. The script publishes
-  only when the draft has every Windows file.
+  and the commit and waits for it with `gh run watch --exit-status`. The run has three jobs. `draft` checks
+  that the release is a draft made from that commit. `build`, on windows-latest with a token that can only
+  read, checks that `package.json` has the tag's version, builds the NSIS installer with the three repository
+  secrets (`RENDERER_VITE_GOOGLE_MAPS_EMBED_KEY`, `ASIST_GOOGLE_CLIENT_ID`, `ASIST_GOOGLE_CLIENT_SECRET`),
+  checks `app-update.yml` and `latest.yml`, and hands the files over as a workflow artifact kept for a day.
+  `upload` runs no npm and no project code: it checks the draft again and uploads `ASIST-Setup-x64.exe`, its
+  blockmap, `latest.yml` and `git-for-windows-<version>.tar.gz` with gh. The unpacked Windows build takes about
+  3 minutes in CI (2026-09-28); the installer adds its compression, and `build` stops after 60 minutes. The
+  script publishes only when the draft has every Windows file.
 
 ## 5. Check what was published
 
@@ -94,9 +96,10 @@ Until then the site describes the previous version, which is what the users stil
 ## When something goes wrong
 
 - A failure before `gh release create` publishes nothing: fix the cause and run `npm run release` again.
-- A failure after it leaves a draft release, which no user sees, and a second run stops at "already
-  released". Show the user the draft (`gh release view v<version> --repo nyosegawa/asist`) and delete it
-  only when they agree, then run again.
+- A failure after it leaves a draft release, which no user sees. A second `npm run release` stops, says that a
+  draft of the version is left, and prints the commands to finish it (the Windows workflow, then publishing)
+  or to delete it. Show the user the draft (`gh release view v<version> --repo nyosegawa/asist`); finish it
+  when only the Windows files are missing, or delete it only when they agree and run again.
 - Notarization rejected: read the log Apple returns
   (`xcrun notarytool log <submission id> --keychain-profile asist-notary`) and fix what it names.
 - The Windows workflow failed: the script stops, prints the run and leaves the draft unpublished. Read the
