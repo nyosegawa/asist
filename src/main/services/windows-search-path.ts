@@ -1,22 +1,30 @@
 import path from 'node:path'
 
+const isQuote = (char: string | undefined): boolean => char === '"' || char === "'"
+
 /**
- * The folders of a Windows PATH value, in order, as Windows searches them. A folder whose name holds `;`
- * is written in double quotes, and a quote only switches whether `;` separates, so the quotes are dropped
- * wherever they stand. An empty entry and a relative folder, which would be searched from whatever the
- * current folder is, are left out.
+ * The folders of a Windows PATH value, in order, read as libuv's search_path reads them (src/win/process.c),
+ * which is how Node's spawn finds a program on Windows. A quote counts only where an entry begins: from
+ * there the entry runs to the same quote and then to the next `;`, and an unclosed one runs to the end of
+ * the value. One quote is then dropped from each end of the entry. Nothing is trimmed. Unlike libuv, an
+ * empty entry and a relative folder, which libuv searches from the current folder, are left out.
  */
 export function windowsPathFolders(value: string): string[] {
   const folders: string[] = []
-  let folder = ''
-  let quoted = false
-  for (const char of value) {
-    if (char === '"') quoted = !quoted
-    else if (char === ';' && !quoted) {
-      folders.push(folder)
-      folder = ''
-    } else folder += char
+  let end = 0
+  while (end < value.length) {
+    if (value[end] === ';') end++
+    const start = end
+    if (isQuote(value[start])) {
+      const close = value.indexOf(value[start], start + 1)
+      end = close === -1 ? value.length : close
+    }
+    const separator = value.indexOf(';', end)
+    end = separator === -1 ? value.length : separator
+    let folder = value.slice(start, end)
+    if (isQuote(folder[0])) folder = folder.slice(1)
+    if (isQuote(folder.at(-1))) folder = folder.slice(0, -1)
+    if (folder !== '' && path.win32.isAbsolute(folder)) folders.push(folder)
   }
-  folders.push(folder)
-  return folders.filter((entry) => entry !== '' && path.win32.isAbsolute(entry))
+  return folders
 }

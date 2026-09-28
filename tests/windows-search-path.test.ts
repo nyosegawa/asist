@@ -17,4 +17,18 @@ describe('the folders of a Windows PATH', () => {
   it('leaves out a quoted folder that is relative', () => {
     expect(windowsPathFolders('"rel;ative";C:\\a')).toEqual(['C:\\a'])
   })
+
+  it('takes a quote only where an entry begins, so a stray one at the end of an entry leaves the next entries apart', () => {
+    expect(windowsPathFolders('C:\\Program Files\\Git\\cmd";C:\\Windows\\System32;C:\\Users\\me\\.local\\bin')).toEqual([
+      'C:\\Program Files\\Git\\cmd',
+      'C:\\Windows\\System32',
+      'C:\\Users\\me\\.local\\bin'
+    ])
+    expect(windowsPathFolders('C:\\a"b;C:\\c')).toEqual(['C:\\a"b', 'C:\\c'])
+  })
+
+  it('reads single quotes as double ones, and runs an unclosed quote at the start of an entry to the end', () => {
+    expect(windowsPathFolders("'C:\\x;y';C:\\z")).toEqual(['C:\\x;y', 'C:\\z'])
+    expect(windowsPathFolders('C:\\a;"C:\\b;C:\\c')).toEqual(['C:\\a', 'C:\\b;C:\\c'])
+  })
 })
