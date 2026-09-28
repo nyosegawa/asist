@@ -134,7 +134,7 @@ describe('aizuchi bank built while the TTS does not answer', () => {
     aizuchi.events.on('changed', changed)
 
     mocks.engineUp = true
-    aizuchi.ttsAnswered()
+    aizuchi.ttsAnswered(false)
 
     expect(changed).toHaveBeenCalledOnce()
     expect((await aizuchi.getBank()).every((clip) => clip.audio === audioFor(1))).toBe(true)
@@ -146,9 +146,39 @@ describe('aizuchi bank built while the TTS does not answer', () => {
     const changed = vi.fn()
     aizuchi.events.on('changed', changed)
 
-    aizuchi.ttsAnswered()
+    aizuchi.ttsAnswered(false)
+    aizuchi.ttsAnswered(true)
 
     expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('is built again once the TTS answers after the engine died while the clips were synthesized', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.synthesize.mockRejectedValueOnce(new Error('connection refused'))
+    const aizuchi = await import('../src/main/services/aizuchi')
+    expect((await aizuchi.getBank()).some((clip) => clip.audio === null)).toBe(true)
+
+    aizuchi.ttsAnswered(false)
+
+    expect((await aizuchi.getBank()).every((clip) => clip.audio === audioFor(1))).toBe(true)
+  })
+
+  it('is not built again on every check while synthesis keeps failing with the TTS answering, only when the TTS comes back', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mocks.synthesize.mockRejectedValue(new Error('speaker not found'))
+    const aizuchi = await import('../src/main/services/aizuchi')
+    await aizuchi.getBank()
+    const changed = vi.fn()
+    aizuchi.events.on('changed', changed)
+
+    aizuchi.ttsAnswered(false)
+    await aizuchi.getBank()
+    aizuchi.ttsAnswered(false)
+    await aizuchi.getBank()
+    expect(changed).toHaveBeenCalledOnce()
+
+    aizuchi.ttsAnswered(true)
+    expect(changed).toHaveBeenCalledTimes(2)
   })
 })
 

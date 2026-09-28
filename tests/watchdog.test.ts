@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   settings: { aizuchi: true, vapEnabled: true, conversationLocale: 'ja-JP', voiceEngine: 'cascade', uiLocale: 'en-US' },
   startEmbedding: vi.fn(async () => false),
-  ttsAnswered: vi.fn()
+  ttsAnswered: vi.fn(),
+  ttsUp: true
 }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -17,7 +18,7 @@ vi.mock('electron', () => ({ app: {
 } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/asr', () => ({ available: async () => true, revive: async () => true }))
-vi.mock('../src/main/services/tts', () => ({ available: async () => true, ensureEngine: async () => true }))
+vi.mock('../src/main/services/tts', () => ({ available: async () => mocks.ttsUp, ensureEngine: async () => true }))
 vi.mock('../src/main/services/aizuchi', () => ({ ttsAnswered: mocks.ttsAnswered }))
 vi.mock('../src/main/services/memory', () => ({ startEmbeddingIfEnabled: mocks.startEmbedding }))
 
@@ -51,6 +52,7 @@ beforeEach(async () => {
   mocks.settings.vapEnabled = true
   mocks.startEmbedding.mockClear()
   mocks.ttsAnswered.mockClear()
+  mocks.ttsUp = true
   children = []
   mocks.spawn.mockReset().mockImplementation((_python: string, args: string[]) => {
     const child = fakeChild(args[0])
@@ -87,9 +89,22 @@ describe('the watchdog', () => {
   it('tells the aizuchi bank that the TTS answers from its first check on, not only after it saw the TTS down', async () => {
     watchdog.start(() => {})
     await vi.advanceTimersByTimeAsync(10)
-    expect(mocks.ttsAnswered).toHaveBeenCalledOnce()
+    expect(mocks.ttsAnswered).toHaveBeenCalledWith(false)
     await vi.advanceTimersByTimeAsync(30_000)
     expect(mocks.ttsAnswered).toHaveBeenCalledTimes(2)
+  })
+
+  it('tells the aizuchi bank that the TTS came back after it saw it down', async () => {
+    mocks.ttsUp = false
+    watchdog.start(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mocks.ttsAnswered).not.toHaveBeenCalled()
+
+    mocks.ttsUp = true
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.ttsAnswered).toHaveBeenCalledWith(true)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.ttsAnswered).toHaveBeenLastCalledWith(false)
   })
 
   it('starts the aizuchi classifier again after a timeout stopped it', async () => {

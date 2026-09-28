@@ -50,7 +50,7 @@ export function start(onChange: (snap: HealthSnapshot) => void): void {
         void tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error))
       }
       const snap: HealthSnapshot = { asr: asrUp, tts: ttsUp }
-      if (snap.tts) aizuchi.ttsAnswered()
+      if (snap.tts) aizuchi.ttsAnswered(last !== null && !last.tts)
       if (!last || last.asr !== snap.asr || last.tts !== snap.tts) {
         if (last) {
           console.log(
