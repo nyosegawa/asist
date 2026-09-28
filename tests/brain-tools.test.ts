@@ -712,6 +712,7 @@ describe('brain tools registry', () => {
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
     expect(result.content).toContain(ja('jobs.merging.noChanges', { id: 'w1' }))
+    expect(result.content).not.toContain('。。')
     expect(mocks.requestConfirm).not.toHaveBeenCalled()
     expect(mocks.agent.merge).not.toHaveBeenCalled()
   })

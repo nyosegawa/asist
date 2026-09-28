@@ -21,7 +21,7 @@ import * as agentRunner from '../agent'
 import * as memory from '../memory'
 import * as projectIndex from '../project-index'
 import type { ToolContext } from './tools'
-import { detail } from './tool-error-text'
+import { detail, reasonText } from './tool-error-text'
 import { confirmDiscard, confirmJob, confirmMerge } from './job-confirm'
 
 /**
@@ -326,7 +326,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           try {
             review = agentRunner.diff(job.id)
           } catch (err) {
-            reviewUnavailable = detail(err, locale)
+            reviewUnavailable = reasonText(err, locale)
           }
         }
         return {
@@ -339,7 +339,7 @@ export function jobTools(locale: ConversationLocale): Def[] {
           costUsd: job.costUsd,
           artifacts: job.artifacts,
           mergeState: job.mergeState,
-          review: review && { ...review, blocked: review.blocked === null ? null : detail(review.blocked, locale) },
+          review: review && { ...review, blocked: review.blocked === null ? null : reasonText(review.blocked, locale) },
           reviewUnavailable,
           logTail
         }
