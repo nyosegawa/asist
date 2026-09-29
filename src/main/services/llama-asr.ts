@@ -1,0 +1,294 @@
+import { spawn, type ChildProcess } from 'node:child_process'
+import { randomBytes, randomUUID } from 'node:crypto'
+import fs from 'node:fs'
+import net from 'node:net'
+import readline from 'node:readline'
+import { asrLanguage, asrModelFiles, type AsrModelSpec } from '@shared/asr-models'
+import type { SetupProgress } from '@shared/ipc'
+import { errorText } from '@shared/i18n/error-text'
+import { childEnv } from './child-env'
+import { conversationLocale } from './conversation-locale'
+import { t } from './i18n'
+import { platformCapabilities } from './platform'
+import { llamaServerPath } from './speech-binaries'
+import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-models'
+import { stopOnQuit } from './speech-worker'
+
+/**
+ * Speech recognition with Qwen3-ASR in llama.cpp's llama-server, on the GPU the capabilities chose. The
+ * server listens on the loopback interface with a key made for each start, so that no other process on
+ * the machine can use it, and transcribes one request at a time. A recording goes to it as a WAV in the
+ * request body and is never written to disk.
+ */
+
+/**
+ * Loading a model and compiling its GPU kernels comes before the server answers /health. The first start
+ * of llama.cpp's Vulkan build compiled its shaders for a few seconds on an RTX 2080 (2026-09-29).
+ */
+const READY_TIMEOUT_MS = 180_000
+const HEALTH_POLL_MS = 250
+
+/**
+ * A request left unanswered this long means the server is hung, and it is stopped. The server answers one
+ * request at a time, so the time also covers the requests queued ahead.
+ */
+const ANSWER_TIMEOUT_MS = 60_000
+
+/**
+ * How long a caller waits for a partial transcription. The server still finishes a partial that took
+ * longer: stopping it would also fail the final transcription queued behind the partial.
+ */
+const PARTIAL_WAIT_MS = 4_000
+
+/** The start of Qwen3-ASR's answer, which names the language before the transcription. */
+const LANGUAGE_PREFIX = /^language\s+\S+?<asr_text>/
+
+interface Server {
+  child: ChildProcess
+  model: AsrModelSpec
+  port: number
+  key: string
+  ready: Promise<boolean>
+  stopped: boolean
+}
+
+let server: Server | null = null
+const requests = new Map<string, AbortController>()
+let prepareInFlight: Promise<{ ok: boolean; message: string }> | null = null
+let prepareController: AbortController | null = null
+
+/** Whether the files of the model are there. */
+export function installationStatus(model: AsrModelSpec): { modelInstalled: boolean } {
+  return { modelInstalled: filesInstalled(asrModelFiles(model)) }
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as net.AddressInfo
+      probe.close(() => resolve(port))
+    })
+  })
+}
+
+async function waitUntilHealthy(started: Server): Promise<boolean> {
+  const deadline = Date.now() + READY_TIMEOUT_MS
+  while (!started.stopped && Date.now() < deadline) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${started.port}/health`, { signal: AbortSignal.timeout(2_000) })
+      if (response.ok) return true
+    } catch {
+      // Not listening yet, or still loading the model.
+    }
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS))
+  }
+  if (!started.stopped) console.error('llama-server did not become ready')
+  return false
+}
+
+async function startServer(model: AsrModelSpec): Promise<Server | null> {
+  const { localSpeech } = platformCapabilities()
+  // The capabilities leave the local speech recognition out where it does not run, so a start here is a caller's mistake.
+  if (localSpeech.backend === null) throw new Error('the local speech recognition cannot run on this machine')
+  if (!installationStatus(model).modelInstalled) return null
+  // llama-server ships with the app, so a missing one is a broken build rather than something to prepare.
+  if (!fs.existsSync(llamaServerPath())) throw new Error(`llama-server is missing from ${llamaServerPath()}`)
+  const port = await freePort()
+  const key = randomBytes(24).toString('hex')
+  const child = spawn(llamaServerPath(), [
+    '--model', modelFilePath(model.model),
+    '--mmproj', modelFilePath(model.mmproj),
+    '--device', localSpeech.device,
+    '--n-gpu-layers', '99',
+    '--ctx-size', '4096',
+    '--parallel', '1',
+    '--host', '127.0.0.1',
+    '--port', String(port),
+    '--api-key', key,
+    '--no-webui',
+    '--offline',
+    // Warnings and errors only; the informational lines run to hundreds per start.
+    '--log-verbosity', '2'
+  ], { stdio: ['ignore', 'ignore', 'pipe'], env: childEnv(), windowsHide: true })
+  stopOnQuit(child)
+  const started: Server = { child, model, port, key, ready: Promise.resolve(false), stopped: false }
+  readline.createInterface({ input: child.stderr! }).on('line', (line) => {
+    if (line.trim()) console.error(`llama-server: ${line}`)
+  })
+  const exited = new Promise<boolean>((resolve) => {
+    child.once('error', (error) => {
+      console.error('llama-server could not be started:', error)
+      resolve(false)
+    })
+    child.once('exit', (code) => {
+      if (!started.stopped) console.error(`llama-server exited (${code ?? 'signal'})`)
+      if (server === started) stopServer()
+      resolve(false)
+    })
+  })
+  started.ready = Promise.race([waitUntilHealthy(started), exited])
+  return started
+}
+
+let ensureInFlight: Promise<boolean> | null = null
+
+/** Starts the server on the model unless it is running it already. Resolves false when the files are missing or it fails to start. */
+export function ensureServer(model: AsrModelSpec): Promise<boolean> {
+  if (server && server.model === model && !server.stopped) return server.ready
+  if (ensureInFlight) return ensureInFlight
+  stopServer()
+  const operation = (async () => {
+    const started = await startServer(model)
+    if (!started) return false
+    server = started
+    const ready = await started.ready
+    if (!ready && server === started) stopServer()
+    return ready
+  })().finally(() => {
+    if (ensureInFlight === operation) ensureInFlight = null
+  })
+  ensureInFlight = operation
+  return operation
+}
+
+export async function available(model: AsrModelSpec): Promise<boolean> {
+  return server !== null && server.model === model && !server.stopped && (await server.ready)
+}
+
+function stopServer(): void {
+  const stale = server
+  server = null
+  if (!stale || stale.stopped) return
+  stale.stopped = true
+  if (stale.child.exitCode === null && !stale.child.killed) stale.child.kill('SIGTERM')
+}
+
+/** Stops the server and fails every open request. */
+export function stop(): void {
+  stopServer()
+  for (const controller of requests.values()) controller.abort(new DOMException(errorText('speechRecognition.errors.stopped'), 'AbortError'))
+  requests.clear()
+}
+
+/** A 16 kHz mono 16-bit WAV of the samples. */
+function encodeWav(samples: Float32Array, sampleRate = 16_000): Buffer {
+  const data = Buffer.alloc(samples.length * 2)
+  for (let index = 0; index < samples.length; index++) {
+    const sample = Math.max(-1, Math.min(1, samples[index]))
+    data.writeInt16LE(Math.round(sample * 32767), index * 2)
+  }
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + data.length, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(sampleRate, 24)
+  header.writeUInt32LE(sampleRate * 2, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(data.length, 40)
+  return Buffer.concat([header, data])
+}
+
+async function request(model: AsrModelSpec, samples: Float32Array, id: string): Promise<string> {
+  if (requests.has(id)) throw new Error(`duplicate transcription request: ${id}`)
+  const controller = new AbortController()
+  requests.set(id, controller)
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError'))
+    stopServer()
+  }, ANSWER_TIMEOUT_MS)
+  timer.unref?.()
+  try {
+    // The language is read here, per request, so that a change of the setting applies to the next
+    // utterance without reloading the model.
+    const language = asrLanguage(conversationLocale())
+    if (!(await ensureServer(model)) || !server) throw new Error(errorText('speechRecognition.errors.notReady'))
+    controller.signal.throwIfAborted()
+    const target = server
+    const response = await fetch(`http://127.0.0.1:${target.port}/v1/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${target.key}` },
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: [{ type: 'input_audio', input_audio: { data: encodeWav(samples).toString('base64'), format: 'wav' } }] },
+          // Qwen3-ASR writes the language before the transcription; starting its answer with it fixes the language.
+          { role: 'assistant', content: `language ${language}<asr_text>` }
+        ],
+        temperature: 0,
+        max_tokens: 512
+      })
+    })
+    const body = await response.text()
+    if (!response.ok) throw new Error(`llama-server answered ${response.status}: ${body.slice(0, 300)}`)
+    const content = (JSON.parse(body) as { choices?: Array<{ message?: { content?: unknown } }> }).choices?.[0]?.message?.content
+    if (typeof content !== 'string') throw new Error(`llama-server answered without a transcription: ${body.slice(0, 300)}`)
+    return content.replace(LANGUAGE_PREFIX, '').trim()
+  } catch (error) {
+    // An abort rejects fetch with the signal's reason, which is the error the caller should see.
+    throw controller.signal.aborted && controller.signal.reason instanceof Error ? controller.signal.reason : error
+  } finally {
+    clearTimeout(timer)
+    requests.delete(id)
+  }
+}
+
+export function transcribe(model: AsrModelSpec, samples: Float32Array, requestId?: string): Promise<string> {
+  return request(model, samples, requestId || randomUUID())
+}
+
+export async function transcribePartial(model: AsrModelSpec, samples: Float32Array): Promise<string> {
+  // The server answers one request at a time, so a partial sent while it still works on another request,
+  // an abandoned partial included, would only delay the final transcription.
+  if (requests.size > 0) return ''
+  const answer = request(model, samples, randomUUID()).catch(() => '')
+  let timer: NodeJS.Timeout | undefined
+  const abandoned = new Promise<string>((resolve) => {
+    timer = setTimeout(() => resolve(''), PARTIAL_WAIT_MS)
+  })
+  try {
+    return await Promise.race([answer, abandoned])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export function cancelTranscription(requestId: string): boolean {
+  const controller = requests.get(requestId)
+  if (!controller) return false
+  controller.abort(new DOMException(errorText('speechRecognition.errors.stopped'), 'AbortError'))
+  return true
+}
+
+export function cancelPreparation(): boolean {
+  if (!prepareController) return false
+  prepareController.abort()
+  stop()
+  return true
+}
+
+export function prepare(model: AsrModelSpec, onProgress: (progress: SetupProgress) => void): Promise<{ ok: boolean; message: string }> {
+  if (prepareInFlight) return prepareInFlight
+  const controller = new AbortController()
+  prepareController = controller
+  const operation = prepareModelFiles({
+    files: asrModelFiles(model),
+    label: model.label,
+    feature: t('settingsModels.features.speechRecognition'),
+    signal: controller.signal,
+    onProgress,
+    start: () => ensureServer(model)
+  }).finally(() => {
+    if (prepareInFlight === operation) prepareInFlight = null
+    prepareController = null
+  })
+  prepareInFlight = operation
+  return operation
+}

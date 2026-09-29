@@ -198,7 +198,7 @@ export async function resolveVoice(settings: AppSettings = getSettings(), locale
   const engine = settings.ttsEngine
   if (engine === 'none') throw new Error(errorText('voice.speech.noSpeech'))
   if (engine === 'system') return { engine: 'system' }
-  if (!ttsEngineRuns(engine, platformCapabilities().speechRuntime)) {
+  if (!ttsEngineRuns(engine, platformCapabilities().localSpeech)) {
     throw new Error(errorText('voice.speech.cannotRunHere', { engine: engineLabel(engine) }))
   }
   if (engine === 'qwen3tts') {
