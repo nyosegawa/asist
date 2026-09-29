@@ -586,8 +586,8 @@ describe('first-run setup on Windows with an NVIDIA GPU', () => {
     await press(ja('setup.listening.recommended', { model: label }))
     const body = container.querySelector('.su-body')!.textContent
     expect(body).toContain(ja('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 }))
-    // The model of 2.17 GB and its projector of 0.36 GB.
-    expect(body).toContain(ja('setup.listening.downloadNote', { sizeGb: '2.5' }))
+    const sizeGb = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrDownloadGb(asrModelSpec('qwen3-asr-1.7b'), false))
+    expect(body).toContain(ja('setup.listening.downloadNote', { sizeGb }))
     expect(container.querySelector('.su-details dt')?.textContent).toBe(ja('setup.listening.details.memory.vulkan'))
     expect([...container.querySelectorAll('.su-details option')].map((option) => option.textContent)).toEqual([
       ja('setup.listening.automaticModel.vulkan'),

@@ -44,11 +44,15 @@ const PARTIAL_WAIT_MS = 4_000
 const LANGUAGE_PREFIX = /^language\s+\S+?<asr_text>/
 
 interface Server {
-  child: ChildProcess
   model: AsrModelSpec
+  /** Null until a free port has been found and the process spawned. */
+  child: ChildProcess | null
   port: number
   key: string
+  /** Settles once the server answers /health, or fails to start. */
   ready: Promise<boolean>
+  /** Whether it answered /health, which a status check reads without waiting for a start. */
+  healthy: boolean
   stopped: boolean
 }
 
@@ -88,32 +92,27 @@ async function waitUntilHealthy(started: Server): Promise<boolean> {
   return false
 }
 
-async function startServer(model: AsrModelSpec): Promise<Server | null> {
-  const { localSpeech } = platformCapabilities()
-  // The capabilities leave the local speech recognition out where it does not run, so a start here is a caller's mistake.
-  if (localSpeech.backend === null) throw new Error('the local speech recognition cannot run on this machine')
-  if (!installationStatus(model).modelInstalled) return null
-  // llama-server ships with the app, so a missing one is a broken build rather than something to prepare.
-  if (!fs.existsSync(llamaServerPath())) throw new Error(`llama-server is missing from ${llamaServerPath()}`)
-  const port = await freePort()
-  const key = randomBytes(24).toString('hex')
+/** Finds a port, spawns the server on it and waits for /health, unless the start is stopped on the way. */
+async function launch(started: Server, device: string): Promise<boolean> {
+  started.port = await freePort()
+  if (started.stopped) return false
   const child = spawn(llamaServerPath(), [
-    '--model', modelFilePath(model.model),
-    '--mmproj', modelFilePath(model.mmproj),
-    '--device', localSpeech.device,
+    '--model', modelFilePath(started.model.model),
+    '--mmproj', modelFilePath(started.model.mmproj),
+    '--device', device,
     '--n-gpu-layers', '99',
     '--ctx-size', '4096',
     '--parallel', '1',
     '--host', '127.0.0.1',
-    '--port', String(port),
-    '--api-key', key,
+    '--port', String(started.port),
+    '--api-key', started.key,
     '--no-webui',
     '--offline',
     // Warnings and errors only; the informational lines run to hundreds per start.
     '--log-verbosity', '2'
   ], { stdio: ['ignore', 'ignore', 'pipe'], env: childEnv(), windowsHide: true })
+  started.child = child
   stopOnQuit(child)
-  const started: Server = { child, model, port, key, ready: Promise.resolve(false), stopped: false }
   readline.createInterface({ input: child.stderr! }).on('line', (line) => {
     if (line.trim()) console.error(`llama-server: ${line}`)
   })
@@ -128,33 +127,42 @@ async function startServer(model: AsrModelSpec): Promise<Server | null> {
       resolve(false)
     })
   })
-  started.ready = Promise.race([waitUntilHealthy(started), exited])
-  return started
+  return Promise.race([waitUntilHealthy(started), exited])
 }
 
-let ensureInFlight: Promise<boolean> | null = null
-
-/** Starts the server on the model unless it is running it already. Resolves false when the files are missing or it fails to start. */
-export function ensureServer(model: AsrModelSpec): Promise<boolean> {
+/**
+ * Starts the server on the model unless it is running or starting on it already; a server on another model
+ * is stopped first. Resolves false when the files are missing or the server fails to start.
+ */
+export async function ensureServer(model: AsrModelSpec): Promise<boolean> {
   if (server && server.model === model && !server.stopped) return server.ready
-  if (ensureInFlight) return ensureInFlight
   stopServer()
-  const operation = (async () => {
-    const started = await startServer(model)
-    if (!started) return false
-    server = started
-    const ready = await started.ready
-    if (!ready && server === started) stopServer()
-    return ready
-  })().finally(() => {
-    if (ensureInFlight === operation) ensureInFlight = null
-  })
-  ensureInFlight = operation
-  return operation
+  const { localSpeech } = platformCapabilities()
+  // The capabilities leave the local speech recognition out where it does not run, so a start here is a caller's mistake.
+  if (localSpeech.backend === null) throw new Error('the local speech recognition cannot run on this machine')
+  if (!installationStatus(model).modelInstalled) return false
+  // llama-server ships with the app, so a missing one is a broken build rather than something to prepare.
+  if (!fs.existsSync(llamaServerPath())) throw new Error(`llama-server is missing from ${llamaServerPath()}`)
+  const started: Server = { model, child: null, port: 0, key: randomBytes(24).toString('hex'), ready: Promise.resolve(false), healthy: false, stopped: false }
+  // The server is in place before the first await, so that a stop or a start on another model made while
+  // this one looks for a port stops it rather than leaving it to spawn afterwards.
+  server = started
+  started.ready = launch(started, localSpeech.device).then(
+    (ready) => {
+      started.healthy = ready && !started.stopped
+      if (!started.healthy && server === started) stopServer()
+      return started.healthy
+    },
+    (error: unknown) => {
+      if (server === started) stopServer()
+      throw error
+    }
+  )
+  return started.ready
 }
 
-export async function available(model: AsrModelSpec): Promise<boolean> {
-  return server !== null && server.model === model && !server.stopped && (await server.ready)
+export function available(model: AsrModelSpec): boolean {
+  return server !== null && server.model === model && !server.stopped && server.healthy
 }
 
 function stopServer(): void {
@@ -162,7 +170,8 @@ function stopServer(): void {
   server = null
   if (!stale || stale.stopped) return
   stale.stopped = true
-  if (stale.child.exitCode === null && !stale.child.killed) stale.child.kill('SIGTERM')
+  stale.healthy = false
+  if (stale.child && stale.child.exitCode === null && !stale.child.killed) stale.child.kill('SIGTERM')
 }
 
 /** Stops the server and fails every open request. */
@@ -200,11 +209,7 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
   if (requests.has(id)) throw new Error(`duplicate transcription request: ${id}`)
   const controller = new AbortController()
   requests.set(id, controller)
-  const timer = setTimeout(() => {
-    controller.abort(new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError'))
-    stopServer()
-  }, ANSWER_TIMEOUT_MS)
-  timer.unref?.()
+  let timer: NodeJS.Timeout | undefined
   try {
     // The language is read here, per request, so that a change of the setting applies to the next
     // utterance without reloading the model.
@@ -212,6 +217,12 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
     if (!(await ensureServer(model)) || !server) throw new Error(errorText('speechRecognition.errors.notReady'))
     controller.signal.throwIfAborted()
     const target = server
+    // The time runs from the request, not from the start of the server, which has its own limit.
+    timer = setTimeout(() => {
+      controller.abort(new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError'))
+      if (server === target) stopServer()
+    }, ANSWER_TIMEOUT_MS)
+    timer.unref?.()
     const response = await fetch(`http://127.0.0.1:${target.port}/v1/chat/completions`, {
       method: 'POST',
       signal: controller.signal,

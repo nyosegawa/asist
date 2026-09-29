@@ -52,8 +52,8 @@ describe('resolving the setting', () => {
 
 describe('the download of a model', () => {
   it('is the language model and its projector together, and nothing once they are installed', () => {
-    // 2,165,034,944 and 355,709,344 bytes.
-    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], false)).toBe(2.52)
+    const { model, mmproj } = ASR_MODEL_SPECS['qwen3-asr-1.7b']
+    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], false)).toBeCloseTo((model.bytes + mmproj.bytes) / 1e9, 2)
     expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], true)).toBe(0)
   })
 

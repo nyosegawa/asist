@@ -251,6 +251,14 @@ describe('an engine that cannot speak the conversation language', () => {
     await expect(tts.resolveVoice()).rejects.toThrow('[asist:voice.speech.cannotRunHere {"engine":"Qwen3-TTS"}]')
   })
 
+  it('starts nothing for Qwen3-TTS left in the settings on a machine that cannot run it, so that the app still starts', async () => {
+    mocks.settings.ttsEngine = 'qwen3tts'
+    mocks.noGpu = true
+    const tts = await import('../src/main/services/tts')
+    await expect(tts.ensureEngine()).resolves.toBeUndefined()
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+
   it('keeps the Japanese engines for a Japanese conversation', async () => {
     const tts = await import('../src/main/services/tts')
     await expect(tts.resolveVoice()).resolves.toEqual({ engine: 'voicevox', speaker: 3 })

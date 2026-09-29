@@ -25,7 +25,7 @@ x64 の CPU の PC と、Windows 11 が要ります。Arm の CPU の Windows �
 
 声の聞き取りと読み上げの Qwen3-TTS をこのコンピュータの中で動かすには、単体の GPU が要ります。NVIDIA、AMD、Intel Arc のどれでも、Vulkan のドライバーが認識する単体の GPU なら使えます。CPU に内蔵された GPU は使いません。単体の GPU が複数あるときは、メモリのいちばん多いものを使います。
 
-GPU のメモリが 6GB 以上なら、聞き取りに Qwen3-ASR 1.7B を勧め、読み上げに Qwen3-TTS を勧めます。それより少なければ、聞き取りに Qwen3-ASR 0.6B を勧めます。初回の準備で取得するモデルは、聞き取りが約 1.0〜2.5GB、Qwen3-TTS が約 1.2GB です。
+GPU のメモリが 6GB 以上なら、聞き取りに Qwen3-ASR 1.7B を勧めます。それより少なければ、聞き取りに Qwen3-ASR 0.6B を勧めます。読み上げの Qwen3-TTS は、GPU のメモリが 8GB 以上なら勧めます。初回の準備で取得するモデルは、聞き取りが約 1.0〜2.5GB、Qwen3-TTS が約 1.2GB です。
 
 使える GPU が無くても、ASIST は使えます。聞き取りにブラウザの中で動く Whisper を使うか、声のエンジンに GPT-Live か Gemini Live を選ぶか、文字で話しかけます。
 

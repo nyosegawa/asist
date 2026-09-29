@@ -320,17 +320,17 @@ export const settingsModels = defineMessages({
         'es-ES': '{model} se ejecuta en la GPU de este Mac. Descarga el modelo (unos {sizeGb} GB). Este Mac tiene menos de 16 GB de memoria, poca para ejecutarlo junto al reconocimiento de voz, así que le van mejor VOICEVOX o la voz de macOS.'
       },
       windows: {
-        'ja-JP': '{model} をこのコンピュータの GPU で動かします。モデル(約 {sizeGb}GB)を取得します。この GPU はメモリが 6GB 未満で、音声認識と並べて動かすには足りないため、VOICEVOX か Windows の音声合成を勧めます。',
-        'en-US': '{model} runs on the GPU of this computer. Downloads the model (about {sizeGb} GB). This GPU has less than 6 GB of memory, too little to run it beside speech recognition, so VOICEVOX or the Windows voice suits it better.',
-        'fr-FR': '{model} tourne sur le GPU de cet ordinateur. Télécharge le modèle (environ {sizeGb} Go). Ce GPU a moins de 6 Go de mémoire, trop peu pour le faire tourner à côté de la reconnaissance vocale : VOICEVOX ou la voix de Windows conviennent mieux.',
-        'de-DE': '{model} läuft auf der GPU dieses Computers. Lädt das Modell (rund {sizeGb} GB). Diese GPU hat weniger als 6 GB Speicher, zu wenig für den Betrieb neben der Spracherkennung, deshalb passen VOICEVOX oder die Windows-Stimme besser.',
-        'hi-IN': '{model} इसी कंप्यूटर के GPU पर चलता है। मॉडल (करीब {sizeGb} GB) डाउनलोड होता है। इस GPU में 6 GB से कम मेमोरी है, जो स्पीच रिकग्निशन के साथ इसे चलाने के लिए कम है, इसलिए VOICEVOX या Windows की आवाज़ ज़्यादा ठीक रहेगी।',
-        'id-ID': '{model} berjalan di GPU komputer ini. Mengunduh modelnya (sekitar {sizeGb} GB). Memori GPU ini kurang dari 6 GB, terlalu sedikit untuk menjalankannya bersama pengenalan suara, jadi VOICEVOX atau suara Windows lebih cocok.',
-        'it-IT': '{model} funziona sulla GPU di questo computer. Scarica il modello (circa {sizeGb} GB). Questa GPU ha meno di 6 GB di memoria, troppo pochi per farlo funzionare insieme al riconoscimento vocale, quindi sono più adatti VOICEVOX o la sintesi vocale di Windows.',
-        'ko-KR': '{model} 모델을 이 컴퓨터의 GPU에서 실행합니다. 모델(약 {sizeGb}GB)을 내려받습니다. 이 GPU는 메모리가 6GB 미만이라 음성 인식과 함께 실행하기에 부족하므로 VOICEVOX나 Windows 음성 합성을 권장합니다.',
-        'pt-BR': '{model} roda na GPU deste computador. Baixa o modelo (cerca de {sizeGb} GB). Esta GPU tem menos de 6 GB de memória, pouco para rodá-lo junto com o reconhecimento de fala, então o VOICEVOX ou a voz do Windows combinam melhor.',
-        'es-419': '{model} funciona en la GPU de esta computadora. Descarga el modelo (unos {sizeGb} GB). Esta GPU tiene menos de 6 GB de memoria, poca para ejecutarlo junto al reconocimiento de voz, así que conviene más VOICEVOX o la voz de Windows.',
-        'es-ES': '{model} se ejecuta en la GPU de este ordenador. Descarga el modelo (unos {sizeGb} GB). Esta GPU tiene menos de 6 GB de memoria, poca para ejecutarlo junto al reconocimiento de voz, así que van mejor VOICEVOX o la voz de Windows.'
+        'ja-JP': '{model} をこのコンピュータの GPU で動かします。モデル(約 {sizeGb}GB)を取得します。この GPU はメモリが 8GB 未満で、音声認識と並べて動かすには足りないため、VOICEVOX か Windows の音声合成を勧めます。',
+        'en-US': '{model} runs on the GPU of this computer. Downloads the model (about {sizeGb} GB). This GPU has less than 8 GB of memory, too little to run it beside speech recognition, so VOICEVOX or the Windows voice suits it better.',
+        'fr-FR': '{model} tourne sur le GPU de cet ordinateur. Télécharge le modèle (environ {sizeGb} Go). Ce GPU a moins de 8 Go de mémoire, trop peu pour le faire tourner à côté de la reconnaissance vocale : VOICEVOX ou la voix de Windows conviennent mieux.',
+        'de-DE': '{model} läuft auf der GPU dieses Computers. Lädt das Modell (rund {sizeGb} GB). Diese GPU hat weniger als 8 GB Speicher, zu wenig für den Betrieb neben der Spracherkennung, deshalb passen VOICEVOX oder die Windows-Stimme besser.',
+        'hi-IN': '{model} इसी कंप्यूटर के GPU पर चलता है। मॉडल (करीब {sizeGb} GB) डाउनलोड होता है। इस GPU में 8 GB से कम मेमोरी है, जो स्पीच रिकग्निशन के साथ इसे चलाने के लिए कम है, इसलिए VOICEVOX या Windows की आवाज़ ज़्यादा ठीक रहेगी।',
+        'id-ID': '{model} berjalan di GPU komputer ini. Mengunduh modelnya (sekitar {sizeGb} GB). Memori GPU ini kurang dari 8 GB, terlalu sedikit untuk menjalankannya bersama pengenalan suara, jadi VOICEVOX atau suara Windows lebih cocok.',
+        'it-IT': '{model} funziona sulla GPU di questo computer. Scarica il modello (circa {sizeGb} GB). Questa GPU ha meno di 8 GB di memoria, troppo pochi per farlo funzionare insieme al riconoscimento vocale, quindi sono più adatti VOICEVOX o la sintesi vocale di Windows.',
+        'ko-KR': '{model} 모델을 이 컴퓨터의 GPU에서 실행합니다. 모델(약 {sizeGb}GB)을 내려받습니다. 이 GPU는 메모리가 8GB 미만이라 음성 인식과 함께 실행하기에 부족하므로 VOICEVOX나 Windows 음성 합성을 권장합니다.',
+        'pt-BR': '{model} roda na GPU deste computador. Baixa o modelo (cerca de {sizeGb} GB). Esta GPU tem menos de 8 GB de memória, pouco para rodá-lo junto com o reconhecimento de fala, então o VOICEVOX ou a voz do Windows combinam melhor.',
+        'es-419': '{model} funciona en la GPU de esta computadora. Descarga el modelo (unos {sizeGb} GB). Esta GPU tiene menos de 8 GB de memoria, poca para ejecutarlo junto al reconocimiento de voz, así que conviene más VOICEVOX o la voz de Windows.',
+        'es-ES': '{model} se ejecuta en la GPU de este ordenador. Descarga el modelo (unos {sizeGb} GB). Esta GPU tiene menos de 8 GB de memoria, poca para ejecutarlo junto al reconocimiento de voz, así que van mejor VOICEVOX o la voz de Windows.'
       }
     }
   },

@@ -46,9 +46,10 @@ export const qwenTtsFiles = (size: QwenTtsSize): PinnedFile[] => [QWEN_TTS_MODEL
 /**
  * The memory from which Qwen3-TTS is offered beside the speech recognition, in GB as the capabilities give
  * it: the Mac's own, which every app shares, and the GPU's on Windows, where 1.7B speech recognition and
- * 0.6B synthesis held 6.7 GB of an 8 GB RTX 2080 with the desktop's 1.9 GB (2026-09-29).
+ * 0.6B synthesis held 6.7 GB of an 8 GB RTX 2080 with the desktop's 1.9 GB (2026-09-29), more than a 6 GB
+ * GPU has.
  */
-const RECOMMENDED_FROM_GB: Readonly<Record<SpeechBackend, number>> = { metal: 16, vulkan: 6 }
+const RECOMMENDED_FROM_GB: Readonly<Record<SpeechBackend, number>> = { metal: 16, vulkan: 8 }
 
 /** The memory from which 1.7B is offered too; with 1.7B recognition it took 7.7 GB of the same 8 GB. */
 const LARGER_FROM_GB: Readonly<Record<SpeechBackend, number>> = { metal: 24, vulkan: 10 }

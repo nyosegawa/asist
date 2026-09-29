@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
-import { ASR_MODEL_SPECS } from '@shared/asr-models'
+import { ASR_MODEL_SPECS, asrDownloadGb } from '@shared/asr-models'
 import { deriveCapabilities } from '@shared/platform'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
 
@@ -88,7 +88,7 @@ describe('Windows with a discrete GPU', () => {
       recommendedModel: 'qwen3-asr-1.7b',
       label: LARGE.label,
       totalMemoryGb: 8,
-      downloadGb: 2.52
+      downloadGb: asrDownloadGb(LARGE, false)
     })
     mocks.installed = { modelInstalled: true }
     expect((await asr.installationStatus())!.downloadGb).toBe(0)

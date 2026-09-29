@@ -115,15 +115,15 @@ function handleMessage(message: Record<string, unknown>): void {
   armSilenceTimer()
 }
 
-function startWorker(): Promise<boolean> {
-  if (available()) return Promise.resolve(true)
+async function startWorker(): Promise<boolean> {
+  if (available()) return true
   if (starting) return starting
   stopWorker()
   const size = getSettings().qwenTtsSize
   const { localSpeech } = platformCapabilities()
   // The capabilities leave Qwen3-TTS out where the local speech does not run, so a start here is a caller's mistake.
   if (localSpeech.backend === null) throw new Error('Qwen3-TTS cannot run on this machine')
-  if (!installationStatus(size).modelInstalled) return Promise.resolve(false)
+  if (!installationStatus(size).modelInstalled) return false
   // The worker ships with the app, so a missing one is a broken build rather than something to prepare.
   if (!fs.existsSync(ttsWorkerPath())) throw new Error(`qwen3-tts-worker is missing from ${ttsWorkerPath()}`)
   const started: SpeechWorker = startSpeechWorker(

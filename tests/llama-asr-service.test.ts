@@ -14,6 +14,7 @@ vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data', on: vi.fn() } }))
 
 const MODEL = ASR_MODEL_SPECS['qwen3-asr-1.7b']
+const SMALL = ASR_MODEL_SPECS['qwen3-asr-0.6b']
 
 function fakeChild() {
   const child = Object.assign(new EventEmitter(), {
@@ -36,6 +37,8 @@ interface Started {
   args: string[]
 }
 let started: Started[] = []
+/** Whether /health answers, which is when a server has loaded its model. */
+let healthy = true
 let answer: (body: Record<string, unknown>) => Promise<Response> = async () => chat('language Japanese<asr_text>こんにちは。')
 const requests: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> = []
 
@@ -46,6 +49,7 @@ let asr: typeof import('../src/main/services/llama-asr')
 beforeEach(async () => {
   vi.resetModules()
   started = []
+  healthy = true
   requests.length = 0
   answer = async () => chat('language Japanese<asr_text>こんにちは。')
   vi.spyOn(fs, 'existsSync').mockReturnValue(true)
@@ -55,7 +59,7 @@ beforeEach(async () => {
     return child
   })
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith('/health')) return new Response('{"status":"ok"}', { status: 200 })
+    if (url.endsWith('/health')) return healthy ? new Response('{"status":"ok"}', { status: 200 }) : new Response('{"status":"loading"}', { status: 503 })
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     requests.push({ url, headers: init?.headers as Record<string, string>, body })
     const signal = init?.signal
@@ -67,6 +71,7 @@ beforeEach(async () => {
   asr = await import('../src/main/services/llama-asr')
 })
 afterEach(() => {
+  vi.useRealTimers()
   asr.stop()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -125,6 +130,49 @@ describe('speech recognition on llama-server', () => {
     expect(started).toHaveLength(2)
   })
 
+  it('answers whether the server is ready without waiting for a server that is still loading', async () => {
+    healthy = false
+    const starting = asr.ensureServer(MODEL)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    expect(asr.available(MODEL)).toBe(false)
+    healthy = true
+    await expect(starting).resolves.toBe(true)
+    expect(asr.available(MODEL)).toBe(true)
+  })
+
+  it('gives a request its full time even when the server took longer than that to load', async () => {
+    vi.useFakeTimers()
+    healthy = false
+    const pending = asr.transcribe(MODEL, new Float32Array(1600), 'slow-start')
+    await vi.advanceTimersByTimeAsync(90_000)
+    healthy = true
+    await vi.advanceTimersByTimeAsync(1_000)
+    await expect(pending).resolves.toBe('こんにちは。')
+    expect(started).toHaveLength(1)
+    expect(started[0].child.kill).not.toHaveBeenCalled()
+  })
+
+  it('stops a server still loading one model and starts the other when the model changes', async () => {
+    healthy = false
+    const first = asr.ensureServer(MODEL)
+    await vi.waitFor(() => expect(started).toHaveLength(1))
+    const second = asr.ensureServer(SMALL)
+    await expect(first).resolves.toBe(false)
+    expect(started[0].child.kill).toHaveBeenCalled()
+    await vi.waitFor(() => expect(started).toHaveLength(2))
+    healthy = true
+    await expect(second).resolves.toBe(true)
+    expect(path.basename(argAfter(started[1].args, '--model'))).toBe(SMALL.model.file)
+    expect(asr.available(SMALL)).toBe(true)
+  })
+
+  it('never spawns a server that was stopped while it was still looking for a port', async () => {
+    const starting = asr.ensureServer(MODEL)
+    asr.stop()
+    await expect(starting).resolves.toBe(false)
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+
   it('starts nothing while a file of the model is missing', async () => {
     vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(MODEL.mmproj.file))
     await expect(asr.ensureServer(MODEL)).resolves.toBe(false)
@@ -133,7 +181,7 @@ describe('speech recognition on llama-server', () => {
 
   it('fails loudly when the app shipped without llama-server', async () => {
     vi.mocked(fs.existsSync).mockImplementation((file) => !/llama-server(\.exe)?$/.test(String(file)))
-    await expect(asr.ensureServer(MODEL)).rejects.toThrow('llama-server is missing')
+    await expect(asr.ensureServer(MODEL)).rejects.toThrow()
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 })

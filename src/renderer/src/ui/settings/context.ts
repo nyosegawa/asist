@@ -70,7 +70,7 @@ export const ttsNeedsPreparation = (engine: TtsEngine): boolean => isExternalTts
 
 /**
  * Whether speech recognition is ready, which the models card shows and the page list counts: the local
- * model where the machine has a runtime for one, Whisper in the browser where it has not. Null while the
+ * model where the machine runs one, Whisper in the browser where it does not. Null while the
  * state of the local model is still being read.
  */
 export function speechRecognitionReady(

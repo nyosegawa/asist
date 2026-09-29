@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { qwenTtsLanguage } from '@shared/tts-models'
+import { QWEN_TTS_CODEC, QWEN_TTS_MODELS, qwenTtsLanguage } from '@shared/tts-models'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), settings: { qwenTtsSize: '0.6b' as '0.6b' | '1.7b' } }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
@@ -205,7 +205,7 @@ describe('Qwen3-TTS service', () => {
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     expect(path.basename(command)).toMatch(/^qwen3-tts-worker(\.exe)?$/)
     expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual([
-      'qwen3-tts-0.6b-customvoice-q8_0.gguf', 'qwen3-tts-codec-12hz-f16.gguf', '--device', 'MTL0'
+      QWEN_TTS_MODELS['0.6b'].talker.file, QWEN_TTS_CODEC.file, '--device', 'MTL0'
     ])
   })
 
@@ -215,7 +215,7 @@ describe('Qwen3-TTS service', () => {
     expect(qwen.available()).toBe(false)
     await expect(qwen.ensureWorker()).resolves.toBe(true)
     expect(children[0].kill).toHaveBeenCalled()
-    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][0])).toBe('qwen3-tts-1.7b-customvoice-q8_0.gguf')
+    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][0])).toBe(QWEN_TTS_MODELS['1.7b'].talker.file)
   })
 })
 

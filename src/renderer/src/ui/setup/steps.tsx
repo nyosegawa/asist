@@ -177,7 +177,7 @@ export function ListeningStep({
   onPrepareLocal,
   onCancelLocal
 }: {
-  /** Where this machine has no runtime for the model, its reason stands in place of that choice. */
+  /** Where this machine cannot run the model, its reason stands in place of that choice. */
   localSpeech: PlatformCapabilities['localSpeech']
   choice: ListeningChoice | null
   onChoice: (choice: ListeningChoice) => void
