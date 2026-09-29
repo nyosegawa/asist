@@ -68,6 +68,14 @@ export async function checkHealth(): Promise<void> {
   }
 }
 
+/**
+ * Checks once the start of a speech engine has settled, so that the screens learn that it answers then
+ * rather than from the next periodic check up to 30 seconds later. The caller handles the start's failure.
+ */
+export function checkAfter(starting: Promise<unknown>): void {
+  void starting.then(checkHealth, checkHealth)
+}
+
 export function start(onChange: (snap: HealthSnapshot) => void): void {
   if (running) return
   running = true

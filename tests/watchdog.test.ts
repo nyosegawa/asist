@@ -120,6 +120,16 @@ describe('the watchdog', () => {
     expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: true })
   })
 
+  it('checks once the start of an engine has settled, whether it succeeded or failed', async () => {
+    const onChange = vi.fn()
+    watchdog.start(onChange)
+    await vi.advanceTimersByTimeAsync(10)
+    mocks.ttsUp = false
+    watchdog.checkAfter(Promise.reject(new Error('the worker exited')))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: false })
+  })
+
   it('checks again once a check that was under way when asked has ended, since that one may have read the old state', async () => {
     let release!: () => void
     mocks.asrAvailable = () => new Promise<boolean>((resolve) => { release = () => resolve(true) })

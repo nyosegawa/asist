@@ -508,14 +508,12 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
         // The clips exist for Japanese only, so the language decides whether there is a bank at all.
         before.conversationLocale !== after.conversationLocale
       ) {
-        // The screens learn that the engine is ready from the check that follows its start, rather than
-        // from the next periodic one up to 30 s later.
-        void tts.ensureEngine().then(() => watchdog.checkHealth(), (error) => console.error('TTS engine failed to start:', error))
+        watchdog.checkAfter(tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error)))
         aizuchi.rebuild()
       }
       if (before.globalHotkey !== after.globalHotkey) refreshHotkey()
       if (before.uiLocale !== after.uiLocale) refreshTrayMenu()
-      if (before.asrModel !== after.asrModel) void asr.switchModel().then(() => watchdog.checkHealth(), (error) => console.error('speech recognition failed to start:', error))
+      if (before.asrModel !== after.asrModel) watchdog.checkAfter(asr.switchModel().catch((error) => console.error('speech recognition failed to start:', error)))
       if (before.memoryEmbeddingEnabled !== after.memoryEmbeddingEnabled) {
         if (after.memoryEmbeddingEnabled) {
           void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
