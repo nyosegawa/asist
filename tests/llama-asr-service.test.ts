@@ -173,6 +173,16 @@ describe('speech recognition on llama-server', () => {
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
+  it('writes the server\'s warnings as warnings and its errors, with the lines that continue them, as errors', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await asr.ensureServer(MODEL)
+    started[0].child.stderr.write('W init_audio: audio input is in experimental stage\nE llama_model_load: error loading model\n    at the second line\n')
+    await vi.waitFor(() => expect(error).toHaveBeenCalledTimes(2))
+    expect(warn.mock.calls.map(([line]) => line)).toEqual(['llama-server: init_audio: audio input is in experimental stage'])
+    expect(error.mock.calls.map(([line]) => line)).toEqual(['llama-server: llama_model_load: error loading model', 'llama-server:     at the second line'])
+  })
+
   it('starts nothing while a file of the model is missing', async () => {
     vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(MODEL.mmproj.file))
     await expect(asr.ensureServer(MODEL)).resolves.toBe(false)

@@ -92,6 +92,21 @@ async function waitUntilHealthy(started: Server): Promise<boolean> {
   return false
 }
 
+/**
+ * Writes llama-server's messages to the app log at their own level. Each message starts with its level
+ * letter, and a message that spans lines continues without one. Loading Qwen3-ASR always warns about a
+ * token type and about audio input being experimental, which are not failures.
+ */
+function logLevels(stderr: NodeJS.ReadableStream): void {
+  let level: 'error' | 'warn' | 'log' = 'error'
+  readline.createInterface({ input: stderr }).on('line', (line) => {
+    const prefixed = /^([DIWE]) (.*)$/.exec(line)
+    if (prefixed) level = prefixed[1] === 'E' ? 'error' : prefixed[1] === 'W' ? 'warn' : 'log'
+    const text = prefixed ? prefixed[2] : line
+    if (text.trim()) console[level](`llama-server: ${text}`)
+  })
+}
+
 /** Finds a port, spawns the server on it and waits for /health, unless the start is stopped on the way. */
 async function launch(started: Server, device: string): Promise<boolean> {
   started.port = await freePort()
@@ -109,13 +124,14 @@ async function launch(started: Server, device: string): Promise<boolean> {
     '--no-webui',
     '--offline',
     // Warnings and errors only; the informational lines run to hundreds per start.
-    '--log-verbosity', '2'
+    '--log-verbosity', '2',
+    // On Windows the automatic setting colours output that goes to a pipe, and the escape codes reach the log.
+    '--log-colors', 'off',
+    '--no-log-timestamps'
   ], { stdio: ['ignore', 'ignore', 'pipe'], env: childEnv(), windowsHide: true })
   started.child = child
   stopOnQuit(child)
-  readline.createInterface({ input: child.stderr! }).on('line', (line) => {
-    if (line.trim()) console.error(`llama-server: ${line}`)
-  })
+  logLevels(child.stderr!)
   const exited = new Promise<boolean>((resolve) => {
     child.once('error', (error) => {
       console.error('llama-server could not be started:', error)
