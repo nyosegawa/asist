@@ -50,7 +50,7 @@ describe('cutting an aizuchi out of a reading in front of the carrier', () => {
   })
 
   it('refuses a reading in which what follows the only pause is not the carrier', async () => {
-    const garbled = async (audio: Float32Array): Promise<string> => ((await recognize(audio)) === CARRIER ? '今日は朝から' : recognize(audio))
+    const garbled = async (audio: Float32Array): Promise<string> => ((await recognize(audio)) === CARRIER ? '今日はあさがおが' : recognize(audio))
     const audio = reading([[0.1, false], [0.3, true], [0.3, false], [1.5, true], [0.3, false]])
     await expect(cutAizuchi(audio, 'はい。', garbled)).resolves.toBeTypeOf('string')
   })
