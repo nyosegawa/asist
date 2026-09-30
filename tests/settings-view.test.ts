@@ -280,6 +280,44 @@ describe('settings dialog', () => {
     expect(api.getSetupStatus.mock.calls.length).toBe(reads + 1)
   })
 
+  it('says Whisper in the browser listens while the local model is missing, instead of saying the microphone cannot be used', async () => {
+    useSettingsStore.setState({ settings: { ...settings, localAsrEnabled: true } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    const listening = view.querySelector(`[aria-label="${t('settingsVoice.recognition.title')}"]`)!
+    expect(listening.querySelector('.st-prepline-text')?.textContent).toBe(t('settingsModels.asr.notDownloadedWhisper', { model: 'Qwen3-ASR 1.7B' }))
+  })
+
+  it('lets speech recognition that is ready be checked again from its row', async () => {
+    useStatusStore.setState({ status: { ...status, asr: true } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    const listening = view.querySelector(`[aria-label="${t('settingsVoice.recognition.title')}"]`)!
+    expect(listening.querySelector('.st-prepline')).toBeNull()
+    const again = listening.querySelector<HTMLButtonElement>('[data-prep="asr"]')!
+    expect(again.textContent).toBe(t('settingsModels.asr.checkAgain'))
+    await act(async () => again.click())
+    expect(api.prepareAsrModel).toHaveBeenCalledWith('auto')
+  })
+
+  it('offers no preparation of turn-taking before its state has been read', async () => {
+    api.vapStatus.mockImplementationOnce(() => new Promise(() => {}))
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    const row = [...view.querySelectorAll('.st-row')].find((one) => one.querySelector('.st-row-label')?.textContent === t('settingsVoice.mic.turnTaking'))!
+    expect(row.querySelector('[data-prep="vap"]')).toBeNull()
+    expect(row.querySelector('.st-chip')?.textContent).toBe(t('settingsModels.checking'))
+  })
+
+  it('links a missing speech application on the overview to where it is downloaded', async () => {
+    useSettingsStore.setState({ settings: { ...settings, ttsEngine: 'voicevox' } })
+    const view = await render()
+    const speech = view.querySelector('[data-pending="speech"]')!
+    expect(speech.querySelector('.st-btn')?.textContent).toBe(t('settingsModels.speech.get', { engine: 'VOICEVOX' }))
+    await act(async () => speech.querySelector<HTMLButtonElement>('.st-btn')!.click())
+    expect(api.openExternal).toHaveBeenCalledWith('https://voicevox.hiroshiba.jp/')
+  })
+
   it('turns turn-taking on once it has been prepared from its own row', async () => {
     api.vapStatus.mockResolvedValueOnce({ runtimeInstalled: false, modelsInstalled: false, running: false })
     const view = await render()
@@ -1042,6 +1080,13 @@ describe('settings dialog on a machine without the local models, the native micr
     expect(labels).toContain(t('settingsVoice.response.listeningAizuchi'))
     await act(async () => nav(view, 'memory').click())
     expect(rowLabels(view)).toContain(t('settingsMemory.search.use'))
+  })
+
+  it('folds away nothing under a live engine, whose only details belong to the native microphone this machine lacks', async () => {
+    useSettingsStore.setState({ settings: { ...settings, voiceEngine: 'gpt-live' } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    expect(view.querySelector('.st-advanced')).toBeNull()
   })
 
   it('names the page after mail alone and leaves the calendar out of it and of its summary', async () => {

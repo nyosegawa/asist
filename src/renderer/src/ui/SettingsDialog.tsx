@@ -27,7 +27,7 @@ import { useMiniApp, useViewStore } from '@/state/view'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { localDate } from '@shared/api-usage'
 import { usageReport } from '@shared/usage-report'
-import { ttsEngineLabel, type Preparation, type PreparationTarget, type SettingsContext, type SettingsPage } from './settings/context'
+import { connectionsTitle, ttsEngineLabel, type Preparation, type PreparationTarget, type SettingsContext, type SettingsPage } from './settings/context'
 import { pendingItems, type Pending } from './settings/pending'
 import { ConversationPage } from './settings/pages/ConversationPage'
 import { PersonaPage } from './settings/pages/PersonaPage'
@@ -247,14 +247,14 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
       )
   }
 
-  const ctx: SettingsContext = { settings, status, setup, vap, embedding, aizuchiClassifier, prep, set, save, refreshStatus, refreshSetup, go: setPage, prepare }
+  const { calendar, localSpeech } = platformCapabilities()
+  const pending = pendingItems({ settings, status, vap, embedding, aizuchiClassifier, localSpeech })
+  const ctx: SettingsContext = { settings, status, setup, vap, embedding, aizuchiClassifier, prep, pending, set, save, refreshStatus, refreshSetup, go: setPage, prepare }
 
   // The one-line note beside each entry in the list on the left, which tells the gist without opening
   // the page. It warns only about what is in use and cannot work yet; a feature left off is no warning.
   const features = conversationFeatures(settings.conversationLocale)
-  const { calendar, localSpeech } = platformCapabilities()
   const live = isLiveEngine(settings.voiceEngine) ? settings.voiceEngine : null
-  const pending = pendingItems({ settings, status, vap, embedding, aizuchiClassifier, localSpeech })
   const has = (...kinds: Array<Pending['kind']>): boolean => pending.some((item) => kinds.includes(item.kind))
   const speechCannotRun = pending.some((item) => item.kind === 'speech' && item.reason === 'cannotRun')
   const keys = LLM_PROVIDERS.filter((provider) => status !== null && keyReadable(status.llmKeys[provider])).length
@@ -308,8 +308,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
     usage: { text: last30 === null ? '' : t('settings.summary.usage', { amount: formatUsd(last30) }) },
     about: { text: t('settings.summary.about') }
   }
-  // A machine without a calendar has only mail on that page, and the list names it so.
-  const title = (id: SettingsPage): string => (id === 'connections' && calendar === null ? t('settingsMail.title') : t(`settings.pages.${id}`))
+  const title = (id: SettingsPage): string => (id === 'connections' ? connectionsTitle(t, calendar) : t(`settings.pages.${id}`))
 
   const body: Record<SettingsPage, React.JSX.Element> = {
     overview: <OverviewPage ctx={ctx} />,

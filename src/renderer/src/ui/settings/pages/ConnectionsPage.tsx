@@ -1,4 +1,4 @@
-import type { SettingsContext } from '../context'
+import { connectionsTitle, type SettingsContext } from '../context'
 import { CalendarSettings } from '../CalendarSettings'
 import { MailSettings } from '../MailSettings'
 import { Page } from '../primitives'
@@ -11,7 +11,7 @@ export function ConnectionsPage({ ctx }: { ctx: SettingsContext }): React.JSX.El
   const { calendar } = platformCapabilities()
   return (
     <Page
-      title={calendar === null ? t('settingsMail.title') : t('settings.pages.connections')}
+      title={connectionsTitle(t, calendar)}
       lead={t(calendar === null ? 'settingsIntegrations.lead.withoutCalendar' : 'settingsIntegrations.lead.withCalendar')}
     >
       {calendar !== null && <CalendarSettings settings={ctx.settings} />}

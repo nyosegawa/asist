@@ -106,32 +106,6 @@ export const settings = defineMessages({
       'es-419': 'Agent',
       'es-ES': 'Agent'
     },
-    integrations: {
-      'ja-JP': '連携',
-      'en-US': 'Integrations',
-      'fr-FR': 'Intégrations',
-      'de-DE': 'Integrationen',
-      'hi-IN': 'इंटीग्रेशन',
-      'id-ID': 'Integrasi',
-      'it-IT': 'Integrazioni',
-      'ko-KR': '연동',
-      'pt-BR': 'Integrações',
-      'es-419': 'Integraciones',
-      'es-ES': 'Integraciones'
-    },
-    models: {
-      'ja-JP': 'モデル',
-      'en-US': 'Models',
-      'fr-FR': 'Modèles',
-      'de-DE': 'Modelle',
-      'hi-IN': 'मॉडल',
-      'id-ID': 'Model',
-      'it-IT': 'Modelli',
-      'ko-KR': '모델',
-      'pt-BR': 'Modelos',
-      'es-419': 'Modelos',
-      'es-ES': 'Modelos'
-    },
     usage: {
       'ja-JP': 'API の料金',
       'en-US': 'API costs',
@@ -609,17 +583,17 @@ export const settings = defineMessages({
       'es-ES': 'Solo la pantalla de configuración inicial puede marcar esa configuración como completada.'
     },
     keyRequired: {
-      'ja-JP': '{target} には {envKey} が要ります。「連携」の「API キー」で保存してから選んでください。',
-      'en-US': '{target} needs {envKey}. Save it under API keys on the Integrations page, then choose it again.',
-      'fr-FR': '{target} a besoin de {envKey}. Enregistrez-la sous Clés API sur la page Intégrations, puis choisissez-le de nouveau.',
-      'de-DE': '{target} braucht {envKey}. Speichern Sie es unter „API-Schlüssel“ auf der Seite „Integrationen“ und wählen Sie es dann erneut.',
-      'hi-IN': '{target} के लिए {envKey} चाहिए। इसे "इंटीग्रेशन" पेज पर "API कुंजी" में सेव करें, फिर इसे चुनें।',
-      'id-ID': '{target} perlu {envKey}. Simpan di bagian Kunci API pada halaman Integrasi, lalu pilih lagi.',
-      'it-IT': 'Per {target} serve {envKey}. Salvalo in «Chiavi API», nella pagina «Integrazioni», poi scegli di nuovo.',
-      'ko-KR': "{target}에는 {envKey} 값이 필요합니다. '연동'의 'API 키'에서 저장한 뒤에 선택하십시오.",
-      'pt-BR': '{target} precisa de {envKey}. Salve em Chaves de API, na página Integrações, e escolha de novo.',
-      'es-419': '{target} necesita {envKey}. Guárdala en «Claves de API», en la página Integraciones, y vuelve a elegirlo.',
-      'es-ES': '{target} necesita {envKey}. Guárdala en “Claves de API”, en la página “Integraciones”, y vuelve a elegirlo.'
+      'ja-JP': '{target} には {envKey} が要ります。「API キー」で保存してから選んでください。',
+      'en-US': '{target} needs {envKey}. Save it on the API keys page, then choose it again.',
+      'fr-FR': '{target} a besoin de {envKey}. Enregistrez-la sur la page Clés API, puis choisissez-le de nouveau.',
+      'de-DE': '{target} braucht {envKey}. Speichern Sie es auf der Seite „API-Schlüssel“ und wählen Sie es dann erneut.',
+      'hi-IN': '{target} के लिए {envKey} चाहिए। इसे "API कुंजी" पेज पर सेव करें, फिर इसे चुनें।',
+      'id-ID': '{target} perlu {envKey}. Simpan di halaman Kunci API, lalu pilih lagi.',
+      'it-IT': 'Per {target} serve {envKey}. Salvalo nella pagina «Chiavi API», poi scegli di nuovo.',
+      'ko-KR': "{target}에는 {envKey} 값이 필요합니다. 'API 키'에서 저장한 뒤에 선택하십시오.",
+      'pt-BR': '{target} precisa de {envKey}. Salve na página Chaves de API e escolha de novo.',
+      'es-419': '{target} necesita {envKey}. Guárdala en la página Claves de API y vuelve a elegirlo.',
+      'es-ES': '{target} necesita {envKey}. Guárdala en la página “Claves de API” y vuelve a elegirlo.'
     },
     unknownProvider: {
       'ja-JP': '知らないプロバイダです: {provider}',

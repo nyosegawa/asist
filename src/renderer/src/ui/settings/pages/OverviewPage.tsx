@@ -10,10 +10,10 @@ import { LOCAL_SPEECH_UNAVAILABLE_TEXT } from '@shared/platform'
 import { osMessageKey } from '@shared/i18n/os-message'
 import { useT } from '@/i18n'
 import { platformCapabilities } from '@/platform'
-import { cascadeListeningReady, speechReadiness, ttsEngineLabel, type SettingsContext, type SettingsPage } from '../context'
+import { AGENT_INSTALL_GUIDE, TTS_SITE, cascadeListeningReady, isExternalTts, speechReadiness, ttsEngineLabel, type SettingsContext, type SettingsPage } from '../context'
 import { Btn, Chip, Group, Page, Row, type ChipTone } from '../primitives'
-import { PrepProgress, PrepareButton } from '../preparation'
-import { pendingItems, type Pending } from '../pending'
+import { PrepProgress, PrepareButton, WhisperControl } from '../preparation'
+import type { Pending } from '../pending'
 
 /** One step of the conversation as it runs now: listening, answering or reading aloud. */
 interface Step {
@@ -29,7 +29,7 @@ interface Step {
  * but not working yet, and the features that can still be added.
  */
 export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
-  const { settings, status, setup, vap, embedding, aizuchiClassifier, prepare, set, go } = ctx
+  const { settings, status, setup, vap, embedding, pending: todo, prepare, set, go } = ctx
   const t = useT()
   const { localSpeech, os } = platformCapabilities()
   const features = conversationFeatures(settings.conversationLocale)
@@ -82,8 +82,6 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
         }
       ]
 
-  const installAgent = (): void =>
-    void window.api.openExternal(settings.agentEngine === 'codex' ? 'https://developers.openai.com/codex/cli' : 'https://docs.claude.com/en/docs/claude-code')
   /** One row of what is turned on and cannot work yet, with the one step that fixes it. */
   const todoRow = (item: Pending): { label: string; hint: string; action: ReactNode; progress?: ReactNode } => {
     switch (item.kind) {
@@ -98,9 +96,10 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
         return {
           label: t('settingsModels.asr.browserWhisper'),
           hint: localSpeech.backend === null ? t(LOCAL_SPEECH_UNAVAILABLE_TEXT[localSpeech.reason]) : '',
-          action: <WhisperButton ctx={ctx} />
+          action: <WhisperControl ctx={ctx} />
         }
-      case 'speech':
+      case 'speech': {
+        const engine = settings.ttsEngine
         return {
           label: t('settingsModels.speech.title'),
           hint:
@@ -110,13 +109,19 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
                   engine: ttsEngineLabel(t, settings.ttsEngine)
                 }),
           action:
-            item.reason === 'missing' && settings.ttsEngine === 'qwen3tts' ? (
+            item.reason === 'missing' && engine === 'qwen3tts' ? (
               <PrepareButton ctx={ctx} target="tts" onClick={prepare.tts} />
+            ) : item.reason === 'missing' && isExternalTts(engine) ? (
+              <Btn onClick={() => void window.api.openExternal(TTS_SITE[engine])}>
+                <ExternalLink size={12} />
+                {t('settingsModels.speech.get', { engine: ttsEngineLabel(t, engine) })}
+              </Btn>
             ) : (
               <Btn onClick={() => go('voice')}>{t('settingsModels.speech.chooseEngine')}</Btn>
             ),
           progress: <PrepProgress ctx={ctx} target="tts" />
         }
+      }
       case 'aizuchi':
         return {
           label: t('settingsVoice.response.aizuchi'),
@@ -146,7 +151,7 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
               ? t(status.agent === 'missing' ? 'settingsAgent.run.engineMissing' : AGENT_CLI_UNAVAILABLE_TEXT[status.agent], { engine: status.agentEngine })
               : '',
           action: (
-            <Btn onClick={installAgent}>
+            <Btn onClick={() => void window.api.openExternal(AGENT_INSTALL_GUIDE[settings.agentEngine])}>
               <ExternalLink size={12} />
               {t('settingsModels.agent.install')}
             </Btn>
@@ -167,7 +172,6 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
       }
     }
   }
-  const todo = pendingItems({ settings, status, vap, embedding, aizuchiClassifier, localSpeech })
   // The features that are off, which the conversation works without. Whisper in the browser is a fallback
   // here; where no local model runs it is the speech recognition itself and appears among the pending.
   const optional = [
@@ -217,7 +221,9 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           {optional.includes('semanticSearch') && (
             <>
               <Row label={t('settingsMemory.search.title')} hint={t('settingsModels.semanticSearch.hint')}>
-                {embeddingReady ? (
+                {embedding === null ? (
+                  <Chip>{t('settingsModels.checking')}</Chip>
+                ) : embeddingReady ? (
                   <HoloSwitch checked={false} onCheckedChange={(v) => set({ memoryEmbeddingEnabled: v })} />
                 ) : (
                   <PrepareButton ctx={ctx} target="embedding" onClick={prepare.embedding} label={t('settingsModels.prepareAndTurnOn')} />
@@ -229,7 +235,9 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           {optional.includes('turnTaking') && (
             <>
               <Row label={t('settingsVoice.mic.turnTaking')} hint={t('settingsModels.turnTaking.hint')}>
-                {vapReady ? (
+                {vap === null ? (
+                  <Chip>{t('settingsModels.checking')}</Chip>
+                ) : vapReady ? (
                   <HoloSwitch checked={false} onCheckedChange={(v) => set({ vapEnabled: v })} />
                 ) : (
                   <PrepareButton ctx={ctx} target="vap" onClick={prepare.vap} label={t('settingsModels.prepareAndTurnOn')} />
@@ -240,7 +248,7 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           )}
           {optional.includes('browserWhisper') && (
             <Row label={t('settingsModels.asr.browserWhisper')} hint={t('settingsVoice.recognition.browserWhisperOff')}>
-              <WhisperButton ctx={ctx} />
+              <WhisperControl ctx={ctx} />
             </Row>
           )}
         </Group>
@@ -249,17 +257,3 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
   )
 }
 
-/** Prepares Whisper in the browser, showing how far it has come while it downloads. */
-function WhisperButton({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
-  const t = useT()
-  const { prep, prepare } = ctx
-  if (prep.localAsr === null) return <Btn onClick={prepare.localAsr}>{t('settingsModels.prepare')}</Btn>
-  return (
-    <>
-      <span className="st-progress-label">{Math.round(prep.localAsr)}%</span>
-      <Btn tone="quiet" onClick={prepare.cancelLocalAsr}>
-        {t('common.stop')}
-      </Btn>
-    </>
-  )
-}

@@ -66,6 +66,32 @@ export const settingsModels = defineMessages({
       'pt-BR': '{model} ainda não foi baixado. O microfone não pode ser usado até ele ficar pronto.',
       'es-419': '{model} todavía no se descargó. El micrófono no se puede usar hasta prepararlo.',
       'es-ES': '{model} todavía no se ha descargado. El micrófono no se puede usar hasta prepararlo.'
+    },
+    checkAgain: {
+      'ja-JP': '再確認する',
+      'en-US': 'Check again',
+      'fr-FR': 'Vérifier de nouveau',
+      'de-DE': 'Erneut prüfen',
+      'hi-IN': 'फिर से देखें',
+      'id-ID': 'Periksa lagi',
+      'it-IT': 'Controlla di nuovo',
+      'ko-KR': '다시 확인',
+      'pt-BR': 'Verificar de novo',
+      'es-419': 'Volver a verificar',
+      'es-ES': 'Volver a comprobar'
+    },
+    notDownloadedWhisper: {
+      'ja-JP': '{model} をまだ取得していません。準備するまでは、ブラウザ内 Whisper で聞き取ります。',
+      'en-US': '{model} has not been downloaded yet. Until it is prepared, in-browser Whisper does the listening.',
+      'fr-FR': "{model} n'a pas encore été téléchargé. Tant qu'il n'est pas prêt, Whisper dans le navigateur assure l'écoute.",
+      'de-DE': '{model} ist noch nicht heruntergeladen. Bis es vorbereitet ist, hört Whisper im Browser zu.',
+      'hi-IN': '{model} अभी डाउनलोड नहीं हुआ है। तैयार होने तक ब्राउज़र वाला Whisper सुनता है।',
+      'id-ID': '{model} belum diunduh. Sampai model ini siap, Whisper dalam browser yang mendengarkan.',
+      'it-IT': '{model} non è ancora stato scaricato. Finché non è pronto, ascolta Whisper nel browser.',
+      'ko-KR': '{model}을(를) 아직 내려받지 않았습니다. 준비할 때까지는 브라우저 내 Whisper가 알아듣습니다.',
+      'pt-BR': '{model} ainda não foi baixado. Até ele ficar pronto, o Whisper no navegador faz a escuta.',
+      'es-419': '{model} todavía no se descargó. Hasta prepararlo, Whisper en el navegador se encarga de escuchar.',
+      'es-ES': '{model} todavía no se ha descargado. Hasta prepararlo, Whisper en el navegador se encarga de escuchar.'
     }
   },
   speech: {

@@ -199,17 +199,17 @@ export const settingsIntegrations = defineMessages({
         'es-ES': 'Este ordenador no puede guardar una clave de API cifrada.'
       },
       keyUnreadable: {
-        'ja-JP': '保存した {provider} の API キーを読み出せません。設定の「連携」で入れ直してください。',
-        'en-US': "Couldn't read the saved {provider} API key. Enter it again on the Integrations page in Settings.",
-        'fr-FR': 'Impossible de lire la clé API {provider} enregistrée. Saisissez-la de nouveau sur la page Intégrations des réglages.',
-        'de-DE': 'Der gespeicherte API-Schlüssel von {provider} ließ sich nicht lesen. Geben Sie ihn auf der Seite „Integrationen“ in den Einstellungen erneut ein.',
-        'hi-IN': 'सेव की गई {provider} की API कुंजी पढ़ी नहीं जा सकी। इसे सेटिंग्ज़ के "इंटीग्रेशन" पेज पर फिर से डालें।',
-        'id-ID': 'Tidak bisa membaca kunci API {provider} yang tersimpan. Masukkan lagi di halaman Integrasi pada Pengaturan.',
-        'it-IT': 'Impossibile leggere la chiave API di {provider} salvata. Inseriscila di nuovo nella pagina «Integrazioni» delle impostazioni.',
-        'ko-KR': "저장한 {provider} API 키를 읽어 올 수 없습니다. 설정의 '연동'에서 다시 입력하십시오.",
-        'pt-BR': 'Não foi possível ler a chave de API de {provider} guardada. Digite de novo na página Integrações dos ajustes.',
-        'es-419': 'No se pudo leer la clave de API de {provider} guardada. Vuelve a escribirla en la página Integraciones de Configuración.',
-        'es-ES': 'No se ha podido leer la clave de API de {provider} guardada. Vuelve a introducirla en la página “Integraciones” de Ajustes.'
+        'ja-JP': '保存した {provider} の API キーを読み出せません。設定の「API キー」で入れ直してください。',
+        'en-US': "Couldn't read the saved {provider} API key. Enter it again on the API keys page in Settings.",
+        'fr-FR': 'Impossible de lire la clé API {provider} enregistrée. Saisissez-la de nouveau sur la page Clés API des réglages.',
+        'de-DE': 'Der gespeicherte API-Schlüssel von {provider} ließ sich nicht lesen. Geben Sie ihn auf der Seite „API-Schlüssel“ in den Einstellungen erneut ein.',
+        'hi-IN': 'सेव की गई {provider} की API कुंजी पढ़ी नहीं जा सकी। इसे सेटिंग्ज़ के "API कुंजी" पेज पर फिर से डालें।',
+        'id-ID': 'Tidak bisa membaca kunci API {provider} yang tersimpan. Masukkan lagi di halaman Kunci API pada Pengaturan.',
+        'it-IT': 'Impossibile leggere la chiave API di {provider} salvata. Inseriscila di nuovo nella pagina «Chiavi API» delle impostazioni.',
+        'ko-KR': "저장한 {provider} API 키를 읽어 올 수 없습니다. 설정의 'API 키'에서 다시 입력하십시오.",
+        'pt-BR': 'Não foi possível ler a chave de API de {provider} guardada. Digite de novo na página Chaves de API dos ajustes.',
+        'es-419': 'No se pudo leer la clave de API de {provider} guardada. Vuelve a escribirla en la página Claves de API de Configuración.',
+        'es-ES': 'No se ha podido leer la clave de API de {provider} guardada. Vuelve a introducirla en la página “Claves de API” de Ajustes.'
       },
       fileUnreadable: {
         'ja-JP': 'API キーのファイルを読めません({file}): {reason}',

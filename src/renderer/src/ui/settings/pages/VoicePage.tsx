@@ -8,10 +8,10 @@ import { useToastStore } from '@/state/stores'
 import { QWEN_TTS_MODELS, QWEN_TTS_SIZES, QWEN_TTS_VOICES, offeredQwenTtsSizes, qwenTtsSizeGb, ttsEngineRuns, type QwenTtsSize, type QwenTtsVoice } from '@shared/tts-models'
 import { LOCAL_SPEECH_UNAVAILABLE_TEXT, shortcutLabel } from '@shared/platform'
 import { conversationFeatures } from '@shared/conversation-locale'
-import { ttsEngineLabel, isExternalTts, speechReadiness, type SettingsContext } from '../context'
+import { TTS_SITE, ttsEngineLabel, isExternalTts, speechReadiness, type SettingsContext } from '../context'
 import { useSpeakerOptions } from '../speaker-options'
 import { Advanced, Btn, Chip, Group, Page, Row } from '../primitives'
-import { PrepLine, PrepProgress, PrepareButton } from '../preparation'
+import { PrepLine, PrepProgress, PrepareButton, WhisperControl } from '../preparation'
 import { LIVE_ENGINE_INFO, isLiveEngine, type LiveEngine } from '@shared/voice-engine'
 import { displayError } from '@/display-error'
 import { useFormatLocale, useT } from '@/i18n'
@@ -116,47 +116,50 @@ function MicGroup({ ctx, live }: { ctx: SettingsContext; live: LiveEngine | null
         <HoloSwitch checked={settings.micAutoStart} onCheckedChange={(v) => set({ micAutoStart: v })} />
       </Row>
       <HotkeyRow ctx={ctx} />
-      <Advanced title={t('settingsVoice.mic.advanced')} note={t('settingsVoice.mic.advancedNote')}>
-        {!live && (
-          <>
-            <Row label={t('settingsVoice.mic.hangover')} hint={t('settingsVoice.mic.hangoverHint')}>
-              <input
-                type="range"
-                aria-label={t('settingsVoice.mic.hangover')}
-                min={200}
-                max={900}
-                step={50}
-                value={settings.hangoverMs}
-                onChange={(e) => set({ hangoverMs: Number(e.target.value) })}
-              />
-              <span className="st-value">{settings.hangoverMs}ms</span>
-            </Row>
-            <Row label={t('settingsVoice.mic.partialInterval')} hint={t('settingsVoice.mic.partialIntervalHint')}>
-              <input
-                type="range"
-                aria-label={t('settingsVoice.mic.partialInterval')}
-                min={0}
-                max={1500}
-                step={100}
-                value={settings.partialIntervalMs}
-                onChange={(e) => set({ partialIntervalMs: Number(e.target.value) })}
-              />
-              <span className="st-value">{settings.partialIntervalMs === 0 ? t('common.off') : `${settings.partialIntervalMs}ms`}</span>
-            </Row>
-          </>
-        )}
-        {/* DeepFilterNet runs on the frames of the native microphone alone, so both switches go with it. */}
-        {capabilities.nativeMic && (
-          <>
-            <Row label={t('settingsVoice.mic.echoCancellation')} hint={t('settingsVoice.mic.echoCancellationHint')}>
-              <HoloSwitch checked={settings.nativeMic} onCheckedChange={(v) => set({ nativeMic: v })} />
-            </Row>
-            <Row label={t('settingsVoice.mic.noiseSuppression')} hint={t('settingsVoice.mic.noiseSuppressionHint')}>
-              <HoloSwitch checked={settings.noiseSuppression} onCheckedChange={(v) => set({ noiseSuppression: v })} />
-            </Row>
-          </>
-        )}
-      </Advanced>
+      {/* A live engine keeps only the two switches of the native microphone, so without it there is nothing to fold away. */}
+      {(!live || capabilities.nativeMic) && (
+        <Advanced title={t('settingsVoice.mic.advanced')} note={t('settingsVoice.mic.advancedNote')}>
+          {!live && (
+            <>
+              <Row label={t('settingsVoice.mic.hangover')} hint={t('settingsVoice.mic.hangoverHint')}>
+                <input
+                  type="range"
+                  aria-label={t('settingsVoice.mic.hangover')}
+                  min={200}
+                  max={900}
+                  step={50}
+                  value={settings.hangoverMs}
+                  onChange={(e) => set({ hangoverMs: Number(e.target.value) })}
+                />
+                <span className="st-value">{settings.hangoverMs}ms</span>
+              </Row>
+              <Row label={t('settingsVoice.mic.partialInterval')} hint={t('settingsVoice.mic.partialIntervalHint')}>
+                <input
+                  type="range"
+                  aria-label={t('settingsVoice.mic.partialInterval')}
+                  min={0}
+                  max={1500}
+                  step={100}
+                  value={settings.partialIntervalMs}
+                  onChange={(e) => set({ partialIntervalMs: Number(e.target.value) })}
+                />
+                <span className="st-value">{settings.partialIntervalMs === 0 ? t('common.off') : `${settings.partialIntervalMs}ms`}</span>
+              </Row>
+            </>
+          )}
+          {/* DeepFilterNet runs on the frames of the native microphone alone, so both switches go with it. */}
+          {capabilities.nativeMic && (
+            <>
+              <Row label={t('settingsVoice.mic.echoCancellation')} hint={t('settingsVoice.mic.echoCancellationHint')}>
+                <HoloSwitch checked={settings.nativeMic} onCheckedChange={(v) => set({ nativeMic: v })} />
+              </Row>
+              <Row label={t('settingsVoice.mic.noiseSuppression')} hint={t('settingsVoice.mic.noiseSuppressionHint')}>
+                <HoloSwitch checked={settings.noiseSuppression} onCheckedChange={(v) => set({ noiseSuppression: v })} />
+              </Row>
+            </>
+          )}
+        </Advanced>
+      )}
     </Group>
   )
 }
@@ -166,7 +169,7 @@ function MicGroup({ ctx, live }: { ctx: SettingsContext; live: LiveEngine | null
  * choice needs downloaded is prepared under the row that chose it.
  */
 export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
-  const { settings, status, setup, vap, aizuchiClassifier, prep, prepare, set, save, refreshStatus } = ctx
+  const { settings, status, setup, vap, aizuchiClassifier, prepare, set, save, refreshStatus } = ctx
   const toast = useToastStore((s) => s.push)
   const t = useT()
   const formatLocale = useFormatLocale()
@@ -195,7 +198,6 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   const vapReady = vap?.runtimeInstalled === true && vap.modelsInstalled
   const classifierReady = aizuchiClassifier?.runtimeInstalled === true && aizuchiClassifier.modelInstalled
   const ttsMissing = engineUsable && speechReadiness(engine, status, localSpeech) === 'missing'
-  const ttsSite = engine === 'aivisspeech' ? 'https://aivis-project.com/' : 'https://voicevox.hiroshiba.jp/'
   const preview = (
     <Btn
       tone="quiet"
@@ -239,6 +241,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
               }
             >
               <Chip tone={asrReady ? 'ok' : 'warn'}>{asrReady ? t('common.ready') : t('common.notReady')}</Chip>
+              {asrReady && <PrepareButton ctx={ctx} target="asr" onClick={prepare.asr} tone="quiet" label={t('settingsModels.asr.checkAgain')} />}
               <select
                 className="st-select"
                 aria-label={t('settingsVoice.recognition.modelLabel')}
@@ -258,8 +261,12 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
                 ))}
               </select>
             </Row>
+            {asrReady && <PrepProgress ctx={ctx} target="asr" />}
             {!asrReady && setup?.asr && (
-              <PrepLine text={t('settingsModels.asr.notDownloaded', { model: setup.asr.label })} progress={<PrepProgress ctx={ctx} target="asr" />}>
+              <PrepLine
+                text={t(settings.localAsrEnabled ? 'settingsModels.asr.notDownloadedWhisper' : 'settingsModels.asr.notDownloaded', { model: setup.asr.label })}
+                progress={<PrepProgress ctx={ctx} target="asr" />}
+              >
                 <PrepareButton ctx={ctx} target="asr" onClick={prepare.asr} onCancel={prepare.cancelAsr} />
               </PrepLine>
             )}
@@ -269,18 +276,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
           label={t('settingsVoice.recognition.browserWhisper')}
           hint={settings.localAsrEnabled ? t('settingsVoice.recognition.browserWhisperOn') : t('settingsVoice.recognition.browserWhisperOff')}
         >
-          {settings.localAsrEnabled ? (
-            <HoloSwitch checked onCheckedChange={(value) => set({ localAsrEnabled: value })} />
-          ) : prep.localAsr !== null ? (
-            <>
-              <span className="st-progress-label">{Math.round(prep.localAsr)}%</span>
-              <Btn tone="quiet" onClick={prepare.cancelLocalAsr}>
-                {t('common.stop')}
-              </Btn>
-            </>
-          ) : (
-            <Btn onClick={prepare.localAsr}>{t('settingsModels.prepare')}</Btn>
-          )}
+          <WhisperControl ctx={ctx} />
         </Row>
       </Group>
 
@@ -313,7 +309,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
         )}
         {ttsMissing && isExternalTts(engine) && (
           <PrepLine text={t(osMessageKey('settingsVoice.speech.engineMissing', capabilities.os), { engine: ttsEngineLabel(t, engine) })}>
-            <Btn onClick={() => void window.api.openExternal(ttsSite)}>
+            <Btn onClick={() => void window.api.openExternal(TTS_SITE[engine])}>
               <ExternalLink size={12} />
               {t('settingsModels.speech.get', { engine: ttsEngineLabel(t, engine) })}
             </Btn>
@@ -425,7 +421,9 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
         {features.maai && (
           <>
             <Row label={t('settingsVoice.mic.turnTaking')} hint={vapReady ? t('settingsVoice.mic.turnTakingOn') : t('settingsModels.turnTaking.hint')}>
-              {vapReady ? (
+              {vap === null ? (
+                <Chip>{t('settingsModels.checking')}</Chip>
+              ) : vapReady ? (
                 <HoloSwitch checked={settings.vapEnabled} onCheckedChange={(v) => set({ vapEnabled: v })} />
               ) : (
                 <PrepareButton ctx={ctx} target="vap" onClick={prepare.vap} label={t('settingsModels.prepareAndTurnOn')} />

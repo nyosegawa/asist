@@ -94,7 +94,9 @@ export function MemoryPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element
               : t('settingsMemory.search.notPrepared')
           }
         >
-          {embeddingReady ? (
+          {embedding === null ? (
+            <Chip>{t('settingsModels.checking')}</Chip>
+          ) : embeddingReady ? (
             <HoloSwitch checked={settings.memoryEmbeddingEnabled} onCheckedChange={(v) => set({ memoryEmbeddingEnabled: v })} />
           ) : (
             <PrepareButton ctx={ctx} target="embedding" onClick={prepare.embedding} label={t('settingsModels.prepareAndTurnOn')} />

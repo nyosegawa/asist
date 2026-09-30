@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { CircleAlert } from 'lucide-react'
+import { HoloSwitch } from '@/components/ui/switch'
 import { useT } from '@/i18n'
 import { progressLabel } from '../progress-label'
 import type { PreparationTarget, SettingsContext } from './context'
@@ -26,19 +27,21 @@ export function PrepareButton({
   target,
   onClick,
   onCancel,
-  label
+  label,
+  tone = 'primary'
 }: {
   ctx: SettingsContext
   target: PreparationTarget
   onClick: () => void
   onCancel?: () => void
   label?: string
+  tone?: 'primary' | 'quiet'
 }): React.JSX.Element {
   const t = useT()
   const preparing = ctx.prep.busy && ctx.prep.target === target
   return (
     <>
-      <Btn tone="primary" data-prep={target} disabled={ctx.prep.busy} onClick={onClick}>
+      <Btn tone={tone} data-prep={target} disabled={ctx.prep.busy} onClick={onClick}>
         {preparing ? t('common.preparing') : (label ?? t('settingsModels.prepare'))}
       </Btn>
       {preparing && onCancel && (
@@ -55,4 +58,23 @@ export function PrepProgress({ ctx, target }: { ctx: SettingsContext; target: Pr
   const { prep } = ctx
   if (!(prep.busy && prep.target === target && prep.progress)) return null
   return <Progress percent={prep.progress.pct ?? 0} label={progressLabel(prep.progress)} />
+}
+
+/**
+ * Whisper in the browser: its switch once it is prepared, and until then the button that prepares it, or how
+ * far it has come while it downloads inside the window.
+ */
+export function WhisperControl({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
+  const t = useT()
+  const { settings, prep, prepare, set } = ctx
+  if (settings.localAsrEnabled) return <HoloSwitch checked onCheckedChange={(value) => set({ localAsrEnabled: value })} />
+  if (prep.localAsr === null) return <Btn onClick={prepare.localAsr}>{t('settingsModels.prepare')}</Btn>
+  return (
+    <>
+      <span className="st-progress-label">{Math.round(prep.localAsr)}%</span>
+      <Btn tone="quiet" onClick={prepare.cancelLocalAsr}>
+        {t('common.stop')}
+      </Btn>
+    </>
+  )
 }

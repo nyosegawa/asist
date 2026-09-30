@@ -1,5 +1,5 @@
 import { ExternalLink } from 'lucide-react'
-import type { SettingsContext } from '../context'
+import { AGENT_INSTALL_GUIDE, type SettingsContext } from '../context'
 import { useFieldDraft } from '../field-draft'
 import { Btn, Chip, Group, NotSavedHint, Page, Row } from '../primitives'
 import { PrepLine } from '../preparation'
@@ -44,13 +44,7 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
           <PrepLine
             text={t(unavailable.state === 'missing' ? 'settingsAgent.run.engineMissing' : AGENT_CLI_UNAVAILABLE_TEXT[unavailable.state], { engine: unavailable.engine })}
           >
-            <Btn
-              onClick={() =>
-                void window.api.openExternal(
-                  settings.agentEngine === 'codex' ? 'https://developers.openai.com/codex/cli' : 'https://docs.claude.com/en/docs/claude-code'
-                )
-              }
-            >
+            <Btn onClick={() => void window.api.openExternal(AGENT_INSTALL_GUIDE[settings.agentEngine])}>
               <ExternalLink size={12} />
               {t('settingsModels.agent.install')}
             </Btn>
