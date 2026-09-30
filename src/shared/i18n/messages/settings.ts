@@ -14,19 +14,6 @@ export const settings = defineMessages({
     'es-419': 'Páginas de configuración',
     'es-ES': 'Páginas de ajustes'
   },
-  language: {
-    'ja-JP': '表示言語',
-    'en-US': 'Interface language',
-    'fr-FR': "Langue de l'interface",
-    'de-DE': 'Anzeigesprache',
-    'hi-IN': 'इंटरफ़ेस की भाषा',
-    'id-ID': 'Bahasa antarmuka',
-    'it-IT': "Lingua dell'interfaccia",
-    'ko-KR': '표시 언어',
-    'pt-BR': 'Idioma da interface',
-    'es-419': 'Idioma de la interfaz',
-    'es-ES': 'Idioma de la interfaz'
-  },
   saveFailed: {
     'ja-JP': '設定を保存できませんでした',
     'en-US': "Couldn't save the settings",
@@ -183,6 +170,58 @@ export const settings = defineMessages({
       'pt-BR': 'Aparência',
       'es-419': 'Apariencia',
       'es-ES': 'Apariencia'
+    },
+    overview: {
+      'ja-JP': '概要',
+      'en-US': 'Overview',
+      'fr-FR': "Vue d'ensemble",
+      'de-DE': 'Übersicht',
+      'hi-IN': 'अवलोकन',
+      'id-ID': 'Ringkasan',
+      'it-IT': 'Panoramica',
+      'ko-KR': '개요',
+      'pt-BR': 'Visão geral',
+      'es-419': 'Resumen',
+      'es-ES': 'Resumen'
+    },
+    connections: {
+      'ja-JP': 'カレンダーとメール',
+      'en-US': 'Calendar and mail',
+      'fr-FR': 'Agenda et e-mail',
+      'de-DE': 'Kalender und E-Mail',
+      'hi-IN': 'कैलेंडर और मेल',
+      'id-ID': 'Kalender dan email',
+      'it-IT': 'Calendario e posta',
+      'ko-KR': '캘린더와 메일',
+      'pt-BR': 'Agenda e e-mail',
+      'es-419': 'Calendario y correo',
+      'es-ES': 'Calendario y correo'
+    },
+    language: {
+      'ja-JP': '言語と地域',
+      'en-US': 'Language and region',
+      'fr-FR': 'Langue et région',
+      'de-DE': 'Sprache und Region',
+      'hi-IN': 'भाषा और क्षेत्र',
+      'id-ID': 'Bahasa dan wilayah',
+      'it-IT': 'Lingua e regione',
+      'ko-KR': '언어와 지역',
+      'pt-BR': 'Idioma e região',
+      'es-419': 'Idioma y región',
+      'es-ES': 'Idioma y región'
+    },
+    apiKeys: {
+      'ja-JP': 'API キー',
+      'en-US': 'API keys',
+      'fr-FR': 'Clés API',
+      'de-DE': 'API-Schlüssel',
+      'hi-IN': 'API कुंजी',
+      'id-ID': 'Kunci API',
+      'it-IT': 'Chiavi API',
+      'ko-KR': 'API 키',
+      'pt-BR': 'Chaves de API',
+      'es-419': 'Claves de API',
+      'es-ES': 'Claves de API'
     }
   },
   ttsEngine: {
@@ -359,32 +398,6 @@ export const settings = defineMessages({
       'es-419': 'Búsqueda por significado desactivada',
       'es-ES': 'Búsqueda semántica desactivada'
     },
-    integrationsCalendarOn: {
-      'ja-JP': 'カレンダーオン · API キー {keys}/{total}',
-      'en-US': 'Calendar on · API keys {keys}/{total}',
-      'fr-FR': 'Calendrier activé · Clés API {keys}/{total}',
-      'de-DE': 'Kalender ein · API-Schlüssel {keys}/{total}',
-      'hi-IN': 'कैलेंडर चालू · API कुंजी {keys}/{total}',
-      'id-ID': 'Kalender aktif · Kunci API {keys}/{total}',
-      'it-IT': 'Calendario attivo · Chiavi API {keys}/{total}',
-      'ko-KR': '캘린더 켜짐 · API 키 {keys}/{total}',
-      'pt-BR': 'Calendário ativado · Chaves de API {keys}/{total}',
-      'es-419': 'Calendario activado · Claves de API {keys}/{total}',
-      'es-ES': 'Calendario activado · Claves de API {keys}/{total}'
-    },
-    integrationsCalendarOff: {
-      'ja-JP': 'カレンダーオフ · API キー {keys}/{total}',
-      'en-US': 'Calendar off · API keys {keys}/{total}',
-      'fr-FR': 'Calendrier désactivé · Clés API {keys}/{total}',
-      'de-DE': 'Kalender aus · API-Schlüssel {keys}/{total}',
-      'hi-IN': 'कैलेंडर बंद · API कुंजी {keys}/{total}',
-      'id-ID': 'Kalender nonaktif · Kunci API {keys}/{total}',
-      'it-IT': 'Calendario non attivo · Chiavi API {keys}/{total}',
-      'ko-KR': '캘린더 꺼짐 · API 키 {keys}/{total}',
-      'pt-BR': 'Calendário desativado · Chaves de API {keys}/{total}',
-      'es-419': 'Calendario desactivado · Claves de API {keys}/{total}',
-      'es-ES': 'Calendario desactivado · Claves de API {keys}/{total}'
-    },
     modelsNotPrepared: {
       'ja-JP': { other: '未準備 {count} 件' },
       'en-US': { one: '{count} not prepared', other: '{count} not prepared' },
@@ -437,18 +450,83 @@ export const settings = defineMessages({
       'es-419': 'Modelos y datos',
       'es-ES': 'Modelos y datos'
     },
-    integrationsKeys: {
-      'ja-JP': 'API キー {keys}/{total}',
-      'en-US': 'API keys {keys}/{total}',
-      'fr-FR': 'Clés API {keys}/{total}',
-      'de-DE': 'API-Schlüssel {keys}/{total}',
-      'hi-IN': 'API कुंजी {keys}/{total}',
-      'id-ID': 'Kunci API {keys}/{total}',
-      'it-IT': 'Chiavi API {keys}/{total}',
-      'ko-KR': 'API 키 {keys}/{total}',
-      'pt-BR': 'Chaves de API {keys}/{total}',
-      'es-419': 'Claves de API {keys}/{total}',
-      'es-ES': 'Claves de API {keys}/{total}'
+    recognitionNotReady: {
+      'ja-JP': '音声認識が未準備',
+      'en-US': 'Speech recognition not ready',
+      'fr-FR': 'Reconnaissance vocale non prête',
+      'de-DE': 'Spracherkennung nicht bereit',
+      'hi-IN': 'वाक् पहचान तैयार नहीं',
+      'id-ID': 'Pengenalan suara belum siap',
+      'it-IT': 'Riconoscimento vocale non pronto',
+      'ko-KR': '음성 인식 준비 안 됨',
+      'pt-BR': 'Reconhecimento de voz não preparado',
+      'es-419': 'Reconocimiento de voz sin preparar',
+      'es-ES': 'Reconocimiento de voz sin preparar'
+    },
+    agentMissing: {
+      'ja-JP': '{engine} が見つかりません',
+      'en-US': '{engine} not found',
+      'fr-FR': '{engine} introuvable',
+      'de-DE': '{engine} nicht gefunden',
+      'hi-IN': '{engine} नहीं मिला',
+      'id-ID': '{engine} tidak ditemukan',
+      'it-IT': '{engine} non trovato',
+      'ko-KR': '{engine}을(를) 찾을 수 없음',
+      'pt-BR': '{engine} não encontrado',
+      'es-419': 'No se encontró {engine}',
+      'es-ES': 'No se ha encontrado {engine}'
+    },
+    calendarOn: {
+      'ja-JP': 'カレンダーオン',
+      'en-US': 'Calendar on',
+      'fr-FR': 'Agenda activé',
+      'de-DE': 'Kalender an',
+      'hi-IN': 'कैलेंडर चालू',
+      'id-ID': 'Kalender aktif',
+      'it-IT': 'Calendario attivo',
+      'ko-KR': '캘린더 켜짐',
+      'pt-BR': 'Agenda ativada',
+      'es-419': 'Calendario activado',
+      'es-ES': 'Calendario activado'
+    },
+    calendarOff: {
+      'ja-JP': 'カレンダーオフ',
+      'en-US': 'Calendar off',
+      'fr-FR': 'Agenda désactivé',
+      'de-DE': 'Kalender aus',
+      'hi-IN': 'कैलेंडर बंद',
+      'id-ID': 'Kalender nonaktif',
+      'it-IT': 'Calendario disattivato',
+      'ko-KR': '캘린더 꺼짐',
+      'pt-BR': 'Agenda desativada',
+      'es-419': 'Calendario desactivado',
+      'es-ES': 'Calendario desactivado'
+    },
+    mailAccounts: {
+      'ja-JP': { other: 'メール {count} 件' },
+      'en-US': { one: 'Mail: {count} account', other: 'Mail: {count} accounts' },
+      'fr-FR': { one: 'E-mail : {count} compte', other: 'E-mail : {count} comptes' },
+      'de-DE': { one: 'E-Mail: {count} Account', other: 'E-Mail: {count} Accounts' },
+      'hi-IN': { one: 'मेल: {count} अकाउंट', other: 'मेल: {count} अकाउंट' },
+      'id-ID': { other: 'Email: {count} akun' },
+      'it-IT': { one: 'Posta: {count} account', other: 'Posta: {count} account' },
+      'ko-KR': { other: '메일 {count}개' },
+      'pt-BR': { one: 'E-mail: {count} conta', other: 'E-mail: {count} contas' },
+      'es-419': { one: 'Correo: {count} cuenta', other: 'Correo: {count} cuentas' },
+      'es-ES': { one: 'Correo: {count} cuenta', other: 'Correo: {count} cuentas' }
+    },
+    apiKeys: {
+      'ja-JP': '登録 {keys}/{total}',
+      'en-US': '{keys} of {total} saved',
+      'fr-FR': '{keys} sur {total} enregistrées',
+      'de-DE': '{keys} von {total} gespeichert',
+      'hi-IN': '{total} में से {keys} सहेजी गईं',
+      'id-ID': '{keys} dari {total} tersimpan',
+      'it-IT': '{keys} su {total} salvate',
+      'ko-KR': '{total}개 중 {keys}개 등록',
+      'pt-BR': '{keys} de {total} salvas',
+      'es-419': '{keys} de {total} guardadas',
+      'es-ES': '{keys} de {total} guardadas'
     }
   },
   errors: {
@@ -569,5 +647,46 @@ export const settings = defineMessages({
     'pt-BR': 'Não foi salvo. Saia do campo para salvar de novo.',
     'es-419': 'No se guardó. Sal del campo para volver a guardarlo.',
     'es-ES': 'No se ha guardado. Sal del campo para volver a guardarlo.'
+  },
+  sections: {
+    assistant: {
+      'ja-JP': 'アシスタント',
+      'en-US': 'Assistant',
+      'fr-FR': 'Assistant',
+      'de-DE': 'Assistent',
+      'hi-IN': 'असिस्टेंट',
+      'id-ID': 'Asisten',
+      'it-IT': 'Assistente',
+      'ko-KR': '어시스턴트',
+      'pt-BR': 'Assistente',
+      'es-419': 'Asistente',
+      'es-ES': 'Asistente'
+    },
+    features: {
+      'ja-JP': '機能',
+      'en-US': 'Features',
+      'fr-FR': 'Fonctions',
+      'de-DE': 'Funktionen',
+      'hi-IN': 'सुविधाएँ',
+      'id-ID': 'Fitur',
+      'it-IT': 'Funzioni',
+      'ko-KR': '기능',
+      'pt-BR': 'Recursos',
+      'es-419': 'Funciones',
+      'es-ES': 'Funciones'
+    },
+    general: {
+      'ja-JP': '一般',
+      'en-US': 'General',
+      'fr-FR': 'Général',
+      'de-DE': 'Allgemein',
+      'hi-IN': 'सामान्य',
+      'id-ID': 'Umum',
+      'it-IT': 'Generali',
+      'ko-KR': '일반',
+      'pt-BR': 'Geral',
+      'es-419': 'General',
+      'es-ES': 'General'
+    }
   }
 })

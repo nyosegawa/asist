@@ -9,7 +9,7 @@ import { platformCapabilities } from '@/platform'
 
 export type { SettingsPage }
 
-/** The items on the models page that are prepared by a download in the main process. */
+/** The items that are prepared by a download in the main process. */
 export type PreparationTarget = 'asr' | 'tts' | 'vap' | 'embedding' | 'aizuchiClassifier'
 
 /**
