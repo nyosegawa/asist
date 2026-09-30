@@ -68,6 +68,16 @@ const VAP_EARLY_HANGOVER_MS = 300
 /** The longest hangover an extension can use. */
 const VAP_EXTENDED_HANGOVER_MS = 900
 
+/** The levels a capture opened on, and the loudest frame it held. */
+interface CaptureLevels {
+  loudestRms: number
+  noiseFloor: number
+  threshold: number
+  boost: number
+}
+
+const dbfs = (rms: number): string => `${rms > 0 ? (20 * Math.log10(rms)).toFixed(1) : '-inf'}dBFS`
+
 export class VadSegmenter {
   private preRoll: Float32Array[] = []
   private preRollSamples = 0
@@ -78,6 +88,7 @@ export class VadSegmenter {
   private voicedMs = 0
   private speechMs = 0
   private noiseFloor = NOISE_FLOOR_INIT
+  private levels: CaptureLevels = { loudestRms: 0, noiseFloor: 0, threshold: 0, boost: 1 }
   /** Speech ends once silence lasts this long. The settings can tune it. */
   hangoverMs = 350
   /** While true, every frame is ignored outright. */
@@ -155,6 +166,7 @@ export class VadSegmenter {
   push(frame: Float32Array): void {
     if (this.muted) {
       if (this.speaking) {
+        console.log(`vad: capture muted ${this.describeCapture()}`)
         this.reset()
         this.events.onSpeechEnd?.(null)
       }
@@ -181,6 +193,7 @@ export class VadSegmenter {
         this.silenceMs = 0
         this.utterance = [...this.preRoll]
         this.utteranceSamples = this.preRollSamples
+        this.levels = { loudestRms: rms, noiseFloor: this.noiseFloor, threshold, boost: this.thresholdBoost }
         this.events.onSpeechStart?.()
       }
       return
@@ -188,6 +201,7 @@ export class VadSegmenter {
 
     this.utterance.push(frame)
     this.utteranceSamples += frame.length
+    this.levels.loudestRms = Math.max(this.levels.loudestRms, rms)
     if (rms > threshold) {
       this.silenceMs = 0
       this.eotHighMs = 0
@@ -233,30 +247,32 @@ export class VadSegmenter {
   }
 
   private finalize(utteranceMs: number, mode: HangoverMode): void {
-    const samples = this.concat()
-    const voicedMs = this.voicedMs
-    const speechMs = this.speechMs
     const vadMs = Math.round(this.silenceMs)
-    this.reset()
     // A short noise must not start Whisper, and requiring accumulated voice from Silero on top of
     // that stops a long noise, such as a run of keystrokes, from being hallucinated into words. The
     // length is measured without the silence, so an early VAP end that shortens the hangover does
     // not discard a short utterance.
-    if (
+    const kept =
       utteranceMs - vadMs >= MIN_UTTERANCE_MS &&
-      voicedMs >= MIN_VOICED_MS &&
-      speechMs >= MIN_SPEECH_MS
-    ) {
-      this.events.onSpeechEnd?.({ samples, vadMs, mode })
-      return
-    }
-    if (voicedMs > 0) {
-      // The breakdown makes it possible to follow up a report that speaking did nothing.
-      console.log(
-        `vad: utterance discarded (utterance=${Math.round(utteranceMs)}ms voiced=${Math.round(voicedMs)}ms speech=${Math.round(speechMs)}ms silence=${vadMs}ms)`
-      )
-    }
-    this.events.onSpeechEnd?.(null)
+      this.voicedMs >= MIN_VOICED_MS &&
+      this.speechMs >= MIN_SPEECH_MS
+    // Every capture is logged with its levels, so that a voice that did nothing, or a noise that
+    // started a turn, can be traced back to the thresholds.
+    console.log(`vad: capture ${kept ? 'kept' : 'discarded'} ${this.describeCapture()}`)
+    const samples = kept ? this.concat() : null
+    this.reset()
+    this.events.onSpeechEnd?.(samples ? { samples, vadMs, mode } : null)
+  }
+
+  private describeCapture(): string {
+    const { loudestRms, noiseFloor, threshold, boost } = this.levels
+    const boosts = boost === this.thresholdBoost ? `${boost}` : `${boost}→${this.thresholdBoost}`
+    const utteranceMs = (this.utteranceSamples / SAMPLE_RATE) * 1000
+    return (
+      `(loudest=${dbfs(loudestRms)} floor=${dbfs(noiseFloor)} threshold=${dbfs(threshold)} boost=${boosts} ` +
+      `utterance=${Math.round(utteranceMs)}ms voiced=${Math.round(this.voicedMs)}ms ` +
+      `speech=${Math.round(this.speechMs)}ms silence=${Math.round(this.silenceMs)}ms)`
+    )
   }
 
   /** Stopping and restarting capture must not carry the previous utterance buffer over. It reports no end, because the owner is stopping. */
