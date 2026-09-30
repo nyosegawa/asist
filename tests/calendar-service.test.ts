@@ -231,6 +231,11 @@ describe('CalendarService', () => {
     ).rejects.toThrow(errorText('calendar.errors.googleSignedOut'))
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.writes()).toHaveLength(0)
+    f.status.signIn = 'unreadable'
+    await expect(
+      f.service.change({ operation: 'create', event: fields }, f.signal.signal)
+    ).rejects.toThrow(errorText('calendar.errors.tokenUnreadable'))
+    expect(f.confirm).not.toHaveBeenCalled()
   })
   it('rejects a read-only destination', async () => {
     const f = fixture()

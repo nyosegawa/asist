@@ -101,8 +101,8 @@ export class CalendarService {
       const settings = this.enabled()
       const configuration = JSON.stringify(settings)
       const status = await this.status()
-      if (status.signIn !== 'signedIn')
-        throw new Error(errorText('calendar.errors.googleSignedOut'))
+      if (status.signIn === 'unreadable') throw new Error(errorText('calendar.errors.tokenUnreadable'))
+      if (status.signIn === 'signedOut') throw new Error(errorText('calendar.errors.googleSignedOut'))
       let before: CalendarEvent | undefined
       let calendarId: string
       if (input.operation === 'create') {

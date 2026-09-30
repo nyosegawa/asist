@@ -92,7 +92,7 @@ export function NavigationDock(): React.JSX.Element {
       </button>
       <span className="dock-divider" aria-hidden />
       <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[horizontalOnly]} onDragEnd={onDragEnd}>
-        <SortableContext items={[...order]} strategy={horizontalListSortingStrategy}>
+        <SortableContext items={order as DockItem[]} strategy={horizontalListSortingStrategy}>
           {order.map((item) => (
             <DockButton key={item} item={item} pressed={open === item} badge={badges[item]} toggle={() => toggleApp(item)} />
           ))}
