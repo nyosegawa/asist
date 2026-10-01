@@ -270,14 +270,15 @@ export const pressKey = (client, key) =>
   client.evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true })) || true`)
 
 /**
- * The phases of the state chip in which the app is not answering. It rests on IDLE with the cascade
- * engine, and on LISTENING while the live engine holds the microphone, which it shows whenever it is not
- * speaking, after a reply as much as between a sentence and the answer to a function call.
+ * The phases of the state chip in which the app is not answering. It rests on IDLE, and on LISTENING once
+ * the live engine, which holds the microphone, has opened its session.
  */
 const RESTING_PHASES = new Set(['IDLE', 'LISTENING'])
 /**
- * How long the app has to rest before a response counts as over. Either engine may speak a sentence, rest
- * while a function runs, and speak again once its result is in.
+ * How long the app has to rest before a response counts as over, because either engine can rest in the
+ * middle of one: between two sentences, or while a function runs after a sentence. Asked by typing for the
+ * weather of one place and of two places on 2026-10-02, Gemini Live showed LISTENING for up to 1.9 s before
+ * it spoke, from the moment its session opened, and for 0.5 s between two parts of its speech.
  */
 const RESPONSE_SETTLE_MS = 3000
 const POLL_MS = 200
