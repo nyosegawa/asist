@@ -3,9 +3,10 @@
  * about 0.1 s of silence between two pieces: the shaper keeps 100 ms after the voice of a local engine and
  * little before it, and the HTTP engines are asked for 0.1 s after a sentence and none before it. That is
  * short at the end of a sentence, and the pieces split at a comma of a long Japanese sentence need a breath
- * as well. With these added, a sentence is followed by about 0.35 s of silence and a comma by about 0.15 s.
+ * as well. With these added, a sentence is followed by about 0.55 s of silence and a comma by about 0.15 s.
+ * Listened to on 2026-10-01 with Irodori-TTS: 0.35 s after a sentence still ran the sentences together.
  */
-const SENTENCE_PAUSE_MS = 250
+const SENTENCE_PAUSE_MS = 450
 const CLAUSE_PAUSE_MS = 50
 
 /** A closing mark that can follow the punctuation that ends a piece. */
