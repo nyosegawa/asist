@@ -99,7 +99,8 @@ export function localTtsSizeGb(model: LocalTtsModel): number {
  * give it: the Mac's own, which every app shares, and the GPU's on Windows, where 1.7B speech recognition and
  * Qwen3-TTS 0.6B held 6.7 GB of an 8 GB RTX 2080 with the desktop's 1.9 GB (2026-09-29), more than a 6 GB GPU
  * has. Irodori-TTS takes 2.1 GB of VRAM there (speech.cpp's measurement, 2026-10-01), half a GB more than
- * Qwen3-TTS 0.6B, which still fits.
+ * Qwen3-TTS 0.6B, which puts it with 1.7B recognition and the desktop at about 7.2 GB; that combination has
+ * not been measured.
  */
 const RECOMMENDED_FROM_GB: Readonly<Record<SpeechBackend, number>> = { metal: 16, vulkan: 8 }
 

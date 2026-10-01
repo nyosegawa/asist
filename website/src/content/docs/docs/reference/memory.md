@@ -34,6 +34,6 @@ Windows の音声認識と読み上げ(Irodori-TTS と Qwen3-TTS)は、単体の
 | Qwen3-TTS 0.6B(Q8_0) | 1.6GB |
 | Qwen3-TTS 1.7B(Q8_0) | 2.7GB |
 
-Windows の画面の表示も同じ GPU のメモリを使い、測ったときは 1.9GB でした。画面の分と合わせると、音声認識の 1.7B と Qwen3-TTS の 0.6B で 6.7GB、Qwen3-TTS を 1.7B にすると 7.7GB でした。GPU のメモリが 6GB 以上なら音声認識に 1.7B を勧め、8GB 以上なら初回セットアップで Irodori-TTS と Qwen3-TTS も勧めるのはこのためです。Irodori-TTS は Qwen3-TTS の 0.6B より 0.5GB 多く使いますが、音声認識の 1.7B と画面の分と合わせても 8GB に収まります。6GB より少なければ、音声認識に 0.6B を勧めます。Qwen3-TTS の 1.7B は、GPU のメモリが 10GB 以上のときに選べます。
+Windows の画面の表示も同じ GPU のメモリを使い、測ったときは 1.9GB でした。画面の分と合わせると、音声認識の 1.7B と Qwen3-TTS の 0.6B で 6.7GB、Qwen3-TTS を 1.7B にすると 7.7GB でした。GPU のメモリが 6GB 以上なら音声認識に 1.7B を勧め、8GB 以上なら初回セットアップで Irodori-TTS と Qwen3-TTS も勧めるのはこのためです。Irodori-TTS は Qwen3-TTS の 0.6B より 0.5GB 多く使うので、音声認識の 1.7B と画面の分と合わせると約 7.2GB になる見込みです。この組み合わせは、まだ Windows で測っていません。6GB より少なければ、音声認識に 0.6B を勧めます。Qwen3-TTS の 1.7B は、GPU のメモリが 10GB 以上のときに選べます。
 
 記憶の意味検索、相槌の種類の判定、話し終わりの判定は、Windows でも CPU とメインのメモリで動きます。Windows でのメモリの量は、まだ測っていません。
