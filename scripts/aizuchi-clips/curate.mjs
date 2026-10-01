@@ -68,16 +68,17 @@ const KEPT_CANDIDATES = 5
 /**
  * Renders `defs` ({ text, speedScale?, volumeScale? }) for the voice into outDir and its manifest.json, keeping
  * the clips of the manifest that are not among them, and writes the best candidates of each clip into
- * candidatesDir/<clip>/ for review.mjs. A clip rendered here is not reviewed yet.
+ * candidatesDir/<clip>/ for the review page of the demo. A clip rendered here is not reviewed yet. With
+ * keepReviewed, a clip someone accepts on the review page while the run goes on is left as they chose it.
  */
-export async function curate({ engine, voice, language, outDir, candidatesDir, candidates, defs }) {
+export async function curate({ engine, voice, language, outDir, candidatesDir, candidates, defs, keepReviewed }) {
   const synthesizer = await startSynthesizer(engine)
   const recognizer = await startRecognizer()
   try {
     mkdirSync(outDir, { recursive: true })
     const manifestPath = path.join(outDir, 'manifest.json')
     const model = `${TTS_MODELS[engine].repo}@${TTS_MODELS[engine].revision}/${TTS_MODELS[engine].file}`
-    // The manifest is read again for every clip, so that a verdict review.mjs wrote meanwhile is kept.
+    // The manifest is read again for every clip, so that a verdict the review page wrote meanwhile is kept.
     const save = (entry) => {
       const previous = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : { clips: [] }
       // A clip names the model that read it, so that clips kept from an earlier run keep theirs.
@@ -88,6 +89,11 @@ export async function curate({ engine, voice, language, outDir, candidatesDir, c
     }
     for (const definition of defs) {
       const head = definition.text
+      // A run takes half an hour for a voice of Qwen3-TTS, and the review goes on meanwhile.
+      if (keepReviewed && existsSync(manifestPath) && JSON.parse(readFileSync(manifestPath, 'utf8')).clips.some((clip) => clip.text === head && clip.reviewed)) {
+        console.error(`${head}: accepted meanwhile, kept`)
+        continue
+      }
       const alone = engine === 'irodori'
       const text = alone ? head : head + ('。、'.includes(head.at(-1)) ? '' : '、') + CARRIER
       // Reading goes on until enough candidates passed the checks, within a budget of attempts.

@@ -6,8 +6,8 @@ import { curate } from './curate.mjs'
 
 /**
  * Pre-renders the aizuchi bank for one voice of a local engine (qwen3tts or irodori) into
- * resources/aizuchi/<engine>/<voice>/, with the best candidates of each clip in .aizuchi-candidates/ for
- * review.mjs. curate.mjs explains why the clips are made ahead of time and how.
+ * resources/aizuchi/<engine>/<voice>/, with the best candidates of each clip in .aizuchi-candidates/ for the
+ * review page of the demo (/aizuchi). curate.mjs explains why the clips are made ahead of time and how.
  *
  *   node scripts/aizuchi-clips/build.mjs <engine> <voice> [candidates] [text ...]
  *
@@ -42,6 +42,7 @@ await curate({
   outDir,
   candidatesDir: path.join(root, '.aizuchi-candidates', engine, voice),
   candidates: Number(candidates),
-  defs: unique
+  defs: unique,
+  keepReviewed: only.length === 0
 })
-console.error(`${engine} ${voice}: ${unique.length} clips rendered into ${path.relative(root, outDir)}; review them with node scripts/aizuchi-clips/review.mjs`)
+console.error(`${engine} ${voice}: ${unique.length} clips rendered into ${path.relative(root, outDir)}; review them at /aizuchi of npm run demo`)
