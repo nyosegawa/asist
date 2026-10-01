@@ -285,16 +285,27 @@ const POLL_MS = 200
 
 /** Remembers the toasts on screen, so that NEW_ERROR_TOAST reports only one that appears afterwards. */
 const MARK_TOASTS = `window.__driveSeenToasts = new WeakSet(document.querySelectorAll('[data-toast]'))`
-/** The text of an error toast that appeared since MARK_TOASTS, or null. */
+/**
+ * The text of an error toast that appeared since MARK_TOASTS, or null. A page loaded since then has lost
+ * what MARK_TOASTS remembered, and the response or the microphone being waited for with it.
+ */
 const NEW_ERROR_TOAST = `(() => {
-  const toast = [...document.querySelectorAll('[data-toast="error"]')].find((el) => !window.__driveSeenToasts.has(el))
+  const seen = window.__driveSeenToasts
+  if (!seen) throw new Error('待っている間にページが読み込み直されました')
+  const toast = [...document.querySelectorAll('[data-toast="error"]')].find((el) => !seen.has(el))
   return toast ? toast.innerText.replace(/\\s+/g, ' ').trim() : null
 })()`
 
-async function throwOnErrorToast(client) {
-  const error = await client.evaluate(NEW_ERROR_TOAST)
+function throwIfShown(error) {
   if (error) throw new Error(`アプリがエラーを表示しました: ${error}`)
 }
+
+/** What say() polls while it waits. The cards are measured once, when the response is over. */
+const RESPONSE_STATE = `({
+  phase: document.querySelector('.state-chip')?.textContent ?? null,
+  cards: document.querySelectorAll('.panel-card').length,
+  error: ${NEW_ERROR_TOAST}
+})`
 
 /**
  * Types an utterance and waits until the response is over: the app has answered, by thinking or speaking,
@@ -319,19 +330,19 @@ export async function say(client, text, { minCards = 0, timeoutMs = 90_000 } = {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     await sleep(POLL_MS)
-    await throwOnErrorToast(client)
-    state = await measureCards(client)
+    state = await client.evaluate(RESPONSE_STATE)
+    throwIfShown(state.error)
     if (!RESTING_PHASES.has(state.phase)) {
       started = true
       restingSince = null
       continue
     }
     restingSince ??= Date.now()
-    if (started && Date.now() - restingSince >= RESPONSE_SETTLE_MS && state.cards.length >= minCards) return state
+    if (started && Date.now() - restingSince >= RESPONSE_SETTLE_MS && state.cards >= minCards) return measureCards(client)
   }
   throw new Error(
     started
-      ? `応答が終わりません(最後の状態 ${state.phase}、カード ${state.cards.length} 枚): ${text}`
+      ? `応答が終わりません(最後の状態 ${state.phase}、カード ${state.cards} 枚): ${text}`
       : `応答が始まりません(状態 ${state?.phase}): ${text}`
   )
 }
@@ -358,8 +369,9 @@ export async function setMic(client, wanted, { timeoutMs = 60_000 } = {}) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     await sleep(POLL_MS)
-    await throwOnErrorToast(client)
-    if ((await client.evaluate(MIC_STATE)) === wanted) return
+    const { mic, error } = await client.evaluate(`({ mic: ${MIC_STATE}, error: ${NEW_ERROR_TOAST} })`)
+    throwIfShown(error)
+    if (mic === wanted) return
   }
   throw new Error(`マイクが ${wanted} になりません`)
 }
