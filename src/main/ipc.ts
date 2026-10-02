@@ -578,8 +578,11 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     return shell.openExternal(target)
   })
 
-  handle(IpcChannel.RevealPath, (_e, target: string) => {
+  handle(IpcChannel.RevealPath, (_e, target: unknown) => {
     const allowed = allowedPath(String(target), agent.allowedFileRoots())
-    if (allowed !== null) shell.showItemInFolder(allowed)
+    if (allowed === null) throw new Error(errorText('files.errors.outsideRoots'))
+    // showItemInFolder says nothing when the file is gone, as when it was removed after the card showed it.
+    if (!fs.existsSync(allowed)) throw new Error(errorText('files.errors.missing'))
+    shell.showItemInFolder(allowed)
   })
 }
