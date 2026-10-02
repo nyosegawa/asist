@@ -10,7 +10,7 @@ import type { DfnRequest, DfnResponse } from './dfn-worker'
  *
  * Nothing here interrupts the audio. A failure creating the worker, loading the model or running
  * inference, and a backlog of unanswered chunks alike, only switch later chunks to passing straight
- * through. The only audio ever lost is the few hundred milliseconds in flight at the switch.
+ * through, after the chunks still in flight have gone on as they were sent.
  */
 
 const CHUNK_SAMPLES = 512
@@ -48,8 +48,11 @@ export class DfnDenoiser {
   private chunk = new Float32Array(CHUNK_SAMPLES)
   private chunkLength = 0
   private nextId = 1
-  /** The ids that have been sent and not yet answered. Responses must arrive in exactly this order. */
-  private pendingIds: number[] = []
+  /**
+   * The chunks sent and not yet answered, oldest first, with the audio as it was sent. Responses must arrive in
+   * exactly this order.
+   */
+  private pending: Array<{ id: number; chunk: Float32Array }> = []
   /** A response below this id answers a chunk sent before noise suppression stopped or before a reset, and is ignored. */
   private ignoreBelowId = 0
 
@@ -84,9 +87,7 @@ export class DfnDenoiser {
         console.warn(`dfn denoiser unavailable: ${detail}`)
         this.loaded = false
         this.available = false
-        // The chunks in flight are lost, at most a few hundred milliseconds. Audio continues
-        // by passing straight through.
-        this.pendingIds = []
+        this.passPendingThrough()
         if (this.worker === worker) this.worker = null
         worker.terminate()
         resolve()
@@ -100,12 +101,13 @@ export class DfnDenoiser {
           resolve()
         } else if (message.type === 'enhanced') {
           if (message.id < this.ignoreBelowId) return
-          const expected = this.pendingIds.shift()
+          const expected = this.pending[0]
           if (expected === undefined) return
-          if (expected !== message.id) {
-            fail(`out-of-order response (expected ${expected}, got ${message.id})`)
+          if (expected.id !== message.id) {
+            fail(`out-of-order response (expected ${expected.id}, got ${message.id})`)
             return
           }
+          this.pending.shift()
           this.onOutput?.(message.chunk)
         } else {
           fail(message.message)
@@ -150,27 +152,34 @@ export class DfnDenoiser {
       this.onOutput?.(chunk.slice(0))
       return
     }
-    if (this.pendingIds.length >= MAX_IN_FLIGHT) {
+    if (this.pending.length >= MAX_IN_FLIGHT) {
       // The worker is behind and order can no longer be held, so noise suppression stops here and
       // resumes after RESUME_AFTER_MS.
-      console.warn(`dfn denoiser fell behind (${this.pendingIds.length} frames); passing through`)
+      console.warn(`dfn denoiser fell behind (${this.pending.length} frames); passing through`)
       this.available = false
       this.resumeAt = this.now() + RESUME_AFTER_MS
-      this.pendingIds = []
-      this.ignoreBelowId = this.nextId
+      this.passPendingThrough()
       this.onOutput?.(chunk.slice(0))
       return
     }
     const id = this.nextId++
-    this.pendingIds.push(id)
-    const copy = chunk.slice(0)
-    this.worker.postMessage({ type: 'infer', id, chunk: copy } satisfies DfnRequest, [copy.buffer])
+    const sent = chunk.slice(0)
+    this.pending.push({ id, chunk: sent })
+    this.worker.postMessage({ type: 'infer', id, chunk: sent } satisfies DfnRequest)
+  }
+
+  /** Hands the chunks still in flight on as they were sent, and leaves their answers to be ignored. */
+  private passPendingThrough(): void {
+    const pending = this.pending
+    this.pending = []
+    this.ignoreBelowId = this.nextId
+    for (const { chunk } of pending) this.onOutput?.(chunk)
   }
 
   /** Clears the capture buffer and the model state when the microphone restarts. */
   reset(): void {
     this.chunkLength = 0
-    this.pendingIds = []
+    this.pending = []
     this.ignoreBelowId = this.nextId
     if (this.loaded && this.worker) {
       // Restarting capture puts the worker back in use even if noise suppression had stopped.
@@ -189,7 +198,7 @@ export class DfnDenoiser {
     this.available = false
     this.resumeAt = Infinity
     this.chunkLength = 0
-    this.pendingIds = []
+    this.pending = []
     this.onOutput = null
   }
 }

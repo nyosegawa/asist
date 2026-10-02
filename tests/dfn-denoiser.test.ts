@@ -99,13 +99,13 @@ describe('DfnDenoiser', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const { dfn, worker, outputs } = await readyDenoiser()
-      dfn.push(new Float32Array(512))
+      dfn.push(new Float32Array(512).fill(0.05))
       worker.message({ type: 'error', message: 'inference failed' })
       expect(dfn.ready).toBe(false)
       expect(worker.terminated).toBe(true)
       dfn.push(new Float32Array(512).fill(0.1))
-      expect(outputs).toHaveLength(1)
-      expect(outputs[0][0]).toBeCloseTo(0.1)
+      // The chunk the worker failed on goes on as it was sent, ahead of the next.
+      expect(outputs.map((chunk) => chunk[0])).toEqual([0.05, 0.1].map(Math.fround))
     } finally {
       warn.mockRestore()
     }
@@ -119,14 +119,14 @@ describe('DfnDenoiser', () => {
       for (let i = 0; i < 32; i++) dfn.push(new Float32Array(512))
       expect(infers(worker)).toHaveLength(32)
       expect(outputs).toHaveLength(0)
-      // The 33rd chunk crosses the limit and falls back to passthrough.
+      // The 33rd chunk crosses the limit and falls back to passthrough, after the 32 in flight.
       dfn.push(new Float32Array(512).fill(0.3))
       expect(dfn.ready).toBe(false)
-      expect(outputs).toHaveLength(1)
-      expect(outputs[0][0]).toBeCloseTo(0.3)
+      expect(outputs).toHaveLength(33)
+      expect(outputs[32][0]).toBeCloseTo(0.3)
       // A late answer for a stalled chunk must not join the output, because that would break the order.
       worker.message({ type: 'enhanced', id: infers(worker)[0].id, chunk: new Float32Array(512) })
-      expect(outputs).toHaveLength(1)
+      expect(outputs).toHaveLength(33)
     } finally {
       warn.mockRestore()
     }
@@ -174,11 +174,11 @@ describe('DfnDenoiser recovery from a stall', () => {
       await init
       for (let i = 0; i < 33; i++) dfn.push(new Float32Array(512))
       expect(dfn.ready).toBe(false)
-      expect(outputs).toHaveLength(1)
+      expect(outputs).toHaveLength(33)
       // Until two seconds have passed the denoiser stays in passthrough.
       clock.now += 1000
       dfn.push(new Float32Array(512).fill(0.2))
-      expect(outputs).toHaveLength(2)
+      expect(outputs).toHaveLength(34)
       expect(infers(worker)).toHaveLength(32)
       // The first chunk after two seconds resets the worker and goes through it again.
       clock.now += 1500
@@ -188,10 +188,10 @@ describe('DfnDenoiser recovery from a stall', () => {
       expect(worker.posted.filter((m) => m.type === 'reset').length).toBe(resets + 1)
       expect(infers(worker)).toHaveLength(33)
       // Nothing is output until the answer arrives.
-      expect(outputs).toHaveLength(2)
+      expect(outputs).toHaveLength(34)
       worker.message({ type: 'enhanced', id: infers(worker)[32].id, chunk: new Float32Array(512).fill(0.9) })
-      expect(outputs).toHaveLength(3)
-      expect(outputs[2][0]).toBeCloseTo(0.9)
+      expect(outputs).toHaveLength(35)
+      expect(outputs[34][0]).toBeCloseTo(0.9)
     } finally {
       warn.mockRestore()
       log.mockRestore()
@@ -210,6 +210,36 @@ describe('DfnDenoiser recovery from a stall', () => {
       expect(infers(worker)).toHaveLength(33)
     } finally {
       warn.mockRestore()
+    }
+  })
+})
+
+describe('DfnDenoiser with a worker that stays alive but stops answering', () => {
+  it('loses none of the audio, however often it goes back to the worker', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const clock = { now: 1000 }
+      const worker = new FakeWorker()
+      const dfn = new DfnDenoiser({ workerFactory: () => asWorker(worker), now: () => clock.now })
+      const outputs: number[] = []
+      dfn.onOutput = (chunk) => outputs.push(chunk[0])
+      const init = dfn.init()
+      worker.message({ type: 'ready' })
+      await init
+      // Ten seconds of 512-sample chunks at 48 kHz, each marked with its number, and not one answer.
+      const chunks = 940
+      for (let i = 1; i <= chunks; i++) {
+        dfn.push(new Float32Array(512).fill(i))
+        clock.now += 512 / 48
+      }
+
+      // At most the chunks sent since the last return to the worker are still out.
+      expect(outputs.length).toBeGreaterThanOrEqual(chunks - 32)
+      expect(outputs).toEqual(Array.from({ length: outputs.length }, (_, i) => i + 1))
+    } finally {
+      warn.mockRestore()
+      log.mockRestore()
     }
   })
 })
