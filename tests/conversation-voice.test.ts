@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import mitt from 'mitt'
+import type { LiveAudio } from '@shared/ipc'
 
 /**
  * The conversation driven by the events of the voice pipeline: the voice controller and the speech
@@ -941,37 +942,38 @@ describe('the voice of the live engine', () => {
       silero: { init: async () => {}, push: () => {}, currentProb: () => null, dispose: () => {} }
     })
     mocks.realLive = live
-    const listeners = new Set<(samples: Float32Array) => void>()
+    const listeners = new Set<(audio: LiveAudio) => void>()
+    let runs = 0
     const conversation = await start({
       requestMicPermission: async () => true,
-      liveStart: async () => ({ ok: true }),
-      onLiveAudio: (listener: (samples: Float32Array) => void) => {
+      liveStart: async () => ({ ok: true, run: ++runs }),
+      onLiveAudio: (listener: (audio: LiveAudio) => void) => {
         listeners.add(listener)
         return () => listeners.delete(listener)
       }
     })
     const streamPush = vi.spyOn(mocks.player as { streamPush: (samples: Float32Array, rate: number) => void }, 'streamPush')
-    /** A chunk of the model's voice as main sends it, which reaches the page some time later. */
-    const chunkFromMain = (): void => {
-      for (const listener of [...listeners]) listener(new Float32Array(2400))
+    /** A chunk of the voice of the engine main started as `run`, which reaches the page some time later. */
+    const chunkFromMain = (run: number): void => {
+      for (const listener of [...listeners]) listener({ run, samples: new Float32Array(2400) })
     }
 
     await conversation.toggleMic()
-    chunkFromMain()
+    chunkFromMain(1)
     expect(streamPush).toHaveBeenCalledOnce()
 
     await conversation.toggleMic()
-    chunkFromMain()
+    chunkFromMain(1)
     expect(streamPush).toHaveBeenCalledOnce()
 
     // Coming back after a sleep turns the microphone off and on again in one go, and the stopped run's
     // voice still on its way arrives while the new one starts.
     await conversation.toggleMic()
     const recovering = live.recover()
-    chunkFromMain()
+    chunkFromMain(2)
     await recovering
     expect(streamPush).toHaveBeenCalledOnce()
-    chunkFromMain()
+    chunkFromMain(3)
     expect(streamPush).toHaveBeenCalledTimes(2)
     live.disable()
   })

@@ -43,8 +43,8 @@ export class LiveVoice {
   private speaking = false
   /**
    * Stops listening to the voice of the engine this run started. Main sends voice until it has handled
-   * the stop, so what is still on its way when the run ends must find nobody listening. The next run
-   * listens only once main has answered its start, which comes after everything the stopped engine sent.
+   * the stop and does not keep it in order with the answer to the next start, so a run hands on only the
+   * voice that carries the number main gave its own start.
    */
   private stopVoice: (() => void) | null = null
   /** Set from the settings. The change takes effect the next time the microphone is turned on. */
@@ -68,9 +68,10 @@ export class LiveVoice {
       const started = await window.api.liveStart()
       if (!current()) return
       if (!started.ok) throw new Error(started.reason ?? errorText('voice.live.startFailed'))
-      this.stopVoice = window.api.onLiveAudio((samples) =>
-        this.events.emit('audio', samples instanceof Float32Array ? samples : new Float32Array(samples))
-      )
+      const run = started.run
+      this.stopVoice = window.api.onLiveAudio(({ run: spokenBy, samples }) => {
+        if (spokenBy === run) this.events.emit('audio', samples instanceof Float32Array ? samples : new Float32Array(samples))
+      })
       const feed = (frame: Float32Array): void => {
         if (!current()) return
         this.silero.push(frame)
