@@ -269,11 +269,14 @@ describe('signing in to Google', () => {
     expect(tokens.value).toBe('refresh-new')
   })
 
-  it('keeps the newer sign-in working when the one it replaced was still trading its code and revokes what it gets', async () => {
-    // Google's documentation: a revocation takes back every scope the account granted the app, and with it
-    // every token issued for them, whichever sign-in they came from.
+  /**
+   * Google's token endpoints as its documentation describes revocation: revoking any token takes back
+   * every scope the account granted the app, and with it every token issued for them. The exchange of the
+   * code `first` waits for `firstExchange`, as on a network that stalls.
+   */
+  function grantingGoogle(firstExchange: Promise<unknown>) {
     const valid = new Set<string>()
-    const grants: Route = async (call) => {
+    const route: Route = async (call) => {
       if (call.url.href === GOOGLE_REVOKE_URL) {
         valid.clear()
         return new Response('', { status: 200 })
@@ -284,28 +287,61 @@ describe('signing in to Google', () => {
       if (form.get('grant_type') === 'refresh_token')
         return valid.has(form.get('refresh_token')!) ? json({ access_token: 'access-renewed', expires_in: 3599, scope }) : json({ error: 'invalid_grant' }, 400)
       const code = form.get('code')!
-      // The first exchange is slow, as on a network that stalls for a moment.
-      if (code === 'first') await new Promise((resolve) => setTimeout(resolve, 200))
+      if (code === 'first') await firstExchange
       valid.add(`refresh-${code}`)
       return json({ access_token: `access-${code}`, refresh_token: `refresh-${code}`, expires_in: 3599, scope })
     }
-    const tokens = memoryTokens(null)
-    const google = fakeGoogle(grants)
-    const { auth, openBrowser } = calendarWith(google, tokens)
+    return { route, valid }
+  }
+
+  /** Signs in with a browser in which the user consents at once, giving the code `first` and then `second`. */
+  function consentingAtOnce(google: ReturnType<typeof fakeGoogle>, tokens: ReturnType<typeof memoryTokens>) {
+    const context = calendarWith(google, tokens)
     let consents = 0
-    openBrowser.mockImplementation(async (url: string) => {
-      // The user consents at once in each tab the browser opens.
+    context.openBrowser.mockImplementation(async (url: string) => {
       const authorize = new URL(url)
       const code = ++consents === 1 ? 'first' : 'second'
       void globalThis.fetch(`${authorize.searchParams.get('redirect_uri')}/?code=${code}&state=${authorize.searchParams.get('state')}`)
     })
+    const exchanging = (code: string): boolean => google.calls.some((call) => new URLSearchParams(call.body).get('code') === code)
+    return { ...context, exchanging }
+  }
+
+  it('keeps the newer sign-in working when the one a sign-in or a sign-out stopped was still trading its code', async () => {
+    for (const between of ['nothing', 'signOut'] as const) {
+      const grants = grantingGoogle(new Promise((resolve) => setTimeout(resolve, 200)))
+      const google = fakeGoogle(grants.route)
+      const tokens = memoryTokens(null)
+      const { auth, exchanging } = consentingAtOnce(google, tokens)
+      const first = auth.signIn().catch((error: unknown) => error)
+      await vi.waitFor(() => expect(exchanging('first')).toBe(true))
+      if (between === 'signOut') await auth.signOut()
+      await auth.signIn()
+      expect(await first).toBeInstanceOf(SignInReplaced)
+      expect(tokens.value).toBe('refresh-second')
+      auth.forgetAccessToken('access-second')
+      await expect(auth.accessToken()).resolves.toBe('access-renewed')
+    }
+  })
+
+  it('opens the browser for a newer sign-in at once while the one it replaced is still trading its code', async () => {
+    let release!: () => void
+    const grants = grantingGoogle(new Promise<void>((resolve) => (release = resolve)))
+    const google = fakeGoogle(grants.route)
+    const tokens = memoryTokens(null)
+    const { auth, openBrowser, exchanging } = consentingAtOnce(google, tokens)
     const first = auth.signIn().catch((error: unknown) => error)
-    await vi.waitFor(() => expect(google.calls.some((call) => new URLSearchParams(call.body).get('code') === 'first')).toBe(true))
-    await auth.signIn()
+    try {
+      await vi.waitFor(() => expect(exchanging('first')).toBe(true))
+      const second = auth.signIn()
+      await vi.waitFor(() => expect(openBrowser).toHaveBeenCalledTimes(2))
+      await second
+      expect(tokens.value).toBe('refresh-second')
+    } finally {
+      release()
+    }
     expect(await first).toBeInstanceOf(SignInReplaced)
     expect(tokens.value).toBe('refresh-second')
-    auth.forgetAccessToken('access-second')
-    await expect(auth.accessToken()).resolves.toBe('access-renewed')
   })
 
   it('opens no browser for a sign-in stopped while its loopback server was starting', async () => {
