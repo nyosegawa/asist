@@ -377,6 +377,21 @@ describe('brain tools registry', () => {
     expect(events[0]).toMatchObject({ event: { op: 'create', key: 'weather:13101:2026-09-16', replacesKey: 'weather:34100:2026-09-16', props: { weather }, state: 'ready' } })
   })
 
+  it('ends a weather card where the day it was fetched on ends at the place, since today and tomorrow name other days after that', async () => {
+    const { executeClientTool } = await load()
+    const keeps = PANEL_CATALOG.find((entry) => entry.type === 'weather')!.ttl!
+    const ttlFetchedAt = async (fetchedAt: string): Promise<unknown> => {
+      const weather = { ...DEMO_WEATHER_TOKYO, fetchedAt }
+      mocks.fetchPanel.mockResolvedValueOnce({ props: { location: '東京都', date: 'today', weather } })
+      const { ctx, events } = makeCtx()
+      await executeClientTool('show_weather', { location: '東京都' }, ctx)
+      return (events[0] as { event: { ttl?: number } }).event.ttl
+    }
+    // 23:50 in Tokyo, ten minutes before the card's today becomes yesterday.
+    expect(await ttlFetchedAt('2026-09-15T14:50:00.000Z')).toBe(10 * 60_000)
+    expect(await ttlFetchedAt('2026-09-15T09:00:00.000Z')).toBe(keeps)
+  })
+
   it('leaves the existing card in place when the weather fetch fails', async () => {
     mocks.fetchPanel.mockRejectedValueOnce(new Error('気象庁の取得に失敗'))
     const { executeClientTool } = await load()

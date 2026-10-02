@@ -313,3 +313,25 @@ export function zonedDate(at: number, timeZone: string): string {
     day: '2-digit'
   }).format(at)
 }
+
+/**
+ * How long a weather card stays current, counted from its fetch: the time its data keeps, cut short where
+ * the day it was fetched on ends at the place, because from there "today" and "tomorrow" name the days
+ * after the ones the card shows.
+ */
+export function weatherCardTtl(data: Pick<WeatherData, 'fetchedAt' | 'location'>, keeps: number): number {
+  const zone = data.location.timeZone
+  const from = Date.parse(data.fetchedAt)
+  const day = zonedDate(from, zone)
+  if (zonedDate(from + keeps, zone) === day) return keeps
+  // The end of the day is searched for rather than worked out from the offset, because where the clocks
+  // change at midnight (America/Santiago) the next day begins at one o'clock.
+  let before = from
+  let after = from + keeps
+  while (after - before > 1) {
+    const middle = Math.floor((before + after) / 2)
+    if (zonedDate(middle, zone) === day) before = middle
+    else after = middle
+  }
+  return after - from
+}

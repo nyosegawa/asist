@@ -1,5 +1,5 @@
 import { resolveWeatherCard, WeatherIssueError } from '../weather'
-import { weatherCardKeyOf, weatherForModel, type WeatherData, type WeatherIssue } from '@shared/weather'
+import { weatherCardKeyOf, weatherCardTtl, weatherForModel, type WeatherData, type WeatherIssue } from '@shared/weather'
 import { PANEL_CATALOG, type PanelCatalogEntry } from '@shared/panel-catalog'
 import { MINI_APPS } from '@shared/mini-apps'
 import type { AgentJob, PanelEvent, TurnEvent } from '@shared/ipc'
@@ -146,7 +146,7 @@ async function runPanelTool(
         ? weatherCardKeyOf(previous.cardId, weather.targetDate)
         : undefined
     ctx.emit({ type: 'panel', turnId: ctx.turnId, event: {
-      op: 'create', key, type, slot: entry.slot, props: result.props, state: 'ready', replacesKey
+      op: 'create', key, type, slot: entry.slot, props: result.props, state: 'ready', replacesKey, ttl: weatherCardTtl(weather, entry.ttl!)
     } })
     return { shown: true, panel: type, data: weatherForModel(weather, locale) }
   }
