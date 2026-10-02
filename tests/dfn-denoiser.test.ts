@@ -76,6 +76,20 @@ describe('DfnDenoiser', () => {
     }
   })
 
+  it('says which chunk closes what each frame completed', async () => {
+    const { dfn, worker } = await readyDenoiser()
+    const ends: boolean[] = []
+    dfn.onOutput = (_chunk, endsFrame) => ends.push(endsFrame)
+    // 4,800 samples make nine chunks and leave 192 for the next frame; the next 4,800 and 3,000 make nine and six.
+    dfn.push(new Float32Array(4_800))
+    dfn.push(new Float32Array(4_800))
+    dfn.push(new Float32Array(3_000))
+    for (const { id, chunk } of infers(worker)) worker.message({ type: 'enhanced', id, chunk })
+    expect(ends).toEqual([
+      ...Array(8).fill(false), true, ...Array(8).fill(false), true, ...Array(5).fill(false), true
+    ])
+  })
+
   it('passes audio through before the worker is ready, so loading never stops the audio', () => {
     const worker = new FakeWorker()
     const dfn = new DfnDenoiser({ workerFactory: () => asWorker(worker) })

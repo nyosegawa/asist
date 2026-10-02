@@ -2,7 +2,8 @@ import type { DfnRequest, DfnResponse } from './dfn-worker'
 
 /**
  * The typed client of dfn-worker. It gathers 48 kHz mono frames into chunks of 512 samples and
- * hands the denoised audio back through onOutput in the same order.
+ * hands the denoised audio back through onOutput in the same order, saying with each chunk whether
+ * it is the last one the frame pushed with it completed.
  *
  * Unlike SileroVad this transforms the audio path itself, so order must hold: while the worker is
  * in use every chunk goes through it and the output follows the order the responses arrive in,
@@ -56,12 +57,15 @@ export class DfnDenoiser {
    * The chunks sent and not yet answered, oldest first, with the audio as it was sent. Responses must arrive in
    * exactly this order.
    */
-  private pending: Array<{ id: number; chunk: Float32Array }> = []
+  private pending: Array<{ id: number; chunk: Float32Array; endsFrame: boolean }> = []
   /** A response below this id answers a chunk sent before noise suppression stopped or before a reset, and is ignored. */
   private ignoreBelowId = 0
 
-  /** Receives each audio chunk, denoised or passed through, in the order the input arrived. */
-  onOutput: ((chunk: Float32Array) => void) | null = null
+  /**
+   * Receives each audio chunk, denoised or passed through, in the order the input arrived, and whether it is the last
+   * chunk the frame pushed with it completed. The rest of that frame goes out with the next frame.
+   */
+  onOutput: ((chunk: Float32Array, endsFrame: boolean) => void) | null = null
 
   constructor(options: DfnDenoiserOptions = {}) {
     this.workerFactory =
@@ -113,7 +117,7 @@ export class DfnDenoiser {
           }
           this.pending.shift()
           this.answeredSinceUse = true
-          this.onOutput?.(message.chunk)
+          this.onOutput?.(message.chunk, expected.endsFrame)
         } else {
           fail(message.message)
         }
@@ -127,6 +131,7 @@ export class DfnDenoiser {
   /** Takes a 48 kHz mono frame of any length and gathers it into chunks of 512 samples. */
   push(frame: Float32Array): void {
     if (this.available && this.pending.length >= MAX_IN_FLIGHT) this.fallBehind()
+    let chunksLeft = Math.floor((this.chunkLength + frame.length) / CHUNK_SAMPLES)
     let offset = 0
     while (offset < frame.length) {
       const take = Math.min(frame.length - offset, CHUNK_SAMPLES - this.chunkLength)
@@ -135,12 +140,13 @@ export class DfnDenoiser {
       offset += take
       if (this.chunkLength === CHUNK_SAMPLES) {
         this.chunkLength = 0
-        this.emitChunk(this.chunk)
+        chunksLeft--
+        this.emitChunk(this.chunk, chunksLeft === 0)
       }
     }
   }
 
-  private emitChunk(chunk: Float32Array): void {
+  private emitChunk(chunk: Float32Array, endsFrame: boolean): void {
     if (!this.available) {
       if (this.loaded && this.worker && this.now() >= this.resumeAt) {
         // The backlog has probably cleared. Nothing is unanswered, so order still holds when the
@@ -149,17 +155,17 @@ export class DfnDenoiser {
         this.putToUse()
         this.worker.postMessage({ type: 'reset' } satisfies DfnRequest)
       } else {
-        this.onOutput?.(chunk.slice(0))
+        this.onOutput?.(chunk.slice(0), endsFrame)
         return
       }
     }
     if (!this.worker) {
-      this.onOutput?.(chunk.slice(0))
+      this.onOutput?.(chunk.slice(0), endsFrame)
       return
     }
     const id = this.nextId++
     const sent = chunk.slice(0)
-    this.pending.push({ id, chunk: sent })
+    this.pending.push({ id, chunk: sent, endsFrame })
     this.worker.postMessage({ type: 'infer', id, chunk: sent } satisfies DfnRequest)
   }
 
@@ -180,7 +186,7 @@ export class DfnDenoiser {
     const pending = this.pending
     this.pending = []
     this.ignoreBelowId = this.nextId
-    for (const { chunk } of pending) this.onOutput?.(chunk)
+    for (const { chunk, endsFrame } of pending) this.onOutput?.(chunk, endsFrame)
   }
 
   /** Clears the capture buffer and the model state when the microphone restarts. */

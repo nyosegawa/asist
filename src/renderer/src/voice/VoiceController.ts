@@ -585,11 +585,11 @@ export class VoiceController {
 
   /** Opens the microphone into Silero, the VAD and MaAI, and listens once it delivers. */
   private async openCapture(generation: number): Promise<void> {
-    const feed = (frame: Float32Array): void => {
+    const feed = (frame: Float32Array, deliveryEnds: boolean): void => {
       this.lastFrameAt = performance.now()
       this.silero.push(frame)
       this.vad.push(frame)
-      if (this.usesMaai()) this.vapAudio.pushUser(frame)
+      if (this.usesMaai()) this.vapAudio.pushUser(frame, deliveryEnds)
     }
     // A source that stops delivering rebuilds the capture: on getUserMedia once main has given up on the
     // native helper, and with no microphone left the rebuild fails and reports it.
