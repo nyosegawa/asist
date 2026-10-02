@@ -40,6 +40,23 @@ async function relsOf(zip: RangedZip, path: string): Promise<Map<string, string>
 const targetOf = (rels: Map<string, string>, kind: string): string | undefined => [...rels.values()].find((target) => target.includes(kind))
 
 /**
+ * What `read` gives for a key, read once and kept for every later request. A read that fails is not kept, so that a
+ * failure that passes, such as a read the server could not answer, does not fail every slide after it.
+ */
+function kept<T>(reads: Map<string, Promise<T>>, key: string, read: () => Promise<T>): Promise<T> {
+  let reading = reads.get(key)
+  if (!reading) {
+    const started = read()
+    reads.set(key, started)
+    started.catch(() => {
+      if (reads.get(key) === started) reads.delete(key)
+    })
+    reading = started
+  }
+  return reading
+}
+
+/**
  * Decodes a picture to fit inside a box of device pixels, as the viewer draws it (object-fit: contain), and never
  * larger than the picture itself. Its own size is known only once it is decoded, and a box of another shape would
  * stretch it, so it is decoded whole first and then scaled. A picture Chromium does not decode gives null: one in a
@@ -95,29 +112,16 @@ const openPptx = async (url: string) => {
 
   /** The placeholder positions of each layout or master read so far, by its path. */
   const frames = new Map<string, Promise<Map<string, PptxFrame>>>()
-  const framesOf = (path: string): Promise<Map<string, PptxFrame>> => {
-    let read = frames.get(path)
-    if (!read) {
-      read = readText(zip, path).then((xml) => placeholderFrames(xml, size))
-      frames.set(path, read)
-    }
-    return read
-  }
-  /** The placeholder positions a slide inherits from its layout and the layout's master, the layout first. */
+  const framesOf = (path: string): Promise<Map<string, PptxFrame>> => kept(frames, path, async () => placeholderFrames(await readText(zip, path), size))
+  /** The placeholder positions a slide inherits from its layout and the layout's master, the layout first, by the layout's path. */
   const inherited = new Map<string, Promise<Map<string, PptxFrame>[]>>()
-  const inheritedOf = (layout: string): Promise<Map<string, PptxFrame>[]> => {
-    let read = inherited.get(layout)
-    if (!read) {
-      read = (async () => {
-        if (!zip.entries.has(layout)) return []
-        const masterTarget = targetOf(await relsOf(zip, layout), 'slideMaster')
-        const master = masterTarget && resolveTarget(dirOf(layout), masterTarget)
-        return Promise.all([layout, ...(master && zip.entries.has(master) ? [master] : [])].map(framesOf))
-      })()
-      inherited.set(layout, read)
-    }
-    return read
-  }
+  const inheritedOf = (layout: string): Promise<Map<string, PptxFrame>[]> =>
+    kept(inherited, layout, async () => {
+      if (!zip.entries.has(layout)) return []
+      const masterTarget = targetOf(await relsOf(zip, layout), 'slideMaster')
+      const master = masterTarget && resolveTarget(dirOf(layout), masterTarget)
+      return Promise.all([layout, ...(master && zip.entries.has(master) ? [master] : [])].map(framesOf))
+    })
 
   return {
     methods: {

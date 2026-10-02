@@ -4,7 +4,7 @@ import { readErrorText } from '@shared/i18n/error-text'
 import { createPreviewClient, type PreviewFile, type PreviewFrame } from '../src/renderer/src/panels/viewers/preview-client'
 import { servePreview, type OpenPreviewDocument } from '../src/renderer/src/preview/serve'
 import openEcho, { closed, failOnce, kept, opened } from './fixtures/preview-methods/echo'
-import openVersioned, { closings, openings, versions } from './fixtures/preview-methods/versioned'
+import openVersioned, { closings, openings, versions, waiting } from './fixtures/preview-methods/versioned'
 
 const ja = createTranslator('ja-JP')
 const kinds = import.meta.glob<{ default: OpenPreviewDocument }>('./fixtures/preview-methods/*.ts')
@@ -149,7 +149,7 @@ describe('the preview frame', () => {
     rewritten.release()
   })
 
-  it('lets go of a document whose file was saved again, tells every view of it, and opens the file as it is now for the next request', async () => {
+  it('lets go of a document whose file was saved again, tells every view of it, fails what the old version answers, and opens the file as it is now for the next request', async () => {
     const { client } = frames()
     const file = newFile()
     const { url } = file
@@ -159,12 +159,17 @@ describe('the preview frame', () => {
     card.onChanged(() => told.push('card'))
     focus.onChanged(() => told.push('focus'))
     expect(await card.call('read', undefined)).toBe(0)
+    const underWay = card.call('readLater', undefined).catch((thrown: Error) => thrown)
+    await vi.waitFor(() => expect(waiting).toHaveLength(1))
 
     versions.set(url, 1)
     const error = await focus.call('read', undefined).catch((thrown: Error) => thrown)
     expect(readErrorText((error as Error).message, 'ja-JP')).toBe(ja('files.errors.changedWhileReading'))
     expect(told).toEqual(['card', 'focus'])
     await vi.waitFor(() => expect(closings.get(url)).toBe(1))
+    // The old version answers a request sent before the change was found, and the answer does not reach the card.
+    waiting.shift()!()
+    expect(readErrorText(((await underWay) as Error).message, 'ja-JP')).toBe(ja('files.errors.changedWhileReading'))
 
     expect(await card.call('read', undefined)).toBe(1)
     expect(await focus.call('read', undefined)).toBe(1)

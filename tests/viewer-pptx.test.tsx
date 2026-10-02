@@ -84,8 +84,8 @@ let decoding: Promise<void> | null = null
 let undecodable = false
 /** What is told when the device pixel ratio no longer holds, as matchMedia tells it. */
 let ratioChanged: (() => void) | null = null
-/** Whether the server fails the reads of pictures, the only ranges past 100 KB besides the end of the file. */
-let picturesFail = false
+/** Whether the server fails the reads past 100 KB other than the end of the file: the pictures, and a padded layout. */
+let largeReadsFail = false
 
 let container: HTMLDivElement
 let root: Root
@@ -105,7 +105,7 @@ beforeEach(() => {
       sent += file.length
       return new Response(file.slice(), { status: 200 })
     }
-    if (picturesFail && !suffix && end - start > 100 * 1024) return new Response(null, { status: 500 })
+    if (largeReadsFail && !suffix && end - start > 100 * 1024) return new Response(null, { status: 500 })
     const body = file.slice(start, end + 1)
     sent += body.length
     return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
@@ -115,7 +115,7 @@ beforeEach(() => {
   stops.clear()
   decoding = null
   undecodable = false
-  picturesFail = false
+  largeReadsFail = false
   vi.stubGlobal('ImageBitmap', FakeBitmap)
   vi.stubGlobal('createImageBitmap', async (source: Blob | FakeBitmap, options?: ImageBitmapOptions) => {
     if (source instanceof FakeBitmap) return new FakeBitmap(options!.resizeWidth!, options!.resizeHeight!)
@@ -225,15 +225,19 @@ const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><circle
 /**
  * A deck of 16:9 slides, each with a title and a photo of PICTURE bytes stored as it is, or with `svg` an SVG, in
  * the order a writer puts them: presentation.xml first, then each slide followed by its picture. A slide given as
- * null is listed in presentation.xml and missing from the file.
+ * null is listed in presentation.xml and missing from the file. With `layout`, every slide uses one layout of more
+ * than 100 KB, stored as it is, as a layout full of drawings is.
  */
-async function deckOf(slides: Array<string | null>, { svg = false } = {}): Promise<Uint8Array> {
+async function deckOf(slides: Array<string | null>, { svg = false, layout = false } = {}): Promise<Uint8Array> {
   const zip = new JSZip()
   const options = { createFolders: false }
   const ids = slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join('')
   zip.file('ppt/presentation.xml', `<p:presentation ${PPT_NS}><p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="${SIZE.cx}" cy="${SIZE.cy}"/></p:presentation>`, options)
   const rels = slides.map((_, i) => `<Relationship Id="rId${i + 1}" Type="x" Target="slides/slide${i + 1}.xml"/>`).join('')
   zip.file('ppt/_rels/presentation.xml.rels', `<Relationships ${RELS_NS}>${rels}</Relationships>`, options)
+  if (layout) {
+    zip.file('ppt/slideLayouts/slideLayout1.xml', `<p:sldLayout ${PPT_NS}><!--${'図'.repeat(40_000)}--><p:cSld><p:spTree/></p:cSld></p:sldLayout>`, { ...options, compression: 'STORE' })
+  }
   slides.forEach((title, i) => {
     if (title === null) return
     zip.file(
@@ -245,13 +249,14 @@ async function deckOf(slides: Array<string | null>, { svg = false } = {}): Promi
       options
     )
     const picture = `media/image${i + 1}.${svg ? 'svg' : 'jpeg'}`
-    zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<Relationships ${RELS_NS}><Relationship Id="rId2" Type="x" Target="../${picture}"/></Relationships>`, options)
+    const layoutRel = layout ? '<Relationship Id="rId1" Type="x" Target="../slideLayouts/slideLayout1.xml"/>' : ''
+    zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<Relationships ${RELS_NS}>${layoutRel}<Relationship Id="rId2" Type="x" Target="../${picture}"/></Relationships>`, options)
     zip.file(`ppt/${picture}`, svg ? SVG : randomBytes(PICTURE), { ...options, compression: 'STORE' })
   })
   return zip.generateAsync({ type: 'uint8array' })
 }
 
-async function serveDeck(name: string, slides: Array<string | null>, options?: { svg?: boolean }): Promise<FileItem> {
+async function serveDeck(name: string, slides: Array<string | null>, options?: { svg?: boolean; layout?: boolean }): Promise<FileItem> {
   const url = `asist-file:///Users/me/${name}`
   const file = await deckOf(slides, options)
   files.set(url, file)
@@ -431,7 +436,7 @@ describe('what the PowerPoint viewer reads and keeps', () => {
   })
 
   it('shows a picture that cannot be read as the picture\'s error under its slide, keeps the slide, and asks for the picture again when the slide comes back', async () => {
-    picturesFail = true
+    largeReadsFail = true
     const item = await serveDeck('deck.pptx', titles(10))
     await render(item, 'focus')
     let scrolled = 0
@@ -441,7 +446,7 @@ describe('what the PowerPoint viewer reads and keeps', () => {
     await until(() => expect(errorsBySlide()).toEqual([0, 1, 2, 3].map((index) => [index, failed])))
     expect(drawnSlides()).toEqual([0, 1, 2, 3])
 
-    picturesFail = false
+    largeReadsFail = false
     scrolled = 3.2 * window.innerHeight
     await frame()
     scrolled = 0
@@ -491,5 +496,21 @@ describe('what the PowerPoint viewer reads and keeps', () => {
     await until(() => expect(card.querySelector('img.fv-pptx-picture')).not.toBeNull())
     expect(card.querySelector('img.fv-pptx-picture')!.getAttribute('src')).toBe(`data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`)
     expect(bitmaps).toEqual([])
+  })
+
+  it('reads a layout again for the next slide after a read of it failed, rather than failing every slide of the layout', async () => {
+    const item = await serveDeck('deck.pptx', titles(10), { layout: true })
+    largeReadsFail = true
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    const failed = t('files.viewer.pptxFailed', { message: t('files.errors.loadFailed', { status: 500 }) })
+    await until(() => expect(errorsBySlide()).toEqual([0, 1, 2, 3].map((index) => [index, failed])))
+
+    largeReadsFail = false
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([4, 5, 6, 7, 8, 9]))
   })
 })

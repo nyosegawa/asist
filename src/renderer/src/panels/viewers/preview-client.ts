@@ -36,8 +36,10 @@ export interface PreviewHandle<Open extends OpenPreviewDocument> {
   /**
    * Calls the listener when a request finds the file changed since its document was opened, as a file saved again
    * while a card shows it is. The client has then let that document go, and the next request of any viewer of the
-   * file opens it again as it is now, so the viewer starts over and asks again for everything it shows; the request
-   * that found the change fails after the listener has run. Returns what stops the listening.
+   * file opens it again as it is now. Answers depend on the version they were read from, such as a slide count or
+   * the order of the sheets, so the viewer drops everything it has from the document and starts over from its first
+   * request. The request that found the change fails after the listener has run, and so does every other request
+   * sent to the old version, whenever its answer comes. Returns what stops the listening.
    */
   onChanged(listener: () => void): () => void
   /** Lets go of the document, which the page closes once no viewer holds it. */
@@ -105,6 +107,9 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
       if ('error' in data) {
         if (errorKeyOf(data.error) === 'files.errors.changedWhileReading') changed(started.frame, request.key, request.sent)
         request.reject(new Error(data.error))
+      } else if (request.sent !== pageKey(request.key)) {
+        // An answer the old version gave after the change was found would mix the two versions in the viewer.
+        request.reject(new Error(errorText('files.errors.changedWhileReading')))
       } else request.resolve(data.value)
     })
     port.start()
