@@ -256,7 +256,8 @@ export const googleAdapter: ProviderAdapter = {
           abortSignal: request.signal
         }
       })
-      return { value: JSON.parse(response.text ?? ''), usage: roundUsage(response.usageMetadata, undefined) }
+      const text = response.text ?? ''
+      return { usage: roundUsage(response.usageMetadata, undefined), value: () => JSON.parse(text) }
     } catch (error) {
       throw normalizeError(error)
     }

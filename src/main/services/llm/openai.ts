@@ -1,10 +1,11 @@
-import OpenAI from 'openai'
+import OpenAI, { APIError } from 'openai'
 import type {
   FunctionTool,
   Response,
   ResponseCreateParamsStreaming,
   ResponseInputItem,
   ResponseOutputItem,
+  ResponseStreamEvent,
   Tool
 } from 'openai/resources/responses/responses'
 import type { ConversationMessage, ConversationRequest, ConversationResult, SearchSource, StopReason } from '@shared/conversation'
@@ -115,6 +116,29 @@ export class CitationFilter {
 
 const uniqueSources = (sources: SearchSource[]): SearchSource[] => [...new Map(sources.map((source) => [source.url, source])).values()]
 
+/**
+ * A failure the server reports inside the stream carries a code but no HTTP status, so it is given the
+ * status a request failing the same way would get, which is what tells a transient failure apart.
+ */
+function streamFailure(code: string | null | undefined, message: string | undefined): Error {
+  const status = code === 'rate_limit_exceeded' ? 429 : code === 'server_error' ? 500 : 400
+  return statusError(status, `OpenAI: ${code ?? 'failed'}: ${message ?? 'the response failed'}`)
+}
+
+/**
+ * The events of a response. The openai package raises an `error` event itself, as an APIError without a
+ * status, before the event reaches the reader (openai/core/streaming.js), so it becomes the same failure
+ * as a failed response here.
+ */
+async function* streamEvents(stream: AsyncIterable<ResponseStreamEvent>): AsyncGenerator<ResponseStreamEvent> {
+  try {
+    yield* stream
+  } catch (error) {
+    if (error instanceof APIError && error.status === undefined && error.error !== undefined) throw streamFailure(error.code, error.message)
+    throw error
+  }
+}
+
 class OpenAIStream extends AdapterStream {
   private readonly items: ResponseOutputItem[] = []
 
@@ -128,9 +152,22 @@ class OpenAIStream extends AdapterStream {
 
   protected nativeSnapshot(openText: string): ConversationMessage['native'] {
     // Text cut off mid-stream never became an item, so it is appended as assistant text to keep what was already spoken.
-    const payload: unknown[] = [...this.items]
+    const payload: unknown[] = this.resendable()
     if (openText) payload.push({ role: 'assistant', content: openText })
     return payload.length > 0 ? { provider: PROVIDER, model: this.request.model.id, payload } : undefined
+  }
+
+  /**
+   * The completed items that can go back to the model. The API refuses a reasoning item unless the item
+   * that followed it in its response comes right after it, recognized by that item's id (400, "provided
+   * without its required following item"). So the reasoning before an item that never completed, cut
+   * off by a broken stream or the output limit, is left out, and text cut off with it goes back without
+   * an id.
+   */
+  private resendable(): ResponseOutputItem[] {
+    let end = this.items.length
+    while (end > 0 && this.items[end - 1].type === 'reasoning') end--
+    return this.items.slice(0, end)
   }
 
   private async run(client: OpenAI): Promise<ConversationResult> {
@@ -156,7 +193,7 @@ class OpenAIStream extends AdapterStream {
     const listed: SearchSource[] = []
     let refused = false
     let response: Response | null = null
-    for await (const event of stream) {
+    for await (const event of streamEvents(stream)) {
       switch (event.type) {
         case 'response.output_text.delta':
           this.emitText(citations ? citations.push(event.delta) : event.delta)
@@ -196,14 +233,11 @@ class OpenAIStream extends AdapterStream {
         case 'response.incomplete':
           response = event.response
           break
-        case 'response.failed': {
+        case 'response.failed':
           // The stream closes normally on a failure, so the failure has to be raised here.
-          const error = event.response.error
-          const status = error?.code === 'rate_limit_exceeded' ? 429 : error?.code === 'server_error' ? 500 : 400
-          throw statusError(status, `OpenAI: ${error?.code ?? 'failed'}: ${error?.message ?? 'the response failed'}`)
-        }
+          throw streamFailure(event.response.error?.code, event.response.error?.message)
         case 'error':
-          throw new Error(`OpenAI: ${event.code ?? 'error'}: ${event.message}`)
+          throw streamFailure(event.code, event.message)
       }
     }
     if (!response) streamCutOff(request.signal, 'OpenAI')
@@ -220,7 +254,7 @@ class OpenAIStream extends AdapterStream {
     if (incomplete && stop === 'end') throw new Error(`OpenAI: the response was cut short (${incomplete})`)
 
     return {
-      message: { role: 'assistant', parts: [...this.parts], native: { provider: PROVIDER, model: request.model.id, payload: [...this.items] } },
+      message: { role: 'assistant', parts: [...this.parts], native: { provider: PROVIDER, model: request.model.id, payload: this.resendable() } },
       stop,
       usage: roundUsage(response.usage, this.items)
     }
@@ -257,10 +291,15 @@ export const openaiAdapter: ProviderAdapter = {
       },
       { signal: request.signal }
     )
-    if (response.status !== 'completed') {
-      throw new Error(`OpenAI: the JSON response did not complete (${response.incomplete_details?.reason ?? response.error?.message ?? response.status})`)
+    return {
+      usage: roundUsage(response.usage, response.output),
+      value: () => {
+        if (response.status !== 'completed') {
+          throw new Error(`OpenAI: the JSON response did not complete (${response.incomplete_details?.reason ?? response.error?.message ?? response.status})`)
+        }
+        return JSON.parse(response.output_text)
+      }
     }
-    return { value: JSON.parse(response.output_text), usage: roundUsage(response.usage, response.output) }
   },
 
   async retrieveModel(id, key, signal) {

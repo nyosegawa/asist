@@ -93,6 +93,14 @@ const PLAN_USER: PromptText = {
 const PLAN_USER_NO_LAST: PromptText = { ja: `(なし)`, en: `(none)` }
 
 /**
+ * The end of the previous line, which is what the user is answering, in at most this many characters.
+ * It is cut between characters rather than UTF-16 units: half of a surrogate pair makes the request
+ * body invalid JSON to a strict parser, and Anthropic refuses such a request with a 400.
+ */
+const LAST_LINE_MAX = 300
+const lastLineEnd = (text: string): string => Array.from(text).slice(-LAST_LINE_MAX).join('')
+
+/**
  * The fast model's output. The line is cut short, because a long one overlaps the real answer. It is
  * measured without the brackets the model wraps it in, as the prompt's own examples do, since they
  * are stripped before it is spoken.
@@ -145,7 +153,7 @@ export async function plan(input: PlanInput): Promise<BridgePlan> {
     language: CONVERSATION_LANGUAGE_NAMES[locale]
   })
   const user = fillPrompt(promptText(locale, PLAN_USER), {
-    last: input.lastAssistantText || promptText(locale, PLAN_USER_NO_LAST),
+    last: lastLineEnd(input.lastAssistantText) || promptText(locale, PLAN_USER_NO_LAST),
     text: input.text
   })
   const raw = await quickJson(system, user, planJsonSchema(locale), AbortSignal.timeout(PLAN_TIMEOUT_MS))

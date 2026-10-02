@@ -169,7 +169,8 @@ export const cerebrasAdapter: ProviderAdapter = {
       { signal: request.signal }
     )
     if (!response.usage) throw new Error('Cerebras: the response carried no usage')
-    return { value: JSON.parse(response.choices[0]?.message.content ?? ''), usage: roundUsage(response.usage) }
+    const text = response.choices[0]?.message.content ?? ''
+    return { usage: roundUsage(response.usage), value: () => JSON.parse(text) }
   },
 
   async retrieveModel(id, key, signal) {

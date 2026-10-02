@@ -212,7 +212,9 @@ describe('the Cerebras JSON call', () => {
         'key'
       )
     mocks.response = { choices: [{ message: { content: '{"bridge":"x"}' } }], usage: USAGE }
-    expect(await call()).toEqual({ value: { bridge: 'x' }, usage: { input: 100, cacheRead: 0, cacheCreation: 0, output: 5, webSearches: 0 } })
+    const response = await call()
+    expect(response.usage).toEqual({ input: 100, cacheRead: 0, cacheCreation: 0, output: 5, webSearches: 0 })
+    expect(response.value()).toEqual({ bridge: 'x' })
     mocks.response = { choices: [{ message: { content: '{"bridge":"x"}' } }] }
     await expect(call()).rejects.toThrow()
   })

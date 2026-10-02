@@ -327,8 +327,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.BridgePlan, (_e, input: { text: unknown; lastAssistantText: unknown }) => {
     const text = typeof input?.text === 'string' ? input.text.trim() : ''
     if (!text || text.length > 500) throw new Error('invalid bridge plan input')
-    const lastAssistantText =
-      typeof input.lastAssistantText === 'string' ? input.lastAssistantText.slice(-300) : ''
+    const lastAssistantText = typeof input.lastAssistantText === 'string' ? input.lastAssistantText : ''
     return bridgePlan.plan({ text, lastAssistantText })
   })
   handle(IpcChannel.BridgeClip, (_e, text: unknown) => {
