@@ -80,6 +80,15 @@ describe('resolving a place of Japan named in romaji', () => {
   // region stays Japan and the weather comes from the Japan Meteorological Agency.
   const sameAs = (romaji: string, japanese: string) =>
     expect(resolve(romaji).municipalityCode, romaji).toBe(resolve(japanese).municipalityCode)
+  const code = (japanese: string) => resolve(japanese).municipalityCode
+  /** The candidates a name comes back with, each checked to resolve to the place it stands for. */
+  const candidatesOf = (name: string): string[] => {
+    const result = resolveWeatherLocation(name)
+    expect(result, name).toMatchObject({ status: 'location_ambiguous' })
+    const candidates = ('candidates' in result && result.candidates) || []
+    for (const c of candidates) expect(resolve(c.location).municipalityCode, c.location).toBe(c.municipalityCode)
+    return candidates.map((c) => c.municipalityCode)
+  }
 
   it('resolves a prefecture or municipality to the place its Japanese name resolves to', () => {
     sameAs('Hokkaido', '北海道')
@@ -109,6 +118,42 @@ describe('resolving a place of Japan named in romaji', () => {
       expect.arrayContaining([resolve('東京都府中市').municipalityCode, resolve('広島県府中市').municipalityCode])
     )
     for (const c of candidates) expect(resolve(c.location).municipalityCode).toBe(c.municipalityCode)
+  })
+  it('reads a long vowel in any spelling, and n or m before b, m and p, as the same name', () => {
+    // The agency's own English writes "Ohtawara", "Kounosu" and "Tanba" beside "Ota", "Gotemba" and "Nambu".
+    sameAs('Ōtawara', '大田原市')
+    sameAs('Konosu', '鴻巣市')
+    sameAs('Tamba-Sasayama', '丹波篠山市')
+    sameAs('Gotenba', '御殿場市')
+    sameAs('Minō, Osaka', '箕面市')
+    expect(candidatesOf('Minō')).toEqual(expect.arrayContaining([code('箕面市'), code('美濃市')]))
+    expect(candidatesOf('Tōnoshō')).toEqual(expect.arrayContaining([code('東庄町'), code('土庄町')]))
+  })
+  it('offers a prefecture together with the municipalities of other prefectures that share its name', () => {
+    expect(candidatesOf('Ibaraki').sort()).toEqual([code('茨城県'), code('大阪府茨木市')].sort())
+    expect(candidatesOf('Yamagata')).toEqual(
+      expect.arrayContaining([code('山形県'), code('長野県山形村'), code('岐阜県山県市')])
+    )
+    sameAs('Ibaraki Prefecture', '茨城県')
+  })
+  it('reaches a ward the agency forecasts on its own through the name of its city', () => {
+    sameAs('Higashinada Ward, Kobe', '神戸市東灘区')
+    sameAs('Higashinada-ku, Kobe', '神戸市東灘区')
+    sameAs('Naka Ward, Hiroshima', '広島市中区')
+    sameAs('Naka-ku, Hiroshima City, Hiroshima', '広島市中区')
+    // Without its city, "Naka Ward" may as well be the ward of Yokohama or Nagoya, which have no English name here.
+    expect(resolveWeatherLocation('Naka Ward')).toMatchObject({ status: 'location_not_found' })
+  })
+  it('splits a name at a full-width or Japanese comma as at a comma', () => {
+    sameAs('Fuchu、Tokyo', '東京都府中市')
+    sameAs('Fuchu，Tokyo', '東京都府中市')
+  })
+  it('takes a name without its kind to the one city that has it when the others are towns or villages', () => {
+    sameAs('Yokohama', '神奈川県横浜市')
+    sameAs('Kawasaki', '神奈川県川崎市')
+    sameAs('Fuchu, Hiroshima', '広島県府中市')
+    sameAs('Yokohama Town', '青森県横浜町')
+    expect(candidatesOf('Sakai')).toEqual(expect.arrayContaining([code('大阪府堺市'), code('福井県坂井市')]))
   })
   it('reaches every municipality the Japan Meteorological Agency forecasts for by its English name and its prefecture', () => {
     // "Esashi Town, Hokkaido" is two towns, "江差町" and "枝幸町", so a name may reach its place among candidates.

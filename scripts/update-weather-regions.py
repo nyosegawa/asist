@@ -43,7 +43,10 @@ def whole(name):
 def english_name(m, subareas):
     names = [area['class20s'][k]['enName'] for k in subareas]
     if len(names) == 1:
-        return names[0]
+        # A ward the agency forecasts on its own comes after its city ("Kobe City Higashinada Ward"), where
+        # English puts the city after a comma ("Higashinada Ward, Kobe City").
+        ward = re.fullmatch(r'(.+ City) (.+ Ward)', names[0])
+        return f'{ward.group(2)}, {ward.group(1)}' if ward else names[0]
     wholes = {whole(name) for name in names}
     if len(wholes) != 1:
         raise SystemExit(f'No single English name for {m["name"]}: {names}')
