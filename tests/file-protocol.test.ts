@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import type { Protocol } from 'electron'
 import { parseRange } from '../src/shared/byte-range'
 import { allowedPath, type PathSystem } from '../src/main/services/file-preview'
 import { PREVIEW_ORIGIN } from '../src/shared/preview-page'
@@ -17,7 +18,7 @@ const MACOS = { windows: false }
 async function serve(folder: string, url: string, range?: string): Promise<Response> {
   const { handleFileScheme } = await load()
   electron.handle.mockClear()
-  handleFileScheme(() => [folder])
+  handleFileScheme({ handle: electron.handle } as unknown as Protocol, () => [folder])
   const handler = electron.handle.mock.calls[0][1] as (request: { url: string; headers: Headers }) => Response
   return handler({ url, headers: new Headers(range ? { range } : {}) })
 }
@@ -191,12 +192,12 @@ function corsLets(response: Response, origin: string, exposed: string[] = []): b
 }
 
 describe('the preview page reading a file by ranges', () => {
-  it('answers the preflight of a suffix range and lets the preview page alone read where the range sits', async () => {
+  it('answers the preflight of a suffix range and lets the preview page alone read where the range sits and which version of the file it holds', async () => {
     const { fileUrl, handleFileScheme } = await load()
     const folder = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
     writeFileSync(path.join(folder, 'book.docx'), Buffer.alloc(100_000, 1))
     electron.handle.mockClear()
-    handleFileScheme(() => [folder])
+    handleFileScheme({ handle: electron.handle } as unknown as Protocol, () => [folder])
     const handler = electron.handle.mock.calls[0][1] as (request: { method: string; url: string; headers: Headers }) => Response
     const url = fileUrl(path.join(folder, 'book.docx'))
 
@@ -208,7 +209,7 @@ describe('the preview page reading a file by ranges', () => {
     const response = handler({ method: 'GET', url, headers: new Headers({ origin: PREVIEW_ORIGIN, range: 'bytes=-65577' }) })
     expect(response.status).toBe(206)
     expect(response.headers.get('content-range')).toBe('bytes 34423-99999/100000')
-    expect(corsLets(response, PREVIEW_ORIGIN, ['Content-Range'])).toBe(true)
+    expect(corsLets(response, PREVIEW_ORIGIN, ['Content-Range', 'ETag'])).toBe(true)
     // An HTML page shown in the files card has an opaque origin, which CORS writes as null.
     expect(corsLets(response, 'null')).toBe(false)
   })
@@ -332,11 +333,11 @@ describe('the policy a document is served with', () => {
 })
 
 describe("the app page's frame-src", () => {
-  it('admits no source that would show any remote site inside the app', () => {
+  it('admits no source that would show any remote site, or a document of an allowed folder, in the app\'s own session', () => {
     const html = readFileSync(new URL('../src/renderer/index.html', import.meta.url), 'utf8')
     const policy = /http-equiv="Content-Security-Policy"\s+content="([^"]+)"/.exec(html)?.[1] ?? ''
     const frameSources = directives(policy).get('frame-src') ?? []
-    expect(frameSources).toContain('asist-file:')
-    for (const wide of ['*', 'https:', 'http:', 'data:', 'blob:', "'self'", 'file:']) expect(frameSources).not.toContain(wide)
+    // An HTML page of the files card is shown in a webview in a session of its own, which reaches no network.
+    for (const wide of ['*', 'https:', 'http:', 'data:', 'blob:', "'self'", 'file:', 'asist-file:']) expect(frameSources).not.toContain(wide)
   })
 })

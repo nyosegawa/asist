@@ -425,5 +425,69 @@
    }
   ],
   "generationtime_ms": 1.0585785
+ },
+ "Lord Howe Island": {
+  "results": [
+   {
+    "id": 6930427,
+    "name": "Lord Howe Island",
+    "latitude": -31.53103,
+    "longitude": 159.0683,
+    "elevation": 10.0,
+    "feature_code": "PPL",
+    "country_code": "AU",
+    "admin1_id": 2155400,
+    "admin2_id": 7839765,
+    "timezone": "Australia/Lord_Howe",
+    "population": 464,
+    "country_id": 2077456,
+    "country": "Australia",
+    "admin1": "New South Wales",
+    "admin2": "Port Macquarie-Hastings"
+   },
+   {
+    "id": 2159558,
+    "name": "Lord Howe Island",
+    "latitude": -31.55281,
+    "longitude": 159.08578,
+    "elevation": 1.0,
+    "feature_code": "ISL",
+    "country_code": "AU",
+    "admin1_id": 2155400,
+    "timezone": "Australia/Lord_Howe",
+    "country_id": 2077456,
+    "country": "Australia",
+    "admin1": "New South Wales"
+   },
+   {
+    "id": 2178584,
+    "name": "Tömotu Noi",
+    "latitude": -10.80611,
+    "longitude": 166.0617,
+    "elevation": 47.0,
+    "feature_code": "ISL",
+    "country_code": "SB",
+    "timezone": "Pacific/Guadalcanal",
+    "country_id": 2103350,
+    "country": "Solomon Islands"
+   },
+   {
+    "id": 7668731,
+    "name": "Lord Howe Island Airport",
+    "latitude": -31.54036,
+    "longitude": 159.07843,
+    "elevation": 1.0,
+    "feature_code": "AIRP",
+    "country_code": "AU",
+    "admin1_id": 2155400,
+    "admin2_id": 7839765,
+    "timezone": "Australia/Lord_Howe",
+    "country_id": 2077456,
+    "country": "Australia",
+    "admin1": "New South Wales",
+    "admin2": "Port Macquarie-Hastings"
+   }
+  ],
+  "generationtime_ms": 0.6978512
  }
 }

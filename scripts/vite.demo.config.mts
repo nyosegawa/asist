@@ -3,6 +3,7 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { aizuchiReview } from './aizuchi-clips/review-api.mjs'
+import { demoPageView } from './demo-page-view.mts'
 import { PREVIEW_PAGE_HOST } from '../src/renderer/src/demo/routes'
 import { PREVIEW_PAGE, PREVIEW_POLICY } from '../src/shared/preview-page'
 
@@ -50,6 +51,6 @@ export default defineConfig({
     }
   },
   // The aizuchi review page (/aizuchi) reads and writes the clips under resources/aizuchi through it.
-  plugins: [react(), tailwindcss(), demoPolicies, aizuchiReview(root)],
+  plugins: [demoPageView(root), react(), tailwindcss(), demoPolicies, aizuchiReview(root)],
   server: { port: 5174, strictPort: true }
 })
