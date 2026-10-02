@@ -119,10 +119,27 @@ export const curationSkillSource = (locale: ConversationLocale): string =>
 /** Where the skill goes inside the worktree: claude reads .claude/skills and codex reads .agents/skills. */
 export const SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const
 /**
- * The rules of the memory's markdown, which both skills' validate.mjs import from two folders above their
- * scripts/: resources/skills in the app, and each of SKILL_DIRS in the worktree.
+ * The scripts under the skill's scripts/ that the Agent runs to check its own work: what each document of
+ * the prompt costs against its limit, and the rules of the markdown. They are the only commands a claude
+ * curation may run.
  */
-export const FORMAT_MODULE = 'memory-format.mjs'
+export const CURATION_SCRIPTS = ['count.py', 'validate.py'] as const
+/**
+ * The command the Agent runs a script of the skill with, `skill` being the skill's folder as the Agent names
+ * it. The uv is the copy of the bundled one that ASIST puts in that folder, run on the Python ASIST installed
+ * for it, so a curation needs neither Node nor a Python of the user's. It is named by its path rather than
+ * found on PATH, because the shell a command runs in sets PATH again: codex runs it in a login shell and
+ * claude in a snapshot of the user's, where path_helper on macOS and the user's startup files can put a uv of
+ * the user's ahead of any folder ASIST added. On Windows the copy is uv.exe, which this name finds as well.
+ * --no-project keeps uv from looking for a project in the folders above the worktree.
+ */
+export const curationScriptCommand = (skill: string, script: (typeof CURATION_SCRIPTS)[number]): string =>
+  `${skill}/uv run --no-project ${skill}/scripts/${script}`
+/**
+ * The rules of the memory's markdown and the values they read, which both skills' scripts import from two
+ * folders above their scripts/: resources/skills in the app, and each of SKILL_DIRS in the worktree.
+ */
+export const FORMAT_FILES = ['memory_format.py', 'memory-format.json'] as const
 /**
  * The .gitignore of the memory repository. The app copies the skill and AGENTS.md in on every run, so
  * they stay out of the memory commits. A save from the memory screen that a power loss cuts off before its
