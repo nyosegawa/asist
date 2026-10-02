@@ -173,7 +173,8 @@ async function tokenOf(response: Response): Promise<z.infer<typeof tokenSchema>>
 export class GoogleAuth {
   private access: { token: string; expiresAt: number } | null = null
   private refreshing: Promise<string> | null = null
-  private signingIn: AbortController | null = null
+  /** The sign-in under way, and a promise that settles once it has ended in whatever way. */
+  private signingIn: { controller: AbortController; ended: Promise<void> } | null = null
   constructor(private readonly deps: GoogleAuthDependencies) {}
 
   private now(): number {
@@ -241,15 +242,28 @@ export class GoogleAuth {
   /**
    * Signs in through the browser and saves the refresh token. A sign-in started while another waits takes
    * its place, since the browser tab of the first may have been closed; the first then fails with
-   * SignInReplaced.
+   * SignInReplaced. The newer one opens the browser only once the first has ended, because a first one
+   * already trading its code revokes the tokens it gets, and Google's revocation takes back every grant
+   * the account gave the app, which would include a consent given in the meantime.
    */
   async signIn(): Promise<void> {
-    this.signingIn?.abort(new SignInReplaced())
+    const replaced = this.signingIn
+    replaced?.controller.abort(new SignInReplaced())
     const controller = new AbortController()
-    this.signingIn = controller
+    const run = (replaced?.ended ?? Promise.resolve()).then(() => this.signInThroughBrowser(controller.signal))
+    const current = { controller, ended: run.then(() => undefined, () => undefined) }
+    this.signingIn = current
+    try {
+      await run
+    } finally {
+      if (this.signingIn === current) this.signingIn = null
+    }
+  }
+
+  private async signInThroughBrowser(signal: AbortSignal): Promise<void> {
     const { verifier, challenge } = pkcePair()
     const state = base64url(randomBytes(16))
-    const loopback = await openLoopback(state, this.deps.page, controller.signal, this.deps.signInTimeoutMs ?? SIGN_IN_TIMEOUT_MS)
+    const loopback = await openLoopback(state, this.deps.page, signal, this.deps.signInTimeoutMs ?? SIGN_IN_TIMEOUT_MS)
     try {
       const url = new URL(AUTHORIZE_URL)
       url.search = new URLSearchParams({
@@ -264,11 +278,11 @@ export class GoogleAuth {
         // Google returns a refresh token only on a consent it shows, so a second sign-in would otherwise get none.
         prompt: 'consent'
       }).toString()
-      controller.signal.throwIfAborted()
+      signal.throwIfAborted()
       await this.deps.openBrowser(url.href)
       const { code, answer } = await loopback.arrival
       try {
-        await this.exchange(code, verifier, loopback.uri, controller.signal)
+        await this.exchange(code, verifier, loopback.uri, signal)
       } catch (error) {
         answer(false)
         throw error
@@ -276,7 +290,6 @@ export class GoogleAuth {
       answer(true)
     } finally {
       loopback.close()
-      if (this.signingIn === controller) this.signingIn = null
     }
   }
 
@@ -315,7 +328,7 @@ export class GoogleAuth {
 
   /** Takes ASIST's access back at Google and forgets it here. A sign-in in progress stops. */
   async signOut(): Promise<void> {
-    this.signingIn?.abort(new SignInReplaced())
+    this.signingIn?.controller.abort(new SignInReplaced())
     let refreshToken: string | null
     try {
       refreshToken = this.deps.tokens.get('refreshToken')

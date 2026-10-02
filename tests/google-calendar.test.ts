@@ -269,6 +269,45 @@ describe('signing in to Google', () => {
     expect(tokens.value).toBe('refresh-new')
   })
 
+  it('keeps the newer sign-in working when the one it replaced was still trading its code and revokes what it gets', async () => {
+    // Google's documentation: a revocation takes back every scope the account granted the app, and with it
+    // every token issued for them, whichever sign-in they came from.
+    const valid = new Set<string>()
+    const grants: Route = async (call) => {
+      if (call.url.href === GOOGLE_REVOKE_URL) {
+        valid.clear()
+        return new Response('', { status: 200 })
+      }
+      if (call.url.href !== GOOGLE_TOKEN_URL) return undefined
+      const form = new URLSearchParams(call.body)
+      const scope = GOOGLE_CALENDAR_SCOPES.join(' ')
+      if (form.get('grant_type') === 'refresh_token')
+        return valid.has(form.get('refresh_token')!) ? json({ access_token: 'access-renewed', expires_in: 3599, scope }) : json({ error: 'invalid_grant' }, 400)
+      const code = form.get('code')!
+      // The first exchange is slow, as on a network that stalls for a moment.
+      if (code === 'first') await new Promise((resolve) => setTimeout(resolve, 200))
+      valid.add(`refresh-${code}`)
+      return json({ access_token: `access-${code}`, refresh_token: `refresh-${code}`, expires_in: 3599, scope })
+    }
+    const tokens = memoryTokens(null)
+    const google = fakeGoogle(grants)
+    const { auth, openBrowser } = calendarWith(google, tokens)
+    let consents = 0
+    openBrowser.mockImplementation(async (url: string) => {
+      // The user consents at once in each tab the browser opens.
+      const authorize = new URL(url)
+      const code = ++consents === 1 ? 'first' : 'second'
+      void globalThis.fetch(`${authorize.searchParams.get('redirect_uri')}/?code=${code}&state=${authorize.searchParams.get('state')}`)
+    })
+    const first = auth.signIn().catch((error: unknown) => error)
+    await vi.waitFor(() => expect(google.calls.some((call) => new URLSearchParams(call.body).get('code') === 'first')).toBe(true))
+    await auth.signIn()
+    expect(await first).toBeInstanceOf(SignInReplaced)
+    expect(tokens.value).toBe('refresh-second')
+    auth.forgetAccessToken('access-second')
+    await expect(auth.accessToken()).resolves.toBe('access-renewed')
+  })
+
   it('opens no browser for a sign-in stopped while its loopback server was starting', async () => {
     const { auth, openBrowser } = calendarWith(fakeGoogle(), memoryTokens(null))
     const signingIn = auth.signIn().catch((error: unknown) => error)
