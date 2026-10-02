@@ -113,7 +113,7 @@ export function setupOsIntegration(window: BrowserWindow): void {
           label: t('app.tray.toggleMic'),
           click: () => {
             showWindow()
-            window.webContents.send(IpcChannel.HotkeyMic, undefined)
+            window.webContents.send(IpcChannel.ToggleMic, undefined)
           }
         },
         { type: 'separator' },

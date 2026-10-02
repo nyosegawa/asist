@@ -157,7 +157,9 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   live.events.on('event', (event) => send(IpcChannel.LiveEvent, event))
   timers.init()
 
+  let statusReads = 0
   const computeStatus = async (): Promise<AppStatus> => {
+    const sequence = ++statusReads
     const settings = getSettings()
     const [ttsUp, asrUp, apiUp] = await Promise.all([
       tts.available(),
@@ -165,6 +167,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       configuredApiKeyAvailable()
     ])
     return {
+      sequence,
       llm: apiUp,
       conversationModel: settings.conversationModel,
       llmKeys: llmKeyStates(),

@@ -196,7 +196,7 @@ async function initializeConversation(): Promise<void> {
 
   window.api.onStatusChanged((status) => {
     const prev = useStatusStore.getState().status
-    useStatusStore.getState().apply(status)
+    if (!useStatusStore.getState().apply(status)) return
     voiceController.handleAsrStatus(status.asr)
     if (prev && (prev.asr !== status.asr || prev.tts !== status.tts)) {
       const parts: string[] = []
@@ -380,6 +380,7 @@ async function initializeConversation(): Promise<void> {
   startMiniAppReports()
   await startStoreSync({ onHeldConfirmationClosed: resumeHeldTurn })
   window.api.onHotkeyMic(() => void enableMic())
+  window.api.onToggleMic(() => void toggleMic())
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)

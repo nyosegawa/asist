@@ -25,19 +25,28 @@ import { translate } from '@/i18n'
 interface StatusState {
   status: AppStatus | null
   refresh: () => Promise<void>
-  apply: (status: AppStatus) => void
+  /** Holds the status unless main read it before the one held, and says whether it did. */
+  apply: (status: AppStatus) => boolean
 }
 
-export const useStatusStore = create<StatusState>((set) => ({
+export const useStatusStore = create<StatusState>((set, get) => ({
   status: null,
   refresh: async () => {
     try {
-      set({ status: await window.api.getStatus() })
+      get().apply(await window.api.getStatus())
     } catch (error) {
       useToastStore.getState().push({ kind: 'error', title: translate('app.status.checkFailed'), body: displayError(error) })
     }
   },
-  apply: (status) => set({ status })
+  apply: (status) => {
+    // The order of arrival is not the order of reading. With Electron 43.7.7, the answer to a read overtook a
+    // push main had sent just before it in 209 of 500 reads made at once (2026-10-02), and a read that waits
+    // for the API key to be checked can end after a read begun later.
+    const held = get().status
+    if (held !== null && status.sequence < held.sequence) return false
+    set({ status })
+    return true
+  }
 }))
 
 interface SettingsState {

@@ -100,6 +100,7 @@ const api: RendererApi = {
   notify: (title, body) => ipcRenderer.invoke(IpcChannel.Notify, title, body),
   reportMiniAppView: (view) => ipcRenderer.invoke(IpcChannel.MiniAppView, view),
   onHotkeyMic: subscribe<void>(IpcChannel.HotkeyMic),
+  onToggleMic: subscribe<void>(IpcChannel.ToggleMic),
   getSetupStatus: () => ipcRenderer.invoke(IpcChannel.GetSetupStatus),
   completeSetup: (request) => ipcRenderer.invoke(IpcChannel.CompleteSetup, request),
   prepareAsrModel: (model) => ipcRenderer.invoke(IpcChannel.AsrPrepare, model),

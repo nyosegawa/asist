@@ -870,7 +870,29 @@ describe('the measurements shown in the HUD', () => {
   })
 })
 
-describe('the global shortcut and the tray item that turn the microphone on', () => {
+describe('the tray item that toggles the microphone', () => {
+  it('turns the microphone off when it is on, and on again when it is off', async () => {
+    let toggle!: () => void
+    await start({
+      onToggleMic: (callback: () => void) => {
+        toggle = callback
+        return () => {}
+      }
+    })
+    voice().current = 'listening'
+    toggle()
+    await flush()
+    expect(voice().disable).toHaveBeenCalledOnce()
+    expect(voice().enable).not.toHaveBeenCalled()
+
+    voice().current = 'off'
+    toggle()
+    await flush()
+    expect(voice().enable).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the global shortcut that turns the microphone on', () => {
   async function pressShortcut(): Promise<void> {
     let hotkey!: () => void
     await start({
@@ -885,19 +907,19 @@ describe('the global shortcut and the tray item that turn the microphone on', ()
     voice().current = 'listening'
   }
 
-  it('leave the microphone off during the first-run setup', async () => {
+  it('leaves the microphone off during the first-run setup', async () => {
     Object.assign(mocks.settings, { onboardingVersion: 0, safetyNoticeVersion: 0 })
     await pressShortcut()
     expect(voice().enable).not.toHaveBeenCalled()
   })
 
-  it('leave the microphone off while the notice of the risks is unanswered', async () => {
+  it('leaves the microphone off while the notice of the risks is unanswered', async () => {
     Object.assign(mocks.settings, { onboardingVersion: 1, safetyNoticeVersion: 0 })
     await pressShortcut()
     expect(voice().enable).not.toHaveBeenCalled()
   })
 
-  it('turn the microphone on once both are answered', async () => {
+  it('turns the microphone on once both are answered', async () => {
     await pressShortcut()
     expect(voice().enable).toHaveBeenCalledOnce()
   })

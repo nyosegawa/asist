@@ -689,6 +689,12 @@ export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
 export const keyReadable = (state: ApiKeyState): boolean => state === 'saved' || state === 'verified'
 
 export interface AppStatus {
+  /**
+   * The order in which main began to read this status: a status with a lower number was read before it. The
+   * page keeps the status read last, since the answer to a read and a push do not reach it in the order main
+   * read them.
+   */
+  sequence: number
   /** Whether both the conversation model and the bridge phrase model could be fetched from the real API with their providers' keys. */
   llm: boolean
   conversationModel: ConversationModel
@@ -853,6 +859,7 @@ export const IpcChannel = {
   NotesChanged: 'notes-changed',
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
+  ToggleMic: 'toggle-mic',
   GetSetupStatus: 'get-setup-status',
   CompleteSetup: 'complete-setup',
   AsrPrepare: 'asr-prepare',
@@ -1058,8 +1065,10 @@ export interface RendererApi {
   notify(title: string, body: string): Promise<void>
   /** Tells main which mini app is open and what it shows, or null when none is; sent on every change. */
   reportMiniAppView(view: MiniAppView | null): Promise<void>
-  /** The request to toggle the microphone, from the global hotkey or the tray. */
+  /** The global hotkey called the window up, and a microphone that is off is to be turned on. */
   onHotkeyMic(callback: () => void): () => void
+  /** The tray's item that turns the microphone on when it is off and off when it is on. */
+  onToggleMic(callback: () => void): () => void
 
   getSetupStatus(): Promise<SetupStatus>
   /** Validates the chosen API, ASR and TTS again, and marks onboarding complete only when they all pass. */
