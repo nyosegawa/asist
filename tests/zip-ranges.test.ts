@@ -87,6 +87,49 @@ async function contentsByRanges(file: Uint8Array): Promise<Record<string, string
 }
 
 /**
+ * A zip of stored entries, written here rather than by JSZip, which passes each entry through a stream of workers:
+ * JSZip took 4 to 9 s to write one of 1,500 entries at a load average of 85, where this takes milliseconds
+ * (Apple M5, 2026-10-02).
+ */
+function storedZipOf(files: Record<string, string>): Uint8Array {
+  const parts: Uint8Array[] = []
+  const central: Uint8Array[] = []
+  let offset = 0
+  for (const [name, content] of Object.entries(files)) {
+    const rawName = new TextEncoder().encode(name)
+    const data = new TextEncoder().encode(content)
+    const local = new DataView(new ArrayBuffer(30 + rawName.length))
+    local.setUint32(0, 0x04034b50, true)
+    local.setUint16(4, 20, true)
+    local.setUint32(14, crc32(data), true)
+    local.setUint32(18, data.length, true)
+    local.setUint32(22, data.length, true)
+    local.setUint16(26, rawName.length, true)
+    new Uint8Array(local.buffer).set(rawName, 30)
+    const record = new DataView(new ArrayBuffer(46 + rawName.length))
+    record.setUint32(0, 0x02014b50, true)
+    record.setUint16(4, 20, true)
+    record.setUint16(6, 20, true)
+    record.setUint32(16, crc32(data), true)
+    record.setUint32(20, data.length, true)
+    record.setUint32(24, data.length, true)
+    record.setUint16(28, rawName.length, true)
+    record.setUint32(42, offset, true)
+    new Uint8Array(record.buffer).set(rawName, 46)
+    parts.push(new Uint8Array(local.buffer), data)
+    central.push(new Uint8Array(record.buffer))
+    offset += local.byteLength + data.length
+  }
+  const end = new DataView(new ArrayBuffer(22))
+  end.setUint32(0, 0x06054b50, true)
+  end.setUint16(8, central.length, true)
+  end.setUint16(10, central.length, true)
+  end.setUint32(12, central.reduce((sum, record) => sum + record.length, 0), true)
+  end.setUint32(16, offset, true)
+  return Buffer.concat([...parts, ...central, new Uint8Array(end.buffer)])
+}
+
+/**
  * A zip written the way a ZIP64 writer writes one: every size and offset of the central directory in its ZIP64
  * field, a ZIP64 field in each local header too, and the counts in the ZIP64 end record. `declared` overrides
  * the size the central directory gives an entry, as a huge sheet would declare it.
@@ -180,7 +223,7 @@ describe('reading a zip by ranges', () => {
   it('reads a central directory that the end of the file it reads first does not hold', async () => {
     // 1,500 entries take about 105 KB of central directory.
     const files = Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`ppt/slides/slide${i}.xml`, `<p:sld>${i}</p:sld>`]))
-    const file = await zipOf(files)
+    const file = storedZipOf(files)
     serve(file)
     const zip = await openZip(URL)
     expect(zip.entries.size).toBe(1500)

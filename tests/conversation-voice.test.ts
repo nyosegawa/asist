@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import mitt from 'mitt'
 import type { AppStatus, LiveAudio } from '@shared/ipc'
 import { createTranslator } from '@shared/i18n'
@@ -280,6 +280,14 @@ async function start(overrides: Record<string, unknown>): Promise<typeof import(
   await conversation.initConversation()
   return conversation
 }
+
+// The first import of the conversation transforms its whole module graph, and the imports after vi.resetModules
+// reuse that work. The first test took 3.8 s against a median of 0.25 s with the other test files beside it at a
+// load average above 70 (Apple M5, 2026-10-02). Importing once here moves that cost into a hook with a timeout of
+// its own.
+beforeAll(async () => {
+  await import('@/conversation')
+}, 30_000)
 
 beforeEach(async () => {
   vi.resetModules()
