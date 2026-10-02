@@ -34,6 +34,3 @@ export const defaultPersona = (locale: ConversationLocale): string => promptText
  */
 export const personaText = (settings: Pick<AppSettings, 'persona' | 'conversationLocale'>): string =>
   settings.persona ?? defaultPersona(settings.conversationLocale)
-
-/** Whether a text is the default persona in one of the languages it is written in. */
-export const isDefaultPersona = (text: string): boolean => Object.values(DEFAULT_PERSONA).includes(text)

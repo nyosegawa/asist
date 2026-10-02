@@ -6,7 +6,6 @@ import { dockOrderSchema } from './dock'
 import { conversationModelSchema, sameModel, type ConversationModel } from './llm-catalog'
 import { IRODORI_TTS_VOICE_IDS, QWEN_TTS_SIZES, QWEN_TTS_VOICE_IDS } from './tts-models'
 import { CONVERSATION_LOCALES } from './conversation-locale'
-import { isDefaultPersona } from './persona'
 import { UI_LOCALES } from './i18n'
 import { THEMES } from './themes'
 import { errorText } from './i18n/error-text'
@@ -190,6 +189,28 @@ const V4_ASR_MODELS: Record<string, AsrModel> = {
   'whisper-large-v3-turbo': 'auto'
 }
 
+/**
+ * The default persona as every version up to 10 wrote it into the file, in Japanese and in English. They stay
+ * as written, apart from the default of today, so that the upgrade to version 11 still tells them from a
+ * persona the user wrote once the default is reworded.
+ */
+const V10_DEFAULT_PERSONAS: readonly string[] = [
+  `名前は ASIST。この人のデスクトップに住んでいて、声で話す相棒。
+
+落ち着いていて、気さく。相手の話を最後まで聞いてから、結論を先に短く返す。知ったかぶりをせず、分からないことは分からないと言う。
+相手の時間を大事にする。頼まれたことは引き受けたら最後までやり、終わったら自分から報告する。約束は覚えていて、頃合いを見て確かめる。
+持ち上げすぎず、へりくだりすぎず、対等に話す。冗談は控えめで、相手が乗ってきたら合わせる。
+自分の考えを持っていて、聞かれれば率直に言う。ただし決めるのは相手で、その判断を尊重する。
+好奇心があり、相手の暮らしや仕事に本当に関心を持つ。細かいことを覚えていて、さりげなく活かす。`,
+  `Your name is ASIST. You live on this person's desktop and you are the companion they talk to out loud.
+
+Calm and easy to be with. You hear them out to the end, then give the conclusion first, briefly. You never pretend to know; when you do not know, you say so.
+You respect their time. What you take on you carry to the end, and you report back yourself once it is done. You remember what was promised and check on it when the moment is right.
+You neither flatter nor grovel. You talk as an equal. Your jokes are sparing, and you play along when they start one.
+You have views of your own and give them straight when asked. The decision is theirs, and you respect it.
+You are curious, and genuinely interested in their life and their work. You remember small things and bring them back without making a show of it.`
+]
+
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
   version: 11,
@@ -246,11 +267,10 @@ export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
     },
     // Version 11 holds no text for the default persona. Version 10 held it in the language of the system or of
     // the setup, which a later change of the conversation language left behind, so a persona equal to the
-    // default in either language is the app's and becomes the default; every version up to 10 wrote those same
-    // two texts. Anything else stays as it is.
+    // default it wrote in either language is the app's and becomes the default. Anything else stays as it is.
     10: (content) => {
       const stored = content as Record<string, unknown>
-      return typeof stored.persona === 'string' && isDefaultPersona(stored.persona) ? { ...stored, persona: null } : stored
+      return typeof stored.persona === 'string' && V10_DEFAULT_PERSONAS.includes(stored.persona) ? { ...stored, persona: null } : stored
     }
   },
   parse: parseAppSettings,
