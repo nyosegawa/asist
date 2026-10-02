@@ -135,17 +135,17 @@ export const settingsMemory = defineMessages({
       'es-ES': 'Organización de la memoria'
     },
     description: {
-      'ja-JP': '毎日 0 時に、Agent が前日までの会話を読んで日記を書き、ページと「いつも覚えておくこと」を書き直します。会話の裏で動き、画面には出ません。',
-      'en-US': 'Every day at midnight, the agent reads the conversations up to the day before, writes the diary and rewrites the pages and "Always keep in mind". It runs behind the conversation and never shows on screen.',
-      'fr-FR': "Chaque jour à minuit, l'agent lit les conversations jusqu'à la veille, écrit le journal et réécrit les pages et « À toujours garder en tête ». Il travaille en arrière-plan de la conversation et n'apparaît jamais à l'écran.",
-      'de-DE': 'Jeden Tag um Mitternacht liest der Agent die Gespräche bis zum Vortag, schreibt das Tagebuch und überarbeitet die Seiten und „Immer im Blick“. Er arbeitet im Hintergrund des Gesprächs und erscheint nie auf dem Bildschirm.',
-      'hi-IN': 'हर दिन आधी रात को Agent पिछले दिन तक की बातचीत पढ़ता है, डायरी लिखता है, और पेज व "हमेशा याद रखने वाली बातें" फिर से लिखता है। यह बातचीत के पीछे चलता है और स्क्रीन पर कभी नहीं दिखता।',
-      'id-ID': 'Setiap hari pukul 00.00, Agent membaca percakapan sampai hari sebelumnya, menulis jurnal, lalu menulis ulang halaman dan “Selalu diingat”. Ini berjalan di balik percakapan dan tidak pernah muncul di layar.',
-      'it-IT': "Ogni giorno a mezzanotte l'agente legge le conversazioni fino al giorno prima, scrive il diario e riscrive le pagine e «Da tenere sempre a mente». Lavora dietro la conversazione e non compare mai sullo schermo.",
-      'ko-KR': '매일 0시에 Agent가 전날까지의 대화를 읽고 일기를 쓰며, 페이지와 "늘 기억해 둘 것"을 다시 씁니다. 대화 뒤에서 움직이며 화면에는 나타나지 않습니다.',
-      'pt-BR': 'Todo dia à meia-noite, o agente lê as conversas até o dia anterior, escreve o diário e reescreve as páginas e “Manter sempre em mente”. Ele roda por trás da conversa e nunca aparece na tela.',
-      'es-419': 'Todos los días a medianoche, el agente lee las conversaciones hasta el día anterior, escribe el diario y reescribe las páginas y «Tener siempre presente». Trabaja detrás de la conversación y nunca aparece en pantalla.',
-      'es-ES': 'Todos los días a medianoche, el agente lee las conversaciones hasta el día anterior, escribe el diario y reescribe las páginas y “Tener siempre presente”. Trabaja detrás de la conversación y nunca aparece en pantalla.'
+      'ja-JP': '毎日 0 時に、Agent が前日までの会話を読んで日記を書き、ページと「私について」「ユーザー」を書き直します。会話の裏で動き、画面には出ません。',
+      'en-US': 'Every day at midnight, the agent reads the conversations up to the day before, writes the diary and rewrites the pages, "About me" and "The user". It runs behind the conversation and never shows on screen.',
+      'fr-FR': "Chaque jour à minuit, l'agent lit les conversations jusqu'à la veille, écrit le journal et réécrit les pages, « À mon sujet » et « L'utilisateur ». Il travaille en arrière-plan de la conversation et n'apparaît jamais à l'écran.",
+      'de-DE': 'Jeden Tag um Mitternacht liest der Agent die Gespräche bis zum Vortag, schreibt das Tagebuch und überarbeitet die Seiten, „Über mich“ und „Nutzer“. Er arbeitet im Hintergrund des Gesprächs und erscheint nie auf dem Bildschirm.',
+      'hi-IN': 'हर दिन आधी रात को Agent पिछले दिन तक की बातचीत पढ़ता है, डायरी लिखता है, और पेज, "मेरे बारे में" व "यूज़र" फिर से लिखता है। यह बातचीत के पीछे चलता है और स्क्रीन पर कभी नहीं दिखता।',
+      'id-ID': 'Setiap hari pukul 00.00, Agent membaca percakapan sampai hari sebelumnya, menulis jurnal, lalu menulis ulang halaman, “Tentang saya”, dan “Pengguna”. Ini berjalan di balik percakapan dan tidak pernah muncul di layar.',
+      'it-IT': "Ogni giorno a mezzanotte l'agente legge le conversazioni fino al giorno prima, scrive il diario e riscrive le pagine, «Su di me» e «L'utente». Lavora dietro la conversazione e non compare mai sullo schermo.",
+      'ko-KR': '매일 0시에 Agent가 전날까지의 대화를 읽고 일기를 쓰며, 페이지와 "나에 대하여", "사용자"를 다시 씁니다. 대화 뒤에서 움직이며 화면에는 나타나지 않습니다.',
+      'pt-BR': 'Todo dia à meia-noite, o agente lê as conversas até o dia anterior, escreve o diário e reescreve as páginas, “Sobre mim” e “O usuário”. Ele roda por trás da conversa e nunca aparece na tela.',
+      'es-419': 'Todos los días a medianoche, el agente lee las conversaciones hasta el día anterior, escribe el diario y reescribe las páginas, «Acerca de mí» y «El usuario». Trabaja detrás de la conversación y nunca aparece en pantalla.',
+      'es-ES': 'Todos los días a medianoche, el agente lee las conversaciones hasta el día anterior, escribe el diario y reescribe las páginas, “Sobre mí” y “El usuario”. Trabaja detrás de la conversación y nunca aparece en pantalla.'
     },
     start: {
       'ja-JP': '今すぐ整理する',
@@ -410,17 +410,17 @@ export const settingsMemory = defineMessages({
       'es-ES': 'Memoria'
     },
     description: {
-      'ja-JP': 'いつも覚えておくこと(instruction.md)、ユーザー(user.md)、私について(me.md)、ページ、日記を読み書きします。',
-      'en-US': 'Read and edit Always keep in mind (instruction.md), The user (user.md), About me (me.md), the pages and the diary.',
-      'fr-FR': "Lisez et modifiez À toujours garder en tête (instruction.md), l'utilisateur (user.md), À mon sujet (me.md), les pages et le journal.",
-      'de-DE': 'Lesen und bearbeiten Sie „Immer im Blick“ (instruction.md), den Nutzer (user.md), „Über mich“ (me.md), die Seiten und das Tagebuch.',
-      'hi-IN': 'हमेशा याद रखने वाली बातें (instruction.md), यूज़र (user.md), मेरे बारे में (me.md), पेज और डायरी पढ़ें और बदलें।',
-      'id-ID': 'Membaca dan mengedit Selalu diingat (instruction.md), pengguna (user.md), Tentang saya (me.md), halaman, dan jurnal.',
-      'it-IT': "Leggi e modifica «Da tenere sempre a mente» (instruction.md), l'utente (user.md), «Su di me» (me.md), le pagine e il diario.",
-      'ko-KR': '늘 기억해 둘 것(instruction.md), 사용자(user.md), 나에 대하여(me.md), 페이지, 일기를 읽고 씁니다.',
-      'pt-BR': 'Leia e edite Manter sempre em mente (instruction.md), o usuário (user.md), Sobre mim (me.md), as páginas e o diário.',
-      'es-419': 'Lee y edita «Tener siempre presente» (instruction.md), el usuario (user.md), «Acerca de mí» (me.md), las páginas y el diario.',
-      'es-ES': 'Lee y edita “Tener siempre presente” (instruction.md), el usuario (user.md), “Sobre mí” (me.md), las páginas y el diario.'
+      'ja-JP': '私について(me.md)、ユーザー(user.md)、ページ、日記を読み書きします。',
+      'en-US': 'Read and edit About me (me.md), The user (user.md), the pages and the diary.',
+      'fr-FR': "Lisez et modifiez À mon sujet (me.md), l'utilisateur (user.md), les pages et le journal.",
+      'de-DE': 'Lesen und bearbeiten Sie „Über mich“ (me.md), den Nutzer (user.md), die Seiten und das Tagebuch.',
+      'hi-IN': 'मेरे बारे में (me.md), यूज़र (user.md), पेज और डायरी पढ़ें और बदलें।',
+      'id-ID': 'Membaca dan mengedit Tentang saya (me.md), pengguna (user.md), halaman, dan jurnal.',
+      'it-IT': "Leggi e modifica «Su di me» (me.md), l'utente (user.md), le pagine e il diario.",
+      'ko-KR': '나에 대하여(me.md), 사용자(user.md), 페이지, 일기를 읽고 씁니다.',
+      'pt-BR': 'Leia e edite Sobre mim (me.md), o usuário (user.md), as páginas e o diário.',
+      'es-419': 'Lee y edita «Acerca de mí» (me.md), el usuario (user.md), las páginas y el diario.',
+      'es-ES': 'Lee y edita “Sobre mí” (me.md), el usuario (user.md), las páginas y el diario.'
     },
     dockHint: {
       'ja-JP': 'Dock の「記憶」からも開けます',
