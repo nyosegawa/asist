@@ -196,7 +196,9 @@ const openXlsx = async (url: string) => {
     if (shown?.sheet === sheet) return Promise.resolve(shown.loaded)
     if (loading?.sheet === sheet) return loading.promise
     const part = sheetParts[sheet]
-    if (part === undefined) throw new Error(`the workbook has no sheet ${sheet}`)
+    // A viewer asks only for the sheets the workbook had when it listed them, so a sheet past the end means the
+    // document was opened again, in a frame started after the last one stopped, from a file saved since.
+    if (part === undefined) throw new Error(errorKey('files.errors.changedWhileReading'))
     const promise =
       tooLarge(zip, part) || (stringsPart !== null && tooLarge(zip, stringsPart))
         ? Promise.resolve(null)
@@ -301,6 +303,7 @@ const openXlsx = async (url: string) => {
   }
 
   return {
+    version: zip.version,
     methods: {
       sheets: (): string[] => workbook.sheets.map(({ name }) => name),
 

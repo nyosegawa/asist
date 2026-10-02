@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FileItem } from '@shared/files'
-import { errorText } from '@shared/i18n/error-text'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import type openXlsx from '@/preview/methods/xlsx'
 import type { SheetCell, SheetSummary } from '@/preview/methods/xlsx'
 import { displayError } from '@/display-error'
@@ -32,47 +32,57 @@ type Workbook = PreviewHandle<typeof openXlsx>
 
 type Loaded<T> = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; value: T }
 
-/** A workbook open in the preview iframe, its sheets, and how many times they have been answered. */
+/** A workbook open in the preview iframe, and its sheets. */
 interface OpenWorkbook {
   workbook: Workbook | null
   sheets: Loaded<string[]>
-  answer: number
 }
 
 /**
  * Makes a request of the workbook, and makes it once more when the preview page stopped before it answered, as it
- * does when the file of another viewer takes the shared frame down: the next request starts a new frame.
+ * does when the file of another viewer takes the shared frame down: the next request starts a new frame. A second
+ * stop is shown, so that a file that stops the frame itself is not read again and again.
  */
 async function asking<T>(request: () => Promise<T>): Promise<T> {
   try {
     return await request()
   } catch (error) {
-    if (!(error instanceof Error) || error.message !== errorText('files.errors.previewStopped')) throw error
+    if (errorKeyOf(error) !== 'files.errors.previewStopped') throw error
     return request()
   }
 }
 
 /**
- * Holds the workbook open in the preview iframe while the viewer shows it, and lists its sheets. Everything the
- * viewer shows below the list is asked for again after each answer, `answer` counting them, since the rows depend
- * on the order of the sheets and on where each one's values start. A file without a URL has nothing to open.
+ * Holds the workbook open in the preview iframe while the viewer shows it, and lists its sheets. When the file is
+ * found saved again, the client lets go of its document and the viewer starts over: it drops the sheets, the sheet
+ * shown and its rows, which depend on the order of the sheets and on where each one's values start, opens the file
+ * again and asks for its sheets. A file without a URL has nothing to open.
  */
 function useWorkbook({ url, sizeBytes, modifiedAt }: FileItem): OpenWorkbook {
-  const [state, setState] = useState<OpenWorkbook>({ workbook: null, sheets: { status: 'loading' }, answer: 0 })
+  const [state, setState] = useState<OpenWorkbook>({ workbook: null, sheets: { status: 'loading' } })
+  /** How many times the file was found saved again while it was shown, each of which opens it anew. */
+  const [saves, setSaves] = useState(0)
   useEffect(() => {
     if (!url) return
-    let cancelled = false
+    let current = true
     const workbook = openPreviewDocument<typeof openXlsx>('xlsx', { url, sizeBytes, modifiedAt })
-    setState((known) => ({ workbook, sheets: { status: 'loading' }, answer: known.answer }))
+    setState({ workbook: null, sheets: { status: 'loading' } })
+    const stopListening = workbook.onChanged(() => {
+      if (!current) return
+      current = false
+      setState({ workbook: null, sheets: { status: 'loading' } })
+      setSaves((count) => count + 1)
+    })
     asking(() => workbook.call('sheets', undefined)).then(
-      (sheets) => !cancelled && setState((known) => ({ workbook, sheets: { status: 'ready', value: sheets }, answer: known.answer + 1 })),
-      (error: unknown) => !cancelled && setState((known) => ({ workbook, sheets: { status: 'error', message: displayError(error) }, answer: known.answer }))
+      (sheets) => current && setState({ workbook, sheets: { status: 'ready', value: sheets } }),
+      (error: unknown) => current && setState({ workbook, sheets: { status: 'error', message: displayError(error) } })
     )
     return () => {
-      cancelled = true
+      current = false
+      stopListening()
       workbook.release()
     }
-  }, [url, sizeBytes, modifiedAt])
+  }, [url, sizeBytes, modifiedAt, saves])
   return state
 }
 
@@ -310,8 +320,9 @@ function Sheet({ workbook, sheet, mode }: { workbook: Workbook; sheet: number; m
 
 export const XlsxViewer: Viewer = ({ item, mode, size }) => {
   const t = useT()
-  const { workbook, sheets, answer } = useWorkbook(item)
-  const [active, setActive] = useState(0)
+  const { workbook, sheets } = useWorkbook(item)
+  /** The sheet chosen by its name, so that it stays chosen when the file is saved with a sheet added in front of it. */
+  const [chosen, setChosen] = useState<string | null>(null)
   if (!item.url) {
     return (
       <Frame mode={mode} size={size}>
@@ -335,21 +346,22 @@ export const XlsxViewer: Viewer = ({ item, mode, size }) => {
       </Frame>
     )
   }
-  const sheet = Math.min(active, sheets.value.length - 1)
+  // The first sheet until one is chosen, and again once the chosen one is no longer in the workbook.
+  const sheet = Math.max(0, chosen === null ? 0 : sheets.value.indexOf(chosen))
   return (
     <Frame mode={mode} size={size}>
       {sheets.value.length > 1 && (
         <ul className="fv-xlsx-tabs" role="tablist">
           {sheets.value.map((name, i) => (
             <li key={i}>
-              <button type="button" role="tab" aria-selected={i === sheet} data-current={i === sheet ? 'true' : undefined} onClick={() => setActive(i)}>
+              <button type="button" role="tab" aria-selected={i === sheet} data-current={i === sheet ? 'true' : undefined} onClick={() => setChosen(name)}>
                 {name}
               </button>
             </li>
           ))}
         </ul>
       )}
-      <Sheet key={`${answer} ${sheet}`} workbook={workbook} sheet={sheet} mode={mode} />
+      <Sheet key={sheet} workbook={workbook} sheet={sheet} mode={mode} />
     </Frame>
   )
 }

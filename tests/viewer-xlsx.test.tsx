@@ -65,6 +65,7 @@ beforeEach(() => {
         await held
         return value
       },
+      onChanged: (listener) => handle.onChanged(listener),
       release: () => handle.release()
     }
   }
