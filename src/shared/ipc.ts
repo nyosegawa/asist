@@ -522,8 +522,19 @@ export interface AgentJob {
    * as found when it settled; ASIST does not merge such a job, and its worktree waits for the user.
    * `movedTo` is what the agent left the worktree on instead of `branch` when it settled: a branch of its own,
    * or the commit of a detached HEAD. ASIST commits nothing onto it and does not merge such a job either.
+   * `keptFor` names, by their paths in the repository, the files that alone keep a job with nothing to merge
+   * waiting: files it reported writing where git ignores them, which go with the worktree when it is discarded.
    */
-  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string; submodules?: string[]; movedTo?: string }
+  worktree?: {
+    repo: string
+    dir: string
+    branch: string
+    base: string
+    commit?: string
+    submodules?: string[]
+    movedTo?: string
+    keptFor?: string[]
+  }
   /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and left nothing a merge would take in. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
@@ -575,6 +586,8 @@ export interface DiscardPreview {
    * Empty when the worktree's folder is gone.
    */
   submodules: string[]
+  /** The files the job reported writing that no branch holds, which the discard deletes with the worktree (see `JobDiff.leftOut`). */
+  leftOut: string[]
 }
 
 /**

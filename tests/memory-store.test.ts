@@ -58,6 +58,17 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(1)
   })
 
+  it('makes the memory folder a repository of its own inside a repository that git refuses to open', () => {
+    const parent = mkdtempSync(path.join(tmpdir(), 'asist-memory-parent-'))
+    git(parent, ['init', '-q'])
+    // A repository of a form this git does not know, which it refuses as it refuses one owned by another user.
+    git(parent, ['config', 'core.repositoryformatversion', '99'])
+    const dir = path.join(parent, 'memory')
+    store.ensureRepo(dir)
+    expect(commits(dir)).toBe(1)
+    expect(fs.realpathSync(git(dir, ['rev-parse', '--show-toplevel']).trim())).toBe(fs.realpathSync(dir))
+  })
+
   it('reads user.md, me.md, the pages and the journal into units, leaves instruction.md out of them, and reports what to fix', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)

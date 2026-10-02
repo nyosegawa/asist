@@ -28,26 +28,34 @@ function inWorktree(worktree: Worktree, file: string): string | null {
  * Where a path in the worktree lies once a merge has removed the worktree: at the same place in the
  * repository. A path outside the worktree stays as it is.
  */
-export function inRepository(worktree: Worktree, file: string): string {
+function inRepository(worktree: Worktree, file: string): string {
   const inside = inWorktree(worktree, file)
   return inside === null ? file : path.join(worktree.repo, inside)
 }
 
 /**
- * The files the job reported writing in its worktree that commit does not hold, by their paths there. The
- * commit holds everything else in the worktree, so these are files git ignores, such as a report under dist/:
- * a merge leaves them behind, and the removal of the worktree deletes them. A folder or a file that is gone
- * holds nothing to lose.
+ * Those of the reported files that lie in the worktree and that commit does not hold, by their paths there.
+ * The reported files are those the job and every job it continues reported writing, since a continuation
+ * works in the worktree its parent left. The commit holds everything else in the worktree, so these are files
+ * git ignores, such as a report under dist/: a merge leaves them behind, and the removal of the worktree
+ * deletes them. A folder or a file that is gone holds nothing to lose.
  */
-function leftOutOf(job: AgentJob, commit: string): string[] {
-  const worktree = job.worktree!
+function leftOutOf(worktree: Worktree, commit: string, reported: readonly string[]): string[] {
   const files: string[] = []
-  for (const file of job.artifacts ?? []) {
+  for (const file of reported) {
     const inside = inWorktree(worktree, file)
     if (inside !== null && git.lstatOrNull(file)?.isDirectory() === false) files.push(inside)
   }
   const held = git.heldIn(worktree.dir, commit, files)
   return sortedUnique(files.filter((file) => !held.has(file)))
+}
+
+/**
+ * The reported files a discard deletes with the worktree although no branch holds them; none while the job
+ * has no commit or its folder is gone.
+ */
+export function leftOutAtDiscard(worktree: Worktree, reported: readonly string[]): string[] {
+  return worktree.commit && fs.existsSync(worktree.dir) ? leftOutOf(worktree, worktree.commit, reported) : []
 }
 
 /**
@@ -96,11 +104,12 @@ export interface Capture {
  * is never merged by ASIST, and waits for the user as well.
  *
  * The worktree is removed without asking only when neither the diff nor its submodules hold anything that
- * could be lost, and no file the job reported writing lies outside the commit, as one written where git
- * ignores it does. A background job is removed all the same, since no user is shown its worktree, and the
- * files git ignores there are those ASIST copied in.
+ * could be lost, and no reported file lies outside the commit, as one written where git ignores it does. A
+ * job kept for such files alone has nothing to merge, and records them as what it is kept for. A background
+ * job is removed all the same, since no user is shown its worktree, and the files git ignores there are those
+ * ASIST copied in.
  */
-export function captureWorktree(job: AgentJob): Capture {
+export function captureWorktree(job: AgentJob, reported: readonly string[]): Capture {
   const worktree = unsettled(job.worktree!)
   assertWorktreePresent(worktree)
   const movedTo = checkedOutElsewhere(worktree)
@@ -111,23 +120,25 @@ export function captureWorktree(job: AgentJob): Capture {
   const commit = git.headCommit(worktree.dir)
   const base = jobBase(worktree, commit)
   const submodules = sortedUnique([...git.submoduleEntryChanges(worktree.repo, base, commit), ...git.submodulesWithWork(worktree.dir)])
+  const leftOut = leftOutOf(worktree, commit, reported)
   const settled = { ...worktree, commit, ...(submodules.length > 0 ? { submodules } : {}) }
-  const leftOut = leftOutOf(job, commit)
-  const kept = submodules.length > 0 || (leftOut.length > 0 && !isBackgroundJob(job))
-  if (!kept && !git.hasChanges(worktree.repo, base, commit)) {
-    git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
-    return { settled: { worktree: settled, mergeState: 'unchanged' }, leftOut }
+  if (submodules.length > 0 || git.hasChanges(worktree.repo, base, commit)) {
+    return { settled: { worktree: settled, mergeState: 'pending' }, leftOut }
   }
-  return { settled: { worktree: settled, mergeState: 'pending' }, leftOut }
+  if (leftOut.length > 0 && !isBackgroundJob(job)) {
+    return { settled: { worktree: { ...settled, keptFor: leftOut }, mergeState: 'pending' }, leftOut }
+  }
+  git.worktreeRemove(worktree.repo, worktree.dir, worktree.branch)
+  return { settled: { worktree: settled, mergeState: 'unchanged' }, leftOut }
 }
 
 /**
  * The job's artifacts once its worktree is merged: a file in the worktree lies at the same place in the
  * repository, unless the merge left it behind to be deleted with the worktree, and a path outside it stays.
  */
-export function mergedArtifacts(job: AgentJob): string[] | undefined {
+export function mergedArtifacts(job: AgentJob, reported: readonly string[]): string[] | undefined {
   const worktree = job.worktree!
-  const behind = new Set(leftOutOf(job, worktree.commit!))
+  const behind = new Set(leftOutOf(worktree, worktree.commit!, reported))
   return job.artifacts
     ?.filter((file) => {
       const inside = inWorktree(worktree, file)
@@ -141,8 +152,12 @@ export function submodulesAtRisk(worktree: Worktree): string[] {
   return fs.existsSync(worktree.dir) ? git.submodulesWithWork(worktree.dir) : []
 }
 
-/** What a discard of the worktree's branch would throw away, counted as a settled job's changes are. */
+/**
+ * What a discard of the worktree's branch would throw away, counted as a settled job's changes are. Nothing,
+ * once an agent renamed the branch away.
+ */
 export function discardStat(worktree: Worktree): string {
+  if (!git.hasBranch(worktree.repo, worktree.branch)) return ''
   return git.diffStat(worktree.repo, jobBase(worktree, worktree.branch), worktree.branch)
 }
 
@@ -226,7 +241,7 @@ export function assertMergeable(job: AgentJob, reviewed: ReviewedMerge): void {
  * from being merged by ASIST, the reported files it leaves behind, and why ASIST would refuse to merge it, if
  * it would.
  */
-export function readWorktreeDiff(job: AgentJob): JobDiff {
+export function readWorktreeDiff(job: AgentJob, reported: readonly string[]): JobDiff {
   const commit = job.worktree?.commit ?? ''
   assertWorktreeReview(job, commit)
   const worktree = job.worktree!
@@ -236,7 +251,7 @@ export function readWorktreeDiff(job: AgentJob): JobDiff {
     base,
     stat: git.diffStat(worktree.repo, base, commit),
     patch: git.diffPatch(worktree.repo, base, commit),
-    leftOut: leftOutOf(job, commit),
+    leftOut: leftOutOf(worktree, commit, reported),
     ...mergeVerdict(job, git.checkedOut(worktree.repo), base, commit)
   }
 }

@@ -128,8 +128,12 @@ describe('git service with an isolated worktree', () => {
   })
 
   it('names the files of the user\'s that git does not track where a merge would write, a file where a folder goes and a folder where a file goes included', () => {
-    fs.writeFileSync(path.join(repo, '.gitignore'), '.env\nbuild\ncache/\n')
-    run(repo, ['add', '.gitignore'])
+    fs.writeFileSync(path.join(repo, '.gitignore'), '.env\nbuild\ncache/\nlocal.json\n')
+    for (const folder of ['conf', 'docs']) {
+      fs.mkdirSync(path.join(repo, folder))
+      fs.writeFileSync(path.join(repo, folder, 'shared.json'), '{}\n')
+    }
+    run(repo, ['add', '.'])
     run(repo, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'ignore'])
     const base = git.headCommit(repo)
     const wt = path.join(root, 'wt')
@@ -140,14 +144,29 @@ describe('git service with an isolated worktree', () => {
     fs.writeFileSync(path.join(wt, 'cache'), 'a file\n')
     fs.writeFileSync(path.join(wt, 'a.txt'), 'edited\n')
     fs.writeFileSync(path.join(wt, 'c.txt'), 'new\n')
+    // Two tracked folders become files; only one of them holds a file of the user's that git ignores.
+    for (const folder of ['conf', 'docs']) {
+      fs.rmSync(path.join(wt, folder), { recursive: true })
+      fs.writeFileSync(path.join(wt, folder), 'a file now\n')
+    }
     run(wt, ['add', '-f', '.env', 'build/out.txt'])
     git.commitAll(wt, 'job')
     fs.writeFileSync(path.join(repo, '.env'), 'THE_USERS_KEY=1\n')
     fs.writeFileSync(path.join(repo, 'build'), 'a file of the user\'s\n')
     fs.mkdirSync(path.join(repo, 'cache'))
     fs.writeFileSync(path.join(repo, 'cache', 'entry'), 'cached\n')
-    expect(git.untrackedInTheWay(repo, base, 'asist/in-the-way')).toEqual(['.env', 'build', 'cache'])
+    fs.writeFileSync(path.join(repo, 'conf', 'local.json'), '{"key":1}\n')
+    expect(git.untrackedInTheWay(repo, base, 'asist/in-the-way')).toEqual(['.env', 'build', 'cache', 'conf'])
     git.worktreeRemove(repo, wt, 'asist/in-the-way')
+  })
+
+  it('discards a worktree whose branch the agent renamed, and leaves the branch under its new name', () => {
+    const wt = path.join(root, 'wt')
+    git.worktreeAdd(repo, wt, 'asist/renamed')
+    run(wt, ['branch', '-m', 'feature/renamed'])
+    git.worktreeRemove(repo, wt, 'asist/renamed')
+    expect(fs.existsSync(wt)).toBe(false)
+    expect(run(repo, ['branch', '--list', 'feature/renamed'])).toContain('feature/renamed')
   })
 
   it('commits changes in the worktree, shows the diff, and on merge lands them on the user branch and drops the worktree', () => {

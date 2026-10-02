@@ -128,20 +128,22 @@ export function agentTool(locale: ConversationLocale): Def {
         }
       }
       const settings = getSettings()
-      let gitRepo = false
-      // A repository ASIST's git refuses to open is no plain folder to write in, so the job is refused before
-      // the user is asked.
-      try {
-        gitRepo = options.cwd ? agentRunner.isGitRepo(options.cwd) : false
-      } catch (err) {
-        throw new ToolError(TEXTS.startFailed(detail(err, locale)))
-      }
-      const access = resolveJobAccess({
+      const wanted = {
         explicitCwd: Boolean(options.cwd),
         readonlyInput: options.readonly,
-        defaultReadonly: settings.agentMode === 'readonly',
-        gitRepo
-      })
+        defaultReadonly: settings.agentMode === 'readonly'
+      }
+      // Only a job that writes into the folder is isolated in a worktree, so only it asks git, and a repository
+      // ASIST's git refuses to open is no plain folder to write in: such a job is refused before the user is asked.
+      let gitRepo = false
+      if (options.cwd && !resolveJobAccess(wanted).readonly) {
+        try {
+          gitRepo = agentRunner.isGitRepo(options.cwd)
+        } catch (err) {
+          throw new ToolError(TEXTS.startFailed(detail(err, locale)))
+        }
+      }
+      const access = resolveJobAccess({ ...wanted, gitRepo })
       const approved = await confirmJob(
         {
           kind: 'start',

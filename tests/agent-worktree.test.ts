@@ -220,6 +220,49 @@ describe('a job that reports a file where the repository ignores it', () => {
     expect(fs.existsSync(report)).toBe(false)
   })
 
+  it('names the report in the discard confirmation of a job kept for it alone, as what the discard deletes', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('dist にレポートを書き出して', { cwd: repo })
+    writeReport(job.cwd)
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.worktree?.keptFor).toEqual(['dist/report.html'])
+    const { jobTools } = await import('../src/main/services/brain/job-tools')
+    const discard = jobTools('ja-JP').find((definition) => definition.name === 'discard_agent_job')!
+    mocks.requestConfirm.mockResolvedValueOnce(false)
+    await discard.run({ jobId: job.id }, {} as never, new AbortController().signal)
+    const [asked] = mocks.requestConfirm.mock.calls[0] as [{ detail: string }]
+    expect(asked.detail).toContain(ja('jobs.merging.leftOut', { paths: 'dist/report.html' }))
+  })
+
+  it('keeps the report its parent wrote when a continuation that wrote nothing settles in the same worktree', async () => {
+    const agent = await import('../src/main/services/agent')
+    const parent = agent.startIsolated('dist にレポートを書き出して', { cwd: repo })
+    mocks.launch.mock.calls[0][2].onEvent({ kind: 'init', model: 'codex', sessionId: 'session' })
+    const report = writeReport(parent.cwd)
+    mocks.launch.mock.calls[0][2].onExit(0)
+    const child = await agent.continueJob(parent.id, 'レポートに何を書いたか教えて')
+    mocks.launch.mock.calls[1][2].onExit(0)
+    expect(agent.get(child.id)?.mergeState).toBe('pending')
+    expect(fs.existsSync(report)).toBe(true)
+    expect(agent.diff(child.id).leftOut).toEqual(['dist/report.html'])
+  })
+
+  it('lets the files card open a report the job wrote at the top of its worktree, outside the folder it worked in', async () => {
+    fs.mkdirSync(path.join(repo, 'packages', 'web'), { recursive: true })
+    fs.writeFileSync(path.join(repo, 'packages', 'web', 'index.ts'), 'export {}\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-qm', 'package')
+    const agent = await import('../src/main/services/agent')
+    const { allowedPath } = await import('../src/main/services/file-preview')
+    // Worktrees kept apart from the agent's folder, which the files card may read on its own.
+    const worktreeRoot = path.join(mocks.root, 'elsewhere')
+    const job = agent.startIsolated('dist にレポートを書き出して', { cwd: path.join(repo, 'packages', 'web'), worktreeRoot })
+    const report = writeReport(job.worktree!.dir)
+    mocks.launch.mock.calls[0][2].onExit(0)
+    expect(agent.get(job.id)?.mergeState).toBe('pending')
+    expect(allowedPath(report, agent.allowedFileRoots())).not.toBeNull()
+  })
+
   it('says in the merge confirmation that the report is not merged, and no longer lists it once the worktree is gone', async () => {
     const agent = await import('../src/main/services/agent')
     const job = agent.startIsolated('直して、dist にレポートも書き出して', { cwd: repo })
@@ -262,6 +305,67 @@ it('starts no job in a repository that ASIST\'s git refuses to open, and says wh
   }
   expect(mocks.requestConfirm).not.toHaveBeenCalled()
   expect(mocks.launch).not.toHaveBeenCalled()
+})
+
+it('runs a read-only job in a repository that ASIST\'s git refuses to open, in the folder named, as in any folder', async () => {
+  const { agentTool } = await import('../src/main/services/brain/job-tools')
+  const ctx = { turnId: 1, emit: vi.fn(), signal: new AbortController().signal }
+  mocks.requestConfirm.mockResolvedValueOnce(true)
+  mocks.differentOwner = true
+  try {
+    await agentTool('ja-JP').run({ prompt: 'README を要約して', cwd: repo, readonly: true }, ctx as never, new AbortController().signal)
+  } finally {
+    mocks.differentOwner = false
+  }
+  expect(mocks.launch).toHaveBeenCalledOnce()
+  expect(mocks.launch.mock.calls[0][0]).toMatchObject({ cwd: repo, readonly: true })
+  expect(mocks.launch.mock.calls[0][0].worktree).toBeUndefined()
+})
+
+it('merges a job that only changed the letter case of a file\'s name, as git itself does', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('tracked.txt を TRACKED.txt に改名して', { cwd: repo })
+  git(job.cwd, 'mv', 'tracked.txt', 'TRACKED.txt')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  expect(review.blocked).toBeNull()
+  agent.merge(job.id, review)
+  expect(git(repo, 'ls-files')).toBe('TRACKED.txt')
+})
+
+it('refuses to merge a job that turned a folder into a file while the folder holds a file of the user\'s that git ignores', async () => {
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'local.json\n')
+  fs.mkdirSync(path.join(repo, 'conf'))
+  fs.writeFileSync(path.join(repo, 'conf', 'shared.json'), '{}\n')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-qm', 'settings')
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('conf をひとつのファイルにまとめて', { cwd: repo })
+  git(job.cwd, 'rm', '-rq', 'conf')
+  fs.writeFileSync(path.join(job.cwd, 'conf'), 'all settings\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  fs.writeFileSync(path.join(repo, 'conf', 'local.json'), '{"key":"the user\'s"}\n')
+  const review = agent.diff(job.id)
+  const reason = errorText('jobs.merging.untrackedInTheWay', { paths: 'conf' })
+  expect(review.blocked).toBe(reason)
+  expect(() => agent.merge(job.id, review)).toThrow(reason)
+  expect(fs.readFileSync(path.join(repo, 'conf', 'local.json'), 'utf8')).toBe('{"key":"the user\'s"}\n')
+})
+
+it('discards a job whose agent renamed the job\'s branch, and leaves the renamed branch with its commit', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('このブランチを feature/renamed にしてコミットして', { cwd: repo })
+  git(job.cwd, 'branch', '-m', 'feature/renamed')
+  fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'work\n')
+  git(job.cwd, 'commit', '-qam', 'work')
+  const agentCommit = git(repo, 'rev-parse', 'feature/renamed')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.get(job.id)?.worktree?.movedTo).toBe('feature/renamed')
+  expect(agent.discardPreview(job.id).stat).toBe('')
+  agent.discard(job.id)
+  expect(agent.get(job.id)?.mergeState).toBe('discarded')
+  expect(fs.existsSync(job.cwd)).toBe(false)
+  expect(git(repo, 'rev-parse', 'feature/renamed')).toBe(agentCommit)
 })
 
 it('does not merge a job whose agent switched the worktree to a branch of its own, names that branch, and commits nothing onto it', async () => {

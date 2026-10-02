@@ -219,7 +219,20 @@ export function worktreeRemove(repo: string, dir: string, branch: string): void 
     // A folder git does not list is not left behind in silence: git refuses to remove it and says why.
     git(repo, ['worktree', 'remove', '--force', dir])
   }
-  git(repo, ['branch', '-D', branch])
+  // An agent that renamed the branch, with `git branch -m`, already took it away under that name.
+  if (hasBranch(repo, branch)) git(repo, ['branch', '-D', branch])
+}
+
+/** Whether repo has a branch of that name. */
+export function hasBranch(repo: string, branch: string): boolean {
+  try {
+    git(repo, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
+    return true
+  } catch (error) {
+    // show-ref exits with 1 and prints nothing when the ref does not exist.
+    if ((error as { status?: number }).status === 1) return false
+    throw error
+  }
 }
 
 const GITMODULES = '.gitmodules'
@@ -776,9 +789,14 @@ export function lstatOrNull(file: string): fs.Stats | null {
 
 /**
  * The paths in repo's working tree that git does not track and that a merge of the changes from base to
- * commit would write over: whatever is at a path the changes leave a file at, and a file where a folder of
- * one of them goes. In a clean working tree they can only be files git ignores, such as a .env, which the
- * merge would replace with one the job committed at that path.
+ * commit would write over, as `merge --no-overwrite-ignore` refuses them: whatever is at a path the changes
+ * leave a file at, a file where a folder of one of them goes, and a tracked folder the changes turn into a
+ * file while it also holds files git does not track. In a clean working tree they can only be files git
+ * ignores, such as a .env, which the merge would replace with one the job committed at that path.
+ *
+ * Names are compared as git compares them in repo: without regard to the letter case of ASCII letters when
+ * core.ignorecase is set, as on the disks of macOS and Windows, where a job that renames tracked.txt to
+ * TRACKED.txt finds the tracked file at the new name.
  */
 export function untrackedInTheWay(repo: string, base: string, commit: string): string[] {
   const found = new Map<string, fs.Stats | null>()
@@ -795,10 +813,24 @@ export function untrackedInTheWay(repo: string, base: string, commit: string): s
     }
   }
   if (occupied.size === 0) return []
+  const ignoreCase = git(repo, ['config', '--type=bool', '--default=false', 'core.ignorecase']).trim() === 'true'
+  const key = (name: string): string => (ignoreCase ? name.replace(/[A-Z]/g, (letter) => letter.toLowerCase()) : name)
   // Every file of the index and every folder above one. A folder already in the set has those above it there too.
   const tracked = new Set<string>()
   for (const file of git(repo, ['ls-files', '-z'], WHOLE).split('\0')) {
-    for (let name = file; name !== '' && name !== '.' && !tracked.has(name); name = path.posix.dirname(name)) tracked.add(name)
+    for (let name = file; name !== '' && name !== '.' && !tracked.has(key(name)); name = path.posix.dirname(name)) tracked.add(key(name))
   }
-  return [...occupied].filter((name) => !tracked.has(name)).sort()
+  const inTheWay = [...occupied].filter((name) => !tracked.has(key(name)))
+  const replacedFolders = [...occupied].filter((name) => tracked.has(key(name)) && at(name)?.isDirectory())
+  if (replacedFolders.length > 0) {
+    // Without an exclude option, --others lists the ignored files as well.
+    const holding = new Set(replacedFolders.map(key))
+    const untracked = git(repo, ['ls-files', '-z', '--others', '--directory', '--', ...replacedFolders.map(literal)], WHOLE)
+    for (const entry of untracked.split('\0').filter(Boolean)) {
+      let folder = path.posix.dirname(entry.replace(/\/$/, ''))
+      while (folder !== '.' && !holding.has(key(folder))) folder = path.posix.dirname(folder)
+      if (folder !== '.' && !inTheWay.includes(folder)) inTheWay.push(folder)
+    }
+  }
+  return inTheWay.sort()
 }
