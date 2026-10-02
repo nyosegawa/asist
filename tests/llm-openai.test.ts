@@ -125,6 +125,14 @@ describe('CitationFilter', () => {
     // A citation left in the text would be read aloud as the bare URL.
     expect(out + filter.flush()).toBe('警戒が続いています。明日は快晴(予報)で、[メモ]もあります。')
   })
+
+  it('lets the text after brackets that cannot become a citation through as it arrives, holding only what still can', async () => {
+    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const filter = new CitationFilter()
+    const out = ['結論から言うと[注]', 'は不要です。', '次に[メモ](', 'メモ帳)を開きます。', '詳しくは [出典', '](https://a.example)です。'].map((delta) => filter.push(delta))
+    // Text held until the end of the message reaches the speech synthesis only then.
+    expect(out).toEqual(['結論から言うと', '[注]は不要です。', '次に', '[メモ](メモ帳)を開きます。', '詳しくは', 'です。'])
+  })
 })
 
 describe('the OpenAI stream', () => {

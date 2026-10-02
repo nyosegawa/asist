@@ -82,6 +82,12 @@ export function toResponsesTools(request: Pick<ConversationRequest, 'tools' | 'w
 }
 
 const CITATION = /[ \t]*\(?\[[^\]\n]*\]\(https?:\/\/[^)\s]*\)\)?/g
+/**
+ * The start of a citation that is still being written at the end of the text: an opening parenthesis, or
+ * a title in brackets followed by as much of `(https://…` as has arrived. Brackets that closed without
+ * `(` after them, or `(` without the scheme, can no longer become a citation and do not match.
+ */
+const PARTIAL_CITATION = /[ \t]*(?:\(|\(?\[[^\]\n]*(?:\](?:\((?:h(?:t(?:t(?:p(?:s?(?::(?:\/(?:\/[^)\s]*)?)?)?)?)?)?)?)?)?)?)$/
 /** How many characters may be held back while it is still undecided whether they are a citation; beyond that they are emitted as text. */
 const CITATION_HOLD_MAX = 600
 
@@ -91,7 +97,7 @@ export class CitationFilter {
 
   push(delta: string): string {
     this.pending = (this.pending + delta).replace(CITATION, '')
-    const open = this.pending.search(/[ \t]*\(?\[|[ \t]*\($/)
+    const open = this.pending.search(PARTIAL_CITATION)
     if (open === -1 || this.pending.length - open > CITATION_HOLD_MAX) return this.flush()
     const ready = this.pending.slice(0, open)
     this.pending = this.pending.slice(open)
