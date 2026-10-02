@@ -521,6 +521,7 @@ export function ExtrasStep({
               <div className="su-extra-text">
                 <span className="su-extra-name">
                   {t(`setup.extras.models.${model.id}.label`)}
+                  <span className="su-gap"> </span>
                   <small>{t('setup.extras.size', { sizeMb: model.sizeMb })}</small>
                 </span>
               </div>
@@ -531,6 +532,7 @@ export function ExtrasStep({
                 <dt>{t('setup.extras.aboutKind')}</dt>
                 <dd>
                   {t(`setup.extras.models.${model.id}.kind`)}
+                  <span className="su-gap"> </span>
                   <button type="button" className="su-link" onClick={() => void window.api.openExternal(model.link)}>
                     {t('setup.extras.source')}
               <ExternalLink size={12} aria-hidden />
