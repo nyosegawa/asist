@@ -38,7 +38,7 @@ let pendingRequestId: string | null = null
 let activeRequestId: string | null = null
 const turnMetrics = new TurnMetrics(
   (payload) => window.api.metricsLog(payload),
-  (timings) => useTurnStore.getState().setTimings(timings)
+  (timings, utterance) => useTurnStore.getState().setTimings(timings, utterance)
 )
 interface OpeningPolicy {
   /**
@@ -102,15 +102,12 @@ function lastAssistantText(): string {
 
 /**
  * Look-ahead on a fast model while the user is still speaking, so the bridge sentence is ready before speech
- * ends. Its plans are not shown in the HUD, because a phrase it worded may never sound; the opening reports
- * what came of the bridge instead.
+ * ends. Neither its plans nor its failures are shown in the HUD, because a later request can still word the
+ * phrase and a worded one may never sound; the opening reports what came of the bridge instead.
  */
 const planner = new BridgePlanner({
   plan: (input) => window.api.bridgePlan(input),
-  onFailure: (error) => {
-    console.warn('bridge plan failed:', error)
-    useTurnStore.getState().setRouterNote({ kind: 'bridgeFailed' })
-  }
+  onFailure: (error) => console.warn('bridge plan failed:', error)
 })
 
 /** The aizuchi classifier runs on every partial recognition; the latest result at speech end picks the aizuchi. Without the worker no aizuchi sounds. */
@@ -140,7 +137,7 @@ const opening = new TurnOpening({
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   measure: (startedAt, timings) => turnMetrics.updateUtterance(startedAt, timings),
-  bridgeEnded: (end) => useTurnStore.getState().setRouterNote({ kind: 'bridge', ...end }),
+  bridgeEnded: (utterance, end) => useTurnStore.getState().setRouterNote({ kind: 'bridge', utterance, ...end }),
   sounding: () => speechPlayer.isPlaying,
   withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })

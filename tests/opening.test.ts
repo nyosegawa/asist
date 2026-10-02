@@ -111,7 +111,7 @@ describe('TurnOpening', () => {
     opening.begin({ ...input, bridge: { plan: new Promise((resolve) => (settle = resolve)), screened: false } })
     expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: false })
     expect(measure).toHaveBeenCalledWith(10, { bridge: 'unsettled' })
-    expect(bridgeEnded).toHaveBeenCalledWith({ outcome: 'unsettled' })
+    expect(bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'unsettled' })
     settle(plan)
     await flush()
     expect(synthesizeBridge).not.toHaveBeenCalled()
@@ -147,7 +147,52 @@ describe('TurnOpening', () => {
     await flush()
     expect(play).toHaveBeenCalledTimes(1)
     expect(measure).toHaveBeenCalledWith(10, { bridge: 'late' })
-    expect(bridgeEnded).toHaveBeenCalledWith({ outcome: 'late' })
+    expect(bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'late' })
+  })
+
+  it('hands brain no bridge that was left out as late before the final transcript', async () => {
+    const { opening, resolvers, bodyQueued, measure } = setup()
+    // The answer to the turn before was queued after this speech ended.
+    bodyQueued.after = true
+    opening.begin(input)
+    await flush()
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    expect(measure).toHaveBeenCalledWith(10, { bridge: 'late' })
+    expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: false })
+  })
+
+  it('hands brain no bridge whose synthesis failed before the final transcript', async () => {
+    const { opening, rejecters, measure } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    opening.begin(input)
+    await flush()
+    rejecters[0](new Error('tts down'))
+    await flush()
+    expect(measure).toHaveBeenCalledWith(10, { bridge: 'failed' })
+    expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: false })
+    vi.restoreAllMocks()
+  })
+
+  it('reports a bridge brain was told is coming as failed when the look-ahead fails, and as declined when it answers with no phrase', async () => {
+    const failing = setup()
+    let fail!: (error: Error) => void
+    failing.opening.begin({ ...input, bridge: { plan: new Promise((_resolve, reject) => (fail = reject)), screened: true } })
+    expect(failing.opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: true })
+    fail(new Error('quota exceeded'))
+    await flush()
+    expect(failing.measure).toHaveBeenCalledWith(10, { bridge: 'failed' })
+    expect(failing.bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'failed' })
+
+    const declining = setup()
+    let settle!: (plan: BridgePlan | null) => void
+    declining.opening.begin({ ...input, bridge: { plan: new Promise((resolve) => (settle = resolve)), screened: true } })
+    expect(declining.opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: true })
+    settle({ bridge: '' })
+    await flush()
+    expect(declining.synthesizeBridge).not.toHaveBeenCalled()
+    expect(declining.measure).toHaveBeenCalledWith(10, { bridge: 'declined' })
+    expect(declining.bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'declined' })
   })
 
   it('reports the bridge as failed when its synthesis throws', async () => {
@@ -158,7 +203,7 @@ describe('TurnOpening', () => {
     rejecters[0](new Error('tts down'))
     await flush()
     expect(measure).toHaveBeenCalledWith(10, { bridge: 'failed' })
-    expect(bridgeEnded).toHaveBeenCalledWith({ outcome: 'failed' })
+    expect(bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'failed' })
     vi.restoreAllMocks()
   })
 
@@ -196,7 +241,7 @@ describe('TurnOpening', () => {
     expect(bridgesOf(queued(play))).toEqual(['会議の件ですね。'])
     expect(bridgeEnded).not.toHaveBeenCalled()
     opening.clipStarted(queued(play)[1], 900, 2100)
-    expect(bridgeEnded).toHaveBeenCalledWith({ outcome: 'played', text: '会議の件ですね。' })
+    expect(bridgeEnded).toHaveBeenCalledWith(10, { outcome: 'played', text: '会議の件ですね。' })
   })
 
   it('plays no aizuchi right after a listening aizuchi, while still asking for the bridge', async () => {

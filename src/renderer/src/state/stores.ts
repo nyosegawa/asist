@@ -64,11 +64,12 @@ export type Phase = 'idle' | 'listen' | 'think' | 'speak'
 
 /**
  * What the latest turn's routing did, kept as what happened rather than as a sentence, so that the HUD words it
- * in the language the interface has when it is drawn. A detail is an error's message as it was thrown.
+ * in the language the interface has when it is drawn. A detail is an error's message as it was thrown. A
+ * bridge names the utterance it belongs to, by when its capture began.
  */
 export type RouterNote =
-  | { kind: 'bridgeFailed' | 'heardAsBackchannel' | 'droppedClipEcho' | 'droppedSelfEcho' | 'interrupted' }
-  | ({ kind: 'bridge' } & BridgeEnd)
+  | { kind: 'heardAsBackchannel' | 'droppedClipEcho' | 'droppedSelfEcho' | 'interrupted' }
+  | ({ kind: 'bridge'; utterance: number } & BridgeEnd)
   | { kind: 'aizuchi'; cls: AizuchiClass; percent: number }
   | { kind: 'live'; state: LiveConnection; detail?: string }
   | { kind: 'tool'; name: string; status: Extract<TurnEvent, { type: 'tool' }>['status']; detail?: string }
@@ -82,13 +83,15 @@ interface TurnState {
   activeTurnId: number
   /** The measurements of the latest input and its turn, as TurnMetrics shows them in the HUD. */
   timings: TurnTimings
+  /** The utterance those measurements are of, by when its capture began, or null for typed input and before any input. */
+  shownUtterance: number | null
   /** What the latest turn's routing did, null until the first turn. */
   routerNote: RouterNote | null
   setPhase: (phase: Phase) => void
   setMic: (micState: TurnState['micState'], progress?: number) => void
   setPartial: (partial: string) => void
   setActiveTurn: (id: number) => void
-  setTimings: (timings: TurnTimings) => void
+  setTimings: (timings: TurnTimings, utterance: number | null) => void
   setRouterNote: (note: RouterNote) => void
 }
 
@@ -99,12 +102,13 @@ export const useTurnStore = create<TurnState>((set) => ({
   partial: '',
   activeTurnId: -1,
   timings: {},
+  shownUtterance: null,
   routerNote: null,
   setPhase: (phase) => set({ phase }),
   setMic: (micState, progress = 0) => set({ micState, micProgress: progress }),
   setPartial: (partial) => set({ partial }),
   setActiveTurn: (id) => set({ activeTurnId: id }),
-  setTimings: (timings) => set({ timings }),
+  setTimings: (timings, utterance) => set({ timings, shownUtterance: utterance }),
   setRouterNote: (routerNote) => set({ routerNote })
 }))
 

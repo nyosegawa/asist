@@ -271,9 +271,11 @@ export interface TurnTimings {
   bridgeMs?: number
   bridgeClipMs?: number
   /**
-   * How the bridge ended: `played`; `late` when the real answer arrived first; `unsettled` when the final
-   * transcript arrived before the look-ahead had worded it and no classification had found the utterance
-   * to take one, so it was given up; or `failed` when synthesizing it failed.
+   * How the bridge of an utterance that could have one ended: `played`; `late` when the real answer
+   * arrived first; `unsettled` when the final transcript arrived before the look-ahead had worded it and
+   * no classification had found the utterance to take one, so it was given up; `declined` when the
+   * look-ahead answered with no phrase; or `failed` when every request of the look-ahead failed or
+   * synthesizing the phrase failed.
    */
   bridge?: BridgeOutcome
   /** From the start of the turn to the first text delta. */
@@ -313,7 +315,7 @@ export interface TurnTimings {
 }
 
 /** The ways a bridge can end, which TurnTimings.bridge records and metrics.jsonl accepts. */
-export const BRIDGE_OUTCOMES = ['played', 'late', 'unsettled', 'failed'] as const
+export const BRIDGE_OUTCOMES = ['played', 'late', 'unsettled', 'declined', 'failed'] as const
 export type BridgeOutcome = (typeof BRIDGE_OUTCOMES)[number]
 
 /**

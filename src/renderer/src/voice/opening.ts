@@ -55,7 +55,11 @@ export interface OpeningInput {
 }
 
 export interface OpeningBridge {
-  /** The look-ahead, waited out to the end of the request in flight. The phrase comes from it, and only has to play before the answer. */
+  /**
+   * The look-ahead, waited out to the end of the request in flight. The phrase comes from it, and only
+   * has to play before the answer. It is null when the look-ahead had nothing to be asked, and rejects
+   * when it failed.
+   */
   plan: Promise<BridgePlan | null>
   /**
    * The aizuchi classification has already found the utterance to be one that takes a bridge, so a
@@ -80,8 +84,8 @@ export interface OpeningPorts {
   bodyQueuedAfter(speechEndAt: number): boolean
   /** Records a measurement of an utterance's opening: when one of its clips started sounding, or why its bridge did not. */
   measure(startedAt: number, timings: TurnTimings): void
-  /** Reports what came of the bridge of an opening that still leads into a turn. */
-  bridgeEnded(end: BridgeEnd): void
+  /** Reports what came of the bridge of an utterance whose opening still leads into a turn. */
+  bridgeEnded(startedAt: number, end: BridgeEnd): void
   /** Whether the player sounds now, or is about to. */
   sounding(): boolean
   /** Drops this bridge if it has not started yet. */
@@ -95,9 +99,9 @@ interface Opening {
   /** The aizuchi as it was handed to play. */
   queuedAizuchi: SpeechSegment | null
   /**
-   * It is pending while the look-ahead runs, and decided once the phrase is settled, which may be
-   * null: from the start for an utterance that may have no bridge, and at the claim for an unscreened
-   * one still pending then.
+   * It is pending while the look-ahead runs, and decided once the phrase is settled. The phrase is null
+   * for an utterance that may have no bridge and for a bridge that ended without sounding, so that
+   * brain is never told of one that will not play.
    */
   bridge: { state: 'pending'; screened: boolean } | { state: 'decided'; text: string | null }
   /** The synthesized bridge, kept until it may sound. */
@@ -144,17 +148,33 @@ export class TurnOpening {
     this.capture = null
     if (aizuchi) opening.queuedAizuchi = this.ports.play(aizuchi, 'aizuchi')
     this.release()
-    void input.bridge?.plan.then((plan) => {
-      if (!this.alive(opening) || opening.bridge.state !== 'pending') return
-      const text = plan?.bridge || null
-      opening.bridge = { state: 'decided', text }
-      if (text) this.requestBridge(opening, text)
-    })
+    void input.bridge?.plan.then(
+      (plan) => {
+        if (!this.waitsForPhrase(opening)) return
+        const text = plan?.bridge || null
+        if (text) {
+          opening.bridge = { state: 'decided', text }
+          this.requestBridge(opening, text)
+        } else if (plan) {
+          this.endBridge(opening, { outcome: 'declined' })
+        } else {
+          opening.bridge = { state: 'decided', text: null }
+        }
+      },
+      () => {
+        if (this.waitsForPhrase(opening)) this.endBridge(opening, { outcome: 'failed' })
+      }
+    )
   }
 
   /** Whether this opening still leads into a turn that may come or is under way. */
   private alive(opening: Opening): boolean {
     return this.openings.includes(opening)
+  }
+
+  /** Whether this opening still leads into a turn and its bridge waits for the look-ahead. */
+  private waitsForPhrase(opening: Opening): boolean {
+    return this.alive(opening) && opening.bridge.state === 'pending'
   }
 
   private requestBridge(opening: Opening, text: string): void {
@@ -171,10 +191,14 @@ export class TurnOpening {
     )
   }
 
-  /** Records what came of the bridge of this opening, together with the measurements that go with it. */
+  /**
+   * Records what came of the bridge of this opening, together with the measurements that go with it.
+   * A bridge that will not sound is no longer handed to brain.
+   */
   private endBridge(opening: Opening, end: BridgeEnd, timings: TurnTimings = {}): void {
+    if (end.outcome !== 'played') opening.bridge = { state: 'decided', text: null }
     this.ports.measure(opening.startedAt, { ...timings, bridge: end.outcome })
-    this.ports.bridgeEnded(end)
+    this.ports.bridgeEnded(opening.startedAt, end)
   }
 
   /** Hands the player every synthesized bridge that may sound now. */
@@ -224,9 +248,10 @@ export class TurnOpening {
   /**
    * Claims the opening of the utterance whose final transcript arrived and returns the aizuchi and
    * bridge wording for brain. A bridge that has not played yet is still handed over, on the
-   * assumption that it plays before the answer; how often it did not is tracked as bridge=late. An
-   * unscreened bridge whose phrase is not settled yet is given up here, as unsettled. The openings of
-   * older utterances end with it, as this turn replaces theirs.
+   * assumption that it plays before the answer; how often it did not is tracked as bridge=late. One
+   * that has already ended without sounding is not. An unscreened bridge whose phrase is not settled
+   * yet is given up here, as unsettled. The openings of older utterances end with it, as this turn
+   * replaces theirs.
    */
   claim(startedAt: number): ClaimedOpening | null {
     const index = this.openings.findIndex((o) => o.startedAt === startedAt && !o.claimed)
@@ -235,10 +260,7 @@ export class TurnOpening {
     this.openings = this.openings.slice(index)
     const opening = this.openings[0]
     opening.claimed = true
-    if (opening.bridge.state === 'pending' && !opening.bridge.screened) {
-      opening.bridge = { state: 'decided', text: null }
-      this.endBridge(opening, { outcome: 'unsettled' })
-    }
+    if (opening.bridge.state === 'pending' && !opening.bridge.screened) this.endBridge(opening, { outcome: 'unsettled' })
     return {
       aizuchi: opening.aizuchi?.text ?? null,
       bridge: opening.bridge.state === 'decided' ? opening.bridge.text : null,

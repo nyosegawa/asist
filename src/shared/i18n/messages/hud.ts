@@ -480,6 +480,19 @@ export const hud = defineMessages({
       'pt-BR': 'Resposta iniciada antes de a frase de transição ser definida',
       'es-419': 'Se empezó la respuesta antes de decidir la frase de enlace',
       'es-ES': 'Se ha empezado la respuesta antes de decidir la frase de enlace'
+    },
+    bridgeDeclined: {
+      'ja-JP': 'つなぎの一言は要らないと判断しました',
+      'en-US': 'Judged that no bridge phrase was needed',
+      'fr-FR': 'Aucune phrase de transition jugée nécessaire',
+      'de-DE': 'Kein Überbrückungssatz für nötig befunden',
+      'hi-IN': 'शुरुआती वाक्य की ज़रूरत नहीं समझी',
+      'id-ID': 'Kalimat penyambung dinilai tidak perlu',
+      'it-IT': 'Frase di raccordo ritenuta non necessaria',
+      'ko-KR': '연결 멘트가 필요 없다고 판단했습니다',
+      'pt-BR': 'Frase de transição considerada desnecessária',
+      'es-419': 'Se determinó que no hacía falta una frase de enlace',
+      'es-ES': 'Se ha determinado que no hacía falta una frase de enlace'
     }
   },
   toolStatus: {

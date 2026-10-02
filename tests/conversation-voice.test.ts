@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => {
     partial: '',
     activeTurnId: -1,
     timings: {} as Record<string, unknown>,
+    /** The utterance the HUD's measurements are of. */
+    shownUtterance: null as number | null,
     setPhase: (phase: string) => {
       turn.phase = phase
       turn.phases.push(phase)
@@ -25,8 +27,9 @@ const mocks = vi.hoisted(() => {
     setActiveTurn: (id: number) => {
       turn.activeTurnId = id
     },
-    setTimings: (timings: Record<string, unknown>) => {
+    setTimings: (timings: Record<string, unknown>, utterance: number | null) => {
       turn.timings = timings
+      turn.shownUtterance = utterance
     },
     setPartial: (partial: string) => {
       turn.partial = partial
@@ -270,9 +273,11 @@ function sound(segment: Record<string, unknown>, durationMs: number): void {
   player().events.emit('segmentstart', { segment, durationMs })
 }
 
-/** What the HUD's ROUTER field says now, in English. */
+/** What the HUD's ROUTER field says now, in English, beside the measurements it shows. */
 const routerText = (): string =>
-  mocks.turn.routerNote ? routerNoteText(mocks.turn.routerNote as RouterNote, createTranslator('en-US')) : ''
+  mocks.turn.routerNote
+    ? routerNoteText(mocks.turn.routerNote as RouterNote, createTranslator('en-US'), mocks.turn.shownUtterance)
+    : ''
 
 /** The rows of measurements saved, in order. */
 const savedRows = (metricsLog: Mock): Array<Record<string, unknown>> =>
@@ -303,6 +308,7 @@ beforeEach(async () => {
   mocks.turn.partial = ''
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
+  mocks.turn.shownUtterance = null
   mocks.turn.routerNote = null
   mocks.confirmOpened = []
   mocks.realLive = null
@@ -556,6 +562,85 @@ describe('the bridge and what brain is told of it', () => {
     expect(savedRows(metricsLog).at(-1)).toMatchObject({ bridge: 'unsettled' })
     expect(routerText()).not.toContain('The meeting, right.')
     expect(routerText()).toBe(createTranslator('en-US')('hud.router.bridgeUnsettled'))
+  })
+
+  it('is shown in the HUD only while the HUD shows the measurements of its own turn', async () => {
+    mocks.settings.conversationLocale = 'en-US'
+    const conversation = await start({
+      bridgePlan: vi.fn((input: { text: string }) =>
+        input.text.includes('weather') ? Promise.resolve({ bridge: "Tomorrow's weather, right." }) : new Promise(() => {})
+      ),
+      bridgeSynthesize: vi.fn(async (text: string) => ({ text, audio: 'eA==' })),
+      turnStart: vi.fn().mockResolvedValueOnce(42).mockResolvedValueOnce(43)
+    })
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', 'what is the weather tomorrow')
+    await flush()
+    const first = speechEnd(performance.now() - 3000, 'what is the weather tomorrow')
+    await flush()
+    utterance(first, 'What is the weather tomorrow?')
+    await flush()
+    sound(lastClip(), 900)
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: 'Sunny.' })
+    expect(routerText()).toContain("Tomorrow's weather, right.")
+
+    // The next speech ends, and its own bridge is not known yet.
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', 'thanks a lot for that')
+    await flush()
+    const second = speechEnd(performance.now() - 2000, 'thanks a lot for that')
+    await flush()
+    expect(mocks.turn.timings.bridgeMs).toBeUndefined()
+    expect(routerText()).not.toContain("Tomorrow's weather, right.")
+
+    // That speech yields no turn, and the HUD goes back to the turn before.
+    voice().events.emit('speechdropped', { startedAt: second.startedAt })
+    expect(mocks.turn.timings.bridgeMs).toEqual(expect.any(Number))
+    expect(routerText()).toContain("Tomorrow's weather, right.")
+  })
+
+  it('is kept in the measurements and shown as failed when brain was told it is coming and the look-ahead then fails', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    let fail!: (error: Error) => void
+    const turnStart = vi.fn(async () => 42)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const conversation = await start({
+      aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })),
+      bridgePlan: vi.fn(() => new Promise((_resolve, reject) => (fail = reject))),
+      turnStart,
+      metricsLog
+    })
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', '昨日の会議の件なんですけど')
+    await flush()
+    utterance(speechEnd(performance.now() - 3000, '昨日の会議の件なんですけど'), '昨日の会議の件なんですけど')
+    await flush()
+    expect(startOptions(turnStart).bridgePending).toBe(true)
+
+    fail(new Error('quota exceeded'))
+    await flush()
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: 'その件は予算の話でした。' })
+
+    expect(savedRows(metricsLog).at(-1)).toMatchObject({ bridge: 'failed' })
+    expect(routerText()).toBe(createTranslator('en-US')('hud.router.bridgeFailed'))
+    vi.mocked(console.warn).mockRestore()
+  })
+
+  it('is kept in the measurements as declined when brain was told it is coming and the look-ahead answers with no phrase', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    const { turnStart, planned } = await speakAheadOfTheLookahead(
+      { partial: '昨日の会議の件なんですけど', final: '昨日の会議の件なんですけど' },
+      { aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })), metricsLog }
+    )
+    expect(startOptions(turnStart).bridgePending).toBe(true)
+
+    planned({ bridge: '' })
+    await flush()
+    const conversation = await import('@/conversation')
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: 'その件は予算の話でした。' })
+
+    expect(savedRows(metricsLog).at(-1)).toMatchObject({ bridge: 'declined' })
+    expect(routerText()).toBe(createTranslator('en-US')('hud.router.bridgeDeclined'))
   })
 
   it('is announced as coming for a Japanese utterance the classifier lets have one, and plays once the look-ahead answers', async () => {
