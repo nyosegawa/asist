@@ -89,33 +89,50 @@ const MIME: Record<string, string> = {
 }
 
 /**
- * The policy an HTML page is served with, which holds even where the page is loaded without the files
- * card's sandboxed iframe. `sandbox allow-scripts` gives the document an opaque origin, so it cannot reach
- * the app's page or the preload bridge, and asist-file:// sends it no CORS header, so it can run and draw
- * the files next to it but cannot read them. Remote scripts, styles and images load, because reports draw
- * their charts with a library from a CDN; frames are refused, so a page never shows a remote site inside
- * the app.
+ * The policy an HTML page is served with, confined to the folder the page is in, which holds even where
+ * the page is loaded without the files card's sandboxed iframe. `sandbox allow-scripts` gives the document
+ * an opaque origin, so it cannot reach the app's page or the preload bridge. Every source that loads is the
+ * page's own folder and the data the page carries, never another folder and never a remote host, so the
+ * page cannot read a file the folder does not hold, and `connect-src 'none'` with no remote source
+ * anywhere leaves it no way to send out what it does read: no fetch, no beacon, no WebSocket, no request to
+ * a remote script, style, image or font, and no frame, worker, form or navigation that could carry bytes.
+ * A scheme-wide `asist-file:` source would reach every allowed folder, so each source names the one folder.
  */
-export const HTML_PAGE_POLICY = [
-  'sandbox allow-scripts',
-  "default-src 'none'",
-  `script-src ${FILE_SCHEME}: https: blob: 'unsafe-inline' 'unsafe-eval'`,
-  `style-src ${FILE_SCHEME}: https: 'unsafe-inline'`,
-  `img-src ${FILE_SCHEME}: https: data: blob:`,
-  `font-src ${FILE_SCHEME}: https: data:`,
-  `media-src ${FILE_SCHEME}: https: data: blob:`,
-  'connect-src https:',
-  "frame-src 'none'",
-  "worker-src blob:",
-  "form-action 'none'",
-  `base-uri ${FILE_SCHEME}:`
-].join('; ')
+export function htmlPagePolicy(filePath: string, rules?: UrlRules): string {
+  const own = ownFolderSource(filePath, rules)
+  return [
+    'sandbox allow-scripts',
+    "default-src 'none'",
+    `script-src ${own} 'unsafe-inline' 'unsafe-eval'`,
+    `style-src ${own} 'unsafe-inline'`,
+    `img-src ${own} data:`,
+    `font-src ${own} data:`,
+    `media-src ${own} data:`,
+    "connect-src 'none'",
+    "frame-src 'none'",
+    "worker-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'"
+  ].join('; ')
+}
 
-/** The headers that depend on the file. An HTML page also keeps its local path out of the Referer of its remote requests. */
-export function contentHeaders(filePath: string): Record<string, string> {
+/**
+ * The folder the page is in, as a CSP source that matches that folder and everything below it. A CSP
+ * host-source needs a host, but an asist-file:// URL for a local path has none (the path carries the whole
+ * location), so `*` stands in for the empty host and the path still confines the source to the one folder; a
+ * Windows share keeps its server as the host. fileUrl escapes each name the way the file is served, so a
+ * folder whose name holds a space or a '#' still matches.
+ */
+function ownFolderSource(filePath: string, rules?: UrlRules): string {
+  const url = new URL(fileUrl(path.dirname(filePath), rules))
+  return `${FILE_SCHEME}://${url.host || '*'}${url.pathname}/`
+}
+
+/** The headers that depend on the file. An HTML page also keeps its local path out of the Referer of any request it makes. */
+export function contentHeaders(filePath: string, rules?: UrlRules): Record<string, string> {
   const type = MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
   if (!type.startsWith('text/html')) return { 'Content-Type': type }
-  return { 'Content-Type': type, 'Content-Security-Policy': HTML_PAGE_POLICY, 'Referrer-Policy': 'no-referrer' }
+  return { 'Content-Type': type, 'Content-Security-Policy': htmlPagePolicy(filePath, rules), 'Referrer-Policy': 'no-referrer' }
 }
 
 /**

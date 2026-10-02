@@ -15,9 +15,9 @@ import { platformCapabilities } from '@/platform'
  * An HTML page, rendered by default and switchable to its highlighted source. The page is loaded from its
  * own URL rather than from srcdoc: a srcdoc document inherits the app's policy, which blocks inline
  * scripts, and it has no address for its relative links to resolve against. The main process serves the
- * page with a policy of its own (HTML_PAGE_POLICY in file-protocol.ts), and the app's frame-src lets a
- * frame show asist-file:// and Google Maps only, so a link to a remote site is blocked instead of opening
- * inside the app; the note then offers it to the default browser.
+ * page with a policy of its own (htmlPagePolicy in file-protocol.ts), confined to the page's folder, and
+ * the app's frame-src lets a frame show asist-file:// and Google Maps only, so a link to a remote site is
+ * blocked instead of opening inside the app; the note then offers it to the default browser.
  */
 
 /**

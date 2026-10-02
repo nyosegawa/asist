@@ -203,28 +203,62 @@ const ESCAPING_FLAGS = [
   'allow-modals'
 ]
 
+/** The directives through which a page could fetch, embed or navigate, each of which must admit no remote host. */
+const FETCHING = ['script-src', 'style-src', 'img-src', 'font-src', 'media-src', 'connect-src', 'frame-src', 'worker-src']
+/** The source forms that would reach a host other than the page's own folder. */
+const REMOTE = ['*', 'https:', 'http:', 'ws:', 'wss:', 'ftp:', "'self'", 'file:']
+
 describe('the headers an HTML page is served with', () => {
   it('sandboxes the page with scripts only, whatever frame loads it', async () => {
     const { contentHeaders } = await load()
     for (const name of ['/r/report.html', '/r/INDEX.HTM']) {
-      const sandbox = directives(contentHeaders(name)['Content-Security-Policy']).get('sandbox')
+      const sandbox = directives(contentHeaders(name, MACOS)['Content-Security-Policy']).get('sandbox')
       expect(sandbox).toContain('allow-scripts')
       for (const flag of ESCAPING_FLAGS) expect(sandbox).not.toContain(flag)
     }
   })
 
-  it('lets the page read no local file, embed no frame and submit no form', async () => {
+  it('leaves the page no way to reach a remote host, so it can send out nothing it reads', async () => {
     const { contentHeaders } = await load()
-    const policy = directives(contentHeaders('/r/report.html')['Content-Security-Policy'])
+    const policy = directives(contentHeaders('/r/report.html', MACOS)['Content-Security-Policy'])
     expect(policy.get('default-src')).toEqual(["'none'"])
-    expect(policy.get('connect-src')).toEqual(['https:'])
+    expect(policy.get('connect-src')).toEqual(["'none'"])
     expect(policy.get('frame-src')).toEqual(["'none'"])
+    expect(policy.get('worker-src')).toEqual(["'none'"])
     expect(policy.get('form-action')).toEqual(["'none'"])
+    expect(policy.get('base-uri')).toEqual(["'none'"])
+    for (const directive of FETCHING) {
+      for (const remote of REMOTE) expect(policy.get(directive) ?? []).not.toContain(remote)
+    }
   })
 
-  it('keeps the local path out of the Referer of the remote resources a page loads', async () => {
+  it('confines every source a page can load to the folder the page is in, not the whole scheme', async () => {
+    const { contentHeaders, fileUrl, FILE_SCHEME } = await load()
+    // A local path has no host in its URL, so the CSP source stands '*' in for the host and the path confines it.
+    const asSource = (dir: string): string => `${fileUrl(dir, MACOS).replace(`${FILE_SCHEME}://`, `${FILE_SCHEME}://*`)}/`
+    const own = asSource('/r/reports/q3')
+    const sibling = asSource('/r/photos')
+    const policy = directives(contentHeaders('/r/reports/q3/index.html', MACOS)['Content-Security-Policy'])
+    for (const directive of ['script-src', 'style-src', 'img-src', 'font-src', 'media-src']) {
+      const sources = policy.get(directive) ?? []
+      expect(sources).toContain(own)
+      // A scheme-wide source would reach every allowed folder, and the sibling folder is not below the page's own.
+      expect(sources).not.toContain(`${FILE_SCHEME}:`)
+      expect(sources.some((source) => source.startsWith(sibling))).toBe(false)
+    }
+  })
+
+  it("names the page's own folder in the policy as the file is served, with a space in the name escaped", async () => {
+    const { contentHeaders, fileUrl, FILE_SCHEME } = await load()
+    const policy = directives(contentHeaders('/r/My Report/index.html', MACOS)['Content-Security-Policy'])
+    const own = `${fileUrl('/r/My Report', MACOS).replace(`${FILE_SCHEME}://`, `${FILE_SCHEME}://*`)}/`
+    expect(own).toContain('/My%20Report/')
+    expect(policy.get('img-src')).toContain(own)
+  })
+
+  it('keeps the local path out of the Referer of any request a page makes', async () => {
     const { contentHeaders } = await load()
-    expect(contentHeaders('/r/report.html')['Referrer-Policy']).toBe('no-referrer')
+    expect(contentHeaders('/r/report.html', MACOS)['Referrer-Policy']).toBe('no-referrer')
   })
 
   it('serves the stylesheet and script next to a page with types a browser applies and runs', async () => {
