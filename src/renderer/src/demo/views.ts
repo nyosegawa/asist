@@ -1,11 +1,11 @@
-import type { CalendarStatus } from '@shared/calendar'
+import { describeCalendarEvent, type CalendarEventInput, type CalendarStatus } from '@shared/calendar'
 import type { PreparationProgress, RendererApi } from '@shared/ipc'
 import type { SettingsPage } from '@shared/mini-apps'
 import type { LocalTtsEngine } from '@shared/tts-models'
 import { dayKey } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
 import { displayError } from '@/display-error'
-import { translate } from '@/i18n'
+import { formatLocale, translate } from '@/i18n'
 import { useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 import { useConfirmStore } from '@/state/confirm'
@@ -150,6 +150,39 @@ function showToasts(): void {
   toastTimer = setInterval(push, 5000)
 }
 
+/** The confirmation of a calendar change, written as the main process writes it: the event now, for an update, and the event to save. */
+function calendarConfirm(operation: 'create' | 'update', after: CalendarEventInput, before?: CalendarEventInput): DemoView {
+  const describe = (heading: 'calendar.confirm.before' | 'calendar.confirm.after', event: CalendarEventInput): string =>
+    `${translate(heading)}\n${describeCalendarEvent(translate, formatLocale(), event)}`
+  return {
+    open: () =>
+      useConfirmStore.getState().open({
+        id: 'demo-confirm',
+        title: translate('calendar.confirm.title'),
+        message: translate('calendar.confirm.message'),
+        detail: [
+          translate(`calendar.confirm.${operation}`, { calendar: '仕事' }),
+          ...(before ? [describe('calendar.confirm.before', before)] : []),
+          describe('calendar.confirm.after', after)
+        ].join('\n\n'),
+        confirmLabel: translate('calendar.confirm.action'),
+        destructive: false,
+        holdsConversation: true
+      })
+  }
+}
+
+/** A call kept in New York, whose time the confirmation shows on this computer's clock and on New York's. */
+const newYorkCall = (start: string, end: string): CalendarEventInput => ({
+  title: '取引先と電話会議',
+  start,
+  end,
+  allDay: false,
+  timeZone: 'America/New_York',
+  location: 'Zoom',
+  notes: '来期の契約の条件を確認する'
+})
+
 export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   conversation: {},
   'conversation/cards': { say: ['長野県の今日の天気を教えて', 'ドル円のレートを教えて'] },
@@ -222,6 +255,20 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
         holdsConversation: true
       })
   },
+  'confirm/calendar': calendarConfirm(
+    'update',
+    newYorkCall('2026-09-15T10:00:00-04:00', '2026-09-15T11:00:00-04:00'),
+    newYorkCall('2026-09-15T09:00:00-04:00', '2026-09-15T10:00:00-04:00')
+  ),
+  'confirm/calendar-all-day': calendarConfirm('create', {
+    title: '大阪出張',
+    start: '2026-09-28',
+    end: '2026-10-02',
+    allDay: true,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    location: '大阪支社',
+    notes: ''
+  }),
   toasts: { open: showToasts }
 }
 
