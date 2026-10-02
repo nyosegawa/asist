@@ -19,6 +19,7 @@ beforeEach(() => {
       liveStop: vi.fn(async () => {}),
       livePush: vi.fn(async () => {}),
       liveActivity: vi.fn(async () => {}),
+      onLiveAudio: vi.fn(() => vi.fn()),
       micNativeStart: vi.fn(async () => ({ ok: true, sampleRate: 48_000 })),
       micNativeStop: vi.fn(async () => {}),
       onMicNativeFrame: vi.fn(() => vi.fn()),

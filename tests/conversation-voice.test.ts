@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => {
     player: null as unknown,
     voice: null as unknown,
     live: null as unknown,
+    realLive: null as object | null,
     /** The requests the conversation put on the confirmation sheet. */
     confirmOpened: [] as unknown[]
   }
@@ -109,7 +110,17 @@ vi.mock('@/voice/LiveVoice', async () => {
   const { default: mittFactory } = await import('mitt')
   const liveVoice = { current: 'off', events: mittFactory(), recover: async () => {}, enable: vi.fn(async () => {}), disable: vi.fn() }
   mocks.live = liveVoice
-  return { liveVoice }
+  // A test that puts a real LiveVoice in mocks.realLive has the conversation it starts use that one instead.
+  const source = (): object => mocks.realLive ?? liveVoice
+  return {
+    liveVoice: new Proxy(liveVoice, {
+      get: (_target, key) => {
+        const value: unknown = Reflect.get(source(), key)
+        return typeof value === 'function' ? value.bind(source()) : value
+      },
+      set: (_target, key, value) => Reflect.set(source(), key, value)
+    })
+  }
 })
 vi.mock('@/voice/SpeechPlayer', async () => {
   const { default: mittFactory } = await import('mitt')
@@ -263,6 +274,7 @@ beforeEach(() => {
   mocks.turn.timings = {}
   mocks.turn.timingsTurnId = -1
   mocks.confirmOpened = []
+  mocks.realLive = null
   mocks.feed.lines.length = 0
   for (const key of Object.keys(mocks.settings)) delete mocks.settings[key]
   Object.assign(mocks.settings, structuredClone(baseSettings))
@@ -916,6 +928,52 @@ describe('a change of how long a quiet live session stays open', () => {
 
     expect(live.disable).toHaveBeenCalled()
     live.current = 'off'
+  })
+})
+
+describe('the voice of the live engine', () => {
+  it('plays none of what main sent before it handled the microphone being turned off, even when the microphone turns on again at once', async () => {
+    Object.assign(mocks.settings, { voiceEngine: 'gemini-live' })
+    const { LiveVoice } = await vi.importActual<typeof import('@/voice/LiveVoice')>('@/voice/LiveVoice')
+    const live = new LiveVoice()
+    Object.assign(live, {
+      microphone: { start: async () => {}, stop: () => {}, close: () => {} },
+      silero: { init: async () => {}, push: () => {}, currentProb: () => null, dispose: () => {} }
+    })
+    mocks.realLive = live
+    const listeners = new Set<(samples: Float32Array) => void>()
+    const conversation = await start({
+      requestMicPermission: async () => true,
+      liveStart: async () => ({ ok: true }),
+      onLiveAudio: (listener: (samples: Float32Array) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      }
+    })
+    const streamPush = vi.spyOn(mocks.player as { streamPush: (samples: Float32Array, rate: number) => void }, 'streamPush')
+    /** A chunk of the model's voice as main sends it, which reaches the page some time later. */
+    const chunkFromMain = (): void => {
+      for (const listener of [...listeners]) listener(new Float32Array(2400))
+    }
+
+    await conversation.toggleMic()
+    chunkFromMain()
+    expect(streamPush).toHaveBeenCalledOnce()
+
+    await conversation.toggleMic()
+    chunkFromMain()
+    expect(streamPush).toHaveBeenCalledOnce()
+
+    // Coming back after a sleep turns the microphone off and on again in one go, and the stopped run's
+    // voice still on its way arrives while the new one starts.
+    await conversation.toggleMic()
+    const recovering = live.recover()
+    chunkFromMain()
+    await recovering
+    expect(streamPush).toHaveBeenCalledOnce()
+    chunkFromMain()
+    expect(streamPush).toHaveBeenCalledTimes(2)
+    live.disable()
   })
 })
 
