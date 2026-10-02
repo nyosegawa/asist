@@ -29,8 +29,8 @@ export interface LiveSessionLifecycleDeps {
   /** Sends base64 PCM16 at 16 kHz. `seconds` is the length of that audio, which the usage counts. */
   transmit: (base64: string, seconds: number) => void
   /**
-   * Whether the engine still runs something for the conversation, such as a function call waiting for
-   * approval, which gives no sign of life until it ends.
+   * Whether the conversation still goes on without a sign of life from it, such as a reply still playing or
+   * a function call waiting for approval.
    */
   working: () => boolean
   emit: (event: LiveEvent) => void
@@ -160,7 +160,7 @@ export class LiveSessionLifecycle {
     void this.ensureOpen()
   }
 
-  /** Marks the conversation as still going, such as model audio or a function call, and pushes back the idle close. */
+  /** Marks the conversation as still going, such as the user's speech or a function call's result, and pushes back the idle close. */
   touch(): void {
     this.policy.activity(this.deps.now())
   }
