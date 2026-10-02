@@ -10,7 +10,8 @@ import { parseVapWorkerLine, type VapWorkerMessage } from '@shared/vap-protocol'
 /**
  * Runs resources/vap_worker.py itself, with stand-ins for MaAI and torch (tests/fixtures/vap-worker) whose values say
  * which frame they were made from. It needs a Python with numpy: ASIST_VAP_PYTHON when it is set, as the app takes
- * it, or else python3 or python on the PATH. Where none has numpy, the tests are skipped.
+ * it, or else python3 or python on the PATH. On a developer's machine without one the tests are skipped, as running
+ * the app from source needs no Python; CI gives its test jobs one, and there a missing one fails them.
  */
 
 const ROOT = path.resolve(import.meta.dirname, '..')
@@ -19,15 +20,15 @@ const STAND_INS = path.join(ROOT, 'tests', 'fixtures', 'vap-worker')
 const FRAME_SAMPLES = 1_280
 
 function pythonWithNumpy(): string | null {
-  for (const candidate of [process.env.ASIST_VAP_PYTHON?.trim(), 'python3', 'python']) {
-    if (!candidate) continue
-    const probe = spawnSync(candidate, ['-c', 'import numpy'], { stdio: 'ignore', windowsHide: true })
-    if (probe.status === 0) return candidate
-  }
-  return null
+  const configured = process.env.ASIST_VAP_PYTHON?.trim()
+  const candidates = configured ? [configured] : ['python3', 'python']
+  const hasNumpy = (candidate: string): boolean =>
+    spawnSync(candidate, ['-c', 'import numpy'], { stdio: 'ignore', windowsHide: true }).status === 0
+  return candidates.find(hasNumpy) ?? null
 }
 
 const python = pythonWithNumpy()
+const pythonRequired = process.env.CI === 'true'
 
 interface Worker {
   messages: VapWorkerMessage[]
@@ -49,6 +50,7 @@ afterEach(() => {
 
 /** Starts the worker as vap.ts does, on empty model files, with the stand-ins first on the import path. */
 function startWorker(env: Record<string, string>): Worker {
+  if (python === null) throw new Error('no Python with numpy: set ASIST_VAP_PYTHON, or put python3 with numpy on the PATH')
   const dir = mkdtempSync(path.join(tmpdir(), 'asist-vap-worker-'))
   modelsDir = dir
   const model = (name: string): string => {
@@ -70,7 +72,7 @@ function startWorker(env: Record<string, string>): Worker {
     '--aux-context', '5',
     '--cpc', model('cpc.pt')
   ]
-  const child = spawn(python!, args, {
+  const child = spawn(python, args, {
     env: { ...process.env, PYTHONPATH: STAND_INS, PYTHONDONTWRITEBYTECODE: '1', PYTHONUTF8: '1', ...env },
     windowsHide: true
   })
@@ -112,7 +114,7 @@ function startWorker(env: Record<string, string>): Worker {
 const states = (messages: VapWorkerMessage[]): VapState[] =>
   messages.flatMap((message) => (message.type === 'state' ? [message.state] : []))
 
-describe.runIf(python !== null)('the MaAI worker, vap_worker.py', () => {
+describe.runIf(python !== null || pythonRequired)('the MaAI worker, vap_worker.py', () => {
   it('dates each estimate of a burst by the frames that reached each model after the one its values were made from', { timeout: 30_000 }, async () => {
     // The first result waits until the whole burst has arrived, so that every value is dated against all of it.
     const worker = startWorker({ FAKE_MAAI_FIRST_FRAME_SEC: '0.5' })
