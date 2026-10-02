@@ -75,7 +75,14 @@ describe('file-path', () => {
     expect(trimTrailingSeparator('/Users/me/repo//')).toBe('/Users/me/repo')
     expect(trimTrailingSeparator('C:\\Users\\me\\')).toBe('C:\\Users\\me')
     expect(trimTrailingSeparator('C:/Users/me/')).toBe('C:/Users/me')
-    for (const root of ['/', 'C:\\', 'C:/', '\\\\server\\share\\']) expect(trimTrailingSeparator(root)).toBe(root)
+    for (const root of ['/', 'C:\\', 'C:/']) expect(trimTrailingSeparator(root)).toBe(root)
+  })
+
+  it('takes a share with and without the separator after it for the same place, as Windows does', () => {
+    expect(samePath('\\\\nas\\team', '\\\\nas\\team\\')).toBe(true)
+    expect(samePath('//nas/team/', '\\\\NAS\\team')).toBe(true)
+    expect(pathInside('\\\\nas\\team\\', '\\\\nas\\team')).toBe('')
+    expect(pathInside('\\\\nas\\team', '\\\\nas\\team-old\\a.md')).toBeNull()
   })
 
   it('takes a Windows path written with the other separator, letter case or a trailing separator for the same place', () => {
@@ -88,7 +95,7 @@ describe('file-path', () => {
     expect(samePath('\\\\nas\\team\\proj', '//nas/team/proj/')).toBe(true)
     expect(pathInside('\\\\nas\\team\\repo', '//nas/team/repo/docs/a.md')).toBe('docs/a.md')
     expect(pathNames('//nas/team/docs/a.md')).toEqual(['docs', 'a.md'])
-    expect(trimTrailingSeparator('//nas/team/')).toBe('//nas/team/')
+    expect(trimTrailingSeparator('//nas/team/docs/')).toBe('//nas/team/docs')
   })
 
   it('gives the part of a path below a folder, in either form, and nothing for a path outside it', () => {

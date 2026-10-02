@@ -8,8 +8,11 @@
 
 const DRIVE = /^[A-Za-z]:/
 const ABSOLUTE = /^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/])/
-/** The root of a path on a share, \\server\share or //server/share, with the separator after the share. */
-const SHARE = /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+[\\/]?/
+/**
+ * The root of a path on a share, \\server\share or //server/share. A separator after the share is not part of it,
+ * since Windows names the same place with and without one, unlike C: and C:\.
+ */
+const SHARE = /^[\\/]{2}[^\\/]+[\\/]+[^\\/]+/
 
 /** Whether p is written in a Windows form: a drive letter, a share, or "\" as in \folder. */
 const isWindowsForm = (p: string): boolean => DRIVE.test(p) || p.startsWith('\\') || SHARE.test(p)
@@ -23,7 +26,7 @@ const separatorOf = (p: string): SeparatorTest => (isWindowsForm(p) ? windowsSep
 
 /**
  * How many characters of p name its root. POSIX has "/" alone; Windows has a drive such as "C:" or "C:\",
- * a share with the separator after it, and "\" for the root of the current drive.
+ * a share such as \\server\share, and "\" for the root of the current drive.
  */
 function rootLength(p: string): number {
   if (!isWindowsForm(p)) return p.startsWith('/') ? 1 : 0
