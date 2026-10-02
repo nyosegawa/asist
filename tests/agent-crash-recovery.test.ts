@@ -127,11 +127,22 @@ async function crashParent(descendant: boolean): Promise<{ job: AgentJob; repo: 
   return { job, repo: fixture.repo, writer }
 }
 
+/**
+ * Waits for the stop the agent's group is sent when ASIST ends, which the fixture's writer outlives as a CLI
+ * slow to stop would, and clears its mark, so that what follows sees only what a recovery sends.
+ */
+async function outliveStopAtExit(job: AgentJob): Promise<void> {
+  const mark = path.join(job.cwd, 'stop-requested')
+  await vi.waitFor(() => expect(fs.existsSync(mark)).toBe(true), PROCESS_START)
+  fs.rmSync(mark)
+}
+
 // The agent starts through /bin/sh in a process group of its own and is found again with /bin/ps, all POSIX only;
 // on Windows the agent launcher's Job Object is to take their place, with tests of its own.
 describe.runIf(process.platform !== 'win32')('Agent crash recovery with real processes', { timeout: 30_000 }, () => {
   it.each([false, true])('does not finalize the worktree after a crash until the surviving writer stops (descendant only=%s)', async (descendant) => {
     const { job, repo, writer } = await crashParent(descendant)
+    await outliveStopAtExit(job)
     agent = await import('../src/main/services/agent')
     expect(agent.get(job.id)).toMatchObject({ status: 'stopping', processIdentity: job.processIdentity })
     expect(fs.existsSync(job.cwd)).toBe(true)
@@ -150,8 +161,14 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
     expect(git(job.cwd, 'status', '--porcelain')).toBe('')
   })
 
+  it.each([false, true])('sends the agent\'s group the stop as soon as ASIST ends, without waiting for ASIST to start again (descendant only=%s)', async (descendant) => {
+    const { job } = await crashParent(descendant)
+    await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
+  })
+
   it('shows the reason while the recovered identity does not match, and re-checks safely when cancelled after the process is gone', async () => {
     const { job, writer } = await crashParent(false)
+    await outliveStopAtExit(job)
     const historyFile = path.join(mocks.data, 'jobs.json')
     const saved = JSON.parse(fs.readFileSync(historyFile, 'utf8')) as { version: number; jobs: AgentJob[] }
     saved.jobs[0].processIdentity!.token = crypto.randomUUID()
@@ -309,6 +326,7 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
 
   it('settles a restored job whose group PID was reused and releases its worktree, leaving the other process alone', async () => {
     const { job, writer } = await crashParent(false)
+    await outliveStopAtExit(job)
     const historyFile = path.join(mocks.data, 'jobs.json')
     const saved = JSON.parse(fs.readFileSync(historyFile, 'utf8')) as { version: number; jobs: AgentJob[] }
     // A process that is not the agent: another start time and none of its token.

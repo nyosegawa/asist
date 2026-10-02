@@ -280,20 +280,36 @@ export function manageAgentProcess(child: ChildProcess, token: string, events: A
 }
 
 /**
- * An agent on macOS is the process group of a shell that waits for permission to start: the CLI must not
- * start writing before the job is persisted, and if ASIST exits first, the EOF on stdin ends the shell
- * before the exec. The prompt follows the permission on the same stdin: the shell's read takes only the
- * first line from a pipe, and the CLI reads the rest (see agent-cli).
+ * The shell an agent starts through. It waits for permission to start: the CLI must not start writing before
+ * the job is persisted, and if ASIST exits first, the EOF on stdin ends the shell before the exec. The prompt
+ * follows the permission on the same stdin: the shell's read takes only the first line from a pipe, and the
+ * CLI reads the rest (see agent-cli).
+ *
+ * Before the exec it leaves a watcher in the CLI's group that reads fd 3, a pipe whose other end only ASIST
+ * holds. When ASIST ends, crashed or killed, the pipe reaches EOF and the watcher sends the group the SIGTERM a
+ * stop begins with, as the launcher on Windows stops its job: a CLI whose output nobody reads goes on with its
+ * task otherwise. Measured with claude 2.1.276 on 2026-10-02: after the process that started it was killed, it
+ * finished the running command, asked the model again and ran another one, and with the watcher it exited
+ * within a second and its running command never finished. What outlives the SIGTERM is stopped by the
+ * recovery at the next launch. The watcher is started from a subshell that exits at once, so that it is not a
+ * child of the CLI, which never started it.
  */
+const LAUNCHER = 'IFS= read -r ready && [ "$ready" = start ] || exit; ( { read -r _ <&3; kill -TERM 0; } </dev/null >/dev/null 2>&1 & ); exec "$@" 3<&-'
+
+/** An agent on macOS is the process group of the launcher shell, which becomes the CLI. */
 export const posixOwner: AgentOwner = {
   start(cli, args, { cwd, env, token }, events) {
-    const child = spawn('/bin/sh', ['-c', 'IFS= read -r ready && [ "$ready" = start ] && exec "$@"', 'asist-agent-launcher', cli, ...args], {
+    const child = spawn('/bin/sh', ['-c', LAUNCHER, 'asist-agent-launcher', cli, ...args], {
       cwd,
       env: { ...env, [AGENT_PROCESS_TOKEN]: token },
       detached: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
+    // Once the CLI has exited, ASIST lets go of the watcher's pipe, and the watcher's SIGTERM reaches only what
+    // the CLI left in its group, which ASIST stops in any case. Node's close waits for that pipe as well, so it
+    // would never come while the watcher waits on it.
+    child.once('exit', () => child.stdio[3]!.destroy())
     return { child, identity: () => captureProcessIdentity(child.pid!, token), lifetime: manageAgentProcess(child, token, events) }
   },
   recover: recoverAgentProcess
