@@ -49,7 +49,12 @@ export async function checkHealth(force = false): Promise<void> {
     const push = forced
     forced = false
     let [asrUp, ttsUp] = await Promise.all([asr.available(), tts.available()])
-    if (!asrUp) asrUp = await asr.revive()
+    // A start that throws, as in a build without llama-server, leaves speech recognition down, which the
+    // screens are told like any other outcome.
+    if (!asrUp) asrUp = await asr.revive().catch((error: unknown) => {
+      console.error('speech recognition failed to start:', error)
+      return false
+    })
     if (!ttsUp) {
       // ensureEngine leaves a process it already owns alone while that process is still coming up over
       // HTTP, and retries only after the process has exited or errored.

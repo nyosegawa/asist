@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
   ttsAnswered: vi.fn(),
   ttsUp: true,
   ttsStarting: false,
-  asrAvailable: async () => true
+  asrAvailable: async () => true,
+  asrRevive: async (): Promise<boolean> => true
 }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -19,7 +20,7 @@ vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/unused', getPath: () => '/unused', on: vi.fn()
 } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
-vi.mock('../src/main/services/asr', () => ({ available: () => mocks.asrAvailable(), revive: async () => true }))
+vi.mock('../src/main/services/asr', () => ({ available: () => mocks.asrAvailable(), revive: () => mocks.asrRevive() }))
 vi.mock('../src/main/services/tts', () => ({ available: async () => mocks.ttsUp, engineStarting: () => mocks.ttsStarting, ensureEngine: async () => true }))
 vi.mock('../src/main/services/aizuchi', () => ({ ttsAnswered: mocks.ttsAnswered }))
 vi.mock('../src/main/services/memory', () => ({ startEmbeddingIfEnabled: mocks.startEmbedding }))
@@ -57,6 +58,7 @@ beforeEach(async () => {
   mocks.ttsUp = true
   mocks.ttsStarting = false
   mocks.asrAvailable = async () => true
+  mocks.asrRevive = async () => true
   children = []
   mocks.spawn.mockReset().mockImplementation((_python: string, args: string[]) => {
     const child = fakeChild(args[0])
@@ -156,6 +158,18 @@ describe('the watchdog', () => {
     mocks.ttsStarting = false
     await watchdog.checkHealth()
     expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: true, ttsStarting: false })
+  })
+
+  it('reports speech recognition as down when starting it again fails, as in a build without llama-server, and logs why', async () => {
+    const failed = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const missing = new Error('llama-server is missing from /Applications/ASIST.app/Contents/Resources/llama.cpp/llama-server')
+    mocks.asrAvailable = async () => false
+    mocks.asrRevive = async () => { throw missing }
+    const onChange = vi.fn()
+    watchdog.start(onChange)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(onChange).toHaveBeenLastCalledWith({ asr: false, tts: true, ttsStarting: false })
+    expect(failed).toHaveBeenCalledWith(expect.any(String), missing)
   })
 
   it('checks again once a check that was under way when asked has ended, since that one may have read the old state', async () => {
