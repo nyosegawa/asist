@@ -4,7 +4,6 @@ import { execFileSync } from 'node:child_process'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
-import { gitPath } from '../src/main/services/git'
 import { shellPath, testGitEnv } from './helpers/git'
 import { longTempFolder } from './helpers/temp'
 
@@ -63,11 +62,13 @@ const expectRefused = (agent: Agent, id: string, submodules: string[], head: str
 }
 
 /**
- * The test's own git is the one ASIST ships, which the code under test runs as well. /usr/bin/git on a Mac finds the
- * real git through xcrun on every call: a call took 23 ms against 9 ms at a load average of 29 (Apple M5, 2026-10-02).
+ * The user's git, which makes the repositories that ASIST's own git then reads, as in use. /usr/bin/git on a Mac is a
+ * shim that looks the real git up through xcrun on every call: a call took 23 ms against 8 ms for the git it finds at
+ * a load average of 30 (Apple M5, 2026-10-02), so the path is looked up once.
  */
+const userGit = process.platform === 'darwin' ? execFileSync('xcrun', ['--find', 'git'], { encoding: 'utf8' }).trim() : 'git'
 const git = (cwd: string, ...args: string[]): string =>
-  execFileSync(gitPath(), args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
+  execFileSync(userGit, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
 
 /** The repository each test starts from, made once and copied into the test's own folder. */
 let template: string

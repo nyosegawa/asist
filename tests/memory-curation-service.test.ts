@@ -40,8 +40,8 @@ const now = new Date(2026, 8, 12, 12).getTime()
 const DAY = 24 * 60 * 60_000
 const MINUTE = 60_000
 /**
- * The test's own git is the one ASIST ships, which the code under test runs as well. /usr/bin/git on a Mac finds the
- * real git through xcrun on every call: a call took 23 ms against 9 ms at a load average of 29 (Apple M5, 2026-10-02).
+ * The test's own git is the one ASIST ships, with which ASIST makes the memory repository. /usr/bin/git on a Mac finds
+ * the real git through xcrun on every call: a call took 23 ms against 9 ms at a load average of 29 (Apple M5, 2026-10-02).
  */
 const git = (cwd: string, ...args: string[]): string => execFileSync(gitPath(), args, {
   cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']

@@ -88,9 +88,9 @@ async function contentsByRanges(file: Uint8Array): Promise<Record<string, string
 }
 
 /**
- * A zip of stored entries, written here rather than by JSZip, which passes each entry through a stream of workers:
- * JSZip took 4 to 9 s to write one of 1,500 entries at a load average of 85, where this takes milliseconds
- * (Apple M5, 2026-10-02).
+ * A zip of stored entries, written here rather than by JSZip, which passes each entry through a stream of workers: a
+ * zip of 1,500 entries took JSZip 4 to 9 s to write at a load average of 85, and takes this milliseconds (Apple M5,
+ * 2026-10-02).
  */
 function storedZipOf(files: Record<string, string>): Uint8Array {
   const parts: Uint8Array[] = []
