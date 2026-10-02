@@ -54,19 +54,25 @@ function liveEvent(value: unknown): GoogleEvent | null {
   if (parseGoogle(eventStatusSchema, value).status === 'cancelled') return null
   return parseGoogle(eventSchema, value)
 }
-const eventsPageSchema = z.object({
+/**
+ * The calendar's own fields of an events page, the one place ASIST reads a calendar's title, zone and
+ * access from for its events, so that an event read alone agrees with the same event in a range. Google's
+ * API documents the zone as always there on an events page, and as optional in the calendar list.
+ */
+const calendarPageSchema = z.object({
   summary: z.string(),
   timeZone: z.string(),
-  accessRole: z.string(),
+  accessRole: z.string()
+})
+const eventsPageSchema = calendarPageSchema.extend({
   items: z.array(z.unknown()),
   nextPageToken: z.string().optional()
 })
-/** An entry of the account's calendar list. Google's API documents its time zone as optional. */
+/** An entry of the account's calendar list, of which the status reads what it shows of each calendar. */
 const calendarEntrySchema = z.object({
   id: z.string(),
   summary: z.string(),
   accessRole: z.string(),
-  timeZone: z.string().optional(),
   primary: z.boolean().optional()
 })
 const calendarListSchema = z.object({ items: z.array(calendarEntrySchema), nextPageToken: z.string().optional() })
@@ -75,9 +81,16 @@ const calendarListSchema = z.object({ items: z.array(calendarEntrySchema), nextP
 interface CalendarInfo {
   id: string
   title: string
-  timeZone?: string
+  timeZone: string
   writable: boolean
 }
+
+const calendarOfPage = (id: string, page: z.infer<typeof calendarPageSchema>): CalendarInfo => ({
+  id,
+  title: page.summary,
+  timeZone: page.timeZone,
+  writable: accessWrites(page.accessRole)
+})
 
 /**
  * The id ASIST gives a Google event. Google's id is unique only inside its calendar, and a change names
@@ -96,13 +109,11 @@ const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 /**
  * An event as the rest of ASIST reads it. An all-day event keeps Google's days, whose end is already the
  * day after the last, and is placed at midnight of this computer; a timed event keeps its own time zone,
- * or its calendar's when it has none, and with neither it has no zone to be saved in.
+ * or its calendar's when it has none.
  */
 export function toCalendarEvent(item: GoogleEvent, calendar: CalendarInfo): CalendarEvent {
   const allDay = item.start.date !== undefined
   const at = (time: GoogleEvent['start']): number => (allDay ? parseDayKey(time.date!).getTime() : Date.parse(time.dateTime!))
-  const timeZone = allDay ? localZone() : (item.start.timeZone ?? calendar.timeZone)
-  if (timeZone === undefined) throw new Error(errorText('calendar.errors.googleBadResponse'))
   return {
     id: googleEventKey(calendar.id, item.id),
     calendarId: calendar.id,
@@ -113,7 +124,7 @@ export function toCalendarEvent(item: GoogleEvent, calendar: CalendarInfo): Cale
     allDay,
     location: item.location ?? '',
     notes: item.description ?? '',
-    timeZone,
+    timeZone: allDay ? localZone() : (item.start.timeZone ?? calendar.timeZone),
     revision: item.etag,
     recurring: item.recurringEventId !== undefined || item.recurrence !== undefined,
     hasAttendees: (item.attendees?.length ?? 0) > 0,
@@ -327,7 +338,7 @@ export class GoogleCalendar {
         },
         'calendar.errors.calendarNotFound'
       )
-      const calendar = { id: calendarId, title: page.summary, timeZone: page.timeZone, writable: accessWrites(page.accessRole) }
+      const calendar = calendarOfPage(calendarId, page)
       // A working location is a place for the day that Google shows apart from the events.
       for (const item of page.items.map(liveEvent)) if (item && item.eventType !== 'workingLocation') events.push(toCalendarEvent(item, calendar))
       pageToken = page.nextPageToken
@@ -338,12 +349,18 @@ export class GoogleCalendar {
   async event(eventId: string, signal?: AbortSignal): Promise<CalendarEvent> {
     const key = parseEventKey(eventId)
     const path = `/calendars/${encodeURIComponent(key.calendarId)}`
-    const [item, entry] = await Promise.all([
+    const [item, page] = await Promise.all([
       this.read(`${path}/events/${encodeURIComponent(key.eventId)}`, z.unknown(), { signal }, 'calendar.errors.eventNotFound').then(liveEvent),
-      this.read(`/users/me/calendarList/${encodeURIComponent(key.calendarId)}`, calendarEntrySchema, { signal }, 'calendar.errors.calendarNotFound')
+      // A partial response: the calendar's own fields of its events page, without its events.
+      this.read(
+        `${path}/events`,
+        calendarPageSchema,
+        { query: [['maxResults', '1'], ['fields', 'summary,timeZone,accessRole']], signal },
+        'calendar.errors.calendarNotFound'
+      )
     ])
     if (!item) throw new Error(errorText('calendar.errors.eventNotFound'))
-    return toCalendarEvent(item, { id: entry.id, title: entry.summary, timeZone: entry.timeZone, writable: accessWrites(entry.accessRole) })
+    return toCalendarEvent(item, calendarOfPage(key.calendarId, page))
   }
 
   /**

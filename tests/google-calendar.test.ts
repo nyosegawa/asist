@@ -445,9 +445,10 @@ describe('the Google calendar through CalendarService', () => {
   }
   const getsEvent: Route = (call) =>
     call.method === 'GET' && call.url.pathname === `/calendar/v3/calendars/me%40example.com/events/ev1` ? json(timed) : undefined
+  /** The calendar's own fields of its events page, which is how Google answers a request for those fields alone. */
   const getsCalendar: Route = (call) =>
-    call.method === 'GET' && call.url.pathname === '/calendar/v3/users/me/calendarList/me%40example.com'
-      ? json({ id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', timeZone: 'Asia/Tokyo', primary: true })
+    call.method === 'GET' && call.url.pathname === '/calendar/v3/calendars/me%40example.com/events'
+      ? json({ summary: 'me@example.com', timeZone: 'Asia/Tokyo', accessRole: 'owner' })
       : undefined
 
   function serviceWith(google: ReturnType<typeof fakeGoogle>, approve = true) {
@@ -586,22 +587,23 @@ describe('the Google calendar through CalendarService', () => {
     expect(google.api().filter((call) => call.method !== 'GET')).toHaveLength(0)
   })
 
-  it('lists the calendars and reads an event when Google leaves out the time zone of a calendar, which its API allows', async () => {
-    const zoneless: Route = (call) => {
-      if (call.method !== 'GET') return undefined
-      if (call.url.pathname === '/calendar/v3/users/me/calendarList')
-        return json({
-          items: [
-            { id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', primary: true },
-            { id: 'team@group.calendar.google.com', summary: 'チーム', accessRole: 'writer', timeZone: 'Asia/Tokyo' }
-          ]
-        })
-      if (call.url.pathname === '/calendar/v3/users/me/calendarList/me%40example.com')
-        return json({ id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', primary: true })
-      return undefined
-    }
-    const { calendar } = calendarWith(fakeGoogle(refreshes, zoneless, getsEvent))
-    expect(await calendar.status()).toEqual({
+  it('lists the calendars, and reads and deletes an event in the zone its list gives, when the calendar list leaves out a zone', async () => {
+    // Google's API documents the zone of a calendar list entry as optional, and that of an events page as always there.
+    const zonelessList: Route = (call) =>
+      call.method === 'GET' && call.url.pathname === '/calendar/v3/users/me/calendarList'
+        ? json({
+            items: [
+              { id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', primary: true },
+              { id: 'team@group.calendar.google.com', summary: 'チーム', accessRole: 'writer', timeZone: 'Asia/Tokyo' }
+            ]
+          })
+        : undefined
+    const floating = { ...timed, start: { dateTime: timed.start.dateTime }, end: { dateTime: timed.end.dateTime } }
+    const getsFloating: Route = (call) =>
+      call.url.pathname === '/calendar/v3/calendars/me%40example.com/events/ev1' ? (call.method === 'DELETE' ? new Response(null, { status: 204 }) : json(floating)) : undefined
+    const google = fakeGoogle(refreshes, zonelessList, getsFloating, eventsOf('me@example.com', [floating]), eventsOf('team@group.calendar.google.com', []))
+    const { service } = serviceWith(google)
+    expect(await service.status()).toEqual({
       signIn: 'signedIn',
       calendars: [
         { id: 'me@example.com', title: 'me@example.com', writable: true },
@@ -609,12 +611,10 @@ describe('the Google calendar through CalendarService', () => {
       ],
       account: 'me@example.com'
     })
-    expect(await calendar.event(googleEventKey('me@example.com', 'ev1'))).toMatchObject({ title: '打合せ', timeZone: 'Asia/Tokyo' })
-    // A timed event without a zone of its own on such a calendar has no zone to be saved in.
-    const floating = { ...timed, start: { dateTime: timed.start.dateTime }, end: { dateTime: timed.end.dateTime } }
-    expect(() => toCalendarEvent(floating, { id: 'me@example.com', title: 'me@example.com', writable: true })).toThrow(
-      errorText('calendar.errors.googleBadResponse')
-    )
+    const [listed] = await service.list({ start: '2026-09-14T00:00:00+09:00', end: '2026-09-21T00:00:00+09:00' })
+    expect(listed.timeZone).toBe('Asia/Tokyo')
+    expect(await calendarWith(google).calendar.event(listed.id)).toEqual(listed)
+    await expect(service.change({ operation: 'delete', eventId: listed.id }, new AbortController().signal)).resolves.toMatchObject({ saved: true })
   })
 
   it('finds no event in a cancelled occurrence Google returns without its times', async () => {
