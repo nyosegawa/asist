@@ -114,9 +114,9 @@ describe('the requests a card makes for the conversation language and the region
 
   it('keeps the Japanese request of the clock card unchanged', async () => {
     const urls: string[] = []
-    respond({ results: [{ name: '東京都', latitude: 35.6, longitude: 139.6, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
-    await fetchPanel('clock', { city: '東京' })
-    expect(urls).toEqual(['https://geocoding-api.open-meteo.com/v1/search?name=Tokyo&count=1&language=ja'])
+    respond({ results: [{ name: '大阪市', latitude: 34.69, longitude: 135.5, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
+    await fetchPanel('clock', { city: '大阪' })
+    expect(urls).toEqual(['https://geocoding-api.open-meteo.com/v1/search?name=Osaka&count=1&language=ja'])
   })
 
   it('takes the Google News edition from the language and the region', async () => {
