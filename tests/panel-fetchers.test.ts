@@ -6,7 +6,8 @@ import { createTranslator } from '@shared/i18n'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { REGIONS, regionCurrency } from '@shared/conversation-locale'
 import { readErrorText } from '@shared/i18n/error-text'
-import { WHOLE_READ_LIMIT } from '@shared/files'
+import { MAX_TEXT_BYTES, WHOLE_READ_LIMIT } from '@shared/files'
+import { smallestLimitedFile } from './helpers/files'
 import munichGeocoding from './fixtures/weather/munich-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
 
@@ -313,7 +314,7 @@ describe('the files card (show_files)', () => {
     }
   )
 
-  it('tells the model of each file the card leaves out for its size, and of no file the card shows', async () => {
+  it('tells the model which files the card leaves out and why, and which it shows only the first part of', async () => {
     const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
     // Files lengthened without writing to them, so that a size past a limit costs no time.
     const file = (name: string, sizeBytes: number): string => {
@@ -322,16 +323,34 @@ describe('the files card (show_files)', () => {
       truncateSync(target, sizeBytes)
       return target
     }
-    const sheet = WHOLE_READ_LIMIT.xlsx!
-    const waveform = WHOLE_READ_LIMIT.audio!
+    const folder = path.join(root, 'many')
+    mkdirSync(folder)
+    const { MAX_DIRECTORY_ENTRIES } = await import('../src/main/services/file-preview')
+    for (let i = 0; i <= MAX_DIRECTORY_ENTRIES; i++) writeFileSync(path.join(folder, `${i}.txt`), '')
+    const { name: large, limit } = smallestLimitedFile()
     mocks.roots = [root]
     try {
-      const result = await fetchPanel('files', {
-        paths: [file('sales.xlsx', sheet + 1), file('budget.xlsx', sheet), file('lecture.mp3', waveform + 1), file('notes.md', 12)]
+      const { data } = await fetchPanel('files', {
+        paths: [
+          file(large, limit + 1),
+          file(`fits-${large}`, limit),
+          file('lecture.mp3', (WHOLE_READ_LIMIT.audio ?? 0) + 1),
+          file('bundle.zip', 64),
+          file('budget.xls', 64),
+          file('server.log', MAX_TEXT_BYTES + 1),
+          file('page.html', MAX_TEXT_BYTES + 1),
+          folder,
+          path.join(tmpdir(), 'elsewhere.md'),
+          file('notes.md', 12)
+        ]
       })
-      // The model is handed the data the fetcher prepared for it, or the card's props when there is none.
-      const { items } = (result.data ?? result.props) as { items: Array<{ name: string; notShown?: string }> }
-      expect(items.filter((item) => item.notShown).map((item) => item.name)).toEqual(['sales.xlsx'])
+      type Group = { files: string[]; why: string; button?: string }
+      const told = data as { notShown?: Group[]; partlyShown?: Group[] }
+      expect(told.notShown?.map((group) => group.files)).toEqual([[large], ['bundle.zip', 'budget.xls'], ['elsewhere.md']])
+      expect(new Set(told.notShown?.map((group) => group.why)).size).toBe(3)
+      // The card offers no button for a file it could not read.
+      expect(told.notShown?.map((group) => group.button !== undefined)).toEqual([true, true, false])
+      expect(told.partlyShown?.map((group) => group.files)).toEqual([['server.log', 'many']])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
