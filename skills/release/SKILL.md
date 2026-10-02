@@ -99,7 +99,7 @@ Until then the site describes the previous version, which is what the users stil
 ## 7. Clear the board
 
 Archive the 完了 cards, which this release shipped, and write a status update that names the version and
-what comes next (`project-board`, section 4).
+what comes next (`project-board`, section 5).
 
 ## When something goes wrong
 

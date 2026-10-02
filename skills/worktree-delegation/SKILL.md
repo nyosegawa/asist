@@ -52,9 +52,9 @@ permissions refused, and one that did so lost its shell for the rest of its task
 ## 4. While it runs
 
 - Keep working on your own files. Tell the user in one line what you handed over.
-- The subagent does not touch the project board. Its work has an issue whose card you keep in 作業中, and
-  you move it as its pull request opens, or to 判断待ち when its report leaves the user a decision
-  (`project-board`).
+- The subagent neither opens issues nor touches the project board; the brief says so. You give its
+  work an issue before it starts and move the card as its pull request opens, or to 判断待ち when its
+  report leaves the user a decision (`project-board`).
 - Do not run a long check such as `npm run demo:fit` while you are merging or while files it reads are
   changing; the demo reloads under it and the run fails for no reason in the code.
 - Never `cd` into a worktree. In Claude Code that moves the session's working directory there. Read its

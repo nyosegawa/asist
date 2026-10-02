@@ -14,7 +14,7 @@ in SKILL.md still applies; this adds what running many of them in parallel needs
 - An item the user has to decide is asked before the brief goes out, not left to the subagent.
 - Each group's pull request closes an issue of its own, on the board in 作業中 before its subagent starts
   (`project-board`). A list of fixes that belong together can be a parent issue with one sub-issue per
-  group.
+  group. A group that fixes a problem that must stay private has a draft card instead of an issue.
 
 ## Prepare each worktree yourself
 
@@ -60,7 +60,7 @@ to read first.
    Every item should have at least one failing test. A test file that cannot load on the base counts,
    but a test that fails only because a function's signature changed does not.
 4. Push and open the pull request (`pull-request` skill), with the body written from the report and
-   ending with `Closes #<issue>`, and move the card to レビュー・CI.
+   ending with `Closes #<issue>` (nothing for a draft card), and move the card to レビュー・CI.
 5. Have it reviewed by another subagent that only reads (below). Send the findings that hold to the
    subagent that made the change, then push its fixes and update the pull request's body.
 6. Wait for CI with `gh pr checks <number> --watch`, run in the background so the conversation goes on.

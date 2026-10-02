@@ -12,8 +12,8 @@ message from the body, so the title and body are written for `git log` as much a
 
 ## 1. Start on a branch
 
-- First give the work its issue and put its card in 作業中 on the board (`project-board`), so the user
-  sees it from the start.
+- Before the first edit, give the work its issue and its card in 作業中 (`project-board`, section 1),
+  so the user sees it from the start. A session that already has a branch of its own does this too.
 - Never commit on main. Cut a branch from the latest main: `git fetch origin` and
   `git switch -c <name> origin/main`. The name is English kebab-case and names the change
   (`bundle-uv-and-git`, `fix-zombie-group-stop`).
@@ -46,6 +46,7 @@ gh pr create --base main --title "<the subject>" --body-file <file>
   installed app's log). "Not checked" names what nobody verified. Screens go in as images.
 - The body ends with `Closes #<issue>` on a line of its own, before any line naming the agent, so the
   merge closes the issue and moves its card to 完了. Move the card to レビュー・CI now (`project-board`).
+  A fix for a problem that must stay private has a draft card instead, and closes nothing.
 - In the Claude Code desktop app, follow the pull request with its PR tools after creating it.
 
 ## 4. Review
@@ -66,8 +67,7 @@ gh pr create --base main --title "<the subject>" --body-file <file>
 ## 6. Hand over
 
 Report in Japanese: the pull request's URL, what it changes, the checks and their results, what the
-review found, and what was not checked. When something is left for the user to decide, move the card to
-判断待ち (`project-board`). Then stop. The user merges with a squash. Merge yourself only
+review found, and what was not checked. Then stop. The user merges with a squash. Merge yourself only
 when the user tells you to merge that pull request, and never turn on auto-merge unless asked.
 
 ## 7. After the merge
@@ -79,5 +79,6 @@ git branch -D <name>
 ```
 
 A squash merge makes the branch's commits unreachable from main, so `git branch -d` refuses; `-D` is
-expected. GitHub deletes the remote branch on merge, closes the issue and moves its card to 完了. To see the change in the installed app, install
+expected. GitHub deletes the remote branch on merge, closes the issue and moves its card to 完了; a draft card
+you move yourself (`project-board`). To see the change in the installed app, install
 from main (`install-mac-app` on a Mac, `install-windows-app` on Windows).
