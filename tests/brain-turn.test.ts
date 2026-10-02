@@ -6,7 +6,7 @@ import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
 import type { AgentJob, TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
-import type { ConversationMessage, ConversationPart, ConversationResult, NativeOutput, SearchEvent, StopReason } from '@shared/conversation'
+import type { ConversationMessage, ConversationPart, ConversationRequest, ConversationResult, NativeOutput, SearchEvent, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
@@ -121,23 +121,53 @@ const mocks = vi.hoisted(() => ({
   /** The agent jobs as the agent service keeps them. */
   jobs: new Map<string, AgentJob>(),
   contextBlock: (): string | null => null,
-  workClip: async (): Promise<unknown> => null
+  workClip: async (): Promise<unknown> => null,
+  conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' } as { provider: 'anthropic' | 'openai'; id: string },
+  /**
+   * The events of the Responses API for each OpenAI request, in order. A function among them is awaited
+   * in its place, so a response can wait for something before it goes on.
+   */
+  openaiResponses: [] as unknown[][],
+  /** The input of each OpenAI request, as the API receives it. */
+  openaiInputs: [] as unknown[][]
 }))
 
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('../src/main/services/store', () => ({
   dataPath: (...parts: string[]) => path.join(mocks.userData, ...parts)
 }))
-vi.mock('../src/main/services/llm', () => ({
-  providerKey: () => mocks.key,
-  completeText: vi.fn(async (): Promise<{ text: string; stop: StopReason }> => ({ text: '', stop: 'end' })),
-  streamConversation: (request: { messages: ConversationMessage[]; system: Array<{ text: string }>; tools: unknown; signal?: AbortSignal }) => {
-    mocks.requests.push({ messages: structuredClone(request.messages), system: request.system, tools: request.tools })
-    const script = mocks.rounds.shift()
-    if (!script) throw new Error('no scripted round left')
-    return new FakeStream(script, request.signal)
+vi.mock('openai', async () => ({
+  APIError: (await import('openai/core/error')).APIError,
+  default: class FakeOpenAI {
+    responses = {
+      create: async (params: { input: unknown[] }) => {
+        mocks.openaiInputs.push(structuredClone(params.input))
+        const steps = mocks.openaiResponses.shift() ?? []
+        return (async function* () {
+          for (const step of steps) {
+            if (typeof step === 'function') await step()
+            else yield step
+          }
+        })()
+      }
+    }
   }
 }))
+vi.mock('../src/main/services/llm', async () => {
+  const { openaiAdapter } = await import('../src/main/services/llm/openai')
+  return {
+    providerKey: () => mocks.key,
+    completeText: vi.fn(async (): Promise<{ text: string; stop: StopReason }> => ({ text: '', stop: 'end' })),
+    streamConversation: (request: ConversationRequest) => {
+      mocks.requests.push({ messages: structuredClone(request.messages) as ConversationMessage[], system: [...request.system], tools: request.tools })
+      // An OpenAI round runs the adapter itself over the scripted events, so what it keeps is what the next request sends.
+      if (request.model.provider === 'openai') return openaiAdapter.stream(request, 'test-key')
+      const script = mocks.rounds.shift()
+      if (!script) throw new Error('no scripted round left')
+      return new FakeStream(script, request.signal)
+    }
+  }
+})
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({
     uiLocale: 'ja-JP',
@@ -145,7 +175,7 @@ vi.mock('../src/main/services/settings', () => ({
     region: 'JP',
     persona: '',
     ttsEngine: mocks.ttsEngine,
-    conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' },
+    conversationModel: mocks.conversationModel,
     bridgeModel: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
     conversationLogRetentionDays: 30,
     agentMode: 'readonly',
@@ -300,6 +330,9 @@ describe('brain turn', () => {
     mocks.jobs = new Map()
     mocks.contextBlock = () => null
     mocks.workClip = async () => null
+    mocks.conversationModel = { provider: 'anthropic', id: 'claude-sonnet-5' }
+    mocks.openaiResponses = []
+    mocks.openaiInputs = []
   })
 
   it('speaks the reply of a normal turn, keeps it in the history and the conversation log, and reports usage in metrics', async () => {
@@ -531,6 +564,40 @@ describe('brain turn', () => {
     expect(unansweredCalls(sent)).toEqual([])
     const results = sent.flatMap((message) => message.parts).filter((part) => part.type === 'tool_result')
     expect(results).toMatchObject([{ callId: 't1' }, { callId: 't2', isError: true }])
+    expect(timers.create).toHaveBeenCalledOnce()
+  })
+
+  it('keeps an OpenAI round that failed on a call it never handed over in a form the next request is not refused for, with every call answered', async () => {
+    mocks.conversationModel = { provider: 'openai', id: 'gpt-5.5' }
+    const { brain } = await loadBrain()
+    const timers = await import('../src/main/services/timers')
+    vi.mocked(timers.create).mockReturnValue({ id: 'timer-1', seconds: 300 } as never)
+    const timer = (id: string, args: string): unknown => ({
+      type: 'response.output_item.done',
+      item: { type: 'function_call', id: `fc_${id}`, call_id: id, name: 'show_timer', arguments: args, status: 'completed' }
+    })
+    mocks.openaiResponses = [
+      [
+        { type: 'response.output_item.done', item: { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'enc' } },
+        timer('call_1', '{"seconds":300}'),
+        // The first call has run when the second arrives with its arguments broken, which fails the response.
+        async () => vi.waitFor(() => expect(timers.create).toHaveBeenCalled()),
+        timer('call_2', '{"seconds":')
+      ],
+      [
+        { type: 'response.output_text.delta', delta: 'はい。' },
+        { type: 'response.output_item.done', item: { type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: 'はい。' }] } },
+        { type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 10, output_tokens: 2 } } }
+      ]
+    ]
+    await runToDone(brain, 'タイマーを5分と10分でかけて')
+    await runToDone(brain, 'ありがとう')
+    const input = mocks.openaiInputs[1] as Array<{ type?: string; id?: string; call_id?: string }>
+    const called = input.filter((item) => item.type === 'function_call').map((item) => item.call_id)
+    // The API refuses a function call without its output, and a reasoning item without the item that followed it.
+    expect(called).toEqual(['call_1'])
+    expect(input.filter((item) => item.type === 'function_call_output').map((item) => item.call_id)).toEqual(called)
+    expect(input.filter((item, i) => item.type === 'reasoning' && typeof input[i + 1]?.id !== 'string')).toEqual([])
     expect(timers.create).toHaveBeenCalledOnce()
   })
 
