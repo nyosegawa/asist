@@ -64,10 +64,15 @@ interface Scene {
   microphone: Microphone
   /** How long the reply has been playing when the microphone hears its first audio. */
   leadMs: number
-  /** How much later than the rest the first delivery arrives. */
-  firstLateMs?: number
+  /** How much later than the rest a delivery arrives, by its index from 0. */
+  lateMs?: Record<number, number>
   /** A stretch of microphone audio that never arrives, as while main starts the helper again. */
   lost?: { fromMs: number; toMs: number }
+  /**
+   * Times the renderer is busy. What arrives meanwhile is handled when it is free again, source by source, and the
+   * microphone's first, as Electron 43.7.7 was measured to do now and then after a stall of 150 to 240 ms.
+   */
+  stalls?: Array<{ fromMs: number; toMs: number }>
 }
 
 interface Played {
@@ -128,11 +133,15 @@ async function play(scene: Scene, fromMs: number, toMs: number): Promise<Played>
     pass(frame)
   }
 
+  const handled = (arrives: number, after: number): number => {
+    const stall = scene.stalls?.find(({ fromMs, toMs }) => arrives >= fromMs && arrives < toMs)
+    return stall ? stall.toMs + after : arrives
+  }
   const endMs = toMs + 1_000
   const tapMs = 128 / 48
   for (let tap = 0; -scene.leadMs + (tap + 1) * tapMs < endMs; tap++) {
     const quantum = Float32Array.from({ length: 128 }, (_, k) => 10 + (-scene.leadMs + ((tap * 128 + k) / 48)) / 1000)
-    timeline.at(-scene.leadMs + (tap + 1) * tapMs, () => audio.pushAssistant(quantum, 48_000))
+    timeline.at(handled(-scene.leadMs + (tap + 1) * tapMs, 0.001), () => audio.pushAssistant(quantum, 48_000))
   }
   const deliveryMs = microphone.source === 'helper' ? microphone.deliveryMs : 1024 / 48
   const latencyMs = microphone.source === 'helper' ? 15 : 5
@@ -142,8 +151,8 @@ async function play(scene: Scene, fromMs: number, toMs: number): Promise<Played>
     const heardFrom = d * deliveryMs
     if (scene.lost && heardFrom >= scene.lost.fromMs && heardFrom < scene.lost.toMs) continue
     const frame = Float32Array.from({ length }, (_, k) => 10 + (d * length + k) / 48_000)
-    const arrives = (d + 1) * deliveryMs + latencyMs + jitterMs[d % jitterMs.length] + (d === 0 ? scene.firstLateMs ?? 0 : 0)
-    timeline.at(arrives, () => handOver(frame))
+    const arrives = (d + 1) * deliveryMs + latencyMs + jitterMs[d % jitterMs.length] + (scene.lateMs?.[d] ?? 0)
+    timeline.at(handled(arrives, 0), () => handOver(frame))
   }
   timeline.run()
   return result
@@ -199,7 +208,7 @@ describe('VapAudio', () => {
 
   it.each([100, 125])('lines the played audio up again for good within a stretch when the first of %i ms deliveries arrived late', async (deliveryMs) => {
     const microphone: Microphone = { source: 'helper', deliveryMs, noiseSuppression: true }
-    const { paired, silent, worstMs, breaks } = await play({ microphone, leadMs: 200, firstLateMs: 100 }, 1_000, 3_000)
+    const { paired, silent, worstMs, breaks } = await play({ microphone, leadMs: 200, lateMs: { 0: 100 } }, 1_000, 3_000)
     expect(paired).toBe(2 * SECOND)
     expect(silent).toBe(0)
     expect(breaks).toBe(0)
@@ -211,6 +220,31 @@ describe('VapAudio', () => {
     const { paired, silent, worstMs } = await play({ microphone, leadMs: 1_000, lost: { fromMs: 2_000, toMs: 3_000 } }, 3_000, 5_000)
     expect(paired).toBe(2 * SECOND)
     expect(silent).toBe(0)
+    expect(worstMs).toBeLessThan(FRAME_MS)
+  })
+
+  it.each<[string, number, Microphone]>([
+    ['the native helper\'s 100 ms without DeepFilterNet', 2_000, { source: 'helper', deliveryMs: 100, noiseSuppression: false }],
+    ['the native helper\'s 100 ms without DeepFilterNet', 2_250, { source: 'helper', deliveryMs: 100, noiseSuppression: false }],
+    ['getUserMedia\'s 21 ms', 2_000, { source: 'getUserMedia' }],
+    ['getUserMedia\'s 21 ms', 2_250, { source: 'getUserMedia' }]
+  ])('moves no played audio after the renderer handled the microphone before the tap, with %s and a stall at %i ms', async (_name, stallMs, microphone) => {
+    // The renderer is busy for 50 ms. The frames sent right then may lack played audio, and nothing after them may.
+    const stalls = [{ fromMs: stallMs, toMs: stallMs + 50 }]
+    const { paired, silent, breaks } = await play({ microphone, leadMs: 1_000, stalls }, stallMs + 125, stallMs + 3_000)
+    expect(paired).toBe(2.875 * SECOND)
+    expect({ silent, breaks }).toEqual({ silent: 0, breaks: 0 })
+  })
+
+  it.each([
+    ['through DeepFilterNet', true],
+    ['without DeepFilterNet', false]
+  ])('keeps the played audio whole when one of the native helper\'s 400 ms deliveries comes 30 ms late every 3.2 s, %s', async (_name, noiseSuppression) => {
+    const microphone: Microphone = { source: 'helper', deliveryMs: 400, noiseSuppression }
+    const lateMs = Object.fromEntries(Array.from({ length: 5 }, (_, i) => [5 + 8 * i, 30]))
+    const { paired, silent, breaks, worstMs } = await play({ microphone, leadMs: 1_000, lateMs }, 1_000, 16_000)
+    expect(paired).toBe(15 * SECOND)
+    expect({ silent, breaks }).toEqual({ silent: 0, breaks: 0 })
     expect(worstMs).toBeLessThan(FRAME_MS)
   })
 
