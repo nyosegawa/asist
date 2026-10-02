@@ -218,7 +218,36 @@ describe('allowedPath with the Windows rules', () => {
     expect(share.asked.some((asked) => asked.includes('attacker'))).toBe(false)
     expect(allowedPath('\\\\NAS\\team\\reports\\q3.pdf', ['\\\\nas\\team\\reports'], share)).not.toBeNull()
   })
+
+  it('allows again the path it returned for a file on a drive that stands for a share or a folder, as the files card asks for it next', () => {
+    const drives = mappedDisk({ 'Z:': '\\\\nas\\team', 'S:': 'C:\\work' }, '\\\\nas\\team\\reports\\q3.png', 'C:\\work\\charts\\a.png')
+    for (const [root, file] of [['Z:\\reports', 'Z:\\reports\\q3.png'], ['S:\\charts', 'S:\\charts\\a.png']]) {
+      const returned = allowedPath(file, [root], drives)
+      expect(returned).not.toBeNull()
+      expect([root, allowedPath(returned!, [root], drives)]).toEqual([root, returned])
+    }
+  })
+
+  it('never asks a server about a path because a root lies on a drive that stands for another share', () => {
+    const drives = mappedDisk({ 'Z:': '\\\\nas\\team' }, '\\\\nas\\team\\reports\\q3.png', '\\\\attacker.example\\share\\a.png')
+    expect(allowedPath('\\\\attacker.example\\share\\a.png', ['Z:\\reports'], drives)).toBeNull()
+    expect(drives.asked.some((asked) => asked.includes('attacker'))).toBe(false)
+  })
 })
+
+/**
+ * A windowsDisk with drives that stand for another place, as a drive mapped with net use stands for a share and
+ * one made with subst for a folder: the OS resolves a path on such a drive to that place.
+ */
+function mappedDisk(drives: Record<string, string>, ...files: string[]): PathSystem & { asked: string[] } {
+  const disk = windowsDisk(...files)
+  const place = (target: string): string => {
+    const resolved = path.win32.resolve(target)
+    const drive = drives[resolved.slice(0, 2).toUpperCase()]
+    return drive === undefined ? resolved : path.win32.join(drive, resolved.slice(2))
+  }
+  return { ...disk, realpath: (target) => disk.realpath(place(target)) }
+}
 
 describe('readFileItem', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'asist-files-'))

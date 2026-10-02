@@ -35,29 +35,36 @@ export function allowedPath(target: string, allowedRoots: readonly string[], sys
   const windows = paths === path.win32
   if (!paths.isAbsolute(target)) return null
   const roots = allowedRoots.filter((root) => paths.isAbsolute(root))
+  const resolvedRoots = new Map<string, string | null>()
+  const resolveRoot = (root: string): string | null => {
+    if (!resolvedRoots.has(root)) {
+      try {
+        resolvedRoots.set(root, realPath(root, system))
+      } catch {
+        // A root the OS refuses to resolve, such as the folder of a past job whose parent became unreadable,
+        // allows nothing, and must not make the files under the other roots unreadable.
+        resolvedRoots.set(root, null)
+      }
+    }
+    return resolvedRoots.get(root)!
+  }
   if (windows) {
     // NTFS opens "report.md:name" as the stream "name" of report.md, data that no listing of the folder shows.
     if (target.slice(paths.parse(target).root.length).includes(':')) return null
-    // Resolving a path on a server connects to it and hands it the user's Windows credentials, so a target
-    // written on a drive or a share that no root is written on is refused before the disk is asked. A link
-    // under a root that points to another server is still followed.
+    // Resolving a path on a server connects to it and hands it the user's Windows credentials, so a target on a
+    // drive or a share that holds no root is refused before the disk is asked. A root counts on its volume as
+    // written and as the OS resolves it: a drive mapped with net use resolves to its share and one made with
+    // subst to the folder it stands for, and the path returned here, which the files card asks for again, is
+    // the resolved one. A link under a root that points to another server is still followed.
     const volume = (p: string): string => paths.parse(paths.normalize(p)).root.toLowerCase()
-    if (!roots.some((root) => volume(root) === volume(target))) return null
+    const onTargetVolume = (p: string | null): boolean => p !== null && volume(p) === volume(target)
+    if (!roots.some(onTargetVolume) && !roots.some((root) => onTargetVolume(resolveRoot(root)))) return null
   }
   // Windows matches names regardless of letter case.
   const key = windows ? (p: string): string => p.toLowerCase() : (p: string): string => p
   // path.join leaves a single separator at the end, so a root such as "/" or "C:\" is a prefix of every path on it too.
   const under = (p: string, root: string | null): boolean =>
     root !== null && (key(p) === key(root) || key(p).startsWith(key(paths.join(root, paths.sep))))
-  const resolveRoot = (root: string): string | null => {
-    try {
-      return realPath(root, system)
-    } catch {
-      // A root the OS refuses to resolve, such as the folder of a past job whose parent became unreadable,
-      // allows nothing, and must not make the files under the other roots unreadable.
-      return null
-    }
-  }
   let resolved: string | null
   try {
     resolved = realPath(target, system)

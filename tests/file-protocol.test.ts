@@ -42,15 +42,18 @@ describe('asist-file:// URLs and paths', () => {
     expect(filePathFromUrl('asist-file://attacker.example/etc/passwd', MACOS)).toBeNull()
   })
 
-  it('reads a server in a Windows URL as a share that is refused before the disk is asked when no allowed folder is on it', async () => {
+  it('reads a server in a Windows URL as a share that is refused before anything on it is asked when no allowed folder is on it', async () => {
     const { filePathFromUrl } = await load()
-    const disk: PathSystem = { path: path.win32, realpath: vi.fn((target: string) => target) }
+    const realpath = vi.fn((target: string) => target)
+    const disk: PathSystem = { path: path.win32, realpath }
+    const roots = ['C:\\Users\\me', '\\\\nas\\team\\reports']
     for (const url of ['asist-file://attacker.example/share/a.png', 'asist-file://nas/other/a.pdf']) {
       const requested = filePathFromUrl(url, { windows: true })
       expect(requested).not.toBeNull()
-      expect(allowedPath(requested!, ['C:\\Users\\me', '\\\\nas\\team\\reports'], disk)).toBeNull()
+      expect(allowedPath(requested!, roots, disk)).toBeNull()
     }
-    expect(disk.realpath).not.toHaveBeenCalled()
+    // The roots themselves may be resolved, to learn the share a mapped drive stands for.
+    expect(realpath.mock.calls.map(([asked]) => asked).filter((asked) => !roots.includes(asked))).toEqual([])
   })
 
   it('refuses a Windows URL that names a server but no share on it, which allowedPath would take for a root without a drive', async () => {
