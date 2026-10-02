@@ -68,6 +68,15 @@ const INPUT_STALL_MS = 1_000
  */
 const VAP_STALE_MS = 500
 
+/**
+ * How long the turn-taking values may keep arriving too old to use before the user hears that MaAI is behind. The
+ * catch-up after a stall stays under it: a worker at 31 ms a frame, as on a Mac, is back inside VAP_STALE_MS about
+ * 1 s after a 2 s stall, and one at 60 ms, the median on a Core i9-9900K (2026-09-27), about 4.4 s after. A worker
+ * held to two thirds of real time, as one on a loaded Mac was (2026-10-02), passes VAP_STALE_MS 1.5 s into the load
+ * and stays past it until MaAI drops its queue at 8 s behind, so the user hears of it about 6.5 s into the load.
+ */
+const MAAI_BEHIND_NOTICE_MS = 5_000
+
 type VoiceEvents = {
   state: VoiceState
   level: number
@@ -112,6 +121,11 @@ type VoiceEvents = {
    * once until MaAI is turned off and on again; the cause is in main's log.
    */
   maaiUnavailable: undefined
+  /**
+   * MaAI's turn-taking values have kept arriving too old to use, so the fixed hangover decides the end of speech
+   * until it catches up. It comes once while the microphone stays on.
+   */
+  maaiBehind: undefined
   error: string
 }
 
@@ -196,6 +210,10 @@ export class VoiceController {
   private vapStateAt = 0
   /** The same for its bcReact, bcEmo and nods, which another of the worker's models makes at its own pace. */
   private backchannelStateAt = 0
+  /** When the turn-taking values began arriving too old to use, while none since has been recent enough. */
+  private turnBehindSince: number | null = null
+  /** The run of the microphone, by micGeneration, that has said MaAI is behind. */
+  private maaiBehindSaidIn = 0
   private vapUnsubscribe: (() => void) | null = null
   private vapAudio = new VapAudio((user, assistant) => {
     void window.api.vapPush(user, assistant).catch(() => {})
@@ -432,6 +450,7 @@ export class VoiceController {
       this.vapState = state
       this.vapStateAt = now - state.turnLagMs
       this.backchannelStateAt = now - state.backchannelLagMs
+      this.watchTurnLag(now)
       this.maybeNod()
     })
     void window.api.vapStart().then(
@@ -453,6 +472,23 @@ export class VoiceController {
     if (!this.usesMaai() || this.maaiUnavailableSaid) return
     this.maaiUnavailableSaid = true
     this.events.emit('maaiUnavailable')
+  }
+
+  /**
+   * Says once while the microphone stays on that MaAI is behind, when its turn-taking values have kept arriving too
+   * old to use for MAAI_BEHIND_NOTICE_MS. It is judged on the estimates alone, so neither a worker that sends none,
+   * such as one main is starting again after it ended, nor the gap before the first estimate after each start of the
+   * microphone counts as a lag.
+   */
+  private watchTurnLag(now: number): void {
+    if (this.state === 'off' || !this.usesMaai() || this.recentVap(this.vapStateAt)) {
+      this.turnBehindSince = null
+      return
+    }
+    this.turnBehindSince ??= now
+    if (now - this.turnBehindSince < MAAI_BEHIND_NOTICE_MS || this.maaiBehindSaidIn === this.micGeneration) return
+    this.maaiBehindSaidIn = this.micGeneration
+    this.events.emit('maaiBehind')
   }
 
   /**
@@ -622,6 +658,7 @@ export class VoiceController {
     this.setOverlap({ kind: 'none' })
     this.vapAudio.reset()
     this.vapState = null
+    this.turnBehindSince = null
     this.vad.reset()
     this.silero.dispose()
   }

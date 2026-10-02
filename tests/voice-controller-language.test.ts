@@ -372,6 +372,105 @@ describe('MaAI that does not start', () => {
   })
 })
 
+describe('MaAI that falls behind the audio', () => {
+  /** How fast a worker gets through its frames, as a multiple of real time, for a stretch of wall time. */
+  interface Stretch {
+    ms: number
+    speed: number
+  }
+
+  let clock = 0
+
+  beforeEach(() => {
+    clock = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => clock)
+    return () => vi.mocked(performance.now).mockRestore()
+  })
+
+  /**
+   * Turns the microphone on with MaAI, and returns a stand-in for vap_worker.py: it is handed an 80 ms frame of
+   * audio every 80 ms of the clock, gets through them at the speed of each stretch, and sends an estimate for each
+   * frame it finishes with how much newer audio had reached it by then.
+   */
+  async function listeningWithWorker(): Promise<{
+    controller: InstanceType<typeof VoiceController>
+    said: ReturnType<typeof vi.fn>
+    work: (...stretches: Stretch[]) => void
+  }> {
+    const listeners: Array<(state: VapState) => void> = []
+    vi.mocked(window.api.onVapState).mockImplementation((listener: (state: VapState) => void) => {
+      listeners.push(listener)
+      return vi.fn()
+    })
+    const controller = new VoiceController()
+    controller.nativeMicPreferred = false
+    controller.partialIntervalMs = 0
+    controller.vapEnabled = true
+    controller.conversationLocale = 'ja-JP'
+    internals(controller).microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    const said = vi.fn()
+    controller.events.on('maaiBehind', said)
+    await controller.enable()
+    let received = 0
+    let done = 0
+    const work = (...stretches: Stretch[]): void => {
+      for (const { ms, speed } of stretches) {
+        for (let elapsed = 0; elapsed < ms; elapsed += 10) {
+          clock += 10
+          received += 10 / 80
+          const before = Math.floor(done)
+          done = Math.min(received, done + (speed * 10) / 80)
+          for (let frame = before + 1; frame <= Math.floor(done); frame++) {
+            const lagMs = Math.round((Math.floor(received) - frame) * 80)
+            for (const listener of listeners) listener({ ...midSentence, turnLagMs: lagMs, backchannelLagMs: lagMs })
+          }
+        }
+      }
+    }
+    return { controller, said, work }
+  }
+
+  /** A worker at its measured 31 ms a frame. */
+  const keepingUp = (ms: number): Stretch => ({ ms, speed: 80 / 31 })
+  /** A worker on a loaded Mac, which got through 248 frames in 30 s of audio, two thirds of real time. */
+  const loaded = (ms: number): Stretch => ({ ms, speed: 248 / 375 })
+
+  it('says once that MaAI fell behind when the load holds it back, and once again after the microphone is turned on again', async () => {
+    const { controller, said, work } = await listeningWithWorker()
+
+    work(keepingUp(2_000), loaded(15_000))
+    expect(said).toHaveBeenCalledOnce()
+
+    // The load lifts, the worker catches up, and the load comes back while the microphone stays on.
+    work(keepingUp(10_000), loaded(15_000))
+    expect(said).toHaveBeenCalledOnce()
+
+    controller.disable()
+    await controller.enable()
+    work(loaded(15_000))
+    expect(said).toHaveBeenCalledTimes(2)
+    controller.disable()
+  })
+
+  it('says nothing when the worker stalls for a moment and catches up', async () => {
+    const { controller, said, work } = await listeningWithWorker()
+
+    work(keepingUp(2_000), { ms: 2_000, speed: 0 }, keepingUp(10_000), { ms: 2_000, speed: 0 }, keepingUp(10_000))
+
+    expect(said).not.toHaveBeenCalled()
+    controller.disable()
+  })
+
+  it('says nothing when the worker stops sending estimates, which main logs', async () => {
+    const { controller, said, work } = await listeningWithWorker()
+
+    work(keepingUp(2_000), { ms: 30_000, speed: 0 })
+
+    expect(said).not.toHaveBeenCalled()
+    controller.disable()
+  })
+})
+
 describe('the list of Whisper hallucinations by conversation language', () => {
   async function transcribe(locale: 'ja-JP' | 'en-US', text: string): Promise<string[]> {
     const controller = new VoiceController()
