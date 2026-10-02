@@ -53,6 +53,13 @@ describe('asist-file:// URLs and paths', () => {
     expect(disk.realpath).not.toHaveBeenCalled()
   })
 
+  it('refuses a Windows URL that names a server but no share on it, which allowedPath would take for a root without a drive', async () => {
+    const { filePathFromUrl } = await load()
+    for (const url of ['asist-file://attacker.example/', 'asist-file://nas/team/..', 'asist-file://nas//team/a.pdf']) {
+      expect([url, filePathFromUrl(url, { windows: true })]).toEqual([url, null])
+    }
+  })
+
   it('keeps a #, a ? or a % in a file name as part of the path rather than a fragment or a query', async () => {
     const { fileUrl, filePathFromUrl } = await load()
     for (const file of ['/Users/me/Documents/C# notes.pdf', '/Users/me/Documents/why?.png', '/Users/me/Documents/Issue #12.png', '/Users/me/Documents/100%.png']) {

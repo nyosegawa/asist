@@ -123,6 +123,9 @@ export function filePathFromUrl(url: string, rules?: UrlRules): string | null {
     return null
   }
   if (parsed.protocol !== `${FILE_SCHEME}:` || !parsed.pathname.startsWith('/')) return null
+  // A path on a server starts with the name of a share. \\server\ alone normalizes to a root without a drive,
+  // which allowedPath would match with any root written without one and then resolve on that server.
+  if (parsed.host !== '' && !/^\/[^/]+/.test(parsed.pathname)) return null
   try {
     // A file:// URL takes a raw backslash for a separator, while in an asist-file:// URL it belongs to the
     // name, so it is escaped before the path is carried over.
