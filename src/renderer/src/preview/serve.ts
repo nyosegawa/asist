@@ -7,6 +7,11 @@
 /** A document open in the preview page: what a viewer can ask of it by name, and how to let go of what it holds. */
 export interface PreviewDocument {
   methods: Record<string, (args: never) => unknown>
+  /**
+   * The version of the file the document was opened from, such as the zip reader's. A frame started after one
+   * stopped opens the document again, and the viewers' side compares the versions to tell a file saved since.
+   */
+  version?: string
   close?(): void
 }
 
@@ -29,7 +34,7 @@ export type PreviewRequest =
  */
 export const CONNECTED = 'connected'
 
-export type PreviewReply = typeof CONNECTED | { id: number; value: unknown } | { id: number; error: string }
+export type PreviewReply = typeof CONNECTED | { id: number; value: unknown; version?: string } | { id: number; error: string }
 
 /**
  * The buffers and bitmaps in a result, which go to the viewer without a copy. A method gives up what it
@@ -81,10 +86,10 @@ export function servePreview(port: MessagePort, kinds: PreviewKinds): void {
 
   async function answer(request: Extract<PreviewRequest, { type: 'call' }>): Promise<void> {
     try {
-      const { methods } = await opened(request)
+      const { methods, version } = await opened(request)
       if (!Object.hasOwn(methods, request.method)) throw new Error(`the ${request.kind} preview has no method ${request.method}`)
       const value = await methods[request.method](request.args as never)
-      port.postMessage({ id: request.id, value } satisfies PreviewReply, transferables(value))
+      port.postMessage({ id: request.id, value, version } satisfies PreviewReply, transferables(value))
     } catch (error) {
       port.postMessage({ id: request.id, error: error instanceof Error ? error.message : String(error) } satisfies PreviewReply)
     }

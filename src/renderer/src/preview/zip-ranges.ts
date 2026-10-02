@@ -36,6 +36,11 @@ interface CentralRecord extends ZipEntry {
 }
 
 export interface RangedZip {
+  /**
+   * The version of the file the zip is read from: its length and, where the server gives one, the ETag of the answer
+   * that gave it. Every later answer has to come from the same version.
+   */
+  readonly version: string
   readonly entries: ReadonlyMap<string, ZipEntry>
   /** The content of one entry, inflated. */
   read(name: string): Promise<Bytes>
@@ -75,11 +80,12 @@ const damaged = (): Error => new Error(errorKey('files.errors.zipDamaged'))
 const changed = (): Error => new Error(errorKey('files.errors.changedWhileReading'))
 const loadFailed = (status: number): Error => new Error(errorKey('files.errors.loadFailed', { status }))
 
-/** The bytes of an answer to a Range request, where they start in the file, and how long the file is now. */
+/** The bytes of an answer to a Range request, where they start in the file, how long the file is now, and its ETag. */
 interface Answer {
   bytes: Bytes
   start: number
   size: number
+  etag: string | null
 }
 
 /**
@@ -97,7 +103,7 @@ async function fetchRange(url: string, range: string): Promise<Answer | null> {
     if (response.status === 206) throw loadFailed(response.status)
     return null
   }
-  return { bytes: new Uint8Array(await response.arrayBuffer()), start: Number(answered[1]), size: Number(answered[2]) }
+  return { bytes: new Uint8Array(await response.arrayBuffer()), start: Number(answered[1]), size: Number(answered[2]), etag: response.headers.get('ETag') }
 }
 
 const viewOf = (bytes: Bytes): DataView => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -309,13 +315,15 @@ export async function openZip(url: string): Promise<RangedZip> {
   const tail = await fetchRange(url, `bytes=-${TAIL_LENGTH}`)
   // A suffix range holds no byte of an empty file alone.
   if (!tail) throw damaged()
-  const { size, start: tailStart } = tail
+  const { size, start: tailStart, etag } = tail
   // A server that does not take a suffix range, such as Vite's for a file over 64 KB, sends other bytes.
   if (tailStart !== Math.max(0, size - TAIL_LENGTH) || tail.bytes.length !== size - tailStart) throw loadFailed(206)
   const fetchBytes = async (start: number, end: number): Promise<Bytes> => {
     if (start === end) return new Uint8Array(0)
     const answer = await fetchRange(url, `bytes=${start}-${end - 1}`)
-    if (!answer || answer.size !== size || answer.start !== start || answer.bytes.length !== end - start) throw changed()
+    // A file saved again at the same length shows only in its ETag, which asist-file makes of the length and the
+    // time of change.
+    if (!answer || answer.size !== size || answer.etag !== etag || answer.start !== start || answer.bytes.length !== end - start) throw changed()
     return answer.bytes
   }
   const bytes = async (start: number, end: number): Promise<Bytes> => {
@@ -359,6 +367,7 @@ export async function openZip(url: string): Promise<RangedZip> {
   const byName = new Map(records.map((record) => [record.name, record]))
 
   return {
+    version: JSON.stringify([size, etag]),
     entries: byName,
 
     async read(name) {

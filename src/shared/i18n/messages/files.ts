@@ -811,6 +811,19 @@ export const files = defineMessages({
       'es-419': 'No se pudieron leer las diapositivas: {message}',
       'es-ES': 'No se han podido leer las diapositivas: {message}'
     },
+    pptxPictureFailed: {
+      'ja-JP': 'スライドの画像を読めません: {message}',
+      'en-US': "Couldn't read a picture on the slide: {message}",
+      'fr-FR': 'Impossible de lire une image de la diapositive : {message}',
+      'de-DE': 'Ein Bild der Folie ließ sich nicht lesen: {message}',
+      'hi-IN': 'स्लाइड की एक तस्वीर पढ़ी नहीं जा सकी: {message}',
+      'id-ID': 'Tidak bisa membaca gambar di slide ini: {message}',
+      'it-IT': "Impossibile leggere un'immagine della slide: {message}",
+      'ko-KR': '슬라이드의 이미지를 읽을 수 없습니다: {message}',
+      'pt-BR': 'Não foi possível ler uma imagem do slide: {message}',
+      'es-419': 'No se pudo leer una imagen de la diapositiva: {message}',
+      'es-ES': 'No se ha podido leer una imagen de la diapositiva: {message}'
+    },
     pptxEmpty: {
       'ja-JP': 'スライドがありません',
       'en-US': 'There are no slides',
@@ -1256,19 +1269,6 @@ export const files = defineMessages({
       'pt-BR': 'O arquivo do PowerPoint não tem o tamanho dos slides.',
       'es-419': 'El archivo de PowerPoint no tiene el tamaño de las diapositivas.',
       'es-ES': 'El archivo de PowerPoint no indica el tamaño de las diapositivas.'
-    },
-    entryMissing: {
-      'ja-JP': 'PowerPoint に {path} がありません。',
-      'en-US': 'The PowerPoint file has no {path}.',
-      'fr-FR': 'Le fichier PowerPoint ne contient pas {path}.',
-      'de-DE': 'In der PowerPoint-Datei fehlt {path}.',
-      'hi-IN': 'PowerPoint फ़ाइल में {path} नहीं है।',
-      'id-ID': 'File PowerPoint ini tidak punya {path}.',
-      'it-IT': 'Nel file PowerPoint manca {path}.',
-      'ko-KR': 'PowerPoint 파일에서 {path} 항목을 찾을 수 없습니다.',
-      'pt-BR': 'O arquivo do PowerPoint não tem {path}.',
-      'es-419': 'El archivo de PowerPoint no tiene {path}.',
-      'es-ES': 'El archivo de PowerPoint no contiene {path}.'
     },
     slideRefMissing: {
       'ja-JP': 'スライド {relId} の参照がありません。',
