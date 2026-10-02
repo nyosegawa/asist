@@ -143,6 +143,19 @@ describe('settings persistence', () => {
     expect(() => reloaded.getSettings()).toThrow(SETTINGS_INVALID)
   })
 
+  it('saves no folder to read files under or to start jobs in that is not written in full, and still saves beside one an older file holds', async () => {
+    const settings = await import('../src/main/services/settings')
+    const saved = settings.saveSettings({ fileRoots: [mocks.userData] })
+    expect(() => settings.saveSettings({ fileRoots: [mocks.userData, 'Documents'] })).toThrow('[asist:app.storage.folderNotFull')
+    expect(() => settings.saveSettings({ agentCwd: 'work' })).toThrow('[asist:app.storage.folderNotFull')
+    expect(settings.getSettings()).toEqual(saved)
+    const target = path.join(mocks.userData, 'settings.json')
+    fs.writeFileSync(target, JSON.stringify({ ...JSON.parse(fs.readFileSync(target, 'utf8')), fileRoots: ['Documents'] }))
+    vi.resetModules()
+    const reloaded = await import('../src/main/services/settings')
+    expect(reloaded.saveSettings({ persona: 'after' })).toMatchObject({ persona: 'after', fileRoots: ['Documents'] })
+  })
+
   it('trims the model name and accepts 0, which turns partial recognition off', async () => {
     const settings = await import('../src/main/services/settings')
     expect(settings.saveSettings({ conversationModel: { provider: 'openai', id: ' model ', effort: 'medium' }, partialIntervalMs: 0 })).toMatchObject({

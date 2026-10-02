@@ -28,6 +28,15 @@ beforeEach(() => {
 const options = { cwd: '/workspace', noteProject: false }
 
 describe('starting an agent', () => {
+  it('starts no job in a working folder that is not written in full, which would be read against the app\'s own folder', async () => {
+    const agent = await import('../src/main/services/agent')
+    for (const cwd of ['workspace', './workspace']) {
+      expect(() => agent.start('調査する', { cwd, noteProject: false })).toThrow(errorText('app.storage.folderNotFull', { path: cwd }))
+      expect(() => agent.isGitRepo(cwd)).toThrow(errorText('app.storage.folderNotFull', { path: cwd }))
+    }
+    expect(mocks.launch).not.toHaveBeenCalled()
+  })
+
   it('records the failure reason instead of leaving the job running when the launch throws synchronously', async () => {
     mocks.launch.mockImplementation(() => { throw new Error('CLI unavailable') })
     const agent = await import('../src/main/services/agent')

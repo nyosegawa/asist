@@ -229,9 +229,24 @@ describe('allowedPath with the Windows rules', () => {
   })
 
   it('never asks a server about a path because a root lies on a drive that stands for another share', () => {
-    const drives = mappedDisk({ 'Z:': '\\\\nas\\team' }, '\\\\nas\\team\\reports\\q3.png', '\\\\attacker.example\\share\\a.png')
-    expect(allowedPath('\\\\attacker.example\\share\\a.png', ['Z:\\reports'], drives)).toBeNull()
-    expect(drives.asked.some((asked) => asked.includes('attacker'))).toBe(false)
+    const drives = mappedDisk({ 'Z:': '\\\\nas\\team' }, '\\\\nas\\team\\reports\\q3.png', '\\\\other\\share\\a.png')
+    expect(allowedPath('\\\\other\\share\\a.png', ['Z:\\reports'], drives)).toBeNull()
+    expect(drives.asked.some((asked) => asked.toLowerCase().includes('\\\\other\\'))).toBe(false)
+  })
+
+  it('allows a file asked for on a drive that stands for the share or the folder a root is written as', () => {
+    const drives = mappedDisk({ 'Z:': '\\\\nas\\team', 'S:': 'C:\\work' }, '\\\\nas\\team\\reports\\q3.png', 'C:\\work\\charts\\a.png')
+    expect(allowedPath('Z:\\reports\\q3.png', ['\\\\nas\\team\\reports'], drives)).toBe('\\\\nas\\team\\reports\\q3.png')
+    expect(allowedPath('S:\\charts\\a.png', ['C:\\work\\charts'], drives)).toBe('C:\\work\\charts\\a.png')
+  })
+
+  it('takes a path that names neither a drive nor a share for no root and no target, and asks the disk nothing for such a target', () => {
+    const share = windowsDisk('C:\\Users\\me\\notes.md', '\\\\nas\\team\\reports\\q3.pdf')
+    const roots = ['C:\\Users\\me', '\\\\nas\\team\\reports', '\\work', '/Users/me/proj']
+    for (const target of ['\\??\\UNC\\other\\share\\a.png', '\\\\?\\UNC\\nas\\team\\reports\\q3.pdf', '\\\\.\\C:\\Users\\me\\notes.md', '\\work\\a.png', '/Users/me/proj/a.png']) {
+      expect([target, allowedPath(target, roots, share)]).toEqual([target, null])
+    }
+    expect(share.asked).toEqual([])
   })
 })
 
