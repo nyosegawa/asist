@@ -61,11 +61,12 @@ const eventsPageSchema = z.object({
   items: z.array(z.unknown()),
   nextPageToken: z.string().optional()
 })
+/** An entry of the account's calendar list. Google's API documents its time zone as optional. */
 const calendarEntrySchema = z.object({
   id: z.string(),
   summary: z.string(),
   accessRole: z.string(),
-  timeZone: z.string(),
+  timeZone: z.string().optional(),
   primary: z.boolean().optional()
 })
 const calendarListSchema = z.object({ items: z.array(calendarEntrySchema), nextPageToken: z.string().optional() })
@@ -74,7 +75,7 @@ const calendarListSchema = z.object({ items: z.array(calendarEntrySchema), nextP
 interface CalendarInfo {
   id: string
   title: string
-  timeZone: string
+  timeZone?: string
   writable: boolean
 }
 
@@ -95,11 +96,13 @@ const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 /**
  * An event as the rest of ASIST reads it. An all-day event keeps Google's days, whose end is already the
  * day after the last, and is placed at midnight of this computer; a timed event keeps its own time zone,
- * or its calendar's when it has none.
+ * or its calendar's when it has none, and with neither it has no zone to be saved in.
  */
 export function toCalendarEvent(item: GoogleEvent, calendar: CalendarInfo): CalendarEvent {
   const allDay = item.start.date !== undefined
   const at = (time: GoogleEvent['start']): number => (allDay ? parseDayKey(time.date!).getTime() : Date.parse(time.dateTime!))
+  const timeZone = allDay ? localZone() : (item.start.timeZone ?? calendar.timeZone)
+  if (timeZone === undefined) throw new Error(errorText('calendar.errors.googleBadResponse'))
   return {
     id: googleEventKey(calendar.id, item.id),
     calendarId: calendar.id,
@@ -110,7 +113,7 @@ export function toCalendarEvent(item: GoogleEvent, calendar: CalendarInfo): Cale
     allDay,
     location: item.location ?? '',
     notes: item.description ?? '',
-    timeZone: allDay ? localZone() : (item.start.timeZone ?? calendar.timeZone),
+    timeZone,
     revision: item.etag,
     recurring: item.recurringEventId !== undefined || item.recurrence !== undefined,
     hasAttendees: (item.attendees?.length ?? 0) > 0,

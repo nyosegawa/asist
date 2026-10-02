@@ -511,6 +511,37 @@ describe('the Google calendar through CalendarService', () => {
     expect(google.api().filter((call) => call.method !== 'GET')).toHaveLength(0)
   })
 
+  it('lists the calendars and reads an event when Google leaves out the time zone of a calendar, which its API allows', async () => {
+    const zoneless: Route = (call) => {
+      if (call.method !== 'GET') return undefined
+      if (call.url.pathname === '/calendar/v3/users/me/calendarList')
+        return json({
+          items: [
+            { id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', primary: true },
+            { id: 'team@group.calendar.google.com', summary: 'チーム', accessRole: 'writer', timeZone: 'Asia/Tokyo' }
+          ]
+        })
+      if (call.url.pathname === '/calendar/v3/users/me/calendarList/me%40example.com')
+        return json({ id: 'me@example.com', summary: 'me@example.com', accessRole: 'owner', primary: true })
+      return undefined
+    }
+    const { calendar } = calendarWith(fakeGoogle(refreshes, zoneless, getsEvent))
+    expect(await calendar.status()).toEqual({
+      signIn: 'signedIn',
+      calendars: [
+        { id: 'me@example.com', title: 'me@example.com', writable: true },
+        { id: 'team@group.calendar.google.com', title: 'チーム', writable: true }
+      ],
+      account: 'me@example.com'
+    })
+    expect(await calendar.event(googleEventKey('me@example.com', 'ev1'))).toMatchObject({ title: '打合せ', timeZone: 'Asia/Tokyo' })
+    // A timed event without a zone of its own on such a calendar has no zone to be saved in.
+    const floating = { ...timed, start: { dateTime: timed.start.dateTime }, end: { dateTime: timed.end.dateTime } }
+    expect(() => toCalendarEvent(floating, { id: 'me@example.com', title: 'me@example.com', writable: true })).toThrow(
+      errorText('calendar.errors.googleBadResponse')
+    )
+  })
+
   it('finds no event in a cancelled occurrence Google returns without its times', async () => {
     const cancelled: Route = (call) =>
       call.method === 'GET' && call.url.pathname.includes('/events/') ? json({ id: 'ev1_20260915T010000Z', etag: '"9"', status: 'cancelled', recurringEventId: 'ev1' }) : undefined
