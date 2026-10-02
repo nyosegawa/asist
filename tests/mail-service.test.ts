@@ -258,18 +258,33 @@ describe('sending and replying', () => {
     await f.service.stop()
   })
 
-  it('appends nothing to Sent when the server filed the sent message there itself, as Gmail, Exchange Online and Yahoo do', async () => {
-    for (const provider of ['custom', 'gmail'] as const) {
-      const f = await setup({ provider })
-      f.smtp.send.mockImplementationOnce(async () => {
-        f.imap.put('Sent', { subject: 'x', from: me, to: tanaka, date: new Date(), text: 'y', flags: ['\\Seen'], messageId: '<sent-1@me>' })
-        return { messageId: '<sent-1@me>', raw: Buffer.from('raw message') }
-      })
-      await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
-      expect(f.imap.calls).not.toContain('append:Sent')
-      expect([...f.imap.folders.get('Sent')!.messages.values()].filter((mail) => mail.messageId === '<sent-1@me>')).toHaveLength(1)
-      await f.service.stop()
-    }
+  it('appends nothing to Sent when the server filed the sent message there itself, as Exchange Online and Yahoo do', async () => {
+    const f = await setup({ provider: 'custom' })
+    f.smtp.send.mockImplementationOnce(async () => {
+      f.imap.put('Sent', { subject: 'x', from: me, to: tanaka, date: new Date(), text: 'y', flags: ['\\Seen'], messageId: '<sent-1@me>' })
+      return { messageId: '<sent-1@me>', raw: Buffer.from('raw message') }
+    })
+    await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
+    expect(f.imap.calls).not.toContain('append:Sent')
+    expect([...f.imap.folders.get('Sent')!.messages.values()].filter((mail) => mail.messageId === '<sent-1@me>')).toHaveLength(1)
+    await f.service.stop()
+  })
+
+  it('appends the sent message to Sent when the search for it fails, since a missing copy is worse than a second one', async () => {
+    const f = await setup({ provider: 'icloud' })
+    f.imap.failSearch = true
+    const result = await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
+    expect(f.imap.calls).toContain('append:Sent')
+    expect((result as { summary: string }).summary).toBe(t('mail.result.send', { recipients: 't@example.com' }))
+    await f.service.stop()
+  })
+
+  it('neither searches nor appends to Sent on Gmail, which files every message sent through it there itself', async () => {
+    const f = await setup({ provider: 'gmail' })
+    const result = await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
+    expect(f.imap.calls.filter((call) => call === 'search:Sent:<sent-1@me>' || call === 'append:Sent')).toEqual([])
+    expect((result as { summary: string }).summary).toBe(t('mail.result.send', { recipients: 't@example.com' }))
+    await f.service.stop()
   })
 
   it('replies to the sender with Re:, quotes the original body, carries the thread headers, and flags the original as answered', async () => {
@@ -344,21 +359,23 @@ describe('sending and replying', () => {
     await f.service.stop()
   })
 
-  it('marks no other message answered when the folder of the original now points at a mailbox with the same UIDVALIDITY', async () => {
-    const f = await setup()
-    const archived = f.imap.put('Archive', { subject: '片付けた相談', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a', messageId: '<archived@x>' })
-    await f.service.syncNow()
-    const original = f.service.list({ view: 'archive' }).messages.find((message) => message.subject === '片付けた相談')!
-    const result = await f.service.change({ operation: 'reply', id: original.id, body: '了解です。' }, f.signal.signal, 'agent')
-    // The archive is pointed at another mailbox, whose UIDVALIDITY and first UID are the same.
-    const other = f.imap.addFolder('Archive2', { uidValidity: f.imap.folders.get('Archive')!.uidValidity })
-    f.imap.put('Archive2', { uid: archived.uid, subject: '別の箱のメール', from: suzuki, to: me, date: new Date(NOW - HOUR), text: 'b', messageId: '<elsewhere@x>' })
-    await f.service.updateAccount('a1', { folders: { sent: 'Sent', archive: 'Archive2', trash: 'Trash' } })
-    await f.service.syncNow()
-    const sent = await pressSend(f, (result as { draftId: string }).draftId)
-    expect(other.messages.get(archived.uid)?.flags).not.toContain('\\Answered')
-    expect((sent as { summary: string }).summary).toContain(t('mail.result.answeredFailed', { reason: t('mail.errors.message.notFound') }))
-    await f.service.stop()
+  it('marks no other message answered when the folder of the original now points at a mailbox with the same UIDVALIDITY, whether or not the two have a Message-ID', async () => {
+    for (const messageIds of [{ original: '<archived@x>', other: '<elsewhere@x>' }, { original: undefined, other: undefined }]) {
+      const f = await setup()
+      const archived = f.imap.put('Archive', { subject: '片付けた相談', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a', messageId: messageIds.original })
+      await f.service.syncNow()
+      const original = f.service.list({ view: 'archive' }).messages.find((message) => message.subject === '片付けた相談')!
+      const result = await f.service.change({ operation: 'reply', id: original.id, body: '了解です。' }, f.signal.signal, 'agent')
+      // The archive is pointed at another mailbox, whose UIDVALIDITY and first UID are the same.
+      const other = f.imap.addFolder('Archive2', { uidValidity: f.imap.folders.get('Archive')!.uidValidity })
+      f.imap.put('Archive2', { uid: archived.uid, subject: '別の箱のメール', from: suzuki, to: me, date: new Date(NOW - HOUR), text: 'b', messageId: messageIds.other })
+      await f.service.updateAccount('a1', { folders: { sent: 'Sent', archive: 'Archive2', trash: 'Trash' } })
+      await f.service.syncNow()
+      const sent = await pressSend(f, (result as { draftId: string }).draftId)
+      expect(other.messages.get(archived.uid)?.flags).not.toContain('\\Answered')
+      expect((sent as { summary: string }).summary).toContain(t('mail.result.answeredFailed', { reason: t('mail.errors.message.notFound') }))
+      await f.service.stop()
+    }
   })
 
   it('does not mark the original answered, and says so, when the server refuses the flag', async () => {

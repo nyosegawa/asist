@@ -11,6 +11,7 @@ export type ImapClient = Pick<
   | 'logout'
   | 'close'
   | 'noop'
+  | 'stats'
   | 'list'
   | 'getMailboxLock'
   | 'search'

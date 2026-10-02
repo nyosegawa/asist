@@ -56,11 +56,23 @@ export async function fetchText(client: Pick<ImapClient, 'download'>, uid: numbe
 
 /**
  * The encoding of an HTML part, as the HTML standard has a browser decide it: a byte order mark first, then the
- * charset of the transport, then a meta tag, and UTF-8 otherwise. imapflow is the transport here: it converts a
- * part to UTF-8 by the charset its MIME header declares, and passes on as written a part whose header declares none.
+ * charset of the transport when it is supported, then the meta tags of the head, and UTF-8 otherwise.
  */
 export function htmlEncoding(html: Buffer, mimeCharset: string | undefined): string {
-  return byteOrderMark(html) ?? (mimeCharset ? 'utf-8' : (metaEncoding(html) ?? 'utf-8'))
+  return byteOrderMark(html) ?? transportEncoding(mimeCharset) ?? metaEncoding(html) ?? 'utf-8'
+}
+
+/**
+ * The encoding the bytes are in by the charset of the MIME header, imapflow being the transport. It converts a part
+ * to UTF-8 by a charset it knows and then reports utf-8, and leaves ASCII as it is, which reads alike as UTF-8. A
+ * part whose charset it does not know, such as Outlook's `_iso-2022-jp$ESC` or `unknown-8bit`, it passes on as
+ * written with the label kept; a label the Encoding Standard does not know either is not supported, and the meta
+ * tags decide.
+ */
+function transportEncoding(mimeCharset: string | undefined): string | null {
+  if (!mimeCharset) return null
+  if (['utf8', 'ascii', 'usascii'].includes(mimeCharset.toLowerCase().replace(/[^a-z0-9]+/g, ''))) return 'utf-8'
+  return encodingOf(mimeCharset)
 }
 
 function byteOrderMark(bytes: Buffer): string | null {
@@ -71,13 +83,17 @@ function byteOrderMark(bytes: Buffer): string | null {
 }
 
 /**
- * The encoding the first meta tag with a label of the Encoding Standard declares: its charset attribute, or the
- * charset of its content when its http-equiv is Content-Type. A label the standard does not know, such as
- * cp932, is passed over. A document that declares UTF-16 in a meta tag is read as UTF-8, since a meta tag
- * readable as ASCII cannot be in UTF-16, and x-user-defined is read as windows-1252.
+ * The encoding the first meta tag of the head with a label of the Encoding Standard declares: its charset
+ * attribute, or the charset of its content when its http-equiv is Content-Type. A label the standard does not know,
+ * such as cp932, is passed over. A document that declares UTF-16 in a meta tag is read as UTF-8, since a meta tag
+ * readable as ASCII cannot be in UTF-16, and x-user-defined is read as windows-1252. Comments are skipped, as the
+ * HTML standard's prescan skips them, and the search goes on past the prescan's first 1024 bytes to the end of the
+ * head, as Chromium's does. A meta tag after the head is not read: in mail it is mostly the head of a message
+ * quoted or forwarded in the body, which describes that message rather than this one.
  */
 function metaEncoding(html: Buffer): string | null {
-  for (const [tag] of html.toString('latin1').matchAll(/<meta\b[^>]*>/gi)) {
+  const head = html.toString('latin1').replace(/<!--[\s\S]*?(?:-->|$)/g, '').split(/<\/head\b|<body\b/i)[0]
+  for (const [tag] of head.matchAll(/<meta\b[^>]*>/gi)) {
     const attributes = new Map<string, string>()
     for (const [, name, value = ''] of tag.slice(5).matchAll(/([^\s=/>]+)(?:\s*=\s*("[^"]*"|'[^']*'|[^\s>]+))?/g)) {
       if (!attributes.has(name.toLowerCase())) attributes.set(name.toLowerCase(), value.replace(/^(["'])(.*)\1$/s, '$2'))

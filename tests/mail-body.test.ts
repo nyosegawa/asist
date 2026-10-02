@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bodyPartsOf, htmlToPlain } from '../src/main/services/mail-body'
+import { bodyPartsOf, htmlEncoding, htmlToPlain } from '../src/main/services/mail-body'
 
 describe('reading a bodyStructure', () => {
   it('separates the text and html body parts from the attachments, and numbers a single part 1', () => {
@@ -31,5 +31,23 @@ describe('reading a bodyStructure', () => {
 
   it('turns HTML into plain text, dropping link targets, images and styles', () => {
     expect(htmlToPlain('<style>p{}</style><p>こんにちは <a href="https://x.example">サイト</a></p><img src="a.png"><script>x()</script>')).toBe('こんにちは サイト')
+  })
+})
+
+describe('the encoding of an HTML part', () => {
+  const html = (head: string, body = '') => Buffer.from(`<html><head>${head}</head><body>${body}</body></html>`)
+
+  it('reads the meta tags when imapflow could not convert by the MIME charset, as a browser does with a transport label it does not support', () => {
+    // Old Outlook writes charset=_iso-2022-jp$ESC in the MIME header, which imapflow passes on unconverted.
+    expect(htmlEncoding(html('<meta http-equiv=Content-Type content="text/html; charset=iso-2022-jp">'), '_iso-2022-jp$esc')).toBe('iso-2022-jp')
+    expect(htmlEncoding(html('<meta charset="euc-jp">'), 'unknown-8bit')).toBe('euc-jp')
+    // imapflow reports utf-8 for a part it converted, which the meta tags no longer describe.
+    expect(htmlEncoding(html('<meta charset="shift_jis">'), 'utf-8')).toBe('utf-8')
+  })
+
+  it('reads the meta tags of the head as the prescan does, past comments and past the first 1024 bytes, and not a meta of a message quoted in the body', () => {
+    expect(htmlEncoding(html('<!-- <meta charset="utf-8"> --><meta charset="shift_jis">'), undefined)).toBe('shift_jis')
+    expect(htmlEncoding(html(`<style>${'p { margin: 0 }\n'.repeat(100)}</style><meta charset="euc-jp">`), undefined)).toBe('euc-jp')
+    expect(htmlEncoding(html('', '<blockquote><html><head><meta charset="shift_jis"></head></html></blockquote>'), undefined)).toBe('utf-8')
   })
 })

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
+import { Worker } from 'node:worker_threads'
 import {
   MAIL_FOLDERS,
   RECENT_WINDOW_MS,
@@ -98,46 +99,58 @@ const COLUMNS =
   'id, account_id, folder, uid, message_id, thread_id, subject, from_name, from_address, to_json, cc_json, reply_to_json, date, snippet, unread, starred, answered, attachments_json, size, labels_json, duplicate, body_fetched'
 
 /** SQLite's result codes for a file that is damaged (SQLITE_CORRUPT) and for one that is not a database at all (SQLITE_NOTADB). */
-const BROKEN_FILE_CODES: ReadonlySet<unknown> = new Set([11, 26])
+const BROKEN_FILE_CODES = [11, 26]
 
 /**
- * Opens the cache file. One that is damaged or is not a database is replaced by an empty cache, which the
- * sync fills from the server again, so nothing it held is lost; kept, it would stop every start of the app,
- * or fail every listing when the damage lies in pages the schema does not touch. Any other failure, such as a
- * file that cannot be opened at all, is thrown.
+ * Opens the cache file. One that is not a database, or whose schema is damaged, is replaced by an empty cache,
+ * which the sync fills from the server again, so nothing it held is lost; kept, it would stop every start of the
+ * app. Damage in the pages the schema does not touch is found by check(). Any other failure, such as a file that
+ * cannot be opened at all, is thrown.
  */
 function openCache(file: string): DatabaseSync {
   const db = new DatabaseSync(file)
-  const damage = damageOf(db)
-  if (damage === null) {
+  try {
     prepareSchema(db)
     return db
+  } catch (error) {
+    db.close()
+    if (!BROKEN_FILE_CODES.includes((error as { errcode?: number }).errcode ?? 0)) throw error
+    return emptyCache(file, error instanceof Error ? error.message : String(error))
   }
-  db.close()
-  console.warn(`mail cache: ${file} is replaced by an empty cache:`, damage)
+}
+
+/** Replaces the cache file with an empty cache, saying why in the log. */
+function emptyCache(file: string, reason: string): DatabaseSync {
+  console.warn(`mail cache: ${file} is replaced by an empty cache:`, reason)
   for (const suffix of ['', '-journal', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true })
-  const rebuilt = new DatabaseSync(file)
-  prepareSchema(rebuilt)
-  return rebuilt
+  const db = new DatabaseSync(file)
+  prepareSchema(db)
+  return db
 }
 
 /**
- * What PRAGMA quick_check finds wrong with the file, or null when it finds nothing. A file that is not a
- * database at all, or whose first page is damaged, fails the check itself. It took 36 to 64 ms on a file of
- * 126 MB just written, so still in the disk cache (Apple M5, 2026-10-02).
+ * Runs PRAGMA quick_check on a cache file in a worker thread, and posts what it finds wrong, or null. The check
+ * reads every page: on a file of 126 MB it took 665 to 680 ms right after the volume holding it was mounted, and
+ * 34 to 35 ms once read (Apple M5, 2026-10-02), far too long for the main process while the window loads. A file
+ * that is not a database at all fails the check itself, which counts as damage.
  */
-function damageOf(db: DatabaseSync): string | null {
+const QUICK_CHECK_WORKER = `
+const { parentPort, workerData } = require('node:worker_threads')
+const { DatabaseSync } = require('node:sqlite')
+let result
+try {
+  const db = new DatabaseSync(workerData.file, { readOnly: true })
   try {
-    const problems = (db.prepare('PRAGMA quick_check').all() as Row[]).map((row) => String(row.quick_check)).filter((line) => line !== 'ok')
-    return problems.length ? problems.slice(0, 3).join('; ') : null
-  } catch (error) {
-    if (!BROKEN_FILE_CODES.has((error as { errcode?: unknown }).errcode)) {
-      db.close()
-      throw error
-    }
-    return error instanceof Error ? error.message : String(error)
+    const problems = db.prepare('PRAGMA quick_check').all().map((row) => String(row.quick_check)).filter((line) => line !== 'ok')
+    result = { damage: problems.length ? problems.slice(0, 3).join('; ') : null }
+  } finally {
+    db.close()
   }
+} catch (error) {
+  result = workerData.brokenFileCodes.includes(error.errcode) ? { damage: error.message } : { error: error.message }
 }
+parentPort.postMessage(result)
+`
 
 function prepareSchema(db: DatabaseSync): void {
   db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
@@ -187,10 +200,28 @@ function prepareSchema(db: DatabaseSync): void {
 }
 
 export class MailCache {
-  private readonly db: DatabaseSync
+  private db: DatabaseSync
 
-  constructor(file: string) {
+  constructor(private readonly file: string) {
     this.db = openCache(file)
+  }
+
+  /**
+   * What PRAGMA quick_check finds wrong with the file, or null when it finds nothing. The check runs in a worker
+   * thread on a connection of its own, so it reads alongside this one and writes nothing.
+   */
+  check(): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(QUICK_CHECK_WORKER, { eval: true, workerData: { file: this.file, brokenFileCodes: BROKEN_FILE_CODES } })
+      worker.once('message', (result: { damage?: string | null; error?: string }) => (result.error === undefined ? resolve(result.damage ?? null) : reject(new Error(result.error))))
+      worker.once('error', reject)
+    })
+  }
+
+  /** Replaces the file with an empty cache, as when check() found it damaged. */
+  replace(reason: string): void {
+    this.db.close()
+    this.db = emptyCache(this.file, reason)
   }
 
   close(): void {

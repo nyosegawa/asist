@@ -59,8 +59,13 @@ export class FakeImap extends EventEmitter {
    * open, every command waits for an answer that never comes, and only closing the connection ends the wait.
    */
   silent = false
-  /** True while a new connection, made by reconnectable() as well, never finishes its handshake until it is closed. */
+  /**
+   * True while a new connection, made by reconnectable() as well, never finishes its handshake. Closing it does
+   * not end the wait either, as with imapflow closed during DNS, TCP connect or the TLS handshake.
+   */
   hangConnect = false
+  /** The bytes received from the server, which stats() reports. A test adds to it for data still arriving. */
+  received = 0
   private readonly unanswered: Array<(error: Error) => void> = []
   private readonly gmail: boolean
   private currentPath = ''
@@ -130,13 +135,18 @@ export class FakeImap extends EventEmitter {
   async connect(): Promise<void> {
     this.calls.push('connect')
     if (this.failConnect) throw this.failConnect
-    if (this.hangConnect) await new Promise<never>((_, reject) => this.unanswered.push(reject))
+    if (this.hangConnect) await new Promise<never>(() => undefined)
     this.usable = true
   }
 
   async noop(): Promise<void> {
     this.calls.push('noop')
     await this.answer()
+    this.received += 20
+  }
+
+  stats(): { sent: number; received: number } {
+    return { sent: 0, received: this.received }
   }
 
   async logout(): Promise<void> {
@@ -193,11 +203,11 @@ export class FakeImap extends EventEmitter {
   /** Like the real client, it answers an empty list when nothing matches and false when the server rejects the command. */
   async search(query: { since?: Date | string; all?: boolean; header?: Record<string, string> }): Promise<number[] | false> {
     const folder = this.current()
-    this.calls.push(`search:${this.currentPath}`)
+    const messageId = Object.entries(query.header ?? {}).find(([name]) => name.toLowerCase() === 'message-id')?.[1]
+    this.calls.push(messageId === undefined ? `search:${this.currentPath}` : `search:${this.currentPath}:${messageId}`)
     await this.answer()
     if (this.failSearch) return false
     const since = query.since ? new Date(query.since).getTime() : 0
-    const messageId = Object.entries(query.header ?? {}).find(([name]) => name.toLowerCase() === 'message-id')?.[1]
     return [...folder.messages.values()]
       .filter((mail) => mail.date.getTime() >= since && (messageId === undefined || mail.messageId === messageId))
       .map((mail) => mail.uid)

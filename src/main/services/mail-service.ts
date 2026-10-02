@@ -125,6 +125,18 @@ export class MailService {
     this.applySettings()
   }
 
+  /**
+   * Checks the cache file, and replaces it with an empty cache when it is damaged. It runs before start(): the
+   * syncs are the cache's only writers, and one that kept running across the replacement would take every
+   * message of the empty cache's first fetch for new mail.
+   */
+  async checkCache(): Promise<void> {
+    const damage = await this.deps.cache.check()
+    if (damage === null) return
+    this.deps.cache.replace(damage)
+    for (const account of this.deps.settings().accounts) this.deps.emit({ type: 'changed', accountId: account.id })
+  }
+
   async stop(): Promise<void> {
     this.started = false
     await Promise.all([...this.syncs.values()].map((sync) => sync.stop()))
@@ -712,23 +724,24 @@ export class MailService {
   }
 
   /**
-   * What follows a message SMTP accepted. The same bytes go into the Sent folder unless the server filed the
-   * message there itself, as Gmail, Exchange Online and Yahoo do, and a reply puts the \Answered flag on the
-   * message it answers, `answered`, while that message is still in the cache. A step that fails adds its note
-   * to `notes`.
+   * What follows a message SMTP accepted. Outside Gmail, which files every message sent through it in Sent Mail
+   * itself, the same bytes go into the Sent folder unless a search finds that the server filed the message there,
+   * as Exchange Online and Yahoo do. A reply puts the \Answered flag on the message it answers, `answered`, while
+   * that message is still in the cache. A step that fails adds its note to `notes`.
    */
   private async afterSent(account: MailAccount, sent: { messageId: string; raw: Buffer }, answered: { id: string; messageId: string } | null, notes: string[]): Promise<void> {
     const sync = this.syncs.get(account.id)
     const sentFolder = account.folders.sent
-    if (sync && sentFolder) {
+    if (sync && sentFolder && account.provider !== 'gmail') {
       try {
         await sync.run(async (client) => {
           const lock = await client.getMailboxLock(sentFolder)
           try {
-            // A server that files its copy only some time after accepting the message still ends up with two.
+            // Only a search that answered with the message skips the copy. imapflow answers false for one the server
+            // refused or the connection cut, and a missing copy is worse than a second one. A server that files its
+            // own copy only after the search still ends up with two.
             const filed = await client.search({ header: { 'message-id': sent.messageId }, since: syncSince(new Date(this.now()), 1) }, { uid: true })
-            if (!Array.isArray(filed)) throw new Error(errorText('mail.errors.sync.noMessageList'))
-            if (filed.length === 0) await client.append(sentFolder, sent.raw, ['\\Seen'], new Date(this.now()))
+            if (!Array.isArray(filed) || filed.length === 0) await client.append(sentFolder, sent.raw, ['\\Seen'], new Date(this.now()))
           } finally {
             lock.release()
           }
@@ -741,8 +754,9 @@ export class MailService {
       try {
         // The id names its folder by role, and a folder pointed at another mailbox with the same UIDVALIDITY can
         // have filed another message under it since the reply was settled.
+        // A message without a Message-ID cannot be told from another one, so it is never taken for the original.
         const original = this.deps.cache.get(answered.id)
-        if (!original || original.messageId !== answered.messageId) throw new Error(errorText('mail.errors.message.notFound'))
+        if (!original || !answered.messageId || original.messageId !== answered.messageId) throw new Error(errorText('mail.errors.message.notFound'))
         await sync.byUid(original.folder, parseMessageId(original.id).uidValidity, (client) => storeFlag(client, [original.uid], '\\Answered', true))
         this.deps.cache.setFlags(original.id, { answered: true })
       } catch (error) {

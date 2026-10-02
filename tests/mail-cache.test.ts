@@ -36,6 +36,18 @@ const message = (folder: MailMessage['folder'], patch: Partial<MailMessage> = {}
   }
 }
 
+/** A cache of 2000 messages whose pages from `from` to `to` (byte offsets, given the page count) are overwritten. */
+function damagedCache(dir: string, name: string, from: (pages: number) => number, to: (pages: number) => number): string {
+  const file = path.join(dir, name)
+  const filled = new MailCache(file)
+  filled.upsert(Array.from({ length: 2000 }, (_, index) => message('inbox', { uid: index + 1, subject: 'x'.repeat(400) })))
+  filled.close()
+  const bytes = fs.readFileSync(file)
+  const pages = bytes.length / 4096
+  fs.writeFileSync(file, Buffer.concat([bytes.subarray(0, from(pages)), Buffer.alloc(to(pages) - from(pages), 7), bytes.subarray(to(pages))]))
+  return file
+}
+
 describe('MailCache', () => {
   it('returns each view newest first and keeps the All Mail copies of inbox and sent messages out of archive and starred', () => {
     const cache = new MailCache(':memory:')
@@ -138,27 +150,14 @@ describe('MailCache', () => {
     expect(cache.thread('a1', 't').map((m) => m.uid)).toEqual([3, 2, 1])
   })
 
-  it('starts over from an empty cache when its file is not a database or is damaged, and keeps a file it cannot open for another reason', () => {
+  it('starts over from an empty cache when its file is not a database or its schema is damaged, and keeps a file it cannot open for another reason', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-mail-cache-'))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     try {
       const notDatabase = path.join(dir, 'not-a-database.sqlite')
       fs.writeFileSync(notDatabase, 'text written over the cache, long enough to fill the header of a database file')
-      // Two caches of 2000 messages, one damaged in its first page, which holds the schema, and one in pages
-      // past it, which hold messages and open without an error.
-      const damaged = (name: string, from: (pages: number) => number, to: (pages: number) => number): string => {
-        const file = path.join(dir, name)
-        const filled = new MailCache(file)
-        filled.upsert(Array.from({ length: 2000 }, (_, index) => message('inbox', { uid: index + 1, subject: 'x'.repeat(400) })))
-        filled.close()
-        const bytes = fs.readFileSync(file)
-        const pages = bytes.length / 4096
-        fs.writeFileSync(file, Buffer.concat([bytes.subarray(0, from(pages)), Buffer.alloc(to(pages) - from(pages), 7), bytes.subarray(to(pages))]))
-        return file
-      }
-      const schemaPage = damaged('schema-page.sqlite', () => 100, () => 4096)
-      const dataPages = damaged('data-pages.sqlite', (pages) => Math.floor(pages * 0.2) * 4096, (pages) => Math.floor(pages * 0.3) * 4096)
-      for (const file of [notDatabase, schemaPage, dataPages]) {
+      const schemaPage = damagedCache(dir, 'schema-page.sqlite', () => 100, () => 4096)
+      for (const file of [notDatabase, schemaPage]) {
         const cache = new MailCache(file)
         expect(cache.list({ view: 'inbox' }).total).toBe(0)
         cache.upsert([message('inbox', { uid: 1 })])
@@ -170,6 +169,31 @@ describe('MailCache', () => {
       fs.mkdirSync(folder)
       expect(() => new MailCache(folder)).toThrow()
       expect(fs.statSync(folder).isDirectory()).toBe(true)
+    } finally {
+      warn.mockRestore()
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('finds damage in the pages past the schema with its check, and starts over from an empty cache when told to', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-mail-cache-'))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const intact = new MailCache(path.join(dir, 'intact.sqlite'))
+      intact.upsert([message('inbox', { uid: 1 })])
+      expect(await intact.check()).toBeNull()
+      const file = damagedCache(dir, 'data-pages.sqlite', (pages) => Math.floor(pages * 0.2) * 4096, (pages) => Math.floor(pages * 0.3) * 4096)
+      const cache = new MailCache(file)
+      const damage = await cache.check()
+      expect(damage).not.toBeNull()
+      expect(() => cache.list({ view: 'inbox' })).toThrow()
+      cache.replace(damage!)
+      expect(cache.list({ view: 'inbox' }).total).toBe(0)
+      cache.upsert([message('inbox', { uid: 1 })])
+      cache.close()
+      const reopened = new MailCache(file)
+      expect(reopened.list({ view: 'inbox' }).messages.map((m) => m.uid)).toEqual([1])
+      expect(await reopened.check()).toBeNull()
     } finally {
       warn.mockRestore()
       fs.rmSync(dir, { recursive: true, force: true })

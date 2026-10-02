@@ -67,7 +67,11 @@ export function initMail(): void {
   })
   powerMonitor.on('resume', () => void mail.wake().catch(() => undefined))
   app.once('will-quit', () => void mail.stop())
-  mail.start()
+  // The check of the cache file runs in a worker thread, and the window and the cached listing need not wait for it.
+  void mail
+    .checkCache()
+    .catch((error: unknown) => console.error('mail cache check:', error))
+    .then(() => mail.start())
 }
 
 export function openMailGuide(): Promise<void> {

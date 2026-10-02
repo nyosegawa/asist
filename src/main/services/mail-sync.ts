@@ -43,9 +43,9 @@ export interface MailSyncIntervals {
   /** How long an IDLE arrival or flag notification is held before the folder is fetched. */
   debounceMs: number
   /**
-   * How long the connection kept across the machine's sleep has to answer a NOOP before it is replaced. A server
-   * answers one in well under a second; the rest leaves room for a network still coming back after the wake, and
-   * for a command under way, which the NOOP waits behind.
+   * How long the connection kept across the machine's sleep has, after the wake, to send anything before it is
+   * replaced. A server answers a NOOP in well under a second; the rest leaves room for a network still coming back.
+   * A longer wait keeps the account that much longer on a connection that is gone.
    */
   wakeCheckMs: number
 }
@@ -84,8 +84,8 @@ export class MailAccountSync {
   private readonly options: MailSyncOptions
   private readonly intervals: MailSyncIntervals
   private client: ImapClient | null = null
-  /** The connection being made, until its handshake ends. */
-  private connecting: ImapClient | null = null
+  /** Gives up the connection being made, until its handshake ends. */
+  private giveUpConnecting: (() => void) | null = null
   private gmail = false
   private queue: Promise<unknown> = Promise.resolve()
   private stopped = false
@@ -155,9 +155,9 @@ export class MailAccountSync {
    * can wait as long.
    */
   async wake(): Promise<void> {
-    const connecting = this.connecting
-    this.connecting = null
-    connecting?.close()
+    const giveUp = this.giveUpConnecting
+    this.giveUpConnecting = null
+    giveUp?.()
     const client = this.client
     if (client && !(await answers(client, this.intervals.wakeCheckMs)) && this.client === client) {
       this.client = null
@@ -367,25 +367,35 @@ export class MailAccountSync {
       const folder = this.folderOf(event.path)
       if (folder) this.scheduleFolderSync(folder)
     })
-    this.connecting = client
+    // imapflow's close() settles a pending connect() only once the socket is up and, with TLS, the handshake is
+    // done; closed during DNS, the TCP connect or the TLS handshake, connect() never settles, and this account's
+    // queue would wait on it for good. So giving the connection up rejects a promise of ASIST's own as well.
+    let giveUp = (): void => undefined
+    const givenUp = new Promise<never>((_, reject) => {
+      giveUp = () => {
+        client.close()
+        reject(new Error(errorText('mail.errors.sync.disconnected')))
+      }
+    })
+    this.giveUpConnecting = giveUp
     try {
-      await client.connect()
+      await Promise.race([client.connect(), givenUp])
     } catch (error) {
       client.close()
       // wake() gave this connection up and makes its own, so the failure it caused is no reason to report or retry.
-      if (this.connecting !== client) throw error
-      this.connecting = null
+      if (this.giveUpConnecting !== giveUp) throw error
+      this.giveUpConnecting = null
       const message = errorMessage(error)
       this.setState('error', message)
       this.scheduleReconnect()
       throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: errMessage(error) }))
     }
     // wake() gave it up just as the handshake ended.
-    if (this.connecting !== client) {
+    if (this.giveUpConnecting !== giveUp) {
       client.close()
       throw new Error(errorText('mail.errors.sync.disconnected'))
     }
-    this.connecting = null
+    this.giveUpConnecting = null
     // stop() ran while the connection was being made and found no client to end.
     if (this.stopped) {
       await disconnect(client)
@@ -612,15 +622,33 @@ export class MailAccountSync {
   }
 }
 
-/** Whether the server answers a NOOP within `ms`. */
-async function answers(client: Pick<ImapClient, 'noop'>, ms: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const silence = new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), ms)))
-  try {
-    return await Promise.race([client.noop().then(() => true, () => false), silence])
-  } finally {
-    clearTimeout(timer)
-  }
+/** How often the bytes received on a connection are read while waiting for it to answer. */
+const ANSWER_POLL_MS = 250
+
+/**
+ * Whether the server sends anything on the connection within `ms`. A NOOP asks it to, but imapflow sends one
+ * command at a time, so the NOOP waits behind a command under way, such as a long FETCH; the bytes that command
+ * keeps receiving show the connection alive as well. An APPEND under way receives nothing until it ends, and
+ * one that outlasts `ms` gets the connection replaced.
+ */
+function answers(client: Pick<ImapClient, 'noop' | 'stats'>, ms: number): Promise<boolean> {
+  const before = client.stats().received
+  return new Promise<boolean>((resolve) => {
+    const settle = (alive: boolean): void => {
+      clearInterval(poll)
+      clearTimeout(deadline)
+      resolve(alive)
+    }
+    const poll = setInterval(() => {
+      if (client.stats().received > before) settle(true)
+    }, ANSWER_POLL_MS)
+    const deadline = setTimeout(() => settle(false), ms)
+    // A NOOP the server refuses still shows it alive; one the connection fails shows nothing arrived.
+    client.noop().then(
+      () => settle(true),
+      () => settle(client.stats().received > before)
+    )
+  })
 }
 
 function* chunks<T>(items: readonly T[], size: number): Generator<T[]> {
