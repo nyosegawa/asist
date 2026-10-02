@@ -289,6 +289,14 @@ describe('memory service', () => {
     expect(service.embeddingStatus()).toMatchObject({ embedded: 1, total: 1, model: 'model-b' })
   })
 
+  it('builds the index anew when its file is not a database, rather than leaving memory unavailable', async () => {
+    fs.writeFileSync(path.join(mocks.userData, 'memory-index.db'), 'not a database '.repeat(100))
+    expect(service.unavailableReason()).toBeNull()
+    fs.writeFileSync(memoryFile('pages', '松葉軒.md'), MATSUBAKEN)
+    service.reindex()
+    expect((await service.search('ラーメン屋'))[0]).toMatchObject({ record: { page: '松葉軒', heading: '要約' } })
+  })
+
   it('reports why memory alone is unavailable when its directory cannot be created, and leaves the conversation running', () => {
     fs.writeFileSync(path.join(mocks.userData, 'memory'), 'not a directory')
     expect(service.unavailableReason()).toContain(ja('memory.errors.openFailed', { message: '' }).trim())

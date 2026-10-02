@@ -34,6 +34,12 @@ const CJK = '\\u3005\\u3006\\u303b\\u30fc\\p{Script=Han}\\p{Script=Hiragana}\\p{
 const CJK_RUN = new RegExp(`[${CJK}](?:[\\s\\p{P}\\p{S}]*[${CJK}])*`, 'gu')
 
 /**
+ * A run of characters written without spaces that also ends at a space or a mark. The model separates the
+ * keywords it recalls by with spaces, as in "猫 犬", where the run of an utterance goes on across them.
+ */
+const CJK_KEYWORD = new RegExp(`[${CJK}]+`, 'gu')
+
+/**
  * Korean is agglutinative and writes a particle onto the word, so "서울" has to find "서울에서". Words in
  * Hangul therefore carry their character bigrams into the index beside the word itself. Measured on
  * 2026-09-22 against a unit that says "서울에서 회의를": indexed by word alone the query "서울 회의 언제예요"
@@ -67,8 +73,8 @@ interface Piece {
   text: string
 }
 
-/** Cuts the text into runs written without spaces and into the words of every other script. */
-function pieces(text: string): Piece[] {
+/** Cuts the text into runs written without spaces, as `runs` finds them, and into the words of every other script. */
+function pieces(text: string, runs: RegExp = CJK_RUN): Piece[] {
   const folded = text.normalize('NFKC').toLowerCase()
   const out: Piece[] = []
   const pushWords = (slice: string): void => {
@@ -79,7 +85,7 @@ function pieces(text: string): Piece[] {
     }
   }
   let last = 0
-  for (const match of folded.matchAll(CJK_RUN)) {
+  for (const match of folded.matchAll(runs)) {
     pushWords(folded.slice(last, match.index))
     const run = normalizeForSearch(match[0])
     if (run) out.push({ kind: 'cjk', text: run })
@@ -122,19 +128,23 @@ export function ftsTokens(text: string): string {
     .join(' ')
 }
 
+const quoted = (token: string): string => `"${token.replace(/"/g, '""')}"`
+
 /** The FTS5 MATCH expression, joining the tokens with OR, or null when there is no token. */
 export function ftsQuery(text: string): string | null {
   const tokens = [...new Set(searchTokens(text))]
   if (tokens.length === 0) return null
-  return tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' OR ')
+  return tokens.map(quoted).join(' OR ')
 }
 
 /**
- * The FTS5 MATCH expression for a keyword the model recalls. A keyword of one character written without
- * spaces, such as "猫" or "姉", is matched as a prefix: FTS5 matches whole tokens, and the index holds such a
- * character only as the start of a bigram or of the marked end of its run. Only a keyword that is one
- * character as a whole is: a lone character inside an utterance, such as the "分" of "あと5分" or a filler
- * such as "お", names nothing, and as a prefix it injected a diary about "分量" or "お茶".
+ * The FTS5 MATCH expression for the keywords the model recalls by, cut where it put a space or a mark between
+ * them. A keyword of one character written without spaces, such as "猫" or each of "猫 犬", and a Korean word
+ * of one syllable, such as "개", are matched as a prefix: FTS5 matches whole tokens, the index holds such a
+ * character only as the start of a bigram or of the marked end of its run, and a Korean word with the
+ * particle written onto it ("개를"). The query of an utterance (ftsQuery) never matches a prefix: a lone
+ * character inside an utterance, such as the "分" of "あと5分" or a filler such as "お", names nothing, and as
+ * a prefix it injected a diary about "分量" or "お茶".
  *
  * Indexing every character alone instead would double the length of each unit in such a script, and bm25
  * divides by the length. Measured on 2026-10-02 over 13 units in English, German, Hindi, Korean and
@@ -145,9 +155,14 @@ export function ftsQuery(text: string): string | null {
  * injected the same units as before.
  */
 export function ftsKeywordQuery(text: string): string | null {
-  const [only, ...rest] = pieces(text)
-  if (only?.kind === 'cjk' && rest.length === 0 && Array.from(only.text).length === 1) return `"${only.text}"*`
-  return ftsQuery(text)
+  const terms = new Set(
+    pieces(text, CJK_KEYWORD).flatMap((piece) =>
+      Array.from(piece.text).length === 1 && (piece.kind === 'cjk' || HANGUL.test(piece.text))
+        ? [`${quoted(piece.text)}*`]
+        : pieceTokens(piece).map(quoted)
+    )
+  )
+  return terms.size > 0 ? [...terms].join(' OR ') : null
 }
 
 const DEVANAGARI_MARKS = [

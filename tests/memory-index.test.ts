@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -235,9 +235,26 @@ describe('MemoryIndex over memories in several languages', () => {
     expect(ids('は?', { mode: 'utterance' })).toEqual([])
   })
 
+  it('finds a memory by each of several recall keywords of one character, and by a Korean word of one syllable that the memory writes with a particle', () => {
+    index.rebuild([
+      ...MULTI,
+      page('ja-family', 'pages/家族.md', '家族', '要約', '母は毎朝薬を飲む。犬を一匹飼っている。'),
+      page('ko-dog', 'pages/dog.md', '초코', '요약', '사용자는 개를 키웁니다.')
+    ])
+    expect(new Set(ids('猫 犬'))).toEqual(new Set(['u2', 'ja-family']))
+    expect(ids('母 薬')).toEqual(['ja-family'])
+    expect(ids('개')).toEqual(['ko-dog'])
+  })
+
   it('injects a memory the utterance names and nothing for an utterance that only shares a common word', () => {
     expect(ids('I think I am allergic to walnuts', { mode: 'utterance' })).toEqual(['en-allergy'])
     expect(ids('that was a really long week and I want to sleep', { mode: 'utterance' })).toEqual([])
+  })
+
+  it('reads the role user.md opens with as no name of a page, so that an utterance saying those words does not inject it', () => {
+    index.rebuild([...MULTI, page('en-user', 'user.md', 'The user', 'Attributes', 'Lives in Lisbon and works as a nurse.')])
+    expect(ids('where did I put the user manual', { mode: 'utterance' })).toEqual([])
+    expect(index.search('I should take Mugi to the vet', { mode: 'utterance' })[0]).toMatchObject({ record: { id: 'en-cat' }, exact: true })
   })
 
   it('rebuilds every token when the schema version on disk is not the current one', () => {
@@ -248,6 +265,21 @@ describe('MemoryIndex over memories in several languages', () => {
 
     index = new MemoryIndex(path.join(dir, 'index.db'))
     expect(index.count).toBe(0)
+    index.rebuild(MULTI)
+    expect(index.count).toBe(MULTI.length)
+    expect(ids('walnuts')).toEqual(['en-allergy'])
+  })
+
+  it('builds the index anew from the files when SQLite finds its file damaged', () => {
+    const file = path.join(dir, 'index.db')
+    const many = Array.from({ length: 2000 }, (_, n) => page(`p${n}`, `pages/p${n}.md`, `p${n}`, 'Summary', `Page ${n} talks about the river, the bread and the week.`))
+    index.rebuild(many)
+    index.close()
+    // What a disk error or a copy cut short leaves: the header and the schema stay readable, the tables do not.
+    const bytes = readFileSync(file)
+    bytes.fill(0x5a, 4096 * 3)
+    writeFileSync(file, bytes)
+    index = new MemoryIndex(file)
     index.rebuild(MULTI)
     expect(index.count).toBe(MULTI.length)
     expect(ids('walnuts')).toEqual(['en-allergy'])

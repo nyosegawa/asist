@@ -31,10 +31,11 @@ describe('bigram tokenization', () => {
     expect(ftsQuery('')).toBeNull()
   })
 
-  it('ends each run in the FTS column with its last character, and matches a keyword of one character as a whole as a prefix, so that any of its characters is found', () => {
+  it('ends each run in the FTS column with its last character, and matches each recall keyword of one character as a prefix, so that any of its characters is found', () => {
     expect(ftsTokens('本人の猫')).toBe('本人 人の の猫 猫\uE000')
     expect(ftsKeywordQuery('猫')).toBe('"猫"*')
-    expect(ftsKeywordQuery('my 猫')).toBe('"my" OR "猫"')
+    expect(ftsKeywordQuery('my 猫')).toBe('"my" OR "猫"*')
+    expect(ftsKeywordQuery('猫 犬')).toBe('"猫"* OR "犬"*')
     expect(ftsKeywordQuery('中野駅')).toBe('"中野" OR "野駅"')
     expect(ftsQuery('猫')).toBe('"猫"')
   })

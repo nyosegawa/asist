@@ -1,8 +1,10 @@
+import fs from 'node:fs'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 import { createHash } from 'node:crypto'
+import { errMessage } from '@shared/api-errors'
 import type { MemoryUnit, MemoryUnitKind } from '@shared/ipc'
 import { EMBEDDING_MODEL, cosine, vectorFromBytes, vectorToBytes } from '@shared/memory-embedding'
-import { embeddingTextOf } from '@shared/memory-page'
+import { classifyFile, embeddingTextOf } from '@shared/memory-page'
 import {
   FTS5_TOKENIZE,
   dominantTokenKind,
@@ -45,6 +47,21 @@ const LEXICAL_LIMIT = 30
 export const INJECTION_MAX_BM25: Record<TokenKind, number> = { bigram: -2.5, word: -5 }
 
 type Row = Record<string, SQLOutputValue>
+
+const SQLITE_CORRUPT = 11
+const SQLITE_NOTADB = 26
+
+/**
+ * Whether SQLite found the file damaged or no database at all. node:sqlite reports the extended result code,
+ * whose low byte is the primary one.
+ */
+function isDamaged(error: unknown): boolean {
+  const code = (error as { errcode?: unknown } | null)?.errcode
+  return typeof code === 'number' && [SQLITE_CORRUPT, SQLITE_NOTADB].includes(code & 0xff)
+}
+
+/** The files SQLite keeps beside the database. A hot journal left beside a deleted file would be played into its successor. */
+const SIDE_FILES = ['', '-journal', '-wal', '-shm']
 
 export interface IndexSearchOptions {
   /**
@@ -93,10 +110,29 @@ function rowToUnit(row: Row): MemoryUnit {
 }
 
 export class MemoryIndex {
-  private readonly db: DatabaseSync
+  private db: DatabaseSync
 
-  constructor(file: string) {
+  constructor(private readonly file: string) {
     this.db = new DatabaseSync(file)
+    try {
+      this.initialize()
+    } catch (error) {
+      this.startAfresh(error)
+    }
+  }
+
+  /**
+   * Replaces a file SQLite finds damaged with an empty one, and rethrows any other error. The units are
+   * rebuilt from the markdown on the index's first use in each run, so only the vectors are lost, and they
+   * are computed again; keeping the file would leave memory unavailable at every start until the user
+   * deleted it. A damaged file can open cleanly and fail only when the rebuild reads its tables.
+   */
+  private startAfresh(error: unknown): void {
+    if (!isDamaged(error)) throw error
+    console.warn('memory index: the file is damaged and is built again from the memory:', this.file, errMessage(error))
+    this.db.close()
+    for (const suffix of SIDE_FILES) fs.rmSync(`${this.file}${suffix}`, { force: true })
+    this.db = new DatabaseSync(this.file)
     this.initialize()
   }
 
@@ -150,6 +186,15 @@ export class MemoryIndex {
 
   /** Rebuilds the index from the files, keeping only the vectors computed from the same text and model. */
   rebuild(units: readonly MemoryUnit[]): void {
+    try {
+      this.write(units)
+    } catch (error) {
+      this.startAfresh(error)
+      this.write(units)
+    }
+  }
+
+  private write(units: readonly MemoryUnit[]): void {
     this.transaction(() => {
       const model = this.getMeta(META_EMBEDDING_MODEL)
       this.db.exec('DELETE FROM units; DELETE FROM units_fts')
@@ -209,9 +254,12 @@ export class MemoryIndex {
     const mode = options.mode ?? 'keyword'
     const limit = options.limit ?? 5
     const { where, params } = this.kindFilter(options.kinds)
-    // Only the first section of a page, which is its summary, may win on an exact name match.
+    // Only the first section of a page, which is its summary, may win on an exact name match. user.md and
+    // me.md open with their role rather than a name, "The user" or "私について", which an utterance says in
+    // other senses, as in "the user manual".
     const isExact = (unit: MemoryUnit): boolean =>
-      unit.kind === 'section' && unit.order === 0 && exactNameHit(query, [unit.page, ...unit.aliases])
+      unit.kind === 'section' && unit.order === 0 && classifyFile(unit.file).kind === 'page' &&
+      exactNameHit(query, [unit.page, ...unit.aliases])
     const lexical = new Map<string, LexicalHit<MemoryUnit>>()
     const match = mode === 'keyword' ? ftsKeywordQuery(query) : ftsQuery(query)
     if (match) {
