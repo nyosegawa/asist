@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
@@ -14,7 +15,7 @@ vi.mock('../src/main/services/job-history', () => ({
   readJobHistory: () => [], writeJobHistory: () => [], jobLogFile: (id: string) => `joblogs/${id}.events.jsonl`
 }))
 vi.mock('../src/main/services/settings', () => ({
-  getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: '/workspace', uiLocale: 'ja-JP' })
+  getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: path.resolve('/workspace'), uiLocale: 'ja-JP' })
 }))
 vi.mock('../src/main/services/project-index', () => ({ noteUsed: vi.fn(), recent: () => [] }))
 vi.mock('../src/main/services/git', () => ({ toplevel: () => null }))
@@ -25,7 +26,8 @@ beforeEach(() => {
   mocks.launch.mockReturnValue({ stop: mocks.kill, completion: Promise.resolve() })
 })
 
-const options = { cwd: '/workspace', noteProject: false }
+// On Windows /workspace names a folder on the current drive, which a job refuses; path.resolve writes it in full.
+const options = { cwd: path.resolve('/workspace'), noteProject: false }
 
 describe('starting an agent', () => {
   it('starts no job in a working folder that is not written in full, which would be read against the app\'s own folder', async () => {

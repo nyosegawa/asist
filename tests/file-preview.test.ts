@@ -38,31 +38,34 @@ describe('classifyFile', () => {
 })
 
 describe('allowedPath, the path check of show_files, asist-file:// and Reveal in Finder', () => {
-  const roots = ['/Users/x/asist-jobs', '/Users/x/repo']
+  // On Windows a path that starts with / names a place on the current drive, which allowedPath refuses, so the
+  // paths here start at the root of that drive there, with every name and .. kept as written.
+  const full = (p: string): string => path.resolve('/') + p.slice(1)
+  const roots = [full('/Users/x/asist-jobs'), full('/Users/x/repo')]
 
   it('allows only paths under an allowed root', () => {
-    expect(allowedPath('/Users/x/asist-jobs/20260718-job/report.md', roots)).not.toBeNull()
-    expect(allowedPath('/Users/x/repo/src/index.ts', roots)).not.toBeNull()
-    expect(allowedPath('/Users/x/repo', roots)).not.toBeNull()
+    expect(allowedPath(full('/Users/x/asist-jobs/20260718-job/report.md'), roots)).not.toBeNull()
+    expect(allowedPath(full('/Users/x/repo/src/index.ts'), roots)).not.toBeNull()
+    expect(allowedPath(full('/Users/x/repo'), roots)).not.toBeNull()
   })
 
   it('rejects paths outside the roots and sensitive paths', () => {
-    expect(allowedPath('/Users/x/.ssh/id_rsa', roots)).toBeNull()
-    expect(allowedPath('/etc/passwd', roots)).toBeNull()
+    expect(allowedPath(full('/Users/x/.ssh/id_rsa'), roots)).toBeNull()
+    expect(allowedPath(full('/etc/passwd'), roots)).toBeNull()
   })
 
   it('rejects traversal through `..`', () => {
-    expect(allowedPath('/Users/x/asist-jobs/../.ssh/id_rsa', roots)).toBeNull()
-    expect(allowedPath('/Users/x/repo/../../etc/passwd', roots)).toBeNull()
+    expect(allowedPath(full('/Users/x/asist-jobs/../.ssh/id_rsa'), roots)).toBeNull()
+    expect(allowedPath(full('/Users/x/repo/../../etc/passwd'), roots)).toBeNull()
   })
 
   it('rejects a directory whose name merely starts with an allowed root', () => {
-    expect(allowedPath('/Users/x/repo-evil/secret.txt', roots)).toBeNull()
+    expect(allowedPath(full('/Users/x/repo-evil/secret.txt'), roots)).toBeNull()
   })
 
   it('rejects a relative path and an empty root', () => {
     expect(allowedPath('report.md', roots)).toBeNull()
-    expect(allowedPath('/Users/x/repo/a.ts', [''])).toBeNull()
+    expect(allowedPath(full('/Users/x/repo/a.ts'), [''])).toBeNull()
   })
 
   it('refuses a symbolic link inside a root that points outside it', () => {
