@@ -44,8 +44,13 @@ function installableUpdater(): Updater {
   return platformCapabilities().os === 'macos' ? afterStaging(autoUpdater, squirrel) : autoUpdater
 }
 
+/** Whether this build updates itself from the releases, which only a build made for a release does. */
+export function updatesItself(): boolean {
+  return app.isPackaged && fs.existsSync(path.join(process.resourcesPath, FEED))
+}
+
 export function initAppUpdates(): void {
-  if (controller || !app.isPackaged || !fs.existsSync(path.join(process.resourcesPath, FEED))) return
+  if (controller || !updatesItself()) return
   autoUpdater.logger = console
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
@@ -75,11 +80,9 @@ export function readyUpdateInstall(): () => void {
 }
 
 /**
- * The newer version a start that failed installs before it quits, or null when this build does not update,
- * the running version is the latest, or the check fails or stalls. The updater starts last in a start, so a
- * start that failed never reached it and it starts here. The caller asks once its error dialog is closed: on
- * macOS, Electron's net delivers no response body while dialog.showErrorBox is open (Electron 43.7.7,
- * 2026-10-02), so a check started before the dialog would only wait on it.
+ * The newer version the launch that only updates after a failed start installs, or null when this build does not
+ * update, the running version is the latest, or the check fails or stalls. That launch starts nothing else, so
+ * the updater starts here.
  */
 export async function versionAfterFailedStart(): Promise<string | null> {
   initAppUpdates()
@@ -92,6 +95,16 @@ export async function installAfterFailedStart(): Promise<() => void> {
   const state = await settledState((state) => state.phase !== 'checking' && state.phase !== 'downloading' && state.phase !== 'staging')
   if (state.phase === 'failed') throw new Error(state.message)
   return readyUpdateInstall()
+}
+
+/**
+ * Throws why the install of a version that was ready failed after it began: Squirrel.Mac can report an error
+ * where it would quit into the new version, and electron-updater then only reports it. When the install works,
+ * the app quits before this settles.
+ */
+export async function installFailure(): Promise<never> {
+  const state = await settledState((state) => state.phase === 'failed')
+  throw new Error(state.phase === 'failed' ? state.message : state.phase)
 }
 
 /**

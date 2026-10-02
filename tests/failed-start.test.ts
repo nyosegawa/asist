@@ -2,11 +2,12 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * Starts src/main/index.ts with a service that throws during the start, over the real update service and a
- * stand-in for electron-updater, to see what a start that failed ends with and what stays up meanwhile.
+ * Starts src/main/index.ts with every service replaced, over the real update service and a stand-in for
+ * electron-updater: a start in which a service throws, and the launch that only updates, which such a start asks
+ * for as it quits.
  */
 
 class FakeUpdater extends EventEmitter {
@@ -20,41 +21,33 @@ class FakeWebContents extends EventEmitter {
   session = { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() }
 }
 
-/** The app's events, which the stand-in for Electron emits the way Electron does. */
-const appEvents = new EventEmitter()
-
-/**
- * A window as Electron keeps one: it emits ready-to-show once its page has loaded, and a destroyed window emits
- * nothing more and leaves the app with no window, which Electron reports as window-all-closed.
- */
 class FakeWindow extends EventEmitter {
   readonly webContents = new FakeWebContents()
-  destroyed = false
-  show = vi.fn()
-  maximize = vi.fn()
-  hide = vi.fn()
   loadURL = vi.fn(() => Promise.resolve())
-  isDestroyed = (): boolean => this.destroyed
-  destroy = vi.fn(() => {
-    this.destroyed = true
-    this.removeAllListeners()
-    appEvents.emit('window-all-closed')
-  })
+  isDestroyed = (): boolean => false
 }
+
+/** The app's events, which a test emits the way Electron does. */
+const appEvents = new EventEmitter()
 
 const mocks = vi.hoisted(() => ({
   os: 'macos' as 'macos' | 'windows',
-  windows: [] as FakeWindow[],
+  windows: [] as unknown[],
   updater: null as unknown as FakeUpdater,
   squirrel: null as unknown as EventEmitter,
   quit: vi.fn(),
+  relaunch: vi.fn(),
   showErrorBox: vi.fn(),
   notify: vi.fn(() => true),
-  leaveOs: vi.fn(),
   prepare: vi.fn(),
   settingsBroken: false,
+  registerIpc: vi.fn(),
+  checkAfter: vi.fn(),
+  initJobReporting: vi.fn(),
+  initMaintenance: vi.fn(),
   initMail: vi.fn(),
-  wanted: vi.fn(() => false),
+  ensureLoaded: vi.fn(),
+  initMemoryCuration: vi.fn(),
   ensureServer: vi.fn(() => Promise.resolve(true)),
   ensureEngine: vi.fn(() => Promise.resolve()),
   // The quit gate stops the agents and then quits or installs; here it does the last step at once.
@@ -67,7 +60,9 @@ vi.mock('electron', () => ({
     requestSingleInstanceLock: () => true,
     whenReady: () => Promise.resolve(),
     on: (event: string, listener: (...args: unknown[]) => void) => appEvents.on(event, listener),
+    off: (event: string, listener: (...args: unknown[]) => void) => appEvents.off(event, listener),
     quit: mocks.quit,
+    relaunch: mocks.relaunch,
     getAppPath: () => '/Applications/ASIST.app/Contents/Resources/app.asar'
   },
   BrowserWindow: class {
@@ -91,10 +86,9 @@ vi.mock('electron-updater', () => ({
 }))
 vi.mock('../src/main/environment', () => ({}))
 vi.mock('../src/main/logging', () => ({ logRenderer: () => undefined }))
-vi.mock('../src/main/ipc', () => ({ registerIpc: () => undefined }))
+vi.mock('../src/main/ipc', () => ({ registerIpc: mocks.registerIpc }))
 vi.mock('../src/main/os-integration', () => ({
   setupOsIntegration: () => undefined,
-  leaveOs: mocks.leaveOs,
   notify: mocks.notify,
   quitAfterAgentsStop: mocks.quitAfterAgentsStop
 }))
@@ -105,12 +99,12 @@ vi.mock('../src/main/services/live', () => ({ stop: () => Promise.resolve() }))
 vi.mock('../src/main/services/asr', () => ({ ensureServer: mocks.ensureServer }))
 vi.mock('../src/main/services/tts', () => ({ ensureEngine: mocks.ensureEngine }))
 vi.mock('../src/main/services/aizuchi', () => ({ getBank: () => undefined }))
-vi.mock('../src/main/services/aizuchi-classifier', () => ({ wanted: mocks.wanted, ensureStarted: () => undefined }))
-vi.mock('../src/main/services/watchdog', () => ({ checkAfter: () => undefined }))
-vi.mock('../src/main/services/brain/job-reporting', () => ({ initJobReporting: () => undefined }))
-vi.mock('../src/main/services/maintenance', () => ({ compactionJob: {}, initMaintenance: () => undefined }))
-vi.mock('../src/main/services/memory', () => ({ ensureLoaded: () => undefined, startEmbeddingIfEnabled: () => Promise.resolve(false) }))
-vi.mock('../src/main/services/memory-curation', () => ({ initMemoryCuration: () => undefined }))
+vi.mock('../src/main/services/aizuchi-classifier', () => ({ wanted: () => false, ensureStarted: () => undefined }))
+vi.mock('../src/main/services/watchdog', () => ({ checkAfter: mocks.checkAfter }))
+vi.mock('../src/main/services/brain/job-reporting', () => ({ initJobReporting: mocks.initJobReporting }))
+vi.mock('../src/main/services/maintenance', () => ({ compactionJob: {}, initMaintenance: mocks.initMaintenance }))
+vi.mock('../src/main/services/memory', () => ({ ensureLoaded: mocks.ensureLoaded, startEmbeddingIfEnabled: () => Promise.resolve(false) }))
+vi.mock('../src/main/services/memory-curation', () => ({ initMemoryCuration: mocks.initMemoryCuration }))
 vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => [] }))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => {
@@ -129,18 +123,34 @@ const releaseResources = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-release-')
 const localResources = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-local-build-'))
 fs.writeFileSync(path.join(releaseResources, 'app-update.yml'), 'provider: github\n')
 
-/** Starts the app with mail failing as a damaged cache made it fail, and waits until the check has begun. */
-async function failToStart(platform: 'macos' | 'windows'): Promise<void> {
-  mocks.os = platform
-  mocks.initMail.mockImplementation(() => {
-    throw new Error('database disk image is malformed')
-  })
-  await start()
+const argv = process.argv
+
+/** Starts the app the way the OS does, with these arguments after the executable. */
+async function launch(args: string[]): Promise<void> {
+  process.argv = [argv[0], ...args]
+  await import('../src/main/index')
 }
 
-async function start(): Promise<void> {
-  await import('../src/main/index')
+/** Starts the app with the memory curation failing as a broken jobs.json made it fail, and waits for the error. */
+async function failToStart(): Promise<void> {
+  mocks.initMemoryCuration.mockImplementation(() => {
+    throw new Error('jobs.json is damaged')
+  })
+  await launch([])
   await vi.waitFor(() => expect(mocks.showErrorBox).toHaveBeenCalled())
+}
+
+/** Starts the launch a start that failed asks for, and waits until it checks for a newer version. */
+async function launchToUpdate(platform: 'macos' | 'windows'): Promise<void> {
+  mocks.os = platform
+  await failToStart()
+  const [{ args }] = mocks.relaunch.mock.calls[0] as [{ args: string[] }]
+  vi.resetModules()
+  vi.clearAllMocks()
+  appEvents.removeAllListeners()
+  mocks.initMemoryCuration.mockReset()
+  await launch(args)
+  await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
 }
 
 /** What electron-updater, and on macOS Squirrel.Mac, report for a newer version found, downloaded and staged. */
@@ -157,13 +167,17 @@ beforeEach(() => {
   vi.clearAllMocks()
   appEvents.removeAllListeners()
   mocks.windows.length = 0
+  mocks.os = 'macos'
   mocks.settingsBroken = false
-  mocks.initMail.mockReset()
-  mocks.wanted.mockReset().mockReturnValue(false)
+  mocks.initMemoryCuration.mockReset()
   mocks.quitAfterAgentsStop.mockImplementation((install?: () => void) => (install ? install() : mocks.quit()))
   mocks.updater = new FakeUpdater()
   mocks.squirrel = new EventEmitter()
   Object.defineProperty(process, 'resourcesPath', { value: releaseResources, configurable: true })
+})
+
+afterEach(() => {
+  process.argv = argv
 })
 
 afterAll(() => {
@@ -172,85 +186,101 @@ afterAll(() => {
 })
 
 describe('a start that failed', () => {
+  it('quits through the quit gate and starts again in a launch that only updates, in a build that updates itself', async () => {
+    await failToStart()
+    await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalled())
+    expect(mocks.quitAfterAgentsStop).toHaveBeenCalledExactlyOnceWith()
+    expect(mocks.relaunch).toHaveBeenCalledOnce()
+    expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+  })
+
+  it('quits without starting again in a build that does not update itself', async () => {
+    Object.defineProperty(process, 'resourcesPath', { value: localResources, configurable: true })
+    await failToStart()
+    await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalled())
+    expect(mocks.relaunch).not.toHaveBeenCalled()
+  })
+
+  it('opens no window and starts no voice when one of the services fails to start', async () => {
+    await failToStart()
+    expect(mocks.windows).toEqual([])
+    expect(mocks.ensureServer).not.toHaveBeenCalled()
+    expect(mocks.ensureEngine).not.toHaveBeenCalled()
+  })
+
+  it('tries the quit again when ASIST is launched again after the agents did not stop', async () => {
+    mocks.quitAfterAgentsStop.mockImplementation(() => undefined)
+    await failToStart()
+    appEvents.emit('activate')
+    appEvents.emit('second-instance')
+    expect(mocks.quitAfterAgentsStop).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('the launch that only updates after a failed start', () => {
   it.each(['macos', 'windows'] as const)('installs a newer version the check finds and starts it, on %s', async (platform) => {
-    await failToStart(platform)
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
+    await launchToUpdate(platform)
     publish('0.5.1')
     await vi.waitFor(() => expect(mocks.updater.quitAndInstall).toHaveBeenCalledExactlyOnceWith(true, true))
     expect(mocks.notify).toHaveBeenCalled()
     expect(mocks.quit).not.toHaveBeenCalled()
   })
 
+  it('starts nothing of the app while it checks and downloads', async () => {
+    await launchToUpdate('macos')
+    mocks.updater.emit('update-available', { version: '0.5.1' })
+    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalled())
+    expect(mocks.windows).toEqual([])
+    for (const started of [mocks.registerIpc, mocks.checkAfter, mocks.initJobReporting, mocks.initMaintenance, mocks.initMail, mocks.ensureLoaded, mocks.initMemoryCuration, mocks.ensureServer, mocks.ensureEngine]) {
+      expect(started).not.toHaveBeenCalled()
+    }
+  })
+
   it.each([
     ['the running version is the latest', () => mocks.updater.emit('update-not-available')],
     ['the check fails', () => mocks.updater.emit('error', new Error('net::ERR_INTERNET_DISCONNECTED'))]
-  ])('quits without installing anything when %s', async (_case, answer) => {
-    await failToStart('macos')
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
+  ])('quits without installing anything or starting again when %s', async (_case, answer) => {
+    await launchToUpdate('macos')
     answer()
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalled())
     expect(mocks.updater.quitAndInstall).not.toHaveBeenCalled()
-    expect(mocks.showErrorBox).toHaveBeenCalledOnce()
+    expect(mocks.showErrorBox).not.toHaveBeenCalled()
+    expect(mocks.relaunch).not.toHaveBeenCalled()
   })
 
-  it('shows why the download of a newer version failed, and quits', async () => {
-    await failToStart('windows')
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
+  it('says again what it is doing when ASIST is launched again during the download, from the Dock as from anywhere else', async () => {
+    await launchToUpdate('macos')
     mocks.updater.emit('update-available', { version: '0.5.1' })
+    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledOnce())
+    appEvents.emit('activate')
+    appEvents.emit('second-instance')
+    expect(mocks.notify).toHaveBeenCalledTimes(3)
+  })
+
+  it('shows why the download failed and quits, and no longer says it is updating', async () => {
+    await launchToUpdate('windows')
+    mocks.updater.emit('update-available', { version: '0.5.1' })
+    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledOnce())
     mocks.updater.emit('error', new Error('net::ERR_CONNECTION_RESET'))
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalled())
-    expect(mocks.showErrorBox).toHaveBeenCalledTimes(2)
+    expect(mocks.showErrorBox).toHaveBeenCalledOnce()
+    appEvents.emit('second-instance')
+    expect(mocks.notify).toHaveBeenCalledOnce()
     expect(mocks.updater.quitAndInstall).not.toHaveBeenCalled()
   })
 
-  it('quits at once in a build that does not update itself', async () => {
-    Object.defineProperty(process, 'resourcesPath', { value: localResources, configurable: true })
-    await failToStart('macos')
+  it('shows why the install failed and quits when Squirrel.Mac reports an error instead of quitting into the new version', async () => {
+    await launchToUpdate('macos')
+    publish('0.5.1')
+    await vi.waitFor(() => expect(mocks.updater.quitAndInstall).toHaveBeenCalled())
+    mocks.updater.emit('error', new Error('Could not locate update bundle'))
     await vi.waitFor(() => expect(mocks.quit).toHaveBeenCalled())
-    expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
-  })
-})
-
-describe('what a start that failed leaves up while it updates', () => {
-  it('opens no window and starts no voice when a service fails to start', async () => {
-    await failToStart('macos')
-    expect(mocks.windows).toEqual([])
-    expect(mocks.ensureServer).not.toHaveBeenCalled()
-    expect(mocks.ensureEngine).not.toHaveBeenCalled()
+    expect(mocks.showErrorBox).toHaveBeenCalledOnce()
   })
 
-  it('closes a window that had opened before the error shows, and nothing shows it again or quits the app early', async () => {
-    mocks.wanted.mockImplementation(() => {
-      throw new Error('the aizuchi classifier is damaged')
-    })
-    await start()
-    const [window] = mocks.windows
-    expect(window.destroy).toHaveBeenCalled()
-    expect(window.destroy.mock.invocationCallOrder[0]).toBeLessThan(mocks.showErrorBox.mock.invocationCallOrder[0])
-    expect(mocks.leaveOs).toHaveBeenCalled()
-    // Electron emits ready-to-show once the page has loaded, which it would have done under the error.
-    window.emit('ready-to-show')
-    appEvents.emit('second-instance')
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
-    mocks.updater.emit('update-available', { version: '0.5.1' })
-    expect(window.show).not.toHaveBeenCalled()
-    expect(mocks.quit).not.toHaveBeenCalled()
-  })
-
-  it('says again what it is doing when the app is launched again during the download', async () => {
-    await failToStart('windows')
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
-    mocks.updater.emit('update-available', { version: '0.5.1' })
-    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledOnce())
-    appEvents.emit('second-instance')
-    expect(mocks.notify).toHaveBeenCalledTimes(2)
-  })
-
-  it('gives the app its identity before reading the settings, so that Windows shows the notification of a start that failed on them', async () => {
-    mocks.os = 'windows'
+  it('gives the app its identity before it notifies, so that Windows shows the notification, even with settings it cannot read', async () => {
     mocks.settingsBroken = true
-    await start()
-    await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalled())
+    await launchToUpdate('windows')
     mocks.updater.emit('update-available', { version: '0.5.1' })
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalled())
     expect(mocks.prepare).toHaveBeenCalled()

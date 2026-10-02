@@ -11,7 +11,7 @@ import dns from 'node:dns'
 net.setDefaultAutoSelectFamily?.(false)
 dns.setDefaultResultOrder('ipv4first')
 import { registerIpc } from './ipc'
-import { leaveOs, notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
+import { notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
 import * as asr from './services/asr'
 import * as tts from './services/tts'
 import * as aizuchi from './services/aizuchi'
@@ -20,7 +20,7 @@ import * as watchdog from './services/watchdog'
 import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
 import * as memory from './services/memory'
-import { initAppUpdates, installAfterFailedStart, versionAfterFailedStart } from './services/app-update'
+import { initAppUpdates, installAfterFailedStart, installFailure, updatesItself, versionAfterFailedStart } from './services/app-update'
 import { initMemoryCuration } from './services/memory-curation'
 import { allowedFileRoots } from './services/agent'
 import { handleFileScheme, registerFileScheme } from './file-protocol'
@@ -32,10 +32,12 @@ import { initMail } from './services/mail'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
 import { windowChrome } from './window-chrome'
-import { closeAppPage, watchAppPage } from './page-lifetime'
+import { watchAppPage } from './page-lifetime'
 
 let mainWindow: BrowserWindow | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
+/** What a start that failed asks the launch after its quit to do instead of starting: update the app, and nothing else. */
+const UPDATE_AFTER_FAILED_START = '--update-after-failed-start'
 // asist-file://, which the files card fetches images, documents, audio and video over, has to be
 // registered before whenReady.
 registerFileScheme()
@@ -125,44 +127,69 @@ function startupLocale(): UiLocale {
 }
 
 /**
- * Shows why the start failed, then quits. A release that cannot start is fixed only by a newer one, which an
- * app that fails at every start would otherwise never receive, so the quit installs and starts a newer version
- * when the check finds one. Nothing of the start stays up meanwhile, so a notification is all that tells the
- * user a download is under way.
+ * Calls `listener` whenever ASIST is launched again while this process runs: on macOS a launch from Finder, the
+ * Dock or Spotlight reaches the running app as activate and starts no second process, and any other launch
+ * starts one that quits on the single-instance lock and reaches this one as second-instance.
  */
-async function quitAfterFailedStart(error: unknown): Promise<void> {
-  // A start that failed after its window opened closes it before the error shows: the page would load under the
-  // error, show itself once the error is closed, and listen and speak while a newer version downloads.
-  if (mainWindow) {
-    leaveOs()
-    closeAppPage(mainWindow)
+function onLaunchedAgain(listener: () => void): () => void {
+  app.on('activate', listener)
+  app.on('second-instance', listener)
+  return () => {
+    app.off('activate', listener)
+    app.off('second-instance', listener)
   }
+}
+
+/**
+ * Shows why the start failed, then quits as any quit does, which stops everything the start had started. A
+ * release that cannot start is fixed only by a newer one, which an app that fails at every start would otherwise
+ * never receive, so a build that updates itself starts again after the quit, in a launch that only updates.
+ */
+function quitAfterFailedStart(error: unknown): void {
+  const locale = startupLocale()
+  dialog.showErrorBox(translatorIn(locale)('app.startup.launchFailed'), errorMessageIn(locale, error))
+  if (updatesItself()) app.relaunch({ args: [...process.argv.slice(1), UPDATE_AFTER_FAILED_START] })
+  // A service that started before the failure may have started an agent, the memory curation, so this quit goes
+  // through the gate that stops it. When an agent does not stop, the gate shows why and the app stays, with no
+  // window or tray to quit from, holding the single-instance lock, so launching ASIST again tries the quit again.
+  onLaunchedAgain(() => quitAfterAgentsStop())
+  quitAfterAgentsStop()
+}
+
+/**
+ * The launch that only updates, which a start that failed asks for: it checks for a newer version, and installs
+ * and starts it when there is one; otherwise it quits. It opens no window and starts no service, so nothing of the
+ * app runs, listens or speaks meanwhile, and a notification is all that tells the user a download is under way.
+ */
+async function updateAfterFailedStart(): Promise<void> {
   const locale = startupLocale()
   const text = translatorIn(locale)
-  dialog.showErrorBox(text('app.startup.launchFailed'), errorMessageIn(locale, error))
+  let stopNotice = (): void => undefined
   try {
+    // Windows shows a notification only from an app that has its identity.
+    windowChrome(platformCapabilities().os).prepare()
     const version = await versionAfterFailedStart()
     if (version !== null) {
-      const notice = (): boolean => notify(text('app.startup.launchFailed'), text('app.startup.updating', { version }))
+      const notice = (): void => void notify(text('app.startup.launchFailed'), text('app.startup.updating', { version }))
       notice()
-      // A second launch quits on the single-instance lock, so this one says again what it is doing.
-      app.on('second-instance', notice)
+      stopNotice = onLaunchedAgain(notice)
       quitAfterAgentsStop(await installAfterFailedStart())
-      return
+      await installFailure()
     }
-  } catch (updateError) {
-    console.error('app update after a failed start:', updateError)
-    dialog.showErrorBox(text('app.startup.updateFailed'), errorMessageIn(locale, updateError))
+  } catch (error) {
+    stopNotice()
+    console.error('app update after a failed start:', error)
+    dialog.showErrorBox(text('app.startup.updateFailed'), errorMessageIn(locale, error))
   }
-  // A service that started before the failure may have started an agent, the memory curation, so this quit too
-  // goes through the gate that stops it.
-  quitAfterAgentsStop()
+  app.quit()
 }
 
 if (!hasSingleInstanceLock) {
   // Two processes updating the same userData notify a timer twice and lose JSON updates, so the second
   // one quits.
   app.quit()
+} else if (process.argv.includes(UPDATE_AFTER_FAILED_START)) {
+  void app.whenReady().then(updateAfterFailedStart)
 } else {
   app.on('second-instance', () => {
     if (!mainWindow || mainWindow.isDestroyed()) return
@@ -209,7 +236,7 @@ if (!hasSingleInstanceLock) {
     initMemoryCuration()
 
     // The window and the voice open only once the services have started, so that a service that fails to start
-    // leaves no page that would listen and speak while the failed start downloads a newer version.
+    // leaves no page under its error, where the page would load, turn the microphone on and wait to show itself.
     createWindow()
     // The sidecars are warmed up here, and a failure does not stop the app from starting.
     watchdog.checkAfter(asr.ensureServer().catch((error) => console.error('speech recognition failed to start:', error)))
@@ -220,14 +247,14 @@ if (!hasSingleInstanceLock) {
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
     initAppUpdates()
 
-    // The window only hides when it is closed and is destroyed only by a quit or by a start that failed, which
-    // never reaches here, so it is never created a second time, which would register the IPC handlers again.
+    // The window only hides when it is closed and is destroyed only by a quit, so it is never created a second
+    // time, which would register the IPC handlers again.
     app.on('activate', () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
     })
   }).catch((error: unknown) => quitAfterFailedStart(error))
 }
 
-// The window closes only when the app quits, which ends the app by itself, or when a start that failed closes it
-// before it checks for an update, which must not end the app, so the last window closing never quits.
-app.on('window-all-closed', () => undefined)
+app.on('window-all-closed', () => {
+  app.quit()
+})
