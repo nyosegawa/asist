@@ -165,7 +165,10 @@ describe('CalendarService', () => {
       // The Azores turn their clock back from 01:00 to 00:00 on 2026-10-25, and either midnight ends the day before.
       const azores = { ...fields, allDay: true, timeZone: 'Atlantic/Azores', start: '2026-10-24T00:00:00+00:00', end: '2026-10-25T00:00:00-01:00' }
       await f.service.change({ operation: 'create', event: azores }, f.signal.signal)
-      const [update, create] = f.confirm.mock.calls.map((call: unknown[]) => String(call[0]))
+      // An all-day event without length, which Google refuses to save but may still hold, covers the day it starts on.
+      Object.assign(f.current, { end: f.current.start })
+      await f.service.change({ operation: 'delete', eventId: event.id }, f.signal.signal)
+      const [update, create, remove] = f.confirm.mock.calls.map((call: unknown[]) => String(call[0]))
       const locale = formatLocaleOf(getSettings().uiLocale, getSettings().region)
       const date = (month: number, day: number): string =>
         new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeZone: 'UTC' }).format(Date.UTC(2026, month - 1, day))
@@ -175,6 +178,8 @@ describe('CalendarService', () => {
       expect(update).not.toContain(date(9, 8))
       expect(create).toContain(date(10, 24))
       expect(create).not.toContain(date(10, 25))
+      expect(remove).toContain(date(9, 6))
+      expect(remove).not.toContain(date(9, 5))
     } finally {
       if (previous === undefined) delete process.env.TZ
       else process.env.TZ = previous

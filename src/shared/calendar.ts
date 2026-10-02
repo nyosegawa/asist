@@ -299,8 +299,9 @@ function describeWhen(t: Translate, locale: string, event: DescribedEvent): stri
   }
   // The last day is the date before the end's, counted on the calendar: the instant before the end lies on
   // the end's own date when the end is the second of the two midnights of a day whose clock turns back.
+  // An event without length covers the day it starts on, as lastInstant has it.
   const first = utcDay(dateIn(event.start, event.timeZone))
-  const last = utcDay(dateIn(event.end, event.timeZone)) - DAY_MS
+  const last = Math.max(first, utcDay(dateIn(event.end, event.timeZone)) - DAY_MS)
   const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
   return first === last ? format.format(first) : t('calendar.dateRange', { from: format.format(first), until: format.format(last) })
 }
