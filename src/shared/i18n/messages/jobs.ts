@@ -1844,17 +1844,17 @@ export const jobs = defineMessages({
       'es-ES': 'El agente ha cambiado el worktree ({dir}) de la rama de ASIST a {branch} y ha trabajado ahí, así que ASIST no lo fusiona. Fusiona tú lo que hay en {branch} o descarta el trabajo. Al descartarlo se borran el worktree y los cambios que solo existen ahí.'
     },
     alreadyMerged: {
-      'ja-JP': 'このジョブの変更は {into} にすでに入っています。取り込むと、取り込み済みとして記録し、worktree を消します。',
-      'en-US': "This job's changes are already in {into}. Merging records the job as merged and removes the worktree.",
-      'fr-FR': 'Les modifications de ce job sont déjà dans {into}. La fusion le marque comme fusionné et supprime le worktree.',
-      'de-DE': 'Die Änderungen dieses Jobs sind bereits in {into}. Übernehmen vermerkt den Job als übernommen und entfernt den worktree.',
-      'hi-IN': 'इस जॉब के बदलाव पहले से {into} में हैं। मर्ज करने पर जॉब को मर्ज हुआ दर्ज किया जाएगा और worktree हटा दिया जाएगा।',
-      'id-ID': 'Perubahan pekerjaan ini sudah ada di {into}. Menggabungkannya akan mencatat pekerjaan ini sebagai sudah digabungkan dan menghapus worktree.',
-      'it-IT': "Le modifiche di questo incarico sono già in {into}. Integrandolo, l'incarico viene segnato come integrato e il worktree viene rimosso.",
-      'ko-KR': '이 작업의 변경은 이미 {into}에 들어 있습니다. 병합하면 병합한 것으로 기록하고 worktree를 삭제합니다.',
-      'pt-BR': 'As alterações deste job já estão em {into}. Mesclar registra o job como mesclado e remove o worktree.',
-      'es-419': 'Los cambios de este trabajo ya están en {into}. Al fusionarlo, queda registrado como fusionado y se quita el worktree.',
-      'es-ES': 'Los cambios de este trabajo ya están en {into}. Al fusionarlo, se registra como fusionado y se elimina el worktree.'
+      'ja-JP': 'このジョブの commit は {into} の履歴にすでに入っています。取り込むと、取り込み済みとして記録し、worktree を消します。',
+      'en-US': "This job's commit is already in the history of {into}. Merging records the job as merged and removes the worktree.",
+      'fr-FR': "Le commit de ce job figure déjà dans l'historique de {into}. La fusion le marque comme fusionné et supprime le worktree.",
+      'de-DE': 'Der commit dieses Jobs ist bereits in der Historie von {into}. Übernehmen vermerkt den Job als übernommen und entfernt den worktree.',
+      'hi-IN': 'इस जॉब का commit पहले से {into} के इतिहास में है। मर्ज करने पर जॉब को मर्ज हुआ दर्ज किया जाएगा और worktree हटा दिया जाएगा।',
+      'id-ID': 'Commit pekerjaan ini sudah ada di riwayat {into}. Menggabungkannya akan mencatat pekerjaan ini sebagai sudah digabungkan dan menghapus worktree.',
+      'it-IT': "Il commit di questo incarico è già nella cronologia di {into}. Integrandolo, l'incarico viene segnato come integrato e il worktree viene rimosso.",
+      'ko-KR': '이 작업의 commit은 이미 {into}의 이력에 들어 있습니다. 병합하면 병합한 것으로 기록하고 worktree를 삭제합니다.',
+      'pt-BR': 'O commit deste job já está no histórico de {into}. Mesclar registra o job como mesclado e remove o worktree.',
+      'es-419': 'El commit de este trabajo ya está en el historial de {into}. Al fusionarlo, queda registrado como fusionado y se quita el worktree.',
+      'es-ES': 'El commit de este trabajo ya está en el historial de {into}. Al fusionarlo, se registra como fusionado y se elimina el worktree.'
     }
   },
   confirm: {

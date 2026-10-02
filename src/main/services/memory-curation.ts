@@ -289,17 +289,25 @@ function discardUnmerged(job: AgentJob): void {
 const stoppedByAppEnd = (job: AgentJob): boolean => job.status === 'cancelled' || job.interrupted === true
 
 /**
- * A curation job that ended without success, or whose merge could not be made. One that the end of the app
- * stopped has its changes discarded without a failure, so that the next start curates the same days rather
- * than waiting for the next midnight. An interrupted job is judged once its recovery has ended it.
+ * A curation that the end of the app stopped has its changes discarded without a failure, so that the next start
+ * curates the same days rather than waiting for the next midnight, unless the curation before it was stopped so
+ * as well.
+ */
+function judgeStop(job: AgentJob): void {
+  if (stoppedAfterStop(job)) fail(job, t('memory.curation.quitTwice'))
+  else discardUnmerged(job)
+}
+
+/**
+ * A curation job that ended without success, or whose merge could not be made. An interrupted one was judged
+ * when the start found it, and only its changes are left to discard once its recovery has ended it.
  */
 function observeFailure(job: AgentJob): void {
   if (!job.memoryCuration || job.memoryCuration.applied || processing.has(job.id) || job.mergeState === 'discarded') return
   if (!isJobTerminal(job.status)) return
-  if (stoppedByAppEnd(job)) {
-    if (stoppedAfterStop(job)) fail(job, t('memory.curation.quitTwice'))
-    else discardUnmerged(job)
-  } else if (job.status === 'error') fail(job, job.summary ?? job.status)
+  if (job.interrupted) discardUnmerged(job)
+  else if (job.status === 'cancelled') judgeStop(job)
+  else if (job.status === 'error') fail(job, job.summary ?? job.status)
   else if (job.mergeState === 'conflict' || job.mergeState === 'error') fail(job, job.summary ?? job.mergeState)
 }
 
@@ -364,6 +372,10 @@ export function initMemoryCuration(): void {
     // locked, so the failure is judged on the job as it stands afterwards rather than on this copy.
     observeFailure(agentRunner.get(event.job.id) ?? event.job)
   })
+  // A curation that the end of the last run cut off is judged as this start finds it, before a new one may
+  // start: its recovery can end only after that, and one whose Agent never started ended as the history was
+  // read, which sends no update.
+  for (const job of agentRunner.cutOffByLastEnd()) if (job.memoryCuration) judgeStop(job)
   reconcileMemoryCuration()
   startIfDue()
   setInterval(startIfDue, DUE_CHECK_MS)

@@ -198,11 +198,12 @@ export function assertWorktreeReview(job: AgentJob, commit: string): void {
  * work, looked into on every call: the merge removes the worktree and whatever work appeared in them since
  * the job settled.
  *
- * The branch already holds the job's changes when the merge base is the job's commit itself: ASIST ended after
- * git had merged the job and before the job's record said so, or the user merged the job's branch. Such a job
- * goes through the same checks, and its merge commits nothing and records it as merged. A job kept only for
- * files git ignores settled with nothing to merge, and still has nothing to merge when the branch holds its
- * commit, as the branch does when that commit is the one the job started from.
+ * The branch's history already holds the job's commit when that commit is the merge base, and the job moved
+ * its branch from where it started: ASIST ended after git had merged the job and before the job's record said
+ * so, or the user merged the job's branch. A job that committed nothing has the commit it started from, which
+ * the branch can hold as well, and has nothing to merge; so has one kept only for files git ignores, whose
+ * branch moved, if at all, only onto commits of the user's. Such a merge writes nothing into the working tree,
+ * so it needs neither a clean one nor a free place for the files; it only records the job as merged.
  */
 function mergeVerdict(
   job: AgentJob, into: string | null, base: string, commit: string
@@ -213,7 +214,7 @@ function mergeVerdict(
     ...git.submoduleEntryChanges(worktree.repo, base, commit),
     ...git.submodulesWithWork(worktree.dir)
   ])
-  const alreadyMerged = base === commit && !worktree.keptFor
+  const alreadyMerged = base === commit && commit !== worktree.base && !worktree.keptFor
   const found = { submodules, alreadyMerged }
   // A merge into a detached HEAD moves only HEAD: the work is left to a reflog once the branch is checked
   // out again, as after a bisect, while the job's branch and worktree are already deleted.
@@ -222,9 +223,8 @@ function mergeVerdict(
     const blocked = errorText('jobs.merging.submodules', { paths: submodules.join(', '), branch: worktree.branch, dir: worktree.dir })
     return { ...found, into, blocked }
   }
-  if (!alreadyMerged && !git.hasChanges(worktree.repo, base, commit)) {
-    return { ...found, into, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
-  }
+  if (alreadyMerged) return { ...found, into, blocked: null }
+  if (!git.hasChanges(worktree.repo, base, commit)) return { ...found, into, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
   if (!git.isClean(worktree.repo)) return { ...found, into, blocked: errorText('jobs.merging.dirtyRepo') }
   const inTheWay = git.untrackedInTheWay(worktree.repo, base, commit)
   if (inTheWay.length > 0) return { ...found, into, blocked: errorText('jobs.merging.untrackedInTheWay', { paths: git.named(inTheWay) }) }

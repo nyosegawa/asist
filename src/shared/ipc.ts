@@ -618,9 +618,9 @@ export type JobDiff = MergeVerdict & {
    */
   leftOut: string[]
   /**
-   * Whether the branch merged into already holds the job's changes, as when ASIST ended between git's merge
-   * and the job's record of it, or the user merged the job's branch. The diff is then empty, and a merge only
-   * records the job as merged and removes its worktree.
+   * Whether the history of the branch merged into already holds the commit the job made, as when ASIST ended
+   * between git's merge and the job's record of it, or the user merged the job's branch, even if a later commit
+   * reverted it. The diff is then empty, and a merge only records the job as merged and removes its worktree.
    */
   alreadyMerged: boolean
 }

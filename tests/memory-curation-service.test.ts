@@ -192,14 +192,28 @@ it.each(['crash', 'quit'] as const)('records a failure when the curation after o
   const third = await restart(now + 20 * MINUTE)
   await settled()
   expect(third.curation.lastFailure()).toMatchObject({ message: ja('memory.curation.quitTwice') })
-  const launched = mocks.launch.mock.calls.length
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
   await restart(now + 30 * MINUTE)
-  expect(mocks.launch).toHaveBeenCalledTimes(launched)
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
   await restart(now + DAY)
-  expect(mocks.launch).toHaveBeenCalledTimes(launched + 1)
+  expect(mocks.launch).toHaveBeenCalledTimes(3)
 })
 
-it('takes a curation whose merge reached the memory before the app ended as merged at the next start, and curates no day twice', async () => {
+it('records a failure when two curations in a row are cut off by a crash before their Agent started, and starts no third that day', async () => {
+  await setup()
+  const second = await restart(now + 10 * MINUTE)
+  expect(second.curation.lastFailure()).toBeNull()
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+  const third = await restart(now + 20 * MINUTE)
+  expect(third.curation.lastFailure()).toMatchObject({ message: ja('memory.curation.quitTwice') })
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+  await restart(now + 30 * MINUTE)
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+  await restart(now + DAY)
+  expect(mocks.launch).toHaveBeenCalledTimes(3)
+})
+
+it.each([false, true])('takes a curation whose merge reached the memory before the app ended as merged at the next start, and curates no day twice (an edit by hand not yet committed: %s)', async (handEdit) => {
   const { curation } = await setup()
   const job = curation.pendingJob()!
   fs.writeFileSync(path.join(job.cwd, 'memory.md'), 'curated\n')
@@ -217,11 +231,14 @@ it('takes a curation whose merge reached the memory before the app ended as merg
   const repo = path.join(mocks.root, 'repo')
   const merged = git(repo, 'rev-parse', 'HEAD')
   expect(fs.readFileSync(path.join(repo, 'memory.md'), 'utf8')).toBe('curated\n')
+  const memory = handEdit ? 'curated\nadded by hand\n' : 'curated\n'
+  fs.writeFileSync(path.join(repo, 'memory.md'), memory)
   const restored = await restart(now + 10 * MINUTE)
   expect(restored.agent.get(job.id)).toMatchObject({ mergeState: 'merged', memoryCuration: { through: '2026-09-11', applied: true } })
   expect(restored.curation.curatedThrough()).toBe('2026-09-11')
   expect(restored.curation.lastFailure()).toBeNull()
   expect(git(repo, 'rev-parse', 'HEAD')).toBe(merged)
+  expect(fs.readFileSync(path.join(repo, 'memory.md'), 'utf8')).toBe(memory)
   expect(fs.existsSync(job.cwd)).toBe(false)
   vi.setSystemTime(now + DAY)
   vi.advanceTimersByTime(MINUTE)
