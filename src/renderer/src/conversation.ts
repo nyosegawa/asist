@@ -386,7 +386,7 @@ async function initializeConversation(): Promise<void> {
     if (segment.index >= 0) {
       t.setPhase('speak')
       const e2eMs = turnMetrics.playbackStarted(segment.turnId, segment.index)
-      if (e2eMs !== undefined && segment.turnId === t.activeTurnId) t.mergeTimings({ e2eMs })
+      if (e2eMs !== undefined && segment.turnId === t.timingsTurnId) t.mergeTimings({ e2eMs })
     }
   })
 
@@ -562,6 +562,7 @@ function activateTurn(
   turn.setActiveTurn(turnId)
   if (!alreadyActive && requestId !== null) {
     turnMetrics.activate(turnId, requestId, turn.timings)
+    turn.setTimingsTurn(turnId)
   }
   activeRequestId = requestId
   pendingRequestId = null

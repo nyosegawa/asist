@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => {
     phases: [] as string[],
     partial: '',
     activeTurnId: -1,
-    timings: {},
+    timings: {} as Record<string, unknown>,
+    timingsTurnId: -1,
     setPhase: (phase: string) => {
       turn.phase = phase
       turn.phases.push(phase)
@@ -21,8 +22,16 @@ const mocks = vi.hoisted(() => {
     setActiveTurn: (id: number) => {
       turn.activeTurnId = id
     },
-    resetTimings: () => {},
-    mergeTimings: () => {},
+    resetTimings: () => {
+      turn.timings = {}
+      turn.timingsTurnId = -1
+    },
+    mergeTimings: (timings: Record<string, unknown>) => {
+      turn.timings = { ...turn.timings, ...timings }
+    },
+    setTimingsTurn: (id: number) => {
+      turn.timingsTurnId = id
+    },
     setPartial: (partial: string) => {
       turn.partial = partial
     },
@@ -251,6 +260,7 @@ beforeEach(() => {
   mocks.turn.partial = ''
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
+  mocks.turn.timingsTurnId = -1
   mocks.confirmOpened = []
   mocks.feed.lines.length = 0
   for (const key of Object.keys(mocks.settings)) delete mocks.settings[key]
@@ -707,6 +717,41 @@ describe('a capture that yields no turn', () => {
     expect(turnStart).toHaveBeenLastCalledWith('やっぱり明後日にして', expect.anything())
     expect(mocks.turn.phases).not.toContain('idle')
     expect(mocks.turn.phase).toBe('think')
+  })
+})
+
+describe('the E2E shown in the HUD', () => {
+  const body = { turnId: 42, index: 0, text: '十時です。', audio: 'eA==', phonemes: null }
+  const logged = (metricsLog: Mock): unknown =>
+    metricsLog.mock.calls.map((call) => (call as Array<{ e2eMs?: number }>)[0]).find((payload) => payload.e2eMs !== undefined)?.e2eMs
+
+  it('is the latest turn\'s, whose only sentence started sounding after brain reported it done', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    const conversation = await start({ turnStart: vi.fn(async () => 42), metricsLog })
+    speak('今何時?')
+    await flush()
+    conversation.handleTurnEvent({ type: 'segment', turnId: 42, segment: body })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: body.text })
+    // The opening clip ends and the reply's only sentence starts sounding.
+    player().events.emit('segmentstart', { segment: body, durationMs: 900 })
+
+    expect(logged(metricsLog)).toEqual(expect.any(Number))
+    expect(mocks.turn.timings.e2eMs).toBe(logged(metricsLog))
+  })
+
+  it('stays out of the measurements of the next utterance when the older turn\'s sentence starts after it', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    const conversation = await start({ turnStart: vi.fn(async () => 42), metricsLog })
+    speak('今何時?')
+    await flush()
+    conversation.handleTurnEvent({ type: 'segment', turnId: 42, segment: body })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: body.text })
+    // The user speaks again before the reply sounds, and the HUD starts over for that utterance.
+    speechEnd(performance.now() - 1500)
+    player().events.emit('segmentstart', { segment: body, durationMs: 900 })
+
+    expect(logged(metricsLog)).toEqual(expect.any(Number))
+    expect(mocks.turn.timings.e2eMs).toBeUndefined()
   })
 })
 
