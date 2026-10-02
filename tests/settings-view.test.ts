@@ -534,6 +534,30 @@ describe('settings fields that are saved once the user leaves them', () => {
     expect(api.saveSettings.mock.calls).toEqual([[{ agentCwd: '/Users/demo/projects' }]])
   })
 
+  it('saves an edited persona when the page goes away while the field still has focus, as when Escape closes the settings', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'persona').click())
+    const persona = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsPersona.text.label')}"]`)!
+    persona.focus()
+    await act(async () => type(persona, '名前は ミナ。短く答える。'))
+    expect(api.saveSettings).not.toHaveBeenCalled()
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls).toEqual([[{ persona: '名前は ミナ。短く答える。' }]])
+  })
+
+  it('keeps an edited persona whose save failed in the field, marked as not saved, instead of putting the saved one back', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'persona').click())
+    const persona = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsPersona.text.label')}"]`)!
+    persona.focus()
+    await act(async () => type(persona, '名前は ミナ。'))
+    await act(async () => leave(persona))
+    expect(api.saveSettings.mock.calls).toEqual([[{ persona: '名前は ミナ。' }]])
+    expect(persona.value).toBe('名前は ミナ。')
+    expect(persona.getAttribute('aria-invalid')).toBe('true')
+  })
+
   it('does not leave the working folder on the Enter that confirms an IME conversion', async () => {
     const view = await render()
     await act(async () => nav(view, 'agent').click())
