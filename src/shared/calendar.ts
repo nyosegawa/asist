@@ -276,22 +276,39 @@ export function isoWithOffset(at: number, timeZone: string): string {
 
 const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
 
+/** The scripts a line may break inside of between any two characters, with no space between them. */
+const IDEOGRAPHIC = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+
+/**
+ * A date, or a date with its time, as one piece that a line never breaks inside, so that a long line of the
+ * confirmation breaks only between the start and the end: its spaces become no-break spaces, and a word
+ * joiner goes on each side of an ideograph, a kana or a Hangul syllable and after a hyphen, as in the
+ * Portuguese terça-feira, where a line may otherwise break with no space. Nothing is put between other
+ * letters, which would change how Devanagari is drawn.
+ */
+function unbroken(text: string): string {
+  const characters = [...text.replaceAll(' ', '\u00a0')]
+  const joined = (before: string, after: string): boolean => IDEOGRAPHIC.test(before) || IDEOGRAPHIC.test(after) || before === '-'
+  return characters.map((character, i) => (i > 0 && joined(characters[i - 1], character) ? `\u2060${character}` : character)).join('')
+}
+
 /**
  * When an event happens, as the confirmation window writes it, in lines. An all-day event shows the days
  * it covers, as the event card does. An event with times shows its start and its end on this computer's
  * clock, the one the model is given them in, so that what the model says and what the window shows
  * agree; where the clock of the zone the event is kept in reads otherwise, a second line shows them there.
+ * The arrow stays with the start, so a line too long breaks after it.
  */
 function describeWhen(t: Translate, locale: string, event: CalendarEventInput): string[] {
   if (event.allDay) {
     // Date.parse reads a date without a time as the beginning of that day in UTC.
     const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
-    const date = (day: string): string => format.format(Date.parse(day))
+    const date = (day: string): string => unbroken(format.format(Date.parse(day)))
     return [event.start === event.end ? date(event.start) : t('calendar.dateRange', { from: date(event.start), until: date(event.end) }), t('calendar.allDay')]
   }
   const span = (timeZone: string): string => {
     const format = new Intl.DateTimeFormat(locale, { timeZone, dateStyle: 'full', timeStyle: 'short' })
-    return `${format.format(Date.parse(event.start))} → ${format.format(Date.parse(event.end))}`
+    return `${unbroken(format.format(Date.parse(event.start)))}\u00a0→ ${unbroken(format.format(Date.parse(event.end)))}`
   }
   const here = span(localZone())
   const there = span(event.timeZone)

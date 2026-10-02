@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createTranslator } from '../src/shared/i18n'
+import { createTranslator, UI_LOCALES } from '../src/shared/i18n'
 import { errorText, readErrorText } from '../src/shared/i18n/error-text'
 
 // The service writes the confirmation window in the language of the interface, which it reads from the settings.
@@ -22,6 +22,7 @@ import type { CalendarWrite } from '../src/main/services/google-calendar'
 import {
   calendarEventInputSchema,
   calendarWindow,
+  describeCalendarEvent,
   detailCalendarEvent,
   includesNextWeek,
   isoWithOffset,
@@ -56,6 +57,11 @@ const fields = {
   location: '',
   notes: ''
 }
+/** The confirmation as it reads, without the joiners and no-break spaces that only decide where its lines break. */
+const read = (detail: string): string => detail.replace(/\u2060/g, '').replace(/\u00a0/g, ' ')
+/** Two ideographs, kana or Hangul syllables next to each other, between which a line may break. */
+const JOINABLE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]{2}/u
+
 function fixture(patch = {}) {
   const settings = {
     enabled: true,
@@ -165,7 +171,7 @@ describe('CalendarService', () => {
       // An all-day event without length, which Google refuses to save but may still hold, covers the day it starts on.
       Object.assign(f.current, { end: f.current.start })
       await f.service.change({ operation: 'delete', eventId: event.id }, f.signal.signal)
-      const [update, remove] = f.confirm.mock.calls.map((call: unknown[]) => String(call[0]))
+      const [update, remove] = f.confirm.mock.calls.map((call: unknown[]) => read(String(call[0])))
       const locale = formatLocaleOf(getSettings().uiLocale, getSettings().region)
       const date = (month: number, day: number): string =>
         new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeZone: 'UTC' }).format(Date.UTC(2026, month - 1, day))
@@ -175,6 +181,10 @@ describe('CalendarService', () => {
       expect(update).not.toContain(date(9, 8))
       expect(remove).toContain(date(9, 6))
       expect(remove).not.toContain(date(9, 5))
+      // A range too long for its line breaks around the dash and never inside a date.
+      const range = String(f.confirm.mock.calls[0][0]).split('\n').find((line) => read(line).includes(date(9, 7)))!
+      expect(range.split(' ')).toHaveLength(3)
+      expect(range).not.toMatch(JOINABLE)
     } finally {
       if (previous === undefined) delete process.env.TZ
       else process.env.TZ = previous
@@ -201,6 +211,27 @@ describe('CalendarService', () => {
       expect(there[0]).not.toContain(clock(22))
       expect(local.filter((line) => line.includes(clock(10)))).toHaveLength(1)
       expect(local.join('\n')).not.toContain('Asia/Tokyo')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+  it('keeps each date with its time in one piece in every language, so that a line too long breaks after the arrow', () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      const call = { ...fields, timeZone: 'America/New_York', start: '2026-09-15T09:00:00-04:00', end: '2026-09-16T10:00:00-04:00' }
+      for (const locale of UI_LOCALES) {
+        const t = createTranslator(locale)
+        const [, here, there] = describeCalendarEvent(t, locale, call).split('\n')
+        const label = t('calendar.confirm.inZone', { zone: call.timeZone, when: '' })
+        expect(there.startsWith(label)).toBe(true)
+        // A line breaks at a space, between two ideographs or Hangul syllables, and after a hyphen.
+        for (const span of [here, there.slice(label.length)]) {
+          expect([locale, span.split(' ').length, span.split(' ')[0].endsWith('→')]).toEqual([locale, 2, true])
+          expect([locale, JOINABLE.test(span), /-(?!\u2060)/.test(span)]).toEqual([locale, false, false])
+        }
+      }
     } finally {
       if (previous === undefined) delete process.env.TZ
       else process.env.TZ = previous
