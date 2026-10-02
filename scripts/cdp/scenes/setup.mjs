@@ -10,8 +10,9 @@ import { main } from '../drive.mjs'
  * (npm run demo:setup).
  *
  * Usage: npm run demo:setup -- [output directory]
- * Output: setup-01-….png and onwards. The branches, which are a key that fails verification, a denied
- * microphone, the text-only path and a language other than the one the setup opens on, are captured last.
+ * Output: setup-01-….png and onwards. The branches, which are a key that fails verification, the text-only
+ * path, a speech app that is not installed, a denied microphone and a language other than the one the setup
+ * opens on, are captured last.
  * The demo's mock advances the state as the steps run, so no key is really verified, no model is really
  * downloaded and no microphone permission is really requested.
  */
