@@ -6,6 +6,7 @@ import { dockOrderSchema } from './dock'
 import { conversationModelSchema, sameModel, type ConversationModel } from './llm-catalog'
 import { IRODORI_TTS_VOICE_IDS, QWEN_TTS_SIZES, QWEN_TTS_VOICE_IDS } from './tts-models'
 import { CONVERSATION_LOCALES } from './conversation-locale'
+import { isDefaultPersona } from './persona'
 import { UI_LOCALES } from './i18n'
 import { THEMES } from './themes'
 import { errorText } from './i18n/error-text'
@@ -40,7 +41,11 @@ const fields = {
   conversationLocale: z.enum(CONVERSATION_LOCALES),
   /** The ISO 3166-1 alpha-2 country whose weather, news, currency and formats apply. */
   region: z.string().regex(/^[A-Z]{2}$/),
-  persona: z.string(),
+  /**
+   * The persona the user wrote, where an empty one means none. Null keeps the default persona, which has no
+   * text here and is read in the conversation language (`personaText`).
+   */
+  persona: z.string().nullable(),
   conversationLogRetentionDays: z.number().int().positive(),
   ttsEngine: z.enum(['voicevox', 'aivisspeech', 'irodori', 'qwen3tts', 'system', 'none']),
   voicevoxSpeaker: z.number().int().nonnegative(),
@@ -187,7 +192,7 @@ const V4_ASR_MODELS: Record<string, AsrModel> = {
 
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
-  version: 10,
+  version: 11,
   upgrades: {
     // Version 2 adds the theme. Everything written before it was drawn in future.
     1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' }),
@@ -238,6 +243,14 @@ export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
     9: (content) => {
       const stored = content as Record<string, unknown>
       return { ...stored, bridgePhrase: stored.aizuchi }
+    },
+    // Version 11 holds no text for the default persona. Version 10 held it in the language of the system or of
+    // the setup, which a later change of the conversation language left behind, so a persona equal to the
+    // default in either language is the app's and becomes the default; every version up to 10 wrote those same
+    // two texts. Anything else stays as it is.
+    10: (content) => {
+      const stored = content as Record<string, unknown>
+      return typeof stored.persona === 'string' && isDefaultPersona(stored.persona) ? { ...stored, persona: null } : stored
     }
   },
   parse: parseAppSettings,
