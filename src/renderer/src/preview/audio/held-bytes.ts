@@ -1,4 +1,4 @@
-import type { Bytes } from '../fetch-range'
+import type { Bytes } from '../ranges'
 
 /**
  * The part of a range read in pieces that a reader still needs. The reader works on `bytes` and asks for more

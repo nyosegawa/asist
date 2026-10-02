@@ -1,4 +1,4 @@
-import type { Bytes } from '../fetch-range'
+import type { Bytes } from '../ranges'
 import { HeldBytes } from './held-bytes'
 import { audioDamaged, type RangedFile } from './ranged-file'
 

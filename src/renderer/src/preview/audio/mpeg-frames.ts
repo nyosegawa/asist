@@ -1,4 +1,4 @@
-import type { Bytes } from '../fetch-range'
+import type { Bytes } from '../ranges'
 import type { HeldBytes } from './held-bytes'
 
 /**

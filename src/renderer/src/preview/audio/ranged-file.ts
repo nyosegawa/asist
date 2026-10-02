@@ -1,5 +1,5 @@
 import { errorKey } from '@shared/i18n/error-key'
-import { fetchRange, type Bytes } from '../fetch-range'
+import { fetchRange, loadFailed, readRange, type Bytes } from '../ranges'
 
 /**
  * A recording read by HTTP ranges from its start to its end, a piece at a time, so that what is held of it at
@@ -10,7 +10,6 @@ import { fetchRange, type Bytes } from '../fetch-range'
 export const PIECE_BYTES = 4 * 1024 * 1024
 
 export const audioDamaged = (): Error => new Error(errorKey('files.errors.audioDamaged'))
-const changed = (): Error => new Error(errorKey('files.errors.changedWhileReading'))
 
 export interface RangedFile {
   /** The file's length when its first piece was read; every later answer has to come from a file of this length. */
@@ -33,14 +32,11 @@ export async function openRangedFile(url: string, signal?: AbortSignal): Promise
   // A range holds no byte of an empty file.
   if (!first) throw audioDamaged()
   const { size, bytes: head } = first
-  if (first.start !== 0 || head.length !== Math.min(size, PIECE_BYTES)) throw changed()
+  // A server that answers with other bytes than the range asked for is no server this can read by ranges.
+  if (first.start !== 0 || head.length !== Math.min(size, PIECE_BYTES)) throw loadFailed(206)
 
-  const read = async (start: number, end: number): Promise<Bytes> => {
-    if (end <= head.length) return head.subarray(start, end)
-    const answer = await fetchRange(url, `bytes=${start}-${end - 1}`, signal)
-    if (!answer || answer.size !== size || answer.start !== start || answer.bytes.length !== end - start) throw changed()
-    return answer.bytes
-  }
+  const read = (start: number, end: number): Promise<Bytes> =>
+    end <= head.length ? Promise.resolve(head.subarray(start, end)) : readRange(url, start, end, size, signal)
 
   async function* pieces(start: number, end: number): AsyncGenerator<Bytes> {
     const ask = (from: number): Promise<Bytes> | null => (from < end && !signal?.aborted ? read(from, Math.min(end, from + PIECE_BYTES)) : null)

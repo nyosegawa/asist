@@ -5,7 +5,7 @@ import { afterId3, isInfoFrame, mpegFrames } from '../audio/mpeg-frames'
 import { PeakTrack } from '../audio/peaks'
 import { audioDamaged, openRangedFile, type RangedFile } from '../audio/ranged-file'
 import { isWav, readWavFormat, wavPeak } from '../audio/wav'
-import type { Bytes } from '../fetch-range'
+import type { Bytes } from '../ranges'
 import type { OpenPreviewDocument } from '../serve'
 
 /**

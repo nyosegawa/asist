@@ -53,6 +53,13 @@ export function windowSize(value) {
 }
 
 /**
+ * How the profile is removed. Chrome's helper processes can still write into it for a moment after the browser
+ * process has exited, and the removal then fails: ENOTEMPTY on the profile's Default folder, on a macOS runner of
+ * GitHub Actions on 2026-10-02. rm retries a removal that fails so.
+ */
+const REMOVE_PROFILE = { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }
+
+/**
  * Starts headless Chrome with a CDP port and a profile of its own in the temporary folder, and returns the
  * port and close(), which stops Chrome and removes the profile once Chrome has exited. Port 0 picks a free one.
  * `args` are flags added to the usual ones.
@@ -74,16 +81,13 @@ export async function launchChrome({ port = 0, url = 'about:blank', args = [] } 
   // wait for Chrome to end, so it kills Chrome outright and removes the profile at once.
   const leave = () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-    rmSync(profile, { recursive: true, force: true })
+    rmSync(profile, REMOVE_PROFILE)
   }
   process.on('exit', leave)
   const close = async () => {
     child.kill()
     await exited
-    // Chrome's helper processes can still write into the profile for a moment after the browser has exited: on a
-    // CI runner the removal met a folder filled again while it was emptied (ENOTEMPTY, 2026-10-02). rm retries
-    // such a folder, waiting a little longer each time.
-    await rm(profile, { recursive: true, force: true, maxRetries: 5 })
+    await rm(profile, REMOVE_PROFILE)
     process.off('exit', leave)
   }
   try {
