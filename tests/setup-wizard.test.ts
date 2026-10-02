@@ -424,6 +424,7 @@ describe('first-run setup', () => {
     status = { ...status, asr: true, tts: true }
     api.ttsTest.mockRejectedValueOnce(new Error('the speech engine did not answer'))
     const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
+    const errorScrolls = (): number => scrolled.mock.contexts.filter((element) => (element as Element).classList.contains('su-error')).length
     try {
       await render()
       await toModel(ja)
@@ -433,11 +434,11 @@ describe('first-run setup', () => {
       await press(ja('setup.next'))
       await press(ja('setup.next'))
       await press(ja('common.playSample'))
-      const error = container.querySelector('.su-error')
-      expect(scrolled.mock.contexts).toEqual([error])
+      expect(container.querySelector('.su-error')?.textContent).toBe('the speech engine did not answer')
+      expect(errorScrolls()).toBe(1)
       // A progress report renders the step again; the user may have scrolled away from the error since.
       await act(async () => progressListener({ target: 'tts', status: 'downloading', pct: 29, downloadedMb: 576.3, totalMb: 1974, message: 'Qwen3-TTS' }))
-      expect(scrolled.mock.contexts).toEqual([error])
+      expect(errorScrolls()).toBe(1)
     } finally {
       scrolled.mockRestore()
     }

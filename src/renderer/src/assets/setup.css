@@ -159,17 +159,13 @@
   cursor: not-allowed;
   opacity: 0.45;
 }
-/* A text followed by a link or a note sits beside it while the line has room, and the link or note
-   otherwise starts the next line level with the text. The space between them is the row's gap, which a
-   wrapped line does not begin with; a margin on the link would stay at the start of the line it wraps to. */
-.su-field label,
-.su-field .su-hint,
-.su-extra-name,
-.su-extra-about dd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 10px;
+/* The space between a text and the link or note that follows it on the same line. It is a collapsible
+   space, which ends the line when the link wraps, so the link starts level with the text; a margin on the
+   link would stay at the start of the line it wraps to. With no font size of its own, the space is exactly
+   the word spacing wide. */
+.su-gap {
+  font-size: 0;
+  word-spacing: 10px;
 }
 
 /* Each language is named in itself and fits on one line, so the choices are a plain grid of names. */
