@@ -61,6 +61,21 @@ describe('DfnDenoiser', () => {
     expect(outputs[0][0]).toBeCloseTo(0.5)
   })
 
+  it('sends all of a delivery that fills more chunks than may wait unanswered to the worker', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const { dfn, worker, outputs } = await readyDenoiser()
+      // The native helper's longest delivery, 400 ms at 48 kHz.
+      dfn.push(new Float32Array(19_200).fill(0.1))
+      expect(dfn.ready).toBe(true)
+      expect(infers(worker)).toHaveLength(37)
+      for (const { id, chunk } of infers(worker)) worker.message({ type: 'enhanced', id, chunk: chunk.map(() => 0.05) })
+      expect(outputs.map((chunk) => chunk[0])).toEqual(Array(37).fill(Math.fround(0.05)))
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('passes audio through before the worker is ready, so loading never stops the audio', () => {
     const worker = new FakeWorker()
     const dfn = new DfnDenoiser({ workerFactory: () => asWorker(worker) })

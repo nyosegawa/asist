@@ -15,9 +15,10 @@ import type { DfnRequest, DfnResponse } from './dfn-worker'
 
 const CHUNK_SAMPLES = 512
 /**
- * The limit on unanswered chunks, about 340 ms at 10.7 ms per 512-sample chunk. Against a measured
- * 0.6 ms per frame that is deep enough that only a broken worker reaches it. Past the limit the
- * audio passes through without noise suppression.
+ * The limit on chunks of earlier frames still unanswered when a frame arrives, about 340 ms at 10.7 ms per
+ * 512-sample chunk. Against a measured 0.6 ms per frame that is deep enough that only a broken worker reaches
+ * it. Past the limit the audio passes through without noise suppression. The chunks of the frame being pushed
+ * do not count: one 400 ms delivery of the native helper fills up to 38 of them before the worker can answer any.
  */
 export const MAX_IN_FLIGHT = 32
 /**
@@ -125,6 +126,7 @@ export class DfnDenoiser {
 
   /** Takes a 48 kHz mono frame of any length and gathers it into chunks of 512 samples. */
   push(frame: Float32Array): void {
+    if (this.available && this.pending.length >= MAX_IN_FLIGHT) this.fallBehind()
     let offset = 0
     while (offset < frame.length) {
       const take = Math.min(frame.length - offset, CHUNK_SAMPLES - this.chunkLength)
@@ -155,23 +157,22 @@ export class DfnDenoiser {
       this.onOutput?.(chunk.slice(0))
       return
     }
-    if (this.pending.length >= MAX_IN_FLIGHT) {
-      // The worker is behind and order can no longer be held, so noise suppression stops here.
-      console.warn(
-        this.answeredSinceUse
-          ? `dfn denoiser fell behind (${this.pending.length} frames); passing through`
-          : 'dfn denoiser stopped answering; passing through until the microphone starts again'
-      )
-      this.available = false
-      this.resumeAt = this.answeredSinceUse ? this.now() + RESUME_AFTER_MS : Infinity
-      this.passPendingThrough()
-      this.onOutput?.(chunk.slice(0))
-      return
-    }
     const id = this.nextId++
     const sent = chunk.slice(0)
     this.pending.push({ id, chunk: sent })
     this.worker.postMessage({ type: 'infer', id, chunk: sent } satisfies DfnRequest)
+  }
+
+  /** Stops noise suppression for a worker that is behind, since order can no longer be held. */
+  private fallBehind(): void {
+    console.warn(
+      this.answeredSinceUse
+        ? `dfn denoiser fell behind (${this.pending.length} chunks); passing through`
+        : 'dfn denoiser stopped answering; passing through until the microphone starts again'
+    )
+    this.available = false
+    this.resumeAt = this.answeredSinceUse ? this.now() + RESUME_AFTER_MS : Infinity
+    this.passPendingThrough()
   }
 
   /** Hands the chunks still in flight on as they were sent, and leaves their answers to be ignored. */
