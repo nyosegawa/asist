@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EmbeddingKind } from '@shared/memory-embedding'
+import { newPageMarkdown } from '@shared/memory-page'
 import { createTranslator } from '@shared/i18n'
 
 const ja = createTranslator('ja-JP')
@@ -86,6 +87,34 @@ describe('memory service', () => {
     service.documentDelete('pages/松葉軒.md')
     expect(service.list()).toEqual([])
     expect(service.documents()).toEqual([])
+  })
+
+  it.each([
+    {
+      conversation: 'ja-JP',
+      name: '田中さん',
+      summary: '## 要約',
+      text: '本人の上司。毎週木曜に打ち合わせをする。',
+      about: '田中さんとの打ち合わせって木曜だっけ',
+      unrelated: ['見出しの付け方がわからない', '一人称で話して', '日付が意味を持つ']
+    },
+    {
+      conversation: 'en-US',
+      name: 'Tanaka',
+      summary: '## Summary',
+      text: 'Their manager at work. They meet every Thursday.',
+      about: 'is my meeting with Tanaka on Thursday',
+      unrelated: ['what is it for and what has been decided', 'how do you get on with your boss', 'where is the shop and what should I order']
+    }
+  ] as const)('searches a page made on the memory screen in $conversation only for what the user wrote in it', async ({ conversation, name, summary, text, about, unrelated }) => {
+    service.ensureLoaded()
+    fs.writeFileSync(memoryFile('pages', 'ムギ.md'), MUGI)
+    service.reindex()
+    const draft = newPageMarkdown(name, conversation, '2026-10-03')
+    service.documentCreate({ name, markdown: draft.replace(`${summary}\n`, `${summary}\n${text}\n`) })
+    expect(service.list().filter((unit) => unit.page === name).map((unit) => unit.text)).toEqual([text])
+    expect((await service.search(about, { mode: 'utterance' }))[0]?.record.page).toBe(name)
+    for (const utterance of unrelated) expect([utterance, await service.search(utterance, { mode: 'utterance' })]).toEqual([utterance, []])
   })
 
   // The rebuild is made to fail with a named pipe (mkfifo), which Windows does not have in a folder.

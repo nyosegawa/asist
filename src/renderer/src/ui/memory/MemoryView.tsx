@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { MemoryDocument } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
-import { JOURNAL_SELF_HEADINGS } from '@shared/memory-page'
+import { errorText } from '@shared/i18n/error-text'
+import { localDateKey } from '@shared/local-date'
+import { JOURNAL_SELF_HEADINGS, classifyFile, documentOf, newPageMarkdown, pageFile, parsePageName } from '@shared/memory-page'
+import { conversationLocale } from '@/conversation-locale'
 import { SaveShortcutKey, isSaveShortcut } from '@/ui/save-shortcut'
 import { keyForApp } from '@/ui/key-for-app'
 import { useToastStore } from '@/state/stores'
@@ -15,9 +18,9 @@ import { useT, useFormatLocale } from '@/i18n'
 /**
  * The memory view, with the list of documents on the left, covering what ASIST knows about itself
  * and about the user, the diary and the pages, and the chosen document on the right. A document can
- * be read and also edited as markdown and saved, and main commits the save. Pages can be created
- * from a template, and pages and diary entries can be deleted. Main refuses a save that breaks the
- * writing rules and gives the reason.
+ * be read and also edited as markdown and saved, and main commits the save. A new page opens in the
+ * editor with its name and an empty summary and is written at its first save; pages and diary entries
+ * can be deleted. Main refuses a save that breaks the writing rules and gives the reason.
  */
 
 const parseDate = (date: string): Date => {
@@ -52,11 +55,15 @@ const matches = (doc: MemoryDocument, filter: string): boolean => {
 }
 
 /**
- * An edit keeps the document it edits and the text it started from, which a save hands to main as the
- * version it replaces. It ends only through leaveEditing or a save, so the draft stays even when the
- * document leaves the list, as when a curation removes it.
+ * An edit keeps the document it edits, the text it opened with, and `base`, the text main holds for it, which a
+ * save hands to main as the version it replaces. A new page has no base, since nothing is written until its
+ * first save. An edit ends only through leaveEditing or a save, so the draft stays even when the document leaves
+ * the list, as when a curation removes it.
  */
-type Mode = { kind: 'read' } | { kind: 'edit'; doc: MemoryDocument; draft: string; base: string } | { kind: 'create' }
+type Mode =
+  | { kind: 'read' }
+  | { kind: 'edit'; doc: MemoryDocument; draft: string; opened: string; base: string | null }
+  | { kind: 'create' }
 
 /** App passes `open`, so the view keeps drawing through the closing animation even after the store says it is closed. */
 export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
@@ -75,8 +82,6 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
   const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
   const [revision, setRevision] = useState(0)
-  // A page that has just been created goes straight into editing once it has loaded.
-  const editOnLoad = useRef<MemoryDocument | null>(null)
 
   const reload = async (): Promise<MemoryDocument[]> => {
     const list = await window.api.memoryDocuments()
@@ -111,14 +116,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     window.api
       .memoryDocumentRead(selected)
       .then((text) => {
-        if (!active) return
-        const value = text ?? ''
-        setMarkdown(value)
-        const created = editOnLoad.current
-        if (created?.file === selected) {
-          editOnLoad.current = null
-          setMode({ kind: 'edit', doc: created, draft: value, base: value })
-        }
+        if (active) setMarkdown(text ?? '')
       })
       .catch((err: unknown) => active && setError(displayError(err)))
     return () => {
@@ -126,7 +124,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
     }
   }, [open, selected, revision])
 
-  const dirty = mode.kind === 'edit' && mode.draft !== mode.base
+  const dirty = mode.kind === 'edit' && mode.draft !== mode.opened
   const leaveEditing = async (): Promise<boolean> => {
     if (dirty && !(await askConfirm({ message: t('common.confirmDiscard'), confirmLabel: t('common.discardChanges'), destructive: true }))) return false
     setMode({ kind: 'read' })
@@ -175,18 +173,24 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
   const save = (): void => {
     if (mode.kind !== 'edit' || busy) return
     const { doc: edited, draft, base } = mode
+    const created = base === null
     setBusy(true)
-    void window.api
-      .memoryDocumentWrite(edited.file, draft, base)
+    void (
+      created
+        ? window.api.memoryDocumentCreate({ name: classifyFile(edited.file).title, markdown: draft })
+        : window.api.memoryDocumentWrite(edited.file, draft, base)
+    )
       .then(
-        () => {
-          toast({ kind: 'ok', title: t('memory.saved'), body: titleOf(edited, t, locale) })
+        async () => {
+          toast({ kind: 'ok', title: t(created ? 'memory.created' : 'memory.saved'), body: titleOf(edited, t, locale) })
+          // A new page joins the list before the editor closes, or the view would leave it for the newest diary entry.
+          if (created) await reload()
           setMode({ kind: 'read' })
           // Main may have written the draft with a final newline added, so the next edit starts from the file.
           setRevision((v) => v + 1)
         },
         async (err: unknown) => {
-          toast({ kind: 'error', title: t('memory.saveFailed'), body: displayError(err) })
+          toast({ kind: 'error', title: t(created ? 'memory.createFailed' : 'memory.saveFailed'), body: displayError(err) })
           // The draft stays in the editor. The document and the list are read again for the view the editor
           // leaves to, because a save is refused when a curation has changed or removed the document since
           // the editor opened.
@@ -199,17 +203,16 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
       .finally(() => setBusy(false))
   }
   const create = (name: string): void => {
-    setBusy(true)
-    void window.api
-      .memoryDocumentCreate({ name })
-      .then(async (created) => {
-        await reload()
-        editOnLoad.current = created
-        setSelected(created.file)
-        toast({ kind: 'ok', title: t('memory.created'), body: created.title })
-      })
-      .catch((err: unknown) => toast({ kind: 'error', title: t('memory.createFailed'), body: displayError(err) }))
-      .finally(() => setBusy(false))
+    try {
+      const page = parsePageName(name)
+      const file = pageFile(page)
+      if (documents.some((candidate) => candidate.file === file)) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+      const draft = newPageMarkdown(page, conversationLocale(), localDateKey(new Date()))
+      setSelected(file)
+      setMode({ kind: 'edit', doc: documentOf(file, draft), draft, opened: draft, base: null })
+    } catch (err) {
+      toast({ kind: 'error', title: t('memory.createFailed'), body: displayError(err) })
+    }
   }
   const remove = async (): Promise<void> => {
     if (!doc) return
@@ -364,7 +367,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
                         type="button"
                         className="my-btn"
                         disabled={markdown === null || busy}
-                        onClick={() => setMode({ kind: 'edit', doc, draft: markdown ?? '', base: markdown ?? '' })}
+                        onClick={() => setMode({ kind: 'edit', doc, draft: markdown ?? '', opened: markdown ?? '', base: markdown ?? '' })}
                       >
                         <Pencil size={13} />
                         {t('memory.doc.edit')}
@@ -419,7 +422,7 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
   )
 }
 
-/** A new page. A name creates it from the template and opens it for editing. */
+/** A new page. A name opens it in the editor, and it is written at its first save. */
 function CreatePage({
   busy,
   onCreate,

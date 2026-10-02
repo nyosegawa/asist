@@ -14,6 +14,7 @@ import {
   classifyFile,
   documentKindOf,
   documentOf,
+  pageFile,
   parseMemoryPageInput,
   parsePage,
   promptBody,
@@ -260,19 +261,19 @@ export function writeDocument(file: string, markdown: string, base: string, dir 
   return documentOf(file, text)
 }
 
-/** Creates a page from the template and commits it. A name that already exists is refused rather than overwritten. */
-export function createPage(name: string, template: string, dir = memoryDir()): MemoryDocument {
-  const input = parseMemoryPageInput({ name })
-  const file = `${PAGES_DIR}/${input.name}.md`
-  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
-  // The name goes in through a function, because a replacement string reads `$&` or `$$` in it as a pattern.
-  const markdown = template
-    .replace(/^updated: .*$/m, `updated: ${localDateKey(new Date())}`)
-    .replace(/^# .*$/m, () => `# ${input.name}`)
+/**
+ * Writes a page the user made on the memory screen, at its first save, and commits it. A name that already exists
+ * is refused rather than overwritten, and a page that breaks the rules is not written, with the reason thrown.
+ */
+export function createPage(input: unknown, dir = memoryDir()): MemoryDocument {
+  const { name, markdown } = parseMemoryPageInput(input)
+  const file = pageFile(name)
+  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name }))
   const errors = validateDocument(file, markdown, t)
-  if (errors.length > 0) throw new Error(errorText('memory.errors.templateInvalid', { errors: errors.join(' / ') }))
-  commitFiles(dir, { [file]: markdown }, written('pageCreated', { name: input.name }))
-  return documentOf(file, markdown)
+  if (errors.length > 0) throw new Error(errors.join(' / '))
+  const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
+  commitFiles(dir, { [file]: text }, written('pageCreated', { name }))
+  return documentOf(file, text)
 }
 
 /**

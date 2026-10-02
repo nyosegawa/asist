@@ -1,4 +1,3 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
 import { errMessage } from '@shared/api-errors'
@@ -9,10 +8,9 @@ import { FrozenMemoryBlock } from '@shared/memory-block'
 import { embeddingModelKey } from '@shared/memory-embedding'
 import * as embedding from './embedding'
 import { MemoryIndex, type IndexSearchOptions, type MemorySearchHit } from './memory-index'
-import { parseMemoryPageInput, type PromptDocumentKind } from '@shared/memory-page'
+import type { PromptDocumentKind } from '@shared/memory-page'
 import * as store from './memory-store'
 import { conversationLocale } from './conversation-locale'
-import { skillSourceDir } from './memory-curation-skill'
 import { errorMessage } from './i18n'
 import { getSettings } from './settings'
 
@@ -154,11 +152,10 @@ export function documentWrite(file: string, markdown: string, base: string): Mem
   return document
 }
 
+/** Writes a page the user made on the memory screen, at its first save. */
 export function documentCreate(input: unknown): MemoryDocument {
   requireOpen()
-  const { name } = parseMemoryPageInput(input)
-  const template = fs.readFileSync(path.join(skillSourceDir(), 'assets', 'templates', 'page.md'), 'utf8')
-  const document = store.createPage(name, template)
+  const document = store.createPage(input)
   reindexAfterChange()
   return document
 }

@@ -712,9 +712,10 @@ export interface MemoryDocument {
   summary: string
 }
 
-/** A new page. Its name becomes the filename. */
+/** A page the user made on the memory screen, at its first save. Its name becomes the filename. */
 export interface MemoryPageInput {
   name: string
+  markdown: string
 }
 
 /** The overview of the memory shown on the settings screen. */
@@ -1089,7 +1090,10 @@ export interface RendererApi {
    * markdown breaks the writing rules.
    */
   memoryDocumentWrite(file: string, markdown: string, base: string): Promise<MemoryDocument>
-  /** Creates a new page from the template. */
+  /**
+   * Writes a page the user made on the memory screen, at its first save, and commits it. It throws when a page of
+   * that name exists by then, and with the reason when the markdown breaks the writing rules.
+   */
   memoryDocumentCreate(input: MemoryPageInput): Promise<MemoryDocument>
   /** Deletes a page or a journal entry. A page talked about on a day not curated yet can be written again by the next curation. */
   memoryDocumentDelete(file: string): Promise<void>
