@@ -124,6 +124,7 @@ const openPptx = async (url: string) => {
     })
 
   return {
+    version: zip.version,
     methods: {
       deck: (): PptxDeck => ({ size, slideCount: slides.length }),
 

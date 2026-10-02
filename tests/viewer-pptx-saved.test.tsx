@@ -32,6 +32,15 @@ vi.mock('@/panels/viewers/preview-client', async (importOriginal) => {
 const t = createTranslator('ja-JP')
 const DECK_URL = 'asist-file:///Users/me/deck.pptx'
 let file = new Uint8Array()
+/** The ETag the server gives the file, which asist-file makes of its length and time of change. */
+let etag = ''
+let saves = 0
+
+/** Writes the file again, as an app that saves it does, at a new time of change. */
+async function save(titles: string[], options?: { stored?: boolean }): Promise<void> {
+  file = await deckOf(titles, options)
+  etag = `"${file.length}-${++saves}"`
+}
 
 const PPT_NS =
   'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
@@ -39,9 +48,10 @@ const RELS_NS = 'xmlns="http://schemas.openxmlformats.org/package/2006/relations
 
 /**
  * A deck of a title on each slide, with 200 KB of other parts behind the slides, so that a slide lies outside the
- * last 64 KB the reader keeps from when it opened the file, and reading it reaches the file as it is now.
+ * last 64 KB the reader keeps from when it opened the file, and reading it reaches the file as it is now. With
+ * `stored`, nothing is compressed, so that titles of the same length make a file of the same length.
  */
-async function deckOf(titles: string[]): Promise<Uint8Array> {
+async function deckOf(titles: string[], { stored = false } = {}): Promise<Uint8Array> {
   const zip = new JSZip()
   const ids = titles.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join('')
   zip.file('ppt/presentation.xml', `<p:presentation ${PPT_NS}><p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/></p:presentation>`)
@@ -53,7 +63,7 @@ async function deckOf(titles: string[]): Promise<Uint8Array> {
     )
   })
   zip.file('ppt/media/filler.bin', new Uint8Array(200_000).map((_, i) => (i * 7919) % 251), { compression: 'STORE' })
-  return zip.generateAsync({ type: 'uint8array' })
+  return zip.generateAsync({ type: 'uint8array', compression: stored ? 'STORE' : 'DEFLATE' })
 }
 
 let container: HTMLDivElement
@@ -68,7 +78,7 @@ beforeEach(() => {
     const suffix = range[1] === ''
     const start = suffix ? Math.max(0, file.length - Number(range[2])) : Number(range[1])
     const end = suffix || range[2] === '' ? file.length - 1 : Math.min(Number(range[2]), file.length - 1)
-    return new Response(file.slice(start, end + 1), { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
+    return new Response(file.slice(start, end + 1), { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}`, ETag: etag } })
   })
   container = document.createElement('div')
   document.body.append(container)
@@ -120,14 +130,14 @@ const errors = (): string[] => [...container.querySelectorAll('.fv-note[data-ton
 
 describe('a PowerPoint file saved again while it is shown', () => {
   it('shows the deck as it is now in the focus view and the card, when it was saved after the card opened it', async () => {
-    file = await deckOf(['一枚目', '二枚目', '三枚目'])
+    await save(['一枚目', '二枚目', '三枚目'])
     const item: FileItem = { path: '/Users/me/deck.pptx', name: 'deck.pptx', kind: 'pptx', sizeBytes: file.length, modifiedAt: 1, url: DECK_URL }
     await show(item, ['card'])
     await frame()
     await until(() => expect(titlesIn('card')).toEqual(['一枚目']))
 
     // The card's item keeps the size and time of the file as it was listed.
-    file = await deckOf(['一枚目', '二枚目(直した)', '三枚目', '四枚目'])
+    await save(['一枚目', '二枚目(直した)', '三枚目', '四枚目'])
     await show(item, ['card', 'focus'])
     await frame()
     await until(() => expect(titlesIn('focus')).toEqual(['一枚目', '二枚目(直した)', '三枚目', '四枚目']))
@@ -136,7 +146,7 @@ describe('a PowerPoint file saved again while it is shown', () => {
   })
 
   it('opens the deck again when a frame started after the last one stopped finds it saved with fewer slides', async () => {
-    file = await deckOf(['一枚目', '二枚目', '三枚目'])
+    await save(['一枚目', '二枚目', '三枚目'])
     const item: FileItem = { path: '/Users/me/deck.pptx', name: 'deck.pptx', kind: 'pptx', sizeBytes: file.length, modifiedAt: 2, url: DECK_URL }
     await show(item, ['focus'])
     // The first slide is in view, and the others more than a screen below it.
@@ -151,10 +161,34 @@ describe('a PowerPoint file saved again while it is shown', () => {
     await until(() => expect(titlesIn('focus')).toEqual(['一枚目', '', '']))
 
     frames.at(-1)!.close()
-    file = await deckOf(['新しい一枚目', '新しい二枚目'])
+    await save(['新しい一枚目', '新しい二枚目'])
     scrolled = 6 * window.innerHeight
     await frame()
     await until(() => expect(titlesIn('focus')).toEqual(['新しい一枚目', '新しい二枚目']))
+    expect(errors()).toEqual([])
+  })
+
+  it('opens the deck again when a frame started after the last one stopped finds it saved at the same length', async () => {
+    await save(['一枚目', '二枚目', '三枚目'], { stored: true })
+    const item: FileItem = { path: '/Users/me/deck.pptx', name: 'deck.pptx', kind: 'pptx', sizeBytes: file.length, modifiedAt: 3, url: DECK_URL }
+    await show(item, ['focus'])
+    let scrolled = 0
+    container.querySelectorAll<HTMLElement>('.fv-pptx-slide').forEach((slide, index) => {
+      slide.getBoundingClientRect = () => {
+        const top = index * 3 * window.innerHeight - scrolled
+        return { top, bottom: top + 400, left: 0, right: 712, width: 712, height: 400, x: 0, y: top } as DOMRect
+      }
+    })
+    await frame()
+    await until(() => expect(titlesIn('focus')).toEqual(['一枚目', '', '']))
+
+    frames.at(-1)!.close()
+    const length = file.length
+    await save(['壱枚目', '弐枚目', '参枚目'], { stored: true })
+    expect(file.length).toBe(length)
+    scrolled = 6 * window.innerHeight
+    await frame()
+    await until(() => expect(titlesIn('focus')).toEqual(['壱枚目', '弐枚目', '参枚目']))
     expect(errors()).toEqual([])
   })
 })

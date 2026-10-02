@@ -36,10 +36,12 @@ export interface PreviewHandle<Open extends OpenPreviewDocument> {
   /**
    * Calls the listener when a request finds the file changed since its document was opened, as a file saved again
    * while a card shows it is. The client has then let that document go, and the next request of any viewer of the
-   * file opens it again as it is now. Answers depend on the version they were read from, such as a slide count or
-   * the order of the sheets, so the viewer drops everything it has from the document and starts over from its first
-   * request. The request that found the change fails after the listener has run, and so does every other request
-   * sent to the old version, whenever its answer comes. Returns what stops the listening.
+   * file opens it again as it is now. The same happens when a frame started after one stopped opens the document
+   * from a file saved in between, which the page tells by the version it reports. Answers depend on the version
+   * they were read from, such as a slide count or the order of the sheets, so the viewer drops everything it has
+   * from the document and starts over from its first request. The request that found the change fails after the
+   * listener has run, and so does every other request sent to the old version, whenever its answer comes. Returns
+   * what stops the listening.
    */
   onChanged(listener: () => void): () => void
   /** Lets go of the document, which the page closes once no viewer holds it. */
@@ -79,13 +81,28 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
   const pageKey = (key: string): string => `${outdated.get(key) ?? 0} ${key}`
   /** What the handles of each document listen for its change with, by documentKey. */
   const listeners = new Map<string, Set<() => void>>()
+  /**
+   * The version of the file each document's first answer came from, by the page's key. A frame started after one
+   * stopped opens the document again from the file as it is then, and an answer of another version means the file
+   * was saved since, even at the same length and slide count.
+   */
+  const versions = new Map<string, string>()
 
   /** Lets go of a document the file has changed under, once for all the requests that find it. */
   function changed(frame: PreviewFrame, key: string, sent: string): void {
     if (sent !== pageKey(key)) return
     outdated.set(key, (outdated.get(key) ?? 0) + 1)
+    versions.delete(sent)
     frame.port.postMessage({ type: 'close', key: sent } satisfies PreviewRequest)
     for (const listener of [...(listeners.get(key) ?? [])]) listener()
+  }
+
+  /** Whether an answer came from another version of the file than the document's first answer did. */
+  function otherVersion(sent: string, version: string | undefined): boolean {
+    if (version === undefined) return false
+    const first = versions.get(sent)
+    if (first === undefined) versions.set(sent, version)
+    return first !== undefined && first !== version
   }
 
   function end(ended: Running): void {
@@ -110,6 +127,9 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
       } else if (request.sent !== pageKey(request.key)) {
         // An answer the old version gave after the change was found would mix the two versions in the viewer.
         request.reject(new Error(errorText('files.errors.changedWhileReading')))
+      } else if (otherVersion(request.sent, data.version)) {
+        changed(started.frame, request.key, request.sent)
+        request.reject(new Error(errorText('files.errors.changedWhileReading')))
       } else request.resolve(data.value)
     })
     port.start()
@@ -123,6 +143,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
    */
   function settle(key: string): void {
     if (holders.has(key) || !running) return
+    versions.delete(pageKey(key))
     running.frame.port.postMessage({ type: 'close', key: pageKey(key) } satisfies PreviewRequest)
     if (holders.size === 0) end(running)
   }
