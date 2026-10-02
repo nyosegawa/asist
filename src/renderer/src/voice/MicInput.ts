@@ -29,7 +29,8 @@ export class MicInput {
   /**
    * main gave up on the native helper while it ran, which it does only after respawning a helper that keeps
    * breaking. Starting the helper again would also clear the failures main counted, and the helper would be
-   * given up on and started over without end, so the input stays on getUserMedia until it is stopped.
+   * given up on and started over without end, so the input stays on getUserMedia until the microphone is
+   * turned off.
    */
   private nativeGivenUp = false
 
@@ -62,13 +63,14 @@ export class MicInput {
     await this.mic.start(onFrame, onLost)
   }
 
-  /** Closes the input for good. The next start tries the native helper again. */
+  /** Closes the input as the microphone turns off. The next start tries the native helper again. */
   stop(): void {
     this.close()
     this.nativeGivenUp = false
   }
 
-  private close(): void {
+  /** Closes the input to build it again, which keeps a helper main gave up on out of the next start. */
+  close(): void {
     this.generation++
     this.nativeMic.stop()
     this.dfn.dispose()

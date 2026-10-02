@@ -177,14 +177,21 @@ describe('MaAI that starts taking part while the microphone is on', () => {
     controller.disable()
   })
 
-  it('says once that the worker did not start', async () => {
+  it('says once that the worker did not start, however often it is started again while MaAI stays on', async () => {
     window.api.vapStart = vi.fn(async () => false)
     const controller = await listeningWithout('setting')
     const said = vi.fn()
     controller.events.on('maaiUnavailable', said)
     controller.vapEnabled = true
-    controller.vapEnabled = true
     await new Promise((resolve) => setTimeout(resolve, 0))
+    // The conversation moves to another language and back, and the microphone is turned off and on.
+    controller.conversationLocale = 'en-US'
+    controller.conversationLocale = 'ja-JP'
+    controller.disable()
+    await controller.enable()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(window.api.vapStart).toHaveBeenCalledTimes(3)
     expect(said).toHaveBeenCalledOnce()
     controller.disable()
   })

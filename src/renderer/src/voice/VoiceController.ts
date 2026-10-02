@@ -9,12 +9,12 @@ import {
 } from '@shared/listening-aizuchi'
 import type { ListeningAizuchi } from '@shared/ipc'
 import { shouldNod, type NodKind } from '@shared/nod'
-import { classifyOverlap, outlastsBackchannel } from '@shared/user-backchannel'
+import { classifyOverlap } from '@shared/user-backchannel'
 import { ECHO_TAIL_MS } from '@shared/self-echo'
 import { errorText } from '@shared/i18n/error-text'
 import { MicInput } from './MicInput'
 import { VapAudio } from './VapAudio'
-import { VadSegmenter, type VadUtterance } from './VadSegmenter'
+import { VadSegmenter, type CaptureMark, type VadUtterance } from './VadSegmenter'
 import { SileroVad } from './SileroVad'
 import type { AsrProgress } from './AsrEngine'
 import { AsrBackend } from './AsrBackend'
@@ -40,7 +40,27 @@ export interface SpeechEnd {
   listening: ListeningAizuchi[]
 }
 
-type Overlap = 'none' | 'pending' | 'noise' | 'backchannel'
+/**
+ * What is being done with a voice that came in during playback.
+ * - pending: the decision is open and the volume is down.
+ * - noise: the voice has held as long as a barge-in needs without the human speech it needs. The volume is
+ *   back up, and the decision waits for that speech.
+ * - backchannel: read as an aizuchi. The reading carries on, and the capture is discarded at its end unless
+ *   the voice keeps going into an interruption.
+ * - aizuchi: let pass as an aizuchi over a reading that has since ended. Nothing played now is judged against
+ *   it, and the capture is discarded at its end unless what the user goes on to say after the reading would
+ *   make an utterance of its own.
+ */
+type Overlap =
+  | { kind: 'none' | 'pending' | 'noise' | 'backchannel' }
+  | { kind: 'aizuchi'; readingEnded: CaptureMark }
+
+/**
+ * The longest a working input goes without a frame: the native helper's AVAudioNode tap hands over up to 400 ms
+ * at a time. A capture with no frame for longer belongs to an input that has stopped, such as one a sleep froze,
+ * and would never end.
+ */
+const INPUT_STALL_MS = 1_000
 
 /** A VAP estimate older than this is not used, which covers a stopped or backed-up worker. It allows the 80 ms frame, about 20 ms of inference and the IPC. */
 const VAP_STALE_MS = 500
@@ -70,8 +90,9 @@ type VoiceEvents = {
     startedAt: number
   }
   /**
-   * The speech a speechend announced will not become an utterance: its transcription failed, the
-   * transcript meant nothing, or the microphone stopped first. Every speechend is followed by one
+   * Speech that will not become an utterance: the speech a speechend announced, whose transcription failed,
+   * whose transcript meant nothing or which the microphone stopped before, or a capture that rebuilding the
+   * input cut off before its speech ended, which has no speechend. Every speechend is followed by one
    * utterance or one of these, with the same startedAt.
    */
   speechdropped: { startedAt: number }
@@ -173,18 +194,16 @@ export class VoiceController {
   private vapAudio = new VapAudio((user, assistant) => {
     void window.api.vapPush(user, assistant).catch(() => {})
   })
-  /**
-   * What is being done with a voice that came in during playback. While pending, the decision is open
-   * and the volume is down. As noise, the volume is back up and the decision waits for human speech,
-   * which opens it again. As backchannel, it was read as an aizuchi: the reading carries on and the
-   * capture is discarded at its end, unless the voice keeps going, which turns it into an interruption,
-   * or into ordinary speech once the reading has ended.
-   */
-  private overlap: Overlap = 'none'
+  private overlap: Overlap = { kind: 'none' }
   private lastBackchannelAt = 0
   private listening = new ListeningRecorder()
   private lastNodAt = 0
   private captureStartedAt = 0
+  private lastFrameAt = 0
+  /** Lets a rebuild that waits for the capture in progress go on. */
+  private releaseRebuild: (() => void) | null = null
+  /** Playback is sounding, or its echo may still linger in the microphone. */
+  private echoExpected = false
   private boostReleaseTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
@@ -217,11 +236,8 @@ export class VoiceController {
     speechPlayer.events.on('segmentstart', ({ segment }) => {
       if (this.boostReleaseTimer) clearTimeout(this.boostReleaseTimer)
       this.boostReleaseTimer = null
-      // Chromium's echo canceller lets echo through, so the threshold rises during playback.
-      // Native capture through Apple's VPIO cancels the echo in the OS and attenuates the
-      // microphone further during double talk, so a boost on top of that would put an
-      // interrupting voice out of reach of the threshold.
-      this.vad.thresholdBoost = this.microphone.native ? 1 : 3
+      this.echoExpected = true
+      this.applyEchoThreshold()
       // The listening aizuchi answers the capture in progress. Muting would throw that capture
       // away, and it is not the assistant taking the floor either.
       if (segment.clip === 'listening') return
@@ -236,10 +252,21 @@ export class VoiceController {
       if (this.boostReleaseTimer) clearTimeout(this.boostReleaseTimer)
       this.boostReleaseTimer = setTimeout(() => {
         this.boostReleaseTimer = null
-        this.vad.thresholdBoost = 1
+        this.echoExpected = false
+        this.applyEchoThreshold()
         this.vad.muted = false
       }, ECHO_TAIL_MS)
     })
+  }
+
+  /**
+   * Chromium's echo canceller lets echo through, so the threshold rises while echo is expected. Native
+   * capture through Apple's VPIO cancels the echo in the OS and attenuates the microphone further during
+   * double talk, so a boost on top of that would put an interrupting voice out of reach of the threshold.
+   * It follows both playback and the input, which can move to getUserMedia in the middle of a reply.
+   */
+  private applyEchoThreshold(): void {
+    this.vad.thresholdBoost = this.echoExpected && !this.microphone.native ? 3 : 1
   }
 
   get current(): VoiceState {
@@ -252,8 +279,10 @@ export class VoiceController {
    * stops the assistant.
    */
   private beginOverlap(): void {
-    if (!this.bargeIn || this.overlap !== 'none') return
-    this.setOverlap('pending')
+    if (!this.bargeIn) return
+    // A voice let pass as an aizuchi stays one when the reading goes on with its next sentence.
+    if (this.overlap.kind === 'aizuchi') this.setOverlap({ kind: 'backchannel' })
+    else if (this.overlap.kind === 'none') this.setOverlap({ kind: 'pending' })
   }
 
   /**
@@ -261,9 +290,10 @@ export class VoiceController {
    * pending, which both keeps the assistant off the user's words and makes the response feel immediate.
    */
   private setOverlap(next: Overlap): void {
-    if (next === this.overlap) return
+    const before = this.overlap.kind
     this.overlap = next
-    if (next !== 'pending') speechPlayer.unduck()
+    if (next.kind === before) return
+    if (next.kind !== 'pending') speechPlayer.unduck()
     // An aizuchi or bridge lasts about a second and sounds broken off if ducked. A real
     // interruption stops it once confirmed anyway.
     else if (!speechPlayer.isPlayingClip) speechPlayer.duck()
@@ -276,41 +306,50 @@ export class VoiceController {
    * speechDuration equals voicedDuration, so noise is refused exactly as it was before Silero.
    */
   private maybeConfirmBargein(): void {
-    if (this.overlap === 'none') return
-    const voice = {
-      voicedMs: this.vad.voicedDuration,
-      speechMs: this.vad.speechDuration,
-      minSpeechMs: this.bargeInMinSpeechMs
-    }
-    if (!speechPlayer.isPlaying) {
-      // Playback ended before the decision closed, so the voice goes on as ordinary speech. One let pass
-      // as an aizuchi stays one until it outlasts an aizuchi, as it would over playback, because the
-      // hangover of a lone 「はい」 over the last words of the reading runs on past their end.
-      if (this.overlap !== 'backchannel' || outlastsBackchannel(voice)) this.setOverlap('none')
+    const overlap = this.overlap
+    if (overlap.kind === 'none') return
+    if (overlap.kind === 'aizuchi') {
+      // What the user says after the reading is speech once it would make an utterance of its own,
+      // which a lone 「はい」 that stops with the reading never does, however long its hangover runs on.
+      if (this.vad.holdsUtteranceSince(overlap.readingEnded)) this.setOverlap({ kind: 'none' })
       return
     }
+    if (!speechPlayer.isPlaying) {
+      // The reading ended before the decision closed. A voice still undecided goes on as ordinary speech;
+      // one let pass as an aizuchi waits to show whether the user goes on after the reading.
+      this.setOverlap(
+        overlap.kind === 'backchannel' ? { kind: 'aizuchi', readingEnded: this.vad.mark() } : { kind: 'none' }
+      )
+      return
+    }
+    const voicedMs = this.vad.voicedDuration
+    const speechMs = this.vad.speechDuration
     const verdict = classifyOverlap({
-      ...voice,
+      voicedMs,
+      speechMs,
       bcDet: this.vapFresh() ? this.vapState!.bcDetUser : null,
-      confirmMs: this.bargeInConfirmMs
+      confirmMs: this.bargeInConfirmMs,
+      minSpeechMs: this.bargeInMinSpeechMs
     })
     if (verdict === 'bargein') {
       // The event goes out while the interrupted reply is still playing, so that it is counted
       // against the turn being read before the stop closes that turn's measurements.
       this.events.emit('bargein')
       speechPlayer.interrupt()
-      this.setOverlap('none')
+      this.setOverlap({ kind: 'none' })
       return
     }
-    if (this.overlap === 'backchannel') return
+    if (overlap.kind === 'backchannel') return
     if (verdict === 'backchannel') {
-      this.setOverlap('backchannel')
+      this.setOverlap({ kind: 'backchannel' })
       this.events.emit('userBackchannel')
       return
     }
-    // Noise brings the volume back up early, so playback spends as little time as possible quietening
-    // on its own, and human speech that follows inside the same capture opens the decision again.
-    this.setOverlap(verdict === 'noise' ? 'noise' : 'pending')
+    // A voice that has held as long as a barge-in needs without the human speech it needs, noise above all,
+    // brings the volume back up, so playback spends as little time as possible quietening on its own. Human
+    // speech that follows inside the same capture opens the decision again once there is enough of it.
+    const shortOfSpeech = voicedMs >= this.bargeInConfirmMs && speechMs < this.bargeInMinSpeechMs
+    this.setOverlap({ kind: shortOfSpeech ? 'noise' : 'pending' })
   }
 
   /** Fires an aizuchi at a break in a long utterance. conversation plays it. */
@@ -480,6 +519,7 @@ export class VoiceController {
     this.awaitingTranscript.clear()
     this.dropCapture()
     this.microphone.stop()
+    this.releaseRebuild?.()
     for (const startedAt of dropped) this.events.emit('speechdropped', { startedAt })
     this.setState('off')
   }
@@ -490,24 +530,45 @@ export class VoiceController {
   }
 
   /**
-   * Builds capture again after the machine sleeps and wakes or the input source goes away. Only the
-   * microphone and what reads it start over: the speech already captured is still transcribed. If the
-   * microphone was off, it only checks whether the backend can move up.
+   * Builds capture again after something like a sleep and wake: the window shown after a long time hidden,
+   * or the network back. Only the microphone and what reads it start over, after the speech in progress, if
+   * any, has ended, and the speech already captured is still transcribed. If the microphone was off, it only
+   * checks whether the backend can move up.
    */
   recover(): Promise<void> {
+    return this.rebuild(false)
+  }
+
+  /** The input stopped delivering, because main gave up on the native helper or the device went away. */
+  private inputLost(): void {
+    // A rebuild waiting for the capture in progress would wait for ever on an input that is gone.
+    this.releaseRebuild?.()
+    void this.rebuild(true)
+  }
+
+  private rebuild(inputLost: boolean): Promise<void> {
     if (this.recoveryPromise) return this.recoveryPromise
-    const recovery = this.state === 'off' ? this.recognition.probeUpgrade() : this.rebuildCapture()
+    const recovery = this.state === 'off' ? this.recognition.probeUpgrade() : this.rebuildCapture(inputLost)
     this.recoveryPromise = recovery.finally(() => {
       this.recoveryPromise = null
     })
     return this.recoveryPromise
   }
 
-  private async rebuildCapture(): Promise<void> {
-    // A microphone still turning on opens its capture once the backend is chosen, so it is rebuilt after that.
-    await this.enabling
-    if (this.state === 'off') return
+  private async rebuildCapture(inputLost: boolean): Promise<void> {
     const generation = this.micGeneration
+    // A microphone still turning on opens its capture once the backend is chosen, so it is rebuilt after
+    // that. One turned off and on meanwhile has opened its capture anew, after whatever asked for this.
+    await this.enabling
+    if (generation !== this.micGeneration) return
+    // Rebuilding takes a moment, about 2 s for a Bluetooth microphone, which would cut off the speech in
+    // progress, so it waits for that speech to end while the input still delivers.
+    if (!inputLost && this.vad.isSpeaking && performance.now() - this.lastFrameAt < INPUT_STALL_MS) {
+      await new Promise<void>((resolve) => (this.releaseRebuild = resolve))
+      this.releaseRebuild = null
+      if (generation !== this.micGeneration) return
+    }
+    if (this.vad.isSpeaking) this.events.emit('speechdropped', { startedAt: this.captureStartedAt })
     this.dropCapture()
     this.setState('loading')
     void this.silero.init()
@@ -517,6 +578,7 @@ export class VoiceController {
   /** Opens the microphone into Silero, the VAD and MaAI, and listens once it delivers. */
   private async openCapture(generation: number): Promise<void> {
     const feed = (frame: Float32Array): void => {
+      this.lastFrameAt = performance.now()
       this.silero.push(frame)
       this.vad.push(frame)
       if (this.usesMaai()) this.vapAudio.pushUser(frame)
@@ -526,11 +588,12 @@ export class VoiceController {
     await this.microphone.start(
       { native: this.nativeMicPreferred, noiseSuppression: this.noiseSuppression },
       feed,
-      () => void this.recover()
+      () => this.inputLost()
     )
     // Each start releases its own resources. Calling the shared stop from an older start would
     // also stop a recording that an off-then-on cycle has already begun.
     if (generation !== this.micGeneration) return
+    this.applyEchoThreshold()
     this.setState(this.activity())
     void this.recognition.probeUpgrade()
   }
@@ -548,7 +611,7 @@ export class VoiceController {
    */
   private dropCapture(): void {
     this.stopPartialLoop()
-    this.setOverlap('none')
+    this.setOverlap({ kind: 'none' })
     this.vapAudio.reset()
     this.vapState = null
     this.vad.reset()
@@ -616,10 +679,11 @@ export class VoiceController {
     this.stopPartialLoop()
     // A "うん" or "はい" during the reading was let pass as an aizuchi, so it becomes neither a turn
     // nor a transcript.
-    const backchannel = this.overlap === 'backchannel'
-    this.setOverlap('none')
-    if (utterance && !backchannel) this.enqueueUtterance(utterance.samples, utterance.vadMs, utterance.mode)
+    const aizuchi = this.overlap.kind === 'backchannel' || this.overlap.kind === 'aizuchi'
+    this.setOverlap({ kind: 'none' })
+    if (utterance && !aizuchi) this.enqueueUtterance(utterance.samples, utterance.vadMs, utterance.mode)
     this.settleState()
+    this.releaseRebuild?.()
   }
 
   private enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: HangoverMode): void {

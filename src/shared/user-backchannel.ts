@@ -44,17 +44,9 @@ export const USER_BACKCHANNEL_MAX_MS = 900
 /** When the model is available, the barge-in decision waits this long to give detection a chance. */
 const DETECTION_GRACE_MS = 450
 
-/**
- * Whether a voice has gone on longer than any aizuchi, as human speech. A voice let pass as an aizuchi is
- * an aizuchi no longer once this holds, whether or not playback is still going.
- */
-export function outlastsBackchannel(input: Pick<OverlapInput, 'voicedMs' | 'speechMs' | 'minSpeechMs'>): boolean {
-  return input.voicedMs > USER_BACKCHANNEL_MAX_MS && input.speechMs >= input.minSpeechMs
-}
-
 export function classifyOverlap(input: OverlapInput): OverlapVerdict {
   const hasSpeech = input.speechMs >= input.minSpeechMs
-  if (outlastsBackchannel(input)) return 'bargein'
+  if (input.voicedMs > USER_BACKCHANNEL_MAX_MS && hasSpeech) return 'bargein'
   if (input.bcDet !== null && input.bcDet >= BC_DET_THRESHOLD && input.speechMs > 0) {
     return 'backchannel'
   }
