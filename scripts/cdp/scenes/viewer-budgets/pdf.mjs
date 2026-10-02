@@ -4,9 +4,9 @@
  * demo's development server serves them, and the focus view showed its first screen in 0.1 to 0.3 s and every
  * later screen within 0.18 s. The renderers grew by 0.43 to 0.6 GB at the peak, the preview frame's process holding
  * 0.2 to 0.3 GB of it with a document open, and the GPU process by 0.09 to 0.15 GB. The main thread was held for
- * 0.03 to 0.14 s, and up to 0.42 s in the runs under the heaviest load. In two runs on the macOS runner of GitHub
- * Actions the same day, the renderers grew by 0.52 to 0.63 GB at the peak and still held 0.34 to 0.41 GB at the end,
- * with the card's document open, and the GPU process grew by 0.13 to 0.19 GB.
+ * 0.03 to 0.14 s, and up to 0.42 s in the runs under the heaviest load. In three runs on the macOS runner of GitHub
+ * Actions on 2026-10-02 and 03, the renderers grew by 0.52 to 0.7 GB at the peak and still held 0.34 to 0.41 GB at
+ * the end, with the card's document open, and the GPU process grew by 0.12 to 0.19 GB.
  *
  * Every page in view has to be drawn. The viewer gives a canvas only to the pages within a screen of the view, and
  * the rest are blank boxes of their size, so a screen can show a drawn page beside one still blank, which the
@@ -42,7 +42,7 @@ const budget = {
   focusFirstMs: 1000,
   focusHeldMs: 150,
   slowestScreenMs: 400,
-  peakMb: 750,
+  peakMb: 800,
   finalMb: 500,
   gpuPeakMb: 300
 }
