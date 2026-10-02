@@ -32,6 +32,7 @@ export function ApiKeyField({
     <div className="su-field">
       <label htmlFor="su-key">
         {t('setup.model.apiKey', { provider: info.label })}
+        <span className="su-gap"> </span>
         <button type="button" className="su-link" onClick={() => void window.api.openExternal(info.console)}>
           {t('setup.model.createKey')}
           <ExternalLink size={12} aria-hidden />
@@ -59,9 +60,12 @@ export function ApiKeyField({
         {info.consoleNote && <>{t('setup.model.keyIssueNote', { note: t(info.consoleNote) })} </>}
         {t('setup.model.keyStoredNote', { provider: info.label })}
         {keyConfigured && onRecheck && (
-          <button type="button" className="su-link" disabled={busy} onClick={onRecheck}>
-            {t('setup.model.verifySavedKey')}
-          </button>
+          <>
+            <span className="su-gap"> </span>
+            <button type="button" className="su-link" disabled={busy} onClick={onRecheck}>
+              {t('setup.model.verifySavedKey')}
+            </button>
+          </>
         )}
       </p>
     </div>
