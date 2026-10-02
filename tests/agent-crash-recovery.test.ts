@@ -22,7 +22,10 @@ let root: string
 let parent: ChildProcess | undefined
 let group: number | undefined
 let agent: typeof import('../src/main/services/agent') | undefined
-/** Commands a test started outside every group it kills, which a failed test would otherwise leave running. */
+/**
+ * The commands a test started in process groups of their own, outside the agent's group, which a failed test would
+ * otherwise leave running.
+ */
 const commands: number[] = []
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
@@ -42,11 +45,12 @@ beforeEach(() => {
 })
 afterEach(async () => {
   if (parent?.pid && alive(parent.pid)) parent.kill('SIGKILL')
-  if (group) { try { process.kill(-group, 'SIGKILL') } catch { /* fixture already exited */ } }
-  if (group) await vi.waitFor(() => expect(alive(-group!)).toBe(false), { timeout: 2_000 })
-  // Each command leads a group of its own, which also holds what a shell loop started.
-  for (const command of commands.splice(0)) { try { process.kill(-command, 'SIGKILL') } catch { /* already stopped */ } }
-  fs.writeFileSync(path.join(root, 'release'), '')
+  // The agent's group and the group each command leads, which also holds what a shell loop started.
+  const groups = [...(group ? [group] : []), ...commands.splice(0)]
+  for (const leader of groups) { try { process.kill(-leader, 'SIGKILL') } catch { /* already stopped */ } }
+  // A process writes into the folder until it is gone, and a file it adds while rmSync empties a folder makes the
+  // removal fail with ENOTEMPTY.
+  await vi.waitFor(() => expect(groups.filter((leader) => alive(-leader))).toEqual([]), { timeout: 2_000 })
   if (agent) await agent.shutdown().catch(() => {})
   vi.unstubAllEnvs()
   fs.rmSync(root, { recursive: true, force: true })
@@ -121,6 +125,7 @@ async function crashParent(descendant: boolean, ownGroup = false): Promise<{ job
   const job = saved()
   group = Number(fs.readFileSync(path.join(job.cwd, 'leader.pid'), 'utf8'))
   const writer = Number(fs.readFileSync(path.join(job.cwd, 'writer.pid'), 'utf8'))
+  if (ownGroup) commands.push(writer)
   const exited = new Promise((resolve) => parent!.once('close', resolve))
   parent.kill('SIGKILL')
   await exited
