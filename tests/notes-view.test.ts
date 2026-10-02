@@ -21,8 +21,8 @@ let clock = 100
 
 const list = (): NoteSummary[] =>
   [...bodies.entries()].map(([id, note]) => summarizeNote(id, note.markdown, note.updatedAt)).sort((a, b) => b.updatedAt - a.updatedAt)
-/** Main tells the store each change once it is written; the fake does the same. */
-const tell = (change: NoteChange): void => useNoteStore.getState().apply(change)
+/** Main tells the store the changes of each save once they are written; the fake does the same. */
+const tell = (change: NoteChange): void => useNoteStore.getState().apply([change])
 const save = (id: string, markdown: string): NoteSummary => {
   bodies.set(id, { markdown, updatedAt: ++clock })
   const note = summarizeNote(id, markdown, clock)
@@ -98,6 +98,18 @@ describe('the notes screen', () => {
     save('20260923-100000-aaaa', '# 買い物\n\n牛乳\n')
     const view = await render()
     expect(titles(view)).toEqual(['買い物', '提案書の構成', '旅行の持ち物'])
+  })
+
+  it('shows the changes main saw outside ASIST: the open note read again, and a note deleted there gone from the list', async () => {
+    useViewStore.getState().openApp({ app: 'notes', noteId: TRIP })
+    const view = await render()
+    bodies.set(TRIP, { markdown: '# 旅行の持ち物\n\nパスポート\n', updatedAt: ++clock })
+    bodies.delete(PLAN)
+    const edited = summarizeNote(TRIP, bodies.get(TRIP)!.markdown, clock)
+    await act(async () => useNoteStore.getState().apply([{ type: 'saved', note: edited }, { type: 'removed', id: PLAN }]))
+    await settle()
+    expect(titles(view)).toEqual(['旅行の持ち物'])
+    expect(view.querySelector('.nv-doc p')?.textContent).toBe('パスポート')
   })
 
   it('saves an edit through main, and writes a new note that it then shows', async () => {
