@@ -8,7 +8,9 @@
  * the card in 265 to 538 ms and in the focus view in 60 to 101 ms, held the page for at most 24 ms in the card and
  * 48 to 214 ms in the focus view, took at most 65 ms for a screen, and grew the renderers by 213 to 243 MB at the
  * peak and 46 to 159 MB at the end, of which the preview iframe's own process is about 140 MB. The longest blocks
- * of the focus view ran no script and laid nothing out, which is the page waiting for the processor.
+ * of the focus view ran no script and laid nothing out, which is the page waiting for the processor. On GitHub's
+ * macOS runner the same day, the renderers grew by 409 to 412 MB at the peak and 172 to 289 MB at the end; the
+ * viewer that parsed the whole workbook grew them by 540 MB on 50,000 rows and 896 MB on the five sheets.
  */
 function shown(root, mode) {
   const frame = root.querySelector('.fv-frame')
@@ -28,7 +30,7 @@ function shown(root, mode) {
   return rows.length > 0 && rows.every((row) => row.dataset.loading !== 'true') && rows.some((row) => row.textContent.trim() !== '')
 }
 
-const budget = { cardFirstMs: 1000, cardHeldMs: 150, cardPeakMb: 300, focusFirstMs: 1000, focusHeldMs: 150, slowestScreenMs: 300, peakMb: 450, finalMb: 350 }
+const budget = { cardFirstMs: 1000, cardHeldMs: 150, cardPeakMb: 300, focusFirstMs: 1000, focusHeldMs: 150, slowestScreenMs: 300, peakMb: 500, finalMb: 350 }
 
 export const cases = [
   { name: 'xlsx-50k', file: 'xlsx-50k', shown, budget },
