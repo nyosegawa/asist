@@ -2,8 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <!-- The page runs the viewers' parsers on the files they read over asist-file:, and loads nothing else. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src asist-file:;" />
+    <!-- The page's content security policy comes as a header with every response of its origin, PREVIEW_POLICY in src/shared/preview-page.ts, so that it holds for the workers the page starts too. -->
   </head>
   <body>
     <script type="module" src="/src/preview/main.ts"></script>

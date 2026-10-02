@@ -1,11 +1,12 @@
+import type { FileItem } from '@shared/files'
 import { errorText } from '@shared/i18n/error-text'
 import { PREVIEW_PAGE_URL } from '@shared/preview-page'
-import { CONNECTED, documentKey, type OpenPreviewDocument, type PreviewReply, type PreviewRequest } from '@/preview/serve'
+import { CONNECTED, type OpenPreviewDocument, type PreviewReply, type PreviewRequest } from '@/preview/serve'
 
 /**
  * The viewers' side of the preview page (src/renderer/src/preview/), where they do their heavy work: a viewer
- * opens its file there as a document of its kind and asks the document for what it draws. The page runs in a
- * hidden iframe, which Chromium gives a process of its own, so a file that takes it out of memory ends that
+ * opens its file there as a document of its kind and asks the document for what it draws. The page runs in an
+ * iframe nobody sees, which Chromium gives a process of its own, so a file that takes it out of memory ends that
  * frame and not the app's page. The frame starts with the first request and goes once no document is open,
  * since its process holds about 80 MB with nothing open (Electron 43.7.7 on an M5, 2026-10-02).
  */
@@ -41,9 +42,18 @@ interface Running {
   pending: Map<number, { resolve(value: unknown): void; reject(error: Error): void }>
 }
 
+/** The file a document is opened from: its URL, and the size and time of change that tell one version from another. */
+export type PreviewFile = Pick<FileItem, 'sizeBytes' | 'modifiedAt'> & { url: string }
+
+/**
+ * The key of a document. The card and the focus view of one file share its document, while a card of the same
+ * file written again since gets one of its own.
+ */
+const documentKey = (kind: string, { url, sizeBytes, modifiedAt }: PreviewFile): string => JSON.stringify([kind, url, sizeBytes, modifiedAt ?? null])
+
 export interface PreviewClient {
-  /** Opens the file at a URL as a document of a kind, which the card and the focus view of one file share. */
-  open<Open extends OpenPreviewDocument>(kind: string, url: string): PreviewHandle<Open>
+  /** Opens a file as a document of a kind. */
+  open<Open extends OpenPreviewDocument>(kind: string, file: PreviewFile): PreviewHandle<Open>
 }
 
 export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClient {
@@ -80,15 +90,16 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
    * Closes a document no handle holds and removes the frame once none is held. It runs after the handles of the
    * same render have been taken, so a card that gives a document up while the focus view takes it keeps it open.
    */
-  function settle(kind: string, url: string): void {
-    if (holders.has(documentKey(kind, url)) || !running) return
-    running.frame.port.postMessage({ type: 'close', kind, url } satisfies PreviewRequest)
+  function settle(key: string): void {
+    if (holders.has(key) || !running) return
+    running.frame.port.postMessage({ type: 'close', key } satisfies PreviewRequest)
     if (holders.size === 0) end(running)
   }
 
   return {
-    open<Open extends OpenPreviewDocument>(kind: string, url: string): PreviewHandle<Open> {
-      const key = documentKey(kind, url)
+    open<Open extends OpenPreviewDocument>(kind: string, file: PreviewFile): PreviewHandle<Open> {
+      const key = documentKey(kind, file)
+      const { url } = file
       holders.set(key, (holders.get(key) ?? 0) + 1)
       let held = true
       return {
@@ -99,7 +110,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
           const id = nextId++
           return new Promise((resolve, reject) => {
             pending.set(id, { resolve: (value) => resolve(value as never), reject })
-            frame.port.postMessage({ type: 'call', id, kind, url, method, args } satisfies PreviewRequest)
+            frame.port.postMessage({ type: 'call', id, key, kind, url, method, args } satisfies PreviewRequest)
           })
         },
         release() {
@@ -108,7 +119,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
           const left = holders.get(key)! - 1
           if (left > 0) holders.set(key, left)
           else holders.delete(key)
-          queueMicrotask(() => settle(kind, url))
+          queueMicrotask(() => settle(key))
         }
       }
     }
@@ -122,10 +133,20 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
  */
 const CONNECT_MS = 5_000
 
-/** Starts the preview page in a hidden iframe and hands it its port once it has loaded. */
-function startIframe(page: string): PreviewFrame {
+/**
+ * Starts the preview page in an iframe nobody sees and hands it its port once it has loaded. Chromium runs no
+ * animation frame in a frame it does not draw, as with display: none, visibility: hidden or a frame off the
+ * screen, and pdf.js draws a page in steps it schedules on animation frames, so in such a frame a heavy page
+ * never finished; a transparent frame of one pixel inside the window drew it (Electron 43.7.7, 2026-10-02).
+ * The frame is kept from the pointer, the keyboard and the accessibility tree. Its sandbox leaves out popups:
+ * a window the page opened would reach the window's open handler, which hands a web link to the default
+ * browser. allow-same-origin keeps the page's own origin, which its module scripts and its reads need.
+ */
+export function startIframe(page: string): PreviewFrame {
   const iframe = document.createElement('iframe')
-  iframe.hidden = true
+  iframe.style.cssText = 'position: fixed; left: 0; top: 0; width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none'
+  iframe.inert = true
+  iframe.sandbox.add('allow-scripts', 'allow-same-origin')
   iframe.src = page
   const { port1, port2 } = new MessageChannel()
   let connected = false
@@ -161,10 +182,10 @@ export function servePreviewFrom(url: string): void {
 }
 
 /**
- * Opens the file at a URL in the preview page. The page reads a relative URL, as the demo's files have, from the
- * server that serves it.
+ * Opens a file in the preview page. The page reads a relative URL, as the demo's files have, from the server
+ * that serves it.
  */
-export function openPreviewDocument<Open extends OpenPreviewDocument>(kind: string, url: string): PreviewHandle<Open> {
+export function openPreviewDocument<Open extends OpenPreviewDocument>(kind: string, file: PreviewFile): PreviewHandle<Open> {
   client ??= createPreviewClient(() => startIframe(page))
-  return client.open<Open>(kind, url)
+  return client.open<Open>(kind, file)
 }

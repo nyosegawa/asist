@@ -3,6 +3,8 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { previewFiles } from './scripts/preview-files'
+import { PREVIEW_FILES, PREVIEW_PAGE } from './src/shared/preview-page'
 
 /**
  * Adds bundled-packages-<name>.json to the output of a bundle: the folders of the npm packages whose code
@@ -65,14 +67,13 @@ export default defineConfig(({ mode }) => ({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), tailwindcss(), bundledPackages()],
+    // The preview page, in whose iframe the viewers do their heavy work, is a second page of the renderer, and
+    // main serves the files previewFiles lists for it and nothing else.
+    plugins: [react(), tailwindcss(), bundledPackages(), previewFiles(PREVIEW_PAGE, PREVIEW_FILES)],
     worker: {
       plugins: () => [bundledPackages()]
     },
     build: {
-      // The preview page, in whose iframe the viewers do their heavy work, is a second page of the renderer.
-      // The manifest lists what each page loads, from which main serves the preview page's files alone.
-      manifest: true,
       rollupOptions: {
         input: { index: resolve('src/renderer/index.html'), preview: resolve('src/renderer/preview.html') }
       }

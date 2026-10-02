@@ -15,10 +15,13 @@ export type OpenPreviewDocument = (url: string) => Promise<PreviewDocument>
 
 export type PreviewKinds = Record<string, () => Promise<{ default: OpenPreviewDocument }>>
 
-/** A message from the viewers' side: a call to a method of a document, or the end of a document no viewer holds any more. */
+/**
+ * A message from the viewers' side: a call to a method of a document, or the end of a document no viewer holds
+ * any more. The viewers' side names each document by a key of its own, the version of the file included.
+ */
 export type PreviewRequest =
-  | { type: 'call'; id: number; kind: string; url: string; method: string; args: unknown }
-  | { type: 'close'; kind: string; url: string }
+  | { type: 'call'; id: number; key: string; kind: string; url: string; method: string; args: unknown }
+  | { type: 'close'; key: string }
 
 /**
  * The page's first message on its port, sent as soon as the port reaches it. A frame that loaded anything else,
@@ -27,9 +30,6 @@ export type PreviewRequest =
 export const CONNECTED = 'connected'
 
 export type PreviewReply = typeof CONNECTED | { id: number; value: unknown } | { id: number; error: string }
-
-/** The key of a document. A URL never holds a space, so the key reads back as one kind and one URL. */
-export const documentKey = (kind: string, url: string): string => `${kind} ${url}`
 
 /**
  * The buffers and bitmaps in a result, which go to the viewer without a copy. A method gives up what it
@@ -46,7 +46,11 @@ function transferables(result: unknown): Transferable[] {
     if (value instanceof ArrayBuffer || value instanceof ImageBitmap) found.add(value)
     else if (ArrayBuffer.isView(value)) {
       if (value.buffer instanceof ArrayBuffer) found.add(value.buffer)
-    } else stack.push(...Object.values(value))
+    } else {
+      // One push at a time: spreading the items into one call throws RangeError past about 150,000 of them,
+      // which a sheet's shared strings or a waveform's peaks reach.
+      for (const item of Object.values(value)) stack.push(item)
+    }
   }
   return [...found]
 }
@@ -59,19 +63,25 @@ async function openDocument(kinds: PreviewKinds, kind: string, url: string): Pro
   return open(url)
 }
 
-/** Answers the viewers' requests on the port, keeping one document open for each kind and URL the viewers hold. */
+/** Answers the viewers' requests on the port, keeping one document open for each key the viewers hold. */
 export function servePreview(port: MessagePort, kinds: PreviewKinds): void {
   const documents = new Map<string, Promise<PreviewDocument>>()
 
+  function opened(request: Extract<PreviewRequest, { type: 'call' }>): Promise<PreviewDocument> {
+    const known = documents.get(request.key)
+    if (known) return known
+    const opening = openDocument(kinds, request.kind, request.url)
+    documents.set(request.key, opening)
+    // A document that failed to open is not kept, so that the next request, such as the focus view's, tries again.
+    opening.catch(() => {
+      if (documents.get(request.key) === opening) documents.delete(request.key)
+    })
+    return opening
+  }
+
   async function answer(request: Extract<PreviewRequest, { type: 'call' }>): Promise<void> {
     try {
-      const key = documentKey(request.kind, request.url)
-      let opening = documents.get(key)
-      if (!opening) {
-        opening = openDocument(kinds, request.kind, request.url)
-        documents.set(key, opening)
-      }
-      const { methods } = await opening
+      const { methods } = await opened(request)
       if (!Object.hasOwn(methods, request.method)) throw new Error(`the ${request.kind} preview has no method ${request.method}`)
       const value = await methods[request.method](request.args as never)
       port.postMessage({ id: request.id, value } satisfies PreviewReply, transferables(value))
@@ -85,12 +95,11 @@ export function servePreview(port: MessagePort, kinds: PreviewKinds): void {
       void answer(data)
       return
     }
-    const key = documentKey(data.kind, data.url)
-    const closing = documents.get(key)
-    documents.delete(key)
+    const closing = documents.get(data.key)
+    documents.delete(data.key)
     // A document that failed to open has nothing to let go of.
     void closing?.then(
-      (opened) => opened.close?.(),
+      (document) => document.close?.(),
       () => undefined
     )
   })

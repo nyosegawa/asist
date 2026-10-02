@@ -12,8 +12,9 @@ import { allowedPath } from './services/file-preview'
  * share asist-file://nas/team/a.png, whose host is the server. The files card fetches its images, PDFs,
  * Office documents, audio and video over this URL rather than carrying bytes in its props, and loads an HTML
  * page from it so that the page's relative links resolve to the files next to it. Range requests are
- * answered so that video and audio can seek. Permission is checked on every request, because a job adds new
- * working directories as it goes.
+ * answered so that video and audio can seek and the preview page (asist-preview://) can read a document in
+ * pieces; that page's origin, and no other, is named in the answers' CORS headers. Permission is checked on
+ * every request, because a job adds new working directories as it goes.
  */
 
 export const FILE_SCHEME = 'asist-file'
