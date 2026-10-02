@@ -37,26 +37,34 @@ jobs:
         with:
           fetch-depth: 2
       # The first parent is the base of a pull request's merge commit, and the previous main of a squash merge.
+      # git diff names a renamed file by its new path alone and quotes a name with characters outside ASCII, so a
+      # file moved out of a listed folder or named in Japanese would match nothing: --no-renames lists both paths
+      # and -z writes every name as it is. Written to a file, a failing git diff fails the step, which a pipe into
+      # grep would hide by giving it no names.
       # layout lists the files that a build of the demo and a run of demo:fit read, traced on 2026-10-03: the
       # renderer, src/shared, the memory templates src/shared imports, the demo's config, fit's scripts and the
-      # dependencies. It adds the configuration Vite and Tailwind look for at the root and in src/, where an
-      # ignore file decides which of the renderer's files Tailwind scans for class names, and the job's own
-      # workflow and setup. A file the demo comes to read from elsewhere has to join the list, or a change to it
-      # skips fit.
+      # dependencies. It adds the configuration Vite and Tailwind look for at the root and in src/: a package.json,
+      # pnpm-workspace.yaml or lerna.json in src/ would keep the demo from serving the templates under resources/,
+      # and an ignore file decides which of the renderer's files Tailwind scans for class names. The job's own
+      # workflow and setup complete it. A file the demo comes to read from elsewhere has to join the list, or a
+      # change to it skips fit.
       - id: diff
         run: |
-          if git diff --name-only HEAD^ HEAD | grep -qv '^website/'; then
+          git diff --name-only --no-renames -z HEAD^ HEAD > "$RUNNER_TEMP/changed"
+          if grep -qzv '^website/' "$RUNNER_TEMP/changed"; then
             echo app=true >> "$GITHUB_OUTPUT"
           fi
-          if git diff --name-only HEAD^ HEAD | grep -qE \
+          if grep -qzE \
             -e '^src/(renderer|shared)/' \
             -e '^resources/skills/memory-curation[^/]*/assets/templates/' \
             -e '^resources/skills/memory-format\.json$' \
             -e '^scripts/(vite\.demo\.config\.mts|demo-page-view\.mts|aizuchi-clips/review-api\.mjs|cdp/[^/]+\.mjs|cdp/scenes/fit\.mjs)$' \
-            -e '^package(-lock)?\.json$' \
-            -e '^(src/)?(tsconfig[^/]*\.json|postcss\.config\.[^/]+|\.postcssrc[^/]*|\.?browserslist(rc)?|\.gitignore|\.ignore)$' \
+            -e '^package-lock\.json$' \
+            -e '^(src/)?(package\.json|pnpm-workspace\.yaml|lerna\.json|tsconfig[^/]*\.json)$' \
+            -e '^(src/)?(postcss\.config\.[^/]+|\.postcssrc[^/]*|\.?browserslist(rc)?|\.gitignore|\.ignore)$' \
             -e '^\.github/workflows/ci\.yml$' \
-            -e '^\.github/actions/setup-app/'; then
+            -e '^\.github/actions/setup-app/' \
+            "$RUNNER_TEMP/changed"; then
             echo layout=true >> "$GITHUB_OUTPUT"
           fi
 
@@ -93,8 +101,7 @@ jobs:
       # Mac, so the times are held to three times their budgets and the memory to the budgets as written; the
       # runner has 7 GB, and the scene never runs two Chromes at once. It runs here after the tests rather than in
       # a job of its own, which would be a fifth macOS runner on every push and keep other pull requests waiting
-      # for one, and on every change rather than on a list of paths, which would miss a change outside the list
-      # that breaks a viewer: the card's shell, the focus view, the dictionary or the demo.
+      # for one. Here it holds no runner of its own, so it runs whenever the tests do rather than only on layout.
       - run: npm run demo:viewer-budgets -- --time-factor 3
 
   # Whether the text of every card and screen still fits in each of the eleven languages and every theme,
