@@ -3,7 +3,7 @@
 ASIST を紹介する最初の動画と、YouTube のサムネイルです。動画は 48 秒、1920×1080、30fps で、H.264 と AAC で書き出します。絵と動きは HTML と GSAP で作り、headless Chrome で 1 コマずつ撮ります。できた動画とサムネイルは `out/` に書き出し、コミットしません。
 
 ```bash
-npm run promo:video       # out/asist-launch-video.mp4 ができます(10 コアの Mac で 9 分ほど)
+npm run promo:video       # out/asist-launch-video.mp4 ができます(10 コアの Mac で 7 分ほど)
 npm run promo:thumbnail   # out/youtube-thumbnail.png ができます(1280×720)
 ```
 
