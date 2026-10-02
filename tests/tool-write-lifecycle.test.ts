@@ -155,7 +155,7 @@ describe('a write whose wait is cut off once it has begun', () => {
     const gate = deferred()
     const entered = deferred()
     const stat = fsp.stat.bind(fsp)
-    // The note is in place, and its save goes on to read the folder back, which took 2.2 s with 8,000 notes.
+    // The note is in place, and its save goes on to read the whole folder back, which is slow when it holds many notes.
     vi.spyOn(fsp, 'stat').mockImplementationOnce(async (file) => {
       entered.resolve()
       await gate.promise
