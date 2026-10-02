@@ -11,7 +11,6 @@ const posixPaths = [
   '/Users/me//repo/a.md',
   '//a',
   '///a',
-  '//server/share/a',
   '/Users/me/a\\b.txt',
   '/Users/me/dir\\',
   'rel',
@@ -33,6 +32,9 @@ const windowsPaths = [
   '\\\\server\\share',
   '\\\\server\\share\\',
   '\\\\server\\share\\docs\\a.md',
+  '//server/share',
+  '//server/share/',
+  '//server/share/docs/a.md',
   '\\Users\\me'
 ]
 
@@ -80,6 +82,13 @@ describe('file-path', () => {
     expect(samePath('C:\\Users\\me\\asist', 'c:/users/me/asist/')).toBe(true)
     expect(samePath('\\\\server\\share\\Docs', '\\\\SERVER\\share\\docs\\')).toBe(true)
     expect(samePath('C:\\Users\\me\\asist', 'C:\\Users\\me\\asist-old')).toBe(false)
+  })
+
+  it('takes a share written with "/", as git on Windows writes //server/share, for the place the same share names with "\\"', () => {
+    expect(samePath('\\\\nas\\team\\proj', '//nas/team/proj/')).toBe(true)
+    expect(pathInside('\\\\nas\\team\\repo', '//nas/team/repo/docs/a.md')).toBe('docs/a.md')
+    expect(pathNames('//nas/team/docs/a.md')).toEqual(['docs', 'a.md'])
+    expect(trimTrailingSeparator('//nas/team/')).toBe('//nas/team/')
   })
 
   it('gives the part of a path below a folder, in either form, and nothing for a path outside it', () => {
