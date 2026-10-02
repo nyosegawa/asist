@@ -236,7 +236,7 @@ export class VoiceController {
       if (this.usesMaai() && this.state !== 'off') {
         this.vapAudio.pushAssistant(samples, speechPlayer.outputSampleRate)
       } else {
-        this.vapAudio.clearAssistant()
+        this.vapAudio.reset()
       }
     }
     speechPlayer.events.on('segmentstart', ({ segment }) => {

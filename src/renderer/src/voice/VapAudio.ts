@@ -14,8 +14,11 @@ const DELIVERY_MAX_SAMPLES = 6_400
  * chunks without it.
  */
 const JITTER_SAMPLES = 320
-/** The played audio kept while the microphone delivers nothing: as much as the longest wait for it can need. */
-const ASSISTANT_MAX_SAMPLES = FRAME_SAMPLES + DELIVERY_MAX_SAMPLES + JITTER_SAMPLES
+/**
+ * The played audio kept waiting: as much as the microphone audio held for the first measurement and the longest
+ * wait for the next delivery can need.
+ */
+const ASSISTANT_MAX_SAMPLES = 2 * DELIVERY_MAX_SAMPLES + JITTER_SAMPLES
 
 /**
  * Aligns the microphone and the audio actually being played into the equal-length frames MaAI expects.
@@ -27,6 +30,10 @@ const ASSISTANT_MAX_SAMPLES = FRAME_SAMPLES + DELIVERY_MAX_SAMPLES + JITTER_SAMP
  * over the longest stretch between deliveries is measured, and what exceeds the jitter is dropped. The measure
  * does not depend on how the microphone audio is cut up: DeepFilterNet hands each 100 ms delivery of the native
  * helper over in pieces of 10.7 ms, which a limit sized on the largest piece cut into every 80 ms frame.
+ *
+ * Until the first such stretch has been measured, played audio from before the microphone started cannot be told
+ * from what the microphone audio pairs with, so the frames wait for it, about 400 ms once per start. Lining the two
+ * up at the first delivery instead would take DeepFilterNet's first piece for the whole delivery.
  */
 export class VapAudio {
   private assistantChunks: Float32Array[] = []
@@ -34,8 +41,8 @@ export class VapAudio {
   private resampler: StreamResampler | null = null
   private userChunks: Float32Array[] = []
   private userSamples = 0
-  /** Whether a delivery has lined the two up since either side started. */
-  private aligned = false
+  /** Whether the backlog has been measured over a first stretch since either side started. */
+  private measured = false
   /** The least played audio left waiting right after a delivery, since the backlog was last dropped. */
   private leastSurplus = Infinity
   /** The microphone audio delivered since the backlog was last dropped. */
@@ -60,9 +67,8 @@ export class VapAudio {
     this.userSamples += frame.length
     this.leastSurplus = Math.min(this.leastSurplus, this.assistantSamples - this.userSamples)
     this.deliveredSinceDrop += frame.length
-    // The first delivery is lined up at once, so that the first frames do not pair with what played while the
-    // microphone was starting.
-    if (!this.aligned || this.deliveredSinceDrop >= DELIVERY_MAX_SAMPLES) this.dropBacklog()
+    if (this.deliveredSinceDrop >= DELIVERY_MAX_SAMPLES) this.dropBacklog()
+    if (!this.measured) return
     while (this.userSamples >= FRAME_SAMPLES) {
       const user = takeSamples(this.userChunks, FRAME_SAMPLES)
       this.userSamples -= FRAME_SAMPLES
@@ -83,24 +89,24 @@ export class VapAudio {
       takeSamples(this.assistantChunks, backlog)
       this.assistantSamples -= backlog
     }
-    this.aligned = true
+    this.measured = true
     this.leastSurplus = Infinity
     this.deliveredSinceDrop = 0
   }
 
-  clearAssistant(): void {
-    this.assistantChunks = []
-    this.assistantSamples = 0
-    this.resampler = null
-    this.aligned = false
-    this.leastSurplus = Infinity
-    this.deliveredSinceDrop = 0
-  }
-
+  /**
+   * Forgets both sides, as when the microphone stops or MaAI stops taking part, so that neither is paired with what
+   * comes after.
+   */
   reset(): void {
     this.userChunks = []
     this.userSamples = 0
-    this.clearAssistant()
+    this.assistantChunks = []
+    this.assistantSamples = 0
+    this.resampler = null
+    this.measured = false
+    this.leastSurplus = Infinity
+    this.deliveredSinceDrop = 0
   }
 }
 

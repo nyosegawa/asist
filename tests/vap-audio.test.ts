@@ -7,38 +7,82 @@ describe('VapAudio', () => {
   it('packs uneven chunks into 80 ms blocks in order and fills the part with no playback audio with silence', () => {
     const emit = vi.fn()
     const audio = new VapAudio(emit)
-    // The played audio reaches only a little further back than the microphone's first delivery.
-    audio.pushAssistant(samples(900, 0.5), 16_000)
+    // Less played audio than the microphone's first delivery, so none of it is older than the microphone's.
+    audio.pushAssistant(samples(500, 0.5), 16_000)
     audio.pushUser(samples(600, 1))
-    expect(emit).not.toHaveBeenCalled()
     audio.pushUser(samples(1960, 2))
-    expect(emit).toHaveBeenCalledTimes(2)
+    while (emit.mock.calls.length < 2) audio.pushUser(samples(1960, 3))
+
     const [firstUser, firstAssistant] = emit.mock.calls[0]
     expect([...firstUser]).toEqual([...samples(600, 1), ...samples(680, 2)])
-    expect([...firstAssistant]).toEqual([...samples(900, 0.5), ...samples(380, 0)])
+    expect([...firstAssistant]).toEqual([...samples(500, 0.5), ...samples(780, 0)])
     expect([...emit.mock.calls[1][0]]).toEqual([...samples(1280, 2)])
     expect([...emit.mock.calls[1][1]]).toEqual([...samples(1280, 0)])
   })
 
-  it('drops the older playback audio and pairs the newest with the microphone when the microphone lags', () => {
-    const emit = vi.fn()
-    const audio = new VapAudio(emit)
-    audio.pushAssistant(samples(16_000, 1), 16_000)
-    audio.pushAssistant(samples(1280, 2), 16_000)
-    audio.pushUser(samples(1280, 0))
-    expect([...emit.mock.calls[0][1]]).toEqual([...samples(1280, 2)])
+  /**
+   * Plays a ramp of the time each sample plays at through the output tap's 128-sample render quanta at 48 kHz,
+   * from a second before the microphone's first audio, as a reply that plays while the microphone starts. The
+   * microphone hands its audio over in deliveries of deliverySamples, each 15 ms after its end and up to 3 ms early
+   * or late, and cut into pieces of pieceSamples 0.6 ms apart. Returns, over the first two seconds of microphone
+   * audio, how many of the played samples paired with it were silent, and the largest distance in milliseconds
+   * between when a microphone sample was heard and when the played sample paired with it played.
+   */
+  function pairingOfTheFirstSeconds(deliverySamples: number, pieceSamples = deliverySamples): { silent: number; worstMs: number } {
+    let silent = 0
+    let worstMs = 0
+    // Every sample carries its time in seconds, shifted so that no sample of either side is 0.
+    const audio = new VapAudio((user, assistant) => {
+      for (let i = 0; i < user.length; i++) {
+        if (user[i] >= 12) return
+        if (assistant[i] === 0) silent++
+        else worstMs = Math.max(worstMs, Math.abs(assistant[i] - user[i]) * 1000)
+      }
+    })
+    const tapMs = 128 / 48
+    const jitterMs = [0, 3, -3, 2, -2, 1]
+    const events: Array<{ at: number; tap?: number; user?: { from: number; length: number } }> = []
+    for (let i = 0; -1000 + (i + 1) * tapMs < 3_000; i++) events.push({ at: -1000 + (i + 1) * tapMs, tap: i })
+    for (let d = 0; ((d + 1) * deliverySamples) / 16 < 3_000; d++) {
+      const arrives = ((d + 1) * deliverySamples) / 16 + 15 + jitterMs[d % 6]
+      for (let offset = 0, k = 0; offset < deliverySamples; offset += pieceSamples, k++) {
+        const length = Math.min(pieceSamples, deliverySamples - offset)
+        events.push({ at: arrives + 0.6 * k, user: { from: d * deliverySamples + offset, length } })
+      }
+    }
+    events.sort((a, b) => a.at - b.at)
+    for (const { tap, user } of events) {
+      if (user) audio.pushUser(Float32Array.from({ length: user.length }, (_, k) => 10 + (user.from + k) / 16_000))
+      else audio.pushAssistant(Float32Array.from({ length: 128 }, (_, k) => 9 + (tap! * 128 + k) / 48_000), 48_000)
+    }
+    return { silent, worstMs }
+  }
+
+  // Within one of MaAI's 80 ms frames, the played audio is what played while the microphone heard its frame.
+  const FRAME_MS = 80
+
+  it('pairs the first seconds with what plays at the time when DeepFilterNet hands the helper\'s 100 ms over in pieces', () => {
+    const { silent, worstMs } = pairingOfTheFirstSeconds(1_600, 171)
+    expect(silent).toBe(0)
+    expect(worstMs).toBeLessThan(FRAME_MS)
   })
 
-  it('pairs the microphone with what is playing now after a whole reply played before its first frame', () => {
-    const emit = vi.fn()
-    const audio = new VapAudio(emit)
-    // The output tap's render quanta at 48 kHz: a second of reply while the microphone is still
-    // starting, then 400 ms more.
-    for (let i = 0; i < 375; i++) audio.pushAssistant(samples(128, 1), 48_000)
-    for (let i = 0; i < 150; i++) audio.pushAssistant(samples(128, 2), 48_000)
-    audio.pushUser(samples(1280, 0))
+  it('pairs the first seconds with what plays at the time when DeepFilterNet hands 400 ms over in pieces', () => {
+    const { silent, worstMs } = pairingOfTheFirstSeconds(6_400, 171)
+    expect(silent).toBe(0)
+    expect(worstMs).toBeLessThan(FRAME_MS)
+  })
 
-    expect([...(emit.mock.calls[0][1] as Float32Array)]).toEqual([...samples(1280, 2)])
+  it('pairs the first seconds with what plays at the time when getUserMedia hands over 21 ms at a time', () => {
+    const { silent, worstMs } = pairingOfTheFirstSeconds(341)
+    expect(silent).toBe(0)
+    expect(worstMs).toBeLessThan(FRAME_MS)
+  })
+
+  it('pairs the first seconds with what plays at the time when the native helper hands over 100 ms at a time', () => {
+    const { silent, worstMs } = pairingOfTheFirstSeconds(1_600)
+    expect(silent).toBe(0)
+    expect(worstMs).toBeLessThan(FRAME_MS)
   })
 
   /**
@@ -91,7 +135,7 @@ describe('VapAudio', () => {
     audio.reset()
     audio.pushAssistant(samples(3841, 0.5), 48_000)
     audio.pushUser(samples(1280, 2))
-    expect(emit).toHaveBeenCalledOnce()
+    while (emit.mock.calls.length === 0) audio.pushUser(samples(1280, 3))
     expect([...emit.mock.calls[0][0]]).toEqual([...samples(1280, 2)])
     expect([...emit.mock.calls[0][1]]).toEqual([...samples(1280, 0.5)])
   })
