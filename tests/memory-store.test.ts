@@ -72,7 +72,7 @@ function mergeErrors({ file, kind, ...rest }: DirectoryProblem): string[] {
     case 'pageName':
       return []
     default:
-      return [documentIssueText(file, { kind, ...rest } as DocumentIssue, ja)]
+      return [documentIssueText(file, { kind, ...rest } as DocumentIssue, ja, 'ja-JP')]
   }
 }
 

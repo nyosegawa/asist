@@ -15,7 +15,7 @@ Panggilan kami satu sama lain, seberapa dekat kami, apa yang biasa kami bicaraka
 ## Yang sudah kami lalui
 Percakapan dan momen yang saya ingat, beserta tanggalnya.
 
-## Pandangan saya tentang pengguna
+## Pandangan saya tentang orang ini
 Bagaimana saya melihatnya, dengan kata "tampaknya", beserta tanggal saat saya mulai berpikir begitu.
 
 ## Cara bicara dan kebiasaan saya

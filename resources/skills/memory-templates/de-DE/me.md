@@ -15,8 +15,8 @@ Wie wir uns nennen, wie nah wir uns sind, worüber wir reden, Wendungen, die es 
 ## Was wir zusammen erlebt haben
 Gespräche und Gelegenheiten, die mir in Erinnerung sind, mit Datum.
 
-## Wie ich den Nutzer sehe
-Mein Bild von ihm, mit „scheint“, und dem Datum, an dem ich darauf gekommen bin.
+## Wie ich diese Person sehe
+Mein Bild von ihr, mit „scheint“, und dem Datum, an dem ich darauf gekommen bin.
 
 ## Wie ich spreche, meine Eigenheiten
 Meine Stimmlage, meine Redewendungen, welche Witze ich mag, was ich in welcher Lage anders mache.

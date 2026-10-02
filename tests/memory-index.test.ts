@@ -310,7 +310,8 @@ describe('MemoryIndex over memories in several languages', () => {
       section('es-impression', 'pages/Panadería.md', 'Panadería', 'Mi impresión', 'Cuando sale la panadería, suele ser una mañana tranquila.'),
       journal('fr-self', 'Mon bilan du jour', 'Un dimanche calme, et j’ai aimé entendre parler du bonsaï.'),
       journal('ko-self', '오늘의 나', '조용한 일요일. 분재 이야기를 들어서 기뻤다.'),
-      journal('hi-self', 'मेरा आज का दिन', 'शांत रविवार। बोनसाई की बात सुनकर अच्छा लगा।')
+      journal('hi-self', 'आज का दिन', 'शांत रविवार। बोनसाई की बात सुनकर अच्छा लगा।'),
+      journal('pt-self', 'Meu dia', 'Um domingo calmo, e gostei de ouvir sobre o bonsai.')
     ])
     const ordinary = [
       'Mein Eindruck von dem Film war gemischt',
@@ -318,7 +319,8 @@ describe('MemoryIndex over memories in several languages', () => {
       'mi impresión es que va a llover',
       'mon bilan du jour est mitigé',
       '오늘의 나는 좀 지쳤어',
-      'मेरा आज का दिन अच्छा नहीं रहा'
+      'आज का दिन अच्छा नहीं रहा',
+      'meu dia foi longo demais'
     ]
     const injected = (utterances: string[]): Record<string, string[]> =>
       Object.fromEntries(utterances.map((utterance) => [utterance, ids(utterance, { mode: 'utterance' })]))

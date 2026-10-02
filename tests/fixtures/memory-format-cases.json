@@ -165,8 +165,7 @@
           "kind": "frontmatterMissing"
         },
         {
-          "kind": "firstHeading",
-          "heading": "要約"
+          "kind": "firstHeading"
         }
       ]
     },
@@ -188,8 +187,7 @@
       "markdown": "---\nupdated: 2026-09-09\n---\n# Bäckerei\n\n## Brot\nRoggenbrot am Samstag.\n",
       "issues": [
         {
-          "kind": "firstHeading",
-          "heading": "Summary"
+          "kind": "firstHeading"
         }
       ]
     },
@@ -199,8 +197,7 @@
       "markdown": "---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Tastes\nNot too spicy.\n",
       "issues": [
         {
-          "kind": "firstHeading",
-          "heading": "Summary"
+          "kind": "firstHeading"
         }
       ]
     },
@@ -213,6 +210,45 @@
           "kind": "duplicateHeading",
           "line": 7,
           "heading": "要約",
+          "first": 5
+        }
+      ]
+    },
+    {
+      "name": "text above the first heading and a German summary heading, read as one heading twice",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# Bäckerei\nDie Bäckerei am Bahnhof.\n\n## Zusammenfassung\nRoggenbrot am Samstag.\n",
+      "issues": [
+        {
+          "kind": "duplicateHeading",
+          "line": 7,
+          "heading": "Zusammenfassung",
+          "first": 5
+        }
+      ]
+    },
+    {
+      "name": "a Korean page that opens with text, read under the Korean summary heading",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# 빵집\n역 앞의 빵집.\n\n## 요약\n토요일에는 호밀빵.\n",
+      "issues": [
+        {
+          "kind": "duplicateHeading",
+          "line": 7,
+          "heading": "요약",
+          "first": 5
+        }
+      ]
+    },
+    {
+      "name": "a Hindi page that opens with text beside its summary heading",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# चायवाला\nस्टेशन के पास की चाय की दुकान।\n\n## सारांश\nसुबह की अदरक वाली चाय।\n",
+      "issues": [
+        {
+          "kind": "duplicateHeading",
+          "line": 7,
+          "heading": "सारांश",
           "first": 5
         }
       ]

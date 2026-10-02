@@ -37,7 +37,7 @@ export function installSkill(worktreeDir: string, locale: ConversationLocale = c
   const source = path.join(skills, curationSkillSource(locale))
   const templates = path.join(skills, MEMORY_TEMPLATES, locale)
   for (const required of [path.join(source, 'SKILL.md'), templates]) {
-    if (!fs.existsSync(required)) throw new Error(`the memory curation skill is missing: ${required}`)
+    if (!fs.existsSync(required)) throw new Error(errorText('memory.errors.skillMissing', { path: required }))
   }
   for (const dir of SKILL_DIRS) {
     const target = path.join(worktreeDir, dir, CURATION_SKILL)

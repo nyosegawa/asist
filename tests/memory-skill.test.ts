@@ -8,6 +8,7 @@ import { CONVERSATION_LOCALES, type ConversationLocale } from '@shared/conversat
 import { CURATION_SKILL, MEMORY_TEMPLATES, SKILL_DIRS, curationScriptCommand, curationSkillSource } from '@shared/memory-curation'
 import { FIXED_HEADINGS, parsePage, validateDocument } from '@shared/memory-page'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { PROMPT_DOCUMENTS, PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/memory-format'
 import { runPython, sectionsOverTheLimit } from './helpers/memory'
 
@@ -244,7 +245,7 @@ describe('the memory-curation skill', () => {
     for (const [file, markdown] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), markdown)
     const reported = problemsIn(dir)
     for (const [file, markdown] of Object.entries(files)) {
-      const app = validateDocument(file, markdown, ja)
+      const app = validateDocument(file, markdown, ja, 'ja-JP')
       expect([file, app.length]).not.toEqual([file, 0])
       expect([file, reported.filter((place) => place === file || place.startsWith(`${file}:`)).length]).toEqual([file, app.length])
     }
@@ -267,6 +268,12 @@ describe('the memory-curation skill', () => {
       fs.writeFileSync(path.join(dir, 'pages', '壊れ.md'), '---\n---\n# 壊れ\n\n## 要約\n\n')
       for (const skills of SKILL_DIRS) expect(places(validate(path.join(worktree, skills, CURATION_SKILL), dir).output)).toEqual(['pages/壊れ.md:5'])
     }
+  })
+
+  it('stops the curation with a reason the screen shows in its own language when the templates of the conversation language are missing', () => {
+    const worktree = mkdtempSync(path.join(tmpdir(), 'asist-memory-skill-missing-'))
+    const missing = path.join(process.cwd(), 'resources', 'skills', MEMORY_TEMPLATES, 'xx-XX')
+    expect(() => installSkill(worktree, 'xx-XX' as ConversationLocale)).toThrow(errorText('memory.errors.skillMissing', { path: missing }))
   })
 
   it('runs its checks with the command it gives, through the uv ASIST copies into its folder, whatever uv comes first on PATH', () => {

@@ -267,8 +267,11 @@ export function documentOf(file: string, markdown: string): MemoryDocument {
   }
 }
 
-/** A finding of documentIssues as a sentence in the language of the interface. */
-export function documentIssueText(file: string, issue: DocumentIssue, t: Translate): string {
+/**
+ * A finding of documentIssues as a sentence in the language of the interface. A page without its summary is told
+ * the summary heading of the conversation's language, the language the memory is written in.
+ */
+export function documentIssueText(file: string, issue: DocumentIssue, t: Translate, locale: ConversationLocale): string {
   switch (issue.kind) {
     case 'duplicateHeading':
       return t('memory.check.duplicateHeading', { file, line: issue.line, heading: issue.heading, first: issue.first })
@@ -279,7 +282,7 @@ export function documentIssueText(file: string, issue: DocumentIssue, t: Transla
     case 'tooManyTokens':
       return t('memory.check.tooManyTokens', { file, tokens: issue.tokens, limit: issue.limit, characters: issue.cut.characters })
     case 'firstHeading':
-      return t('memory.check.firstHeading', { file, heading: issue.heading })
+      return t('memory.check.firstHeading', { file, heading: SUMMARY_HEADING[locale] })
     case 'obsoleteKey':
       return t('memory.check.obsoleteKey', { file, key: issue.key })
     default:
@@ -292,10 +295,10 @@ export function documentIssueText(file: string, issue: DocumentIssue, t: Transla
  * language of the interface, or nothing when it is valid. Reading the whole directory and saving from
  * the screen apply the same rules.
  */
-export function validateDocument(file: string, markdown: string, t: Translate): string[] {
+export function validateDocument(file: string, markdown: string, t: Translate, locale: ConversationLocale): string[] {
   const kind = documentKindOf(file)
   if (!kind) return [t('memory.check.wrongPlace', { file })]
-  return documentIssues(kind, markdown).map((issue) => documentIssueText(file, issue, t))
+  return documentIssues(kind, markdown).map((issue) => documentIssueText(file, issue, t, locale))
 }
 
 export function parseMemoryPageInput(value: unknown): MemoryPageInput {

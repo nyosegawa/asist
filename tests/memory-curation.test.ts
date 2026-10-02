@@ -141,7 +141,7 @@ describe('buildCurationPrompt', () => {
       persona: ' like a butler '
     })
     expect(prompt.startsWith(`Today is 2026-09-09. Follow the \`${CURATION_SKILL}\` skill`)).toBe(true)
-    expect(prompt).toContain('write every file in German')
+    expect(prompt).toContain('German')
     expect(prompt).not.toContain('{language}')
     expect(prompt).toContain('# Character settings (me.md, where the assistant starts from)\nlike a butler')
     expect(prompt).toContain('# The conversation of 2026-09-07\n[10:00 #1] User: Guten Morgen')

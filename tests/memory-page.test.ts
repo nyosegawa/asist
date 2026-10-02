@@ -84,13 +84,13 @@ describe('parsePage', () => {
   it('reports a heading without a body, an unclosed frontmatter and a malformed updated as things to fix, and leaves the empty heading out of the sections', () => {
     const file = 'journal/2026-09-07.md'
     const markdown = '---\nupdated: 昨日\n---\n# x\n## 空\n\n## あり\n本文\n'
-    expect(validateDocument(file, markdown, ja)).toEqual([
+    expect(validateDocument(file, markdown, ja, 'ja-JP')).toEqual([
       ja('memory.check.updatedNotDate', { file }),
       ja('memory.check.headingWithoutText', { file, line: 5, heading: '空' })
     ])
     expect(parsePage(markdown, 'x').sections.map((s) => s.heading)).toEqual(['あり'])
-    expect(validateDocument(file, '---\nupdated: 2026-09-09\n# x\n## 話\n本文\n', ja)).toContain(ja('memory.check.frontmatterUnclosed', { file }))
-    expect(validateDocument(file, '---\nupdated: 2026-09-09\n---', ja)).not.toContain(ja('memory.check.frontmatterUnclosed', { file }))
+    expect(validateDocument(file, '---\nupdated: 2026-09-09\n# x\n## 話\n本文\n', ja, 'ja-JP')).toContain(ja('memory.check.frontmatterUnclosed', { file }))
+    expect(validateDocument(file, '---\nupdated: 2026-09-09\n---', ja, 'ja-JP')).not.toContain(ja('memory.check.frontmatterUnclosed', { file }))
   })
 
   it('reads a page written under the English fixed headings into the same structure as its Japanese twin', () => {
@@ -117,7 +117,7 @@ describe('parsePage', () => {
     const file = 'pages/松葉軒.md'
     const markdown = '---\nkind: place\nlinks:\n  - ユーザー\n- 田中さん\naliases:\n  - 松葉軒\n---\n# 松葉軒\n## 要約\n行きつけの店。\n'
     expect(parsePage(markdown, 'x').frontmatter.aliases).toEqual(['松葉軒'])
-    expect(validateDocument(file, markdown, ja)).toEqual([
+    expect(validateDocument(file, markdown, ja, 'ja-JP')).toEqual([
       ja('memory.check.obsoleteKey', { file, key: 'kind' }),
       ja('memory.check.obsoleteKey', { file, key: 'links' })
     ])
@@ -126,8 +126,8 @@ describe('parsePage', () => {
   it('reports a section whose body passes the cap, counted without whitespace', () => {
     const file = 'journal/2026-09-07.md'
     const atCap = 'あ '.repeat(SECTION_MAX_CHARS / 2) + '\n' + 'い\t'.repeat(SECTION_MAX_CHARS / 2)
-    expect(validateDocument(file, `# x\n## 長い\n${atCap}\n`, ja)).toEqual([])
-    expect(validateDocument(file, `# x\n## 長い\n${'あ'.repeat(SECTION_MAX_CHARS + 1)}\n`, ja)).toEqual([
+    expect(validateDocument(file, `# x\n## 長い\n${atCap}\n`, ja, 'ja-JP')).toEqual([])
+    expect(validateDocument(file, `# x\n## 長い\n${'あ'.repeat(SECTION_MAX_CHARS + 1)}\n`, ja, 'ja-JP')).toEqual([
       ja('memory.check.sectionTooLong', { file, line: 2, heading: '長い', limit: SECTION_MAX_CHARS })
     ])
   })
@@ -181,7 +181,7 @@ describe('units', () => {
       embedded('pages/Mugi.md', 'Mugi', 'Mein Eindruck'),
       embedded('pages/Mugi.md', 'Mugi', 'Überschriften, die zum Thema passen'),
       embedded('pages/Mugi.md', 'Mugi', 'Mi impresión'),
-      embedded('journal/2026-09-20.md', '2026-09-20', 'मेरा आज का दिन'),
+      embedded('journal/2026-09-20.md', '2026-09-20', 'आज का दिन'),
       embedded('journal/2026-09-20.md', '2026-09-20', '오늘의 나'),
       embedded('journal/2026-09-20.md', '2026-09-20', 'Un sujet')
     ]).toEqual([
@@ -245,21 +245,21 @@ describe('documents', () => {
   })
 
   it('reports what to fix in a page that breaks the rules', () => {
-    expect(validateDocument('pages/壊れ.md', '# 壊れ\n\n## 経緯\n本文\n', ja)).toEqual([
+    expect(validateDocument('pages/壊れ.md', '# 壊れ\n\n## 経緯\n本文\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.frontmatterMissing', { file: 'pages/壊れ.md' }),
       ja('memory.check.firstHeading', { file: 'pages/壊れ.md', heading: '要約' })
     ])
-    expect(validateDocument('pages/松葉軒.md', MATSUBAKEN, ja)).toEqual([])
-    expect(validateDocument('journal/2026-09-07.md', '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n', ja)).toEqual([])
-    expect(validateDocument('../me.md', '', ja)).toEqual([ja('memory.check.wrongPlace', { file: '../me.md' })])
-    expect(validateDocument('profile.md', '# 要点\n## 要点\n本文\n', ja)).toEqual([ja('memory.check.wrongPlace', { file: 'profile.md' })])
-    expect(validateDocument('instruction.md', '# いつも覚えておくこと\n## この人について\n東京に住む。\n', ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', MATSUBAKEN, ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('journal/2026-09-07.md', '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n', ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('../me.md', '', ja, 'ja-JP')).toEqual([ja('memory.check.wrongPlace', { file: '../me.md' })])
+    expect(validateDocument('profile.md', '# 要点\n## 要点\n本文\n', ja, 'ja-JP')).toEqual([ja('memory.check.wrongPlace', { file: 'profile.md' })])
+    expect(validateDocument('instruction.md', '# いつも覚えておくこと\n## この人について\n東京に住む。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.wrongPlace', { file: 'instruction.md' })
     ])
   })
 
   it('refuses the obsolete frontmatter keys kind and links', () => {
-    expect(validateDocument('pages/松葉軒.md', '---\nkind: place\nlinks: [ユーザー]\nupdated: 2026-09-09\n---\n# 松葉軒\n## 要約\n行きつけの店。\n', ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', '---\nkind: place\nlinks: [ユーザー]\nupdated: 2026-09-09\n---\n# 松葉軒\n## 要約\n行きつけの店。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.obsoleteKey', { file: 'pages/松葉軒.md', key: 'kind' }),
       ja('memory.check.obsoleteKey', { file: 'pages/松葉軒.md', key: 'links' })
     ])
@@ -267,42 +267,42 @@ describe('documents', () => {
 
   it('refuses a section whose body is longer than the cap', () => {
     const markdown = `---\nupdated: 2026-09-09\n---\n# 松葉軒\n## 要約\n${'あ'.repeat(SECTION_MAX_CHARS + 1)}\n`
-    expect(validateDocument('pages/松葉軒.md', markdown, ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', markdown, ja, 'ja-JP')).toEqual([
       ja('memory.check.sectionTooLong', { file: 'pages/松葉軒.md', line: 5, heading: '要約', limit: SECTION_MAX_CHARS })
     ])
   })
 
   it('asks every page, user.md and me.md for its # name line, and every one but me.md for a ## heading', () => {
-    expect(validateDocument('user.md', '---\nupdated: 2026-09-09\n---\n## 好み\n辛さは控えめ。\n', ja)).toEqual([
+    expect(validateDocument('user.md', '---\nupdated: 2026-09-09\n---\n## 好み\n辛さは控えめ。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.titleMissing', { file: 'user.md' })
     ])
-    expect(validateDocument('user.md', '---\nupdated: 2026-09-09\n---\n# ユーザー\n東京に住む。\n', ja)).toEqual([
+    expect(validateDocument('user.md', '---\nupdated: 2026-09-09\n---\n# ユーザー\n東京に住む。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.noHeadings', { file: 'user.md' })
     ])
-    expect(validateDocument('pages/松葉軒.md', '---\nupdated: 2026-09-09\n---\n# 松葉軒\n行きつけの店。\n', ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', '---\nupdated: 2026-09-09\n---\n# 松葉軒\n行きつけの店。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.noHeadings', { file: 'pages/松葉軒.md' })
     ])
-    expect(validateDocument('me.md', '---\nupdated: 2026-09-09\n---\n# 私について\n落ち着いた声で話す。\n', ja)).toEqual([])
-    expect(validateDocument('me.md', '# 私について\n## 私は誰か\n落ち着いた声で話す。\n', ja)).toEqual([
+    expect(validateDocument('me.md', '---\nupdated: 2026-09-09\n---\n# 私について\n落ち着いた声で話す。\n', ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('me.md', '# 私について\n## 私は誰か\n落ち着いた声で話す。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.frontmatterMissing', { file: 'me.md' })
     ])
   })
 
   it('asks a journal entry for a ## heading but not for frontmatter or a # line', () => {
-    expect(validateDocument('journal/2026-09-07.md', '## 四季の話\n春は桜を勧めた。\n', ja)).toEqual([])
-    expect(validateDocument('journal/2026-09-07.md', '# 2026-09-07\n春は桜を勧めた。\n', ja)).toEqual([
+    expect(validateDocument('journal/2026-09-07.md', '## 四季の話\n春は桜を勧めた。\n', ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('journal/2026-09-07.md', '# 2026-09-07\n春は桜を勧めた。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.noHeadings', { file: 'journal/2026-09-07.md' })
     ])
   })
 
   it('allows aliases only on the pages under pages/', () => {
-    expect(validateDocument('user.md', '---\naliases: [本人]\nupdated: 2026-09-09\n---\n# ユーザー\n## 好み\n辛さは控えめ。\n', ja)).toEqual([
+    expect(validateDocument('user.md', '---\naliases: [本人]\nupdated: 2026-09-09\n---\n# ユーザー\n## 好み\n辛さは控えめ。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.aliasesOnlyOnPages', { file: 'user.md' })
     ])
-    expect(validateDocument('me.md', '---\naliases: [アシスト]\n---\n# 私について\n## 私は誰か\n落ち着いた声で話す。\n', ja)).toEqual([
+    expect(validateDocument('me.md', '---\naliases: [アシスト]\n---\n# 私について\n## 私は誰か\n落ち着いた声で話す。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.aliasesOnlyOnPages', { file: 'me.md' })
     ])    // An empty list is refused too, as validate.py refuses it, so a page the Agent passes is never refused at the merge.
-    expect(validateDocument('user.md', '---\naliases: []\nupdated: 2026-09-09\n---\n# ユーザー\n## 好み\n辛さは控えめ。\n', ja)).toEqual([
+    expect(validateDocument('user.md', '---\naliases: []\nupdated: 2026-09-09\n---\n# ユーザー\n## 好み\n辛さは控えめ。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.aliasesOnlyOnPages', { file: 'user.md' })
     ])
   })
@@ -310,15 +310,15 @@ describe('documents', () => {
   it('refuses a heading that stands twice in one file, since a section is found by its file and heading', () => {
     const file = 'pages/大川俊介.md'
     const twice = '---\nupdated: 2026-09-20\n---\n# 大川俊介\n\n## 要約\n本人の上司。\n\n## 私の印象\n落ち着いた人に見える。\n\n## 私の印象\nくるみアレルギーがあると本人が言っていた。\n'
-    expect(validateDocument(file, twice, ja)).toEqual([ja('memory.check.duplicateHeading', { file, line: 12, heading: '私の印象', first: 9 })])
+    expect(validateDocument(file, twice, ja, 'ja-JP')).toEqual([ja('memory.check.duplicateHeading', { file, line: 12, heading: '私の印象', first: 9 })])
     // The text above the first heading is the summary section, so a `## 要約` after it is a second one.
     const above = '---\nupdated: 2026-09-20\n---\n# 大川俊介\n本人の上司。\n\n## 要約\n打ち合わせの相手。\n'
-    expect(validateDocument(file, above, ja)).toEqual([ja('memory.check.duplicateHeading', { file, line: 7, heading: '要約', first: 5 })])
+    expect(validateDocument(file, above, ja, 'ja-JP')).toEqual([ja('memory.check.duplicateHeading', { file, line: 7, heading: '要約', first: 5 })])
   })
 
   it('caps the text above the first heading of a page like any other section', () => {
     const prose = '本人の行きつけのラーメン屋で、麺類の気分のときにまず名前が出る。'.repeat(30)
-    expect(validateDocument('pages/松葉軒.md', `---\nupdated: 2026-09-20\n---\n# 松葉軒\n\n${prose}\n\n## 好み\n辛さは控えめ。\n`, ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', `---\nupdated: 2026-09-20\n---\n# 松葉軒\n\n${prose}\n\n## 好み\n辛さは控えめ。\n`, ja, 'ja-JP')).toEqual([
       ja('memory.check.sectionTooLong', { file: 'pages/松葉軒.md', line: 6, heading: '要約', limit: SECTION_MAX_CHARS })
     ])
   })
@@ -335,12 +335,12 @@ describe('documents', () => {
       while (promptSize(shape(body + sentence)).tokens <= PROMPT_DOCUMENT_MAX_TOKENS) body += sentence
       while (promptSize(shape(body + 'あ')).tokens <= PROMPT_DOCUMENT_MAX_TOKENS) body += 'あ'
       // A section far past the cap of a page's section is no problem in a document that goes whole into the prompt.
-      expect([file, validateDocument(file, shape(body), ja)]).toEqual([file, []])
+      expect([file, validateDocument(file, shape(body), ja, 'ja-JP')]).toEqual([file, []])
       const over = shape(`${body}あ`)
       const size = promptSize(over)
       expect(size.tokens).toBeGreaterThan(PROMPT_DOCUMENT_MAX_TOKENS)
       const cut = textForTokens(size, size.tokens - PROMPT_DOCUMENT_MAX_TOKENS).characters
-      expect([file, validateDocument(file, over, ja)]).toEqual([
+      expect([file, validateDocument(file, over, ja, 'ja-JP')]).toEqual([
         file,
         [ja('memory.check.tooManyTokens', { file, tokens: size.tokens, limit: PROMPT_DOCUMENT_MAX_TOKENS, characters: cut })]
       ])
@@ -367,20 +367,34 @@ describe('documents', () => {
     expect(textForTokens(size, 20)).toEqual({ characters: 30, words: 6 })
   })
 
-  it('accepts a page under the summary heading of any language, and names the English one to a page written in a language other than Japanese', () => {
-    expect(validateDocument('pages/Matsubaken.md', PAGE_EN, ja)).toEqual([])
-    expect(validateDocument('pages/松葉軒.md', MATSUBAKEN, ja)).toEqual([])
-    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## Zusammenfassung'), ja)).toEqual([])
-    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## सारांश'), ja)).toEqual([])
-    expect(validateDocument('pages/Matsubaken.md', '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Bestellung\nNicht zu scharf.\n', ja)).toEqual([
-      ja('memory.check.firstHeading', { file: 'pages/Matsubaken.md', heading: 'Summary' })
+  it('accepts a page under the summary heading of any language, and names the one of the conversation language to a page without one', () => {
+    expect(validateDocument('pages/Matsubaken.md', PAGE_EN, ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('pages/松葉軒.md', MATSUBAKEN, ja, 'de-DE')).toEqual([])
+    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## Zusammenfassung'), ja, 'ja-JP')).toEqual([])
+    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## सारांश'), ja, 'ja-JP')).toEqual([])
+    const bakery = '---\nupdated: 2026-09-09\n---\n# Bäckerei\n\n## Brot\nRoggenbrot am Samstag.\n'
+    expect(validateDocument('pages/Bäckerei.md', bakery, ja, 'de-DE')).toEqual([
+      ja('memory.check.firstHeading', { file: 'pages/Bäckerei.md', heading: 'Zusammenfassung' })
     ])
-    expect(validateDocument('pages/Matsubaken.md', '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Tastes\nNot too spicy.\n', ja)).toEqual([
-      ja('memory.check.firstHeading', { file: 'pages/Matsubaken.md', heading: 'Summary' })
+    expect(validateDocument('pages/빵집.md', '---\nupdated: 2026-09-09\n---\n# 빵집\n\n## 메뉴\n호밀빵.\n', ja, 'ko-KR')).toEqual([
+      ja('memory.check.firstHeading', { file: 'pages/빵집.md', heading: '요약' })
     ])
-    expect(validateDocument('pages/松葉軒.md', '---\nupdated: 2026-09-09\n---\n# 松葉軒\n\n## 好み\n辛さは控えめ。\n', ja)).toEqual([
+    expect(validateDocument('pages/松葉軒.md', '---\nupdated: 2026-09-09\n---\n# 松葉軒\n\n## 好み\n辛さは控えめ。\n', ja, 'ja-JP')).toEqual([
       ja('memory.check.firstHeading', { file: 'pages/松葉軒.md', heading: '要約' })
     ])
+  })
+
+  it('reads text above the first heading as the summary the page has in whichever language, or as the one its letters show, so that the two are caught as one heading twice', () => {
+    const headings = (markdown: string): string[] => parsePage(markdown, '').sections.map((section) => section.heading)
+    const german = '---\nupdated: 2026-09-09\n---\n# Bäckerei\nDie Bäckerei am Bahnhof.\n\n## Zusammenfassung\nRoggenbrot.\n'
+    expect(headings(german)).toEqual(['Zusammenfassung', 'Zusammenfassung'])
+    expect(validateDocument('pages/Bäckerei.md', german, ja, 'de-DE')).toEqual([
+      ja('memory.check.duplicateHeading', { file: 'pages/Bäckerei.md', line: 7, heading: 'Zusammenfassung', first: 5 })
+    ])
+    expect(headings('# 빵집\n역 앞의 빵집.\n\n## 메뉴\n호밀빵.\n')).toEqual(['요약', '메뉴'])
+    expect(headings('# चायवाला\nस्टेशन के पास की दुकान।\n')).toEqual(['सारांश'])
+    expect(headings('# 松葉軒\n行きつけの店。\n')).toEqual(['要約'])
+    expect(headings('# Bäckerei\nDie Bäckerei am Bahnhof.\n\n## Brot\nRoggenbrot.\n')).toEqual(['Summary', 'Brot'])
   })
 
   it('accepts only a name that works in a path when a page is created', () => {

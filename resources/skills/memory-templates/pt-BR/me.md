@@ -15,8 +15,8 @@ Como chamamos um ao outro, o quanto somos próximos, sobre o que conversamos, as
 ## O que vivemos juntos
 Conversas e momentos de que me lembro, com a data.
 
-## O que penso do usuário
-Como o vejo, com "parece", e a data em que passei a pensar assim.
+## O que penso dessa pessoa
+Como a vejo, com "parece", e a data em que passei a pensar assim.
 
 ## Meu jeito de falar e minhas manias
 O tom de voz, as expressões que uso, o tipo de piada que faço, o que faço diferente em cada situação.

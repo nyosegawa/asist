@@ -521,7 +521,8 @@ it('writes the prompt, the transcript and the worktree AGENTS.md in English for 
   const { curation } = await setup()
   const job = curation.pendingJob()!
   expect(job.prompt).toContain('[09:05 #1] User: Ich mag Katzen')
-  expect(job.prompt).toContain('write every file in German')
+  expect(job.prompt).toContain('German')
+  expect(job.prompt).not.toContain('{language}')
   expect(/[぀-ヿ一-鿿]/.test(job.prompt)).toBe(false)
   const agents = fs.readFileSync(path.join(job.cwd, 'AGENTS.md'), 'utf8')
   expect(agents).toContain('memory-curation')

@@ -52,9 +52,10 @@ ones it has.
 ## Headings
 
 Do not put the same heading twice in one file. In the pages and the journal, ASIST searches a `## heading`
-and the text under it as one section. Text above the first `## heading` is read as the "Summary" section,
-which is how a me.md without headings is read. In the other files, write the text under a heading: text
-above `## Summary` makes a second "Summary".
+and the text under it as one section. Text above the first `## heading` is read as if it stood under the
+summary heading (`## Summary` in English), which is how a me.md without headings is read. In the other
+files, write the text under a heading: text above the summary heading, in any language, makes the summary
+heading stand twice.
 
 ## Length
 

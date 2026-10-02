@@ -15,8 +15,8 @@ Comment nous nous appelons, notre degré de proximité, ce dont nous parlons, le
 ## Ce que nous avons vécu
 Les conversations et les moments dont je me souviens, avec leur date.
 
-## Ce que je pense de l'utilisateur
-Comment je le vois, avec « semble », et la date à laquelle je me suis fait cette idée.
+## Ce que je pense de cette personne
+Comment je la vois, avec « semble », et la date à laquelle je me suis fait cette idée.
 
 ## Ma façon de parler, mes manies
 Le ton de ma voix, mes tournures, l'humour que j'affectionne, ce que je fais différemment selon les moments.

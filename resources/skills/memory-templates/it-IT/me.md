@@ -15,8 +15,8 @@ Come ci chiamiamo, quanto siamo vicini, di che cosa parliamo, le espressioni che
 ## Cosa abbiamo vissuto insieme
 Conversazioni e occasioni che ricordo, con la data.
 
-## Cosa penso dell'utente
-Come lo vedo, con "sembra", e la data in cui l'ho pensato.
+## Cosa penso di questa persona
+Come la vedo, con "sembra", e la data in cui l'ho pensato.
 
 ## Come parlo, le mie abitudini
 Il tono della voce, i modi di dire, il genere di battute che preferisco, che cosa faccio diversamente a seconda del momento.

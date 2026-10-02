@@ -24,7 +24,7 @@ describe('removing the page template example text', () => {
     expect(withoutExampleText(page)).toBe('---\naliases: []\nupdated: 2026-09-20\n---\n# 田中さん\n\n## 要約\n本人の上司。毎週木曜に打ち合わせをする。\n')
     const english = EN.replace(EN_SUMMARY, 'Their manager at work.')
     expect(withoutExampleText(english)).toBe('---\naliases: []\nupdated: 2026-09-20\n---\n# Tanaka\n\n## Summary\nTheir manager at work.\n')
-    expect(validateDocument('pages/田中さん.md', withoutExampleText(page)!, ja)).toEqual([])
+    expect(validateDocument('pages/田中さん.md', withoutExampleText(page)!, ja, 'ja-JP')).toEqual([])
   })
 
   it('keeps a section whose example the user edited, or whose heading they renamed, word for word', () => {

@@ -63,7 +63,7 @@ export type DocumentIssue =
   | { kind: 'duplicateHeading'; line: number; heading: string; first: number }
   | { kind: 'headingWithoutText'; line: number; heading: string }
   | { kind: 'sectionTooLong'; line: number; heading: string; length: number }
-  | { kind: 'firstHeading'; heading: string }
+  | { kind: 'firstHeading' }
   | { kind: 'tooManyTokens'; tokens: number; limit: number; cut: TextAmount }
 
 export type PageNameIssue = 'characters' | 'reserved'
@@ -203,6 +203,10 @@ interface Body {
 function readBody(markdown: string): Body {
   const lines = markdown.split(/\r?\n/)
   const { frontmatter, bodyStart, unclosed } = parseFrontmatter(lines)
+  const summary = summaryFor(
+    markdown,
+    lines.slice(bodyStart).filter((line) => /^## /.test(line)).map((line) => line.slice(3).trim())
+  )
   let title: string | null = null
   let headed = false
   const sections: PageSection[] = []
@@ -221,7 +225,7 @@ function readBody(markdown: string): Body {
     }
     if (!raw.trim()) continue
     if (!current) {
-      current = { line: i + 1, heading: summaryFor(markdown), text: '' }
+      current = { line: i + 1, heading: summary, text: '' }
       sections.push(current)
     }
     current.text = current.text ? `${current.text}\n${raw.trimEnd()}` : raw.trimEnd()
@@ -230,11 +234,25 @@ function readBody(markdown: string): Body {
 }
 
 /**
- * The summary heading the text above a document's first `## ` heading is read under: the Japanese one in a document
- * written in Japanese, which its kana tell, and the English one in any other. No other language of the eleven can
- * be told from the text without guessing, and either heading is one the rules accept on any page.
+ * The conversation languages whose letters tell a text apart: of the eleven, only Japanese writes kana, only
+ * Korean hangul and only Hindi Devanagari, in the ranges memory-format.json weighs them by. The eight written in
+ * Latin letters cannot be told apart without guessing.
  */
-const summaryFor = (markdown: string): string => SUMMARY_HEADING[writtenInJapanese(markdown) ? 'ja-JP' : 'en-US']
+const LETTERS: ReadonlyArray<readonly [RegExp, ConversationLocale]> = [
+  [/[ぁ-ヿ]/, 'ja-JP'],
+  [/[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/, 'ko-KR'],
+  [/[\u0900-\u097f\ua8e0-\ua8ff]/, 'hi-IN']
+]
+
+/**
+ * The summary heading the text above a document's first `## ` heading is read under: the summary heading the
+ * document has, in whichever language, so that the text and that heading are the same heading twice in every
+ * language; otherwise the one of the language its letters show (LETTERS), and the English one for Latin letters.
+ */
+function summaryFor(markdown: string, headings: readonly string[]): string {
+  const own = headings.find((heading) => SUMMARY_HEADINGS.includes(heading))
+  return own ?? SUMMARY_HEADING[LETTERS.find(([letters]) => letters.test(markdown))?.[1] ?? 'en-US']
+}
 
 /**
  * Reads user.md, me.md, a page or a journal entry into the sections that carry text. A document without
@@ -318,7 +336,7 @@ export function documentIssues(kind: DocumentKind, markdown: string): DocumentIs
   }
   const opening = sections[0]?.heading
   if (kind === 'page' && opening !== undefined && !SUMMARY_HEADINGS.includes(opening)) {
-    issues.push({ kind: 'firstHeading', heading: summaryFor(markdown) })
+    issues.push({ kind: 'firstHeading' })
   }
   if (inPrompt(kind)) {
     const size = promptSize(markdown)

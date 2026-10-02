@@ -15,8 +15,8 @@ Cómo nos llamamos, qué tan cercanos somos, de qué platicamos, las expresiones
 ## Lo que hemos vivido
 Conversaciones y momentos que recuerdo, con su fecha.
 
-## Lo que pienso del usuario
-Cómo lo veo, con "parece", y la fecha en que empecé a pensarlo.
+## Lo que pienso de esta persona
+Cómo la veo, con "parece", y la fecha en que empecé a pensarlo.
 
 ## Mi forma de hablar y mis manías
 El tono de mi voz, mis muletillas, el humor que me gusta, qué hago distinto según el momento.
