@@ -1,8 +1,62 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Trash2, X } from 'lucide-react'
 import { TASK_STATUSES, addDaysKey, type Task, type TaskPatch, type TaskStatus } from '@shared/tasks'
 import { relativeTime } from '@/panels/primitives/format'
+import { keyForApp } from '@/ui/key-for-app'
 import { useT } from '@/i18n'
+
+interface Typed {
+  /** The task's value when the typing started. */
+  from: string
+  text: string
+  /** Set once leaving the field sent the text to main. */
+  sent?: true
+}
+
+interface TaskField {
+  value: string
+  type: (text: string) => void
+  leave: () => void
+  /** Throws away what was typed, so that the field shows the task's value again. */
+  drop: () => void
+}
+
+/**
+ * A text field of the editor. It shows the task's current value, so a change made from the conversation
+ * appears in it, except while the user is typing in it. Leaving the field saves the text only when it
+ * differs from the value the typing started from, and the text stays in the field until the task has it.
+ */
+function useTaskField(
+  value: string,
+  { parse, save }: { parse: (text: string) => string | null; save: (text: string) => Promise<boolean> }
+): TaskField {
+  const [typed, setTyped] = useState<Typed | null>(null)
+  // A text sent to main gives way once the task's value changes, by that save or from anywhere else.
+  useEffect(() => {
+    setTyped((current) => (current?.sent ? null : current))
+  }, [value])
+  const leave = (): void => {
+    if (typed === null || typed.sent) return
+    const text = parse(typed.text)
+    if (text === null || text === typed.from || text === value) {
+      setTyped(null)
+      return
+    }
+    const sent: Typed = { from: typed.from, text, sent: true }
+    setTyped(sent)
+    void save(text).then((saved) => {
+      // A text main did not take stays in the field as typed, and leaving the field again saves it again.
+      if (!saved) setTyped((current) => (current === sent ? { from: sent.from, text } : current))
+    })
+  }
+  return {
+    value: typed?.text ?? value,
+    type: (text) => setTyped((current) => ({ from: current && !current.sent ? current.from : value, text })),
+    leave,
+    drop: () => setTyped(null)
+  }
+}
 
 /**
  * The editor on the right. The title and the notes are saved when the field loses focus, while the
@@ -18,29 +72,19 @@ export function Editor({
 }: {
   task: Task
   today: string
-  onChange: (patch: TaskPatch) => void
+  /** Saves a change through main, reporting a failure itself, and resolves to whether it was saved. */
+  onChange: (patch: TaskPatch) => Promise<boolean>
   onRemove: () => void
   onClose: () => void
 }): React.JSX.Element {
   const t = useT()
-  const [title, setTitle] = useState(task.title)
-  const [notes, setNotes] = useState(task.notes)
-  const commitTitle = (): void => {
-    const value = title.trim()
-    if (!value) {
-      setTitle(task.title)
-      return
-    }
-    if (value !== task.title) onChange({ title: value })
-  }
-  const commitNotes = (): void => {
-    if (notes !== task.notes) onChange({ notes })
-  }
+  const title = useTaskField(task.title, { parse: (text) => text.trim() || null, save: (value) => onChange({ title: value }) })
+  const notes = useTaskField(task.notes, { parse: (text) => text, save: (value) => onChange({ notes: value }) })
   const setStatus = (status: TaskStatus): void => {
-    if (status !== task.status) onChange({ status })
+    if (status !== task.status) void onChange({ status })
   }
   const setDue = (due: string | null): void => {
-    if (due !== task.due) onChange({ due })
+    if (due !== task.due) void onChange({ due })
   }
   const quick: Array<[string, string | null]> = [
     [t('tasks.editor.dueToday'), today],
@@ -64,16 +108,20 @@ export function Editor({
       </div>
       <input
         className="tk-editor-title"
-        value={title}
+        value={title.value}
         aria-label={t('tasks.editor.title')}
-        onChange={(event) => setTitle(event.target.value)}
-        onBlur={commitTitle}
+        onChange={(event) => title.type(event.target.value)}
+        onBlur={title.leave}
         onKeyDown={(event) => {
-          if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
-          if (event.key === 'Escape') {
+          const field = event.currentTarget
+          const key = keyForApp(event)
+          if (key === 'Enter') field.blur()
+          if (key === 'Escape') {
             event.stopPropagation()
-            setTitle(task.title)
-            ;(event.target as HTMLInputElement).blur()
+            // blur() runs onBlur before React would apply a drop made in this handler, and that onBlur would
+            // save the text Escape throws away.
+            flushSync(title.drop)
+            field.blur()
           }
         }}
       />
@@ -97,12 +145,12 @@ export function Editor({
         <label htmlFor={`notes-${task.id}`}>{t('tasks.editor.notes')}</label>
         <textarea
           id={`notes-${task.id}`}
-          value={notes}
+          value={notes.value}
           placeholder={t('tasks.editor.notesPlaceholder')}
-          onChange={(event) => setNotes(event.target.value)}
-          onBlur={commitNotes}
+          onChange={(event) => notes.type(event.target.value)}
+          onBlur={notes.leave}
           onKeyDown={(event) => {
-            if (event.key === 'Escape') event.stopPropagation()
+            if (keyForApp(event) === 'Escape') event.stopPropagation()
           }}
         />
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { keyForApp } from '@/ui/key-for-app'
 
 interface FieldDraftOptions<T> {
   format: (value: T) => string
@@ -73,8 +74,7 @@ export function useFieldDraft<T>(saved: T, { format, parse, save }: FieldDraftOp
       onChange: (event) => setDraft({ text: event.target.value, leftOver: null }),
       onBlur: leave,
       onKeyDown: (event) => {
-        // The Enter that confirms a conversion in the Japanese IME must not leave the field.
-        if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.currentTarget instanceof HTMLInputElement) event.currentTarget.blur()
+        if (keyForApp(event) === 'Enter' && event.currentTarget instanceof HTMLInputElement) event.currentTarget.blur()
       },
       'aria-invalid': failed
     },

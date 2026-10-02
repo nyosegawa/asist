@@ -126,3 +126,29 @@ it('follows the stored dockOrder and keeps ASIST pinned to the left end', async 
     vi.unstubAllGlobals()
   }
 })
+
+it('leaves the settings open on the Escape that cancels an IME conversion in one of their fields, and closes them on the next Escape', async () => {
+  vi.stubGlobal('React', React)
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  const field = document.body.appendChild(document.createElement('textarea'))
+  try {
+    useViewStore.getState().closeApp()
+    useTaskStore.setState({ tasks: [], loaded: true, error: '' })
+    await act(async () => root.render(React.createElement(NavigationDock)))
+    await act(async () => useViewStore.getState().openApp({ app: 'settings' }))
+    field.focus()
+    // Chromium on macOS sends the Escape that cancels an IME conversion with isComposing set.
+    await act(async () => void field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })))
+    expect(useViewStore.getState().open?.app).toBe('settings')
+    await act(async () => void field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(useViewStore.getState().open?.app).not.toBe('settings')
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+    field.remove()
+    vi.unstubAllGlobals()
+  }
+})

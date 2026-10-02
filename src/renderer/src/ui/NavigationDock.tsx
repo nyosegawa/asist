@@ -9,6 +9,7 @@ import type { MessageKey } from '@shared/i18n'
 import { useT } from '@/i18n'
 import { useJobStore, useMailStore, useSettingsStore, useTaskStore, useToastStore } from '@/state/stores'
 import { activeMiniApp, useViewStore } from '@/state/view'
+import { keyForApp } from '@/ui/key-for-app'
 import asistIcon from '@/assets/holo/asist.png'
 import agentIcon from '@/assets/holo/agent.png'
 import tasksIcon from '@/assets/holo/tasks.png'
@@ -66,7 +67,7 @@ export function NavigationDock(): React.JSX.Element {
   useEffect(() => {
     if (open !== 'settings' && open !== 'jobs') return
     const close = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return
+      if (keyForApp(event) !== 'Escape' || event.defaultPrevented) return
       closeApp()
     }
     window.addEventListener('keydown', close)
