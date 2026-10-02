@@ -485,6 +485,26 @@ describe('calendar dates', () => {
       else process.env.TZ = previous
     }
   })
+  it('takes back an all-day event in a time zone whose clock skips or repeats midnight, as show_calendar shows it', () => {
+    const previous = process.env.TZ
+    try {
+      // Chile moves its clock from 00:00 to 01:00 on 2026-09-06, so that day begins at 01:00.
+      process.env.TZ = 'America/Santiago'
+      const holiday = { ...event, allDay: true, timeZone: 'America/Santiago', start: new Date(2026, 8, 6).getTime(), end: new Date(2026, 8, 7).getTime() }
+      for (const shown of [detailCalendarEvent('en-US', holiday), detailCalendarEvent('en-US', { ...holiday, start: new Date(2026, 8, 5).getTime(), end: holiday.start })]) {
+        const update = { title: 'Holiday', start: shown.start, end: shown.end, allDay: true, timeZone: shown.timeZone, location: '', notes: '' }
+        expect(calendarEventInputSchema.safeParse(update).success).toBe(true)
+        expect(calendarEventInputSchema.safeParse({ ...update, end: '2026-09-07T01:00:00-03:00' }).success).toBe(false)
+      }
+      // The Azores turn their clock back from 01:00 to 00:00 on 2026-10-25, so midnight comes twice and both name that day.
+      const azores = { title: 'Holiday', allDay: true, timeZone: 'Atlantic/Azores', location: '', notes: '' }
+      for (const end of ['2026-10-25T00:00:00+00:00', '2026-10-25T00:00:00-01:00'])
+        expect(calendarEventInputSchema.safeParse({ ...azores, start: '2026-10-24T00:00:00+00:00', end }).success).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
   it('tells the model that an event ending at midnight is on the day it starts', () => {
     const previous = process.env.TZ
     try {
