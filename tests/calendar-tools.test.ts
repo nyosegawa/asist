@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CalendarChangeResult, CalendarEvent } from '@shared/calendar'
+import { detailCalendarEvent, type CalendarChangeResult, type CalendarEvent } from '@shared/calendar'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { executeClientTool } from '../src/main/services/brain/tools'
 
@@ -51,11 +51,8 @@ describe('change_calendar', () => {
     process.env.TZ = 'America/Santiago'
     const holiday = { ...saved, allDay: true, timeZone: 'America/Santiago', start: new Date(2026, 8, 6).getTime(), end: new Date(2026, 8, 7).getTime() }
     const result = await savedAs(holiday, 'ja-JP')
-    expect(result).toMatchObject({
-      saved: true,
-      operation: 'create',
-      event: { id: holiday.id, title: '休み', date: '2026-09-06(日)', time: '終日', start: '2026-09-06', end: '2026-09-06', allDay: true }
-    })
+    expect(result).toMatchObject({ saved: true, operation: 'create', event: detailCalendarEvent('ja-JP', holiday) })
+    expect(result).toMatchObject({ event: { date: '2026-09-06(日)', start: '2026-09-06', end: '2026-09-06', allDay: true } })
     expect(JSON.stringify(result)).not.toMatch(/\d{10,}|T\d\d:/)
   })
 
@@ -63,6 +60,7 @@ describe('change_calendar', () => {
     process.env.TZ = 'Asia/Tokyo'
     const call = { ...saved, title: 'Call', allDay: false, timeZone: 'America/New_York', start: Date.parse('2026-09-15T09:00:00-04:00'), end: Date.parse('2026-09-15T10:00:00-04:00') }
     const result = await savedAs(call, 'en-US')
+    expect(result).toMatchObject({ event: detailCalendarEvent('en-US', call) })
     expect(result).toMatchObject({
       event: { date: '2026-09-15 (Tue)', time: '22:00–23:00', start: '2026-09-15T22:00:00+09:00', end: '2026-09-15T23:00:00+09:00', timeZone: 'America/New_York' }
     })

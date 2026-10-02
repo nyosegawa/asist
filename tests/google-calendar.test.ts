@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { detailCalendarEvent } from '../src/shared/calendar'
 import { errorText } from '../src/shared/i18n/error-text'
 
 // The service and the sign-in page write in the language of the interface, which they read from the settings.
@@ -564,6 +565,32 @@ describe('the Google calendar through CalendarService', () => {
     const post = google.api().find((call) => call.method === 'POST')!
     expect(decodeURIComponent(post.url.pathname)).toBe('/calendar/v3/calendars/me@example.com/events')
     expect(JSON.parse(post.body)).toEqual({ summary: '休暇', location: '', description: '', start: { date: '2026-09-29' }, end: { date: '2026-10-01' } })
+  })
+
+  it('sends a multi-day all-day event read from Google back, as show_calendar gives it, as the dates Google had and no time', async () => {
+    const previous = process.env.TZ
+    // Chile moves its clock from 00:00 to 01:00 on 2026-09-06, so that day begins at 01:00.
+    process.env.TZ = 'America/Santiago'
+    try {
+      const trip = { ...timed, start: { date: '2026-09-05' }, end: { date: '2026-09-08' } }
+      const getsTrip: Route = (call) =>
+        call.method === 'GET' && call.url.pathname === '/calendar/v3/calendars/me%40example.com/events/ev1' ? json(trip) : undefined
+      const google = fakeGoogle(refreshes, calendarList, getsTrip, getsCalendar, (call) => (call.method === 'PATCH' ? json({ ...trip, etag: '"3001"' }) : undefined))
+      const { service } = serviceWith(google)
+      const eventId = googleEventKey('me@example.com', 'ev1')
+      const shown = detailCalendarEvent('en-US', await calendarWith(google).calendar.event(eventId))
+      expect([shown.start, shown.end]).toEqual(['2026-09-05', '2026-09-07'])
+      const event = { title: shown.title, start: shown.start, end: shown.end, allDay: shown.allDay, timeZone: shown.timeZone, location: shown.location ?? '', notes: shown.notes }
+      await expect(service.change({ operation: 'update', eventId, event }, new AbortController().signal)).resolves.toMatchObject({ saved: true })
+      const patch = google.api().find((call) => call.method === 'PATCH')!
+      expect(JSON.parse(patch.body)).toMatchObject({
+        start: { date: '2026-09-05', dateTime: null, timeZone: null },
+        end: { date: '2026-09-08', dateTime: null, timeZone: null }
+      })
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
   })
 
   it('reports a write whose access token could not be renewed as refused, since nothing was sent', async () => {

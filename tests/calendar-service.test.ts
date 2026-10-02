@@ -180,6 +180,32 @@ describe('CalendarService', () => {
       else process.env.TZ = previous
     }
   })
+  it('shows an event with times on the clock of this computer, as the model is told it, and names the zone it is kept in where that clock reads otherwise', async () => {
+    const previous = process.env.TZ
+    try {
+      process.env.TZ = 'Asia/Tokyo'
+      const f = fixture()
+      const call = { ...fields, timeZone: 'America/New_York', start: '2026-09-15T09:00:00-04:00', end: '2026-09-15T10:00:00-04:00' }
+      await f.service.change({ operation: 'create', event: call }, f.signal.signal)
+      await f.service.change({ operation: 'create', event: fields }, f.signal.signal)
+      const [other, local] = f.confirm.mock.calls.map((call: unknown[]) => String(call[0]).split('\n'))
+      const locale = formatLocaleOf(getSettings().uiLocale, getSettings().region)
+      const clock = (hour: number): string => new Intl.DateTimeFormat(locale, { timeStyle: 'short', timeZone: 'UTC' }).format(Date.UTC(2026, 0, 1, hour))
+      const here = other.filter((line) => line.includes(clock(22)))
+      expect(here).toHaveLength(1)
+      expect(here[0]).toContain(clock(23))
+      expect(here[0]).not.toContain('America/New_York')
+      const there = other.filter((line) => line.includes('America/New_York'))
+      expect(there).toHaveLength(1)
+      expect([clock(9), clock(10)].every((time) => there[0].includes(time))).toBe(true)
+      expect(there[0]).not.toContain(clock(22))
+      expect(local.filter((line) => line.includes(clock(10)))).toHaveLength(1)
+      expect(local.join('\n')).not.toContain('Asia/Tokyo')
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
   it('marks only a delete as a destructive confirmation', async () => {
     const f = fixture()
     await f.service.change({ operation: 'delete', eventId: f.current.id }, f.signal.signal)
@@ -375,7 +401,8 @@ describe('calendar dates', () => {
     expect(reasons({ allDay: true, start: '2026-09-15', end: '2026-09-17' })).toEqual([])
     expect(reasons({ allDay: true })).toEqual([errorText('calendar.errors.boundsFormat')])
     expect(reasons({ start: '2026-09-15', end: '2026-09-16' })).toEqual([errorText('calendar.errors.boundsFormat')])
-    expect(reasons({ allDay: true, start: '2026-09-15', end: '2026-09-14' })).toEqual([errorText('calendar.errors.endBeforeStart')])
+    expect(reasons({ allDay: true, start: '2026-09-15', end: '2026-09-14' })).toEqual([errorText('calendar.errors.lastDayBeforeFirst')])
+    expect(reasons({ end: fields.start })).toEqual([errorText('calendar.errors.endBeforeStart')])
   })
   it('resolves "week" to the Monday-start week containing today, and adds next week only on a weekend', () => {
     const previous = process.env.TZ

@@ -63,8 +63,8 @@ export const calendarEventInputSchema = z
     ),
     end: z.string().describe(
       bilingual({
-        ja: '時刻のある予定は終了日時。終日の予定は最終日(YYYY-MM-DD)',
-        en: 'For an event with times, when it ends. For an all-day event, its last day (YYYY-MM-DD).'
+        ja: '時刻のある予定は終了日時。終日の予定は最終日(YYYY-MM-DD)で、その日も含む',
+        en: 'For an event with times, when it ends. For an all-day event, its last day (YYYY-MM-DD), which the event includes.'
       })
     ),
     allDay: z.boolean(),
@@ -87,8 +87,14 @@ export const calendarEventInputSchema = z
     errorText('calendar.errors.boundsFormat')
   )
   // zod runs a check of the whole object even after a field failed its own, and a bound that is not a
-  // date or an instant has no order.
-  .refine((value) => (value.allDay ? value.end >= value.start : Date.parse(value.end) > Date.parse(value.start)), {
+  // date or an instant has no order. An all-day event may end on the day it starts, so it has a message of
+  // its own: the one for an event with times asks for an end after the start, which a model would meet by
+  // moving the last day one later.
+  .refine((value) => !value.allDay || value.end >= value.start, {
+    message: errorText('calendar.errors.lastDayBeforeFirst'),
+    when: (payload) => payload.issues.length === 0
+  })
+  .refine((value) => value.allDay || Date.parse(value.end) > Date.parse(value.start), {
     message: errorText('calendar.errors.endBeforeStart'),
     when: (payload) => payload.issues.length === 0
   })
@@ -268,19 +274,28 @@ export function isoWithOffset(at: number, timeZone: string): string {
   return `${clock.year}-${clock.month}-${clock.day}T${clock.hour}:${clock.minute}:${clock.second}${offset}`
 }
 
+const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
+
 /**
- * When an event happens, as the confirmation window writes it. An event with times shows its start and its
- * end on the clock of its time zone, and an all-day event the days it covers, as the event card does.
+ * When an event happens, as the confirmation window writes it, in lines. An all-day event shows the days
+ * it covers, as the event card does. An event with times shows its start and its end on this computer's
+ * clock, the one the model is given them in, so that what the model says and what the window shows
+ * agree; where the clock of the zone the event is kept in reads otherwise, a second line shows them there.
  */
-function describeWhen(t: Translate, locale: string, event: CalendarEventInput): string {
-  if (!event.allDay) {
-    const format = new Intl.DateTimeFormat(locale, { timeZone: event.timeZone, dateStyle: 'full', timeStyle: 'short' })
+function describeWhen(t: Translate, locale: string, event: CalendarEventInput): string[] {
+  if (event.allDay) {
+    // Date.parse reads a date without a time as the beginning of that day in UTC.
+    const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
+    const date = (day: string): string => format.format(Date.parse(day))
+    return [event.start === event.end ? date(event.start) : t('calendar.dateRange', { from: date(event.start), until: date(event.end) }), t('calendar.allDay')]
+  }
+  const span = (timeZone: string): string => {
+    const format = new Intl.DateTimeFormat(locale, { timeZone, dateStyle: 'full', timeStyle: 'short' })
     return `${format.format(Date.parse(event.start))} → ${format.format(Date.parse(event.end))}`
   }
-  // Date.parse reads a date without a time as the beginning of that day in UTC.
-  const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
-  const date = (day: string): string => format.format(Date.parse(day))
-  return event.start === event.end ? date(event.start) : t('calendar.dateRange', { from: date(event.start), until: date(event.end) })
+  const here = span(localZone())
+  const there = span(event.timeZone)
+  return there === here ? [here] : [here, t('calendar.confirm.inZone', { zone: event.timeZone, when: there })]
 }
 
 /** An event as the confirmation window of a change shows it, in the language of `t` and the formats of `locale`. */
@@ -288,8 +303,7 @@ export function describeCalendarEvent(t: Translate, locale: string, event: Calen
   const none = t('calendar.confirm.none')
   return [
     event.title,
-    describeWhen(t, locale, event),
-    event.allDay ? t('calendar.allDay') : event.timeZone,
+    ...describeWhen(t, locale, event),
     t('calendar.confirm.location', { location: event.location || none }),
     t('calendar.confirm.notes', { notes: event.notes || none })
   ].join('\n')
@@ -300,17 +314,18 @@ export function describeCalendarEvent(t: Translate, locale: string, event: Calen
  * carries local time, so a UTC stamp would put mail that arrived, or a task finished, before 9 a.m. in
  * Japan on the day before.
  */
-export const localIsoWithOffset = (at: number): string =>
-  isoWithOffset(at, Intl.DateTimeFormat().resolvedOptions().timeZone)
+export const localIsoWithOffset = (at: number): string => isoWithOffset(at, localZone())
 
 /**
- * An event in the form change_calendar and the editor give it. An event with times is written in this
- * machine's time zone, as everything else the model reads is, whatever zone it is kept in. An all-day
- * event, which ASIST places at the beginning of its days on this machine, is written as those days, the
- * last one included; an event without length covers the day it starts on, as lastInstant has it. Given
- * the instant such a day begins at, which is 01:00 on 2026-09-06 in America/Santiago, and asked in English
- * when the event starts, Gemini 3.8 Flash said one in the morning in 8 of 20 runs on 2026-10-02; given the
- * day, in none of 19.
+ * An event in the form change_calendar and the editor give it. An event with times is written on this
+ * machine's clock, the one the confirmation window shows it on and everything else the model reads is
+ * written in, whatever zone keeps it. timeZone names that zone, and the model works out the time there
+ * when asked: for a call at 9:00 in New York read on a machine in Tokyo, Gemini 3.8 Flash gave it in 40
+ * of 40 runs on 2026-10-02. An all-day event, which ASIST places at the beginning of its days on this
+ * machine, is written as those days, the last one included; an event without length covers the day it
+ * starts on, as lastInstant has it. Given the instant such a day begins at, which is 01:00 on 2026-09-06
+ * in America/Santiago, and asked in English when the event starts, Gemini 3.8 Flash said one in the
+ * morning in 8 of 20 runs on 2026-10-02; given the day, in none of 19.
  */
 export function calendarEventInput(event: CalendarEvent): CalendarEventInput {
   return {

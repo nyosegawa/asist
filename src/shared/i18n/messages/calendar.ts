@@ -1143,6 +1143,19 @@ export const calendar = defineMessages({
       'pt-BR': 'Nenhum',
       'es-419': 'Ninguna',
       'es-ES': 'Ninguna'
+    },
+    inZone: {
+      'ja-JP': '{zone} の時刻: {when}',
+      'en-US': 'Time in {zone}: {when}',
+      'fr-FR': 'Heure de {zone} : {when}',
+      'de-DE': 'Uhrzeit in {zone}: {when}',
+      'hi-IN': '{zone} में समय: {when}',
+      'id-ID': 'Waktu di {zone}: {when}',
+      'it-IT': 'Ora in {zone}: {when}',
+      'ko-KR': '{zone} 기준 시각: {when}',
+      'pt-BR': 'Horário em {zone}: {when}',
+      'es-419': 'Hora en {zone}: {when}',
+      'es-ES': 'Hora en {zone}: {when}'
     }
   },
   errors: {
@@ -1587,6 +1600,19 @@ export const calendar = defineMessages({
       'pt-BR': 'O início e o fim são horários com a diferença em relação ao UTC, ou datas (YYYY-MM-DD) para um evento de dia inteiro.',
       'es-419': 'El inicio y el final son horas con su diferencia respecto de UTC, o fechas (YYYY-MM-DD) para un evento de todo el día.',
       'es-ES': 'El inicio y el final son horas con su diferencia respecto a UTC, o fechas (YYYY-MM-DD) para un evento de todo el día.'
+    },
+    lastDayBeforeFirst: {
+      'ja-JP': '終日の予定の最終日は、初日と同じ日かそれより後にしてください。',
+      'en-US': "An all-day event's last day can be its first day, but not a day before it.",
+      'fr-FR': "Le dernier jour d'un événement d'une journée entière peut être son premier jour, mais pas un jour antérieur.",
+      'de-DE': 'Der letzte Tag eines ganztägigen Termins kann sein erster Tag sein, aber nicht davor liegen.',
+      'hi-IN': 'पूरे दिन के इवेंट का आख़िरी दिन उसका पहला दिन हो सकता है, लेकिन उससे पहले का कोई दिन नहीं।',
+      'id-ID': 'Hari terakhir acara sehari penuh boleh sama dengan hari pertamanya, tetapi tidak boleh sebelumnya.',
+      'it-IT': "L'ultimo giorno di un evento di un'intera giornata può essere il primo, ma non un giorno precedente.",
+      'ko-KR': '종일 일정의 마지막 날은 첫날과 같아도 되지만 첫날보다 앞설 수는 없습니다.',
+      'pt-BR': 'O último dia de um evento de dia inteiro pode ser o primeiro dia, mas não um dia antes dele.',
+      'es-419': 'El último día de un evento de todo el día puede ser el primero, pero no un día anterior.',
+      'es-ES': 'El último día de un evento de todo el día puede ser el primero, pero no un día anterior.'
     }
   },
   google: {
