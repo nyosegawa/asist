@@ -1,7 +1,7 @@
 import { defaultPersona } from '@shared/persona'
 import { useViewStore } from '@/state/view'
 import type { SettingsContext } from '../context'
-import { useFieldDraft } from '../field-draft'
+import { useFieldDraft } from '@/ui/field-draft'
 import { Btn, Group, Link, NotSavedHint, Page, Row } from '../primitives'
 import { useT } from '@/i18n'
 import { personaStateKey } from '../persona-state'

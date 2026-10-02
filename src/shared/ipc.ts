@@ -289,7 +289,10 @@ export interface TurnTimings {
 
 export type BridgeOutcome = 'played' | 'late' | 'failed'
 
-/** The usage of one round, the four numbers taken from the provider's own usage report. */
+/**
+ * The usage of one round, the four numbers taken from the provider's own usage report. On every provider
+ * input, cacheRead and cacheCreation are separate parts of the prompt, so their sum is its length.
+ */
 export interface RoundUsage {
   input: number
   cacheRead: number
@@ -842,6 +845,7 @@ export const IpcChannel = {
   MicOpenPrivacy: 'mic-open-privacy',
   AppVersion: 'app-version',
   GetPlatformCapabilities: 'get-platform-capabilities',
+  IsLaunchPage: 'is-launch-page',
   HotkeyStatus: 'hotkey-status',
   PaintWindowControls: 'paint-window-controls',
   LicensesOpen: 'licenses-open',
@@ -1140,6 +1144,11 @@ export interface RendererApi {
   appVersion(): Promise<string>
   /** What this OS and machine can run, decided once by the main process and the same for the whole run. */
   getPlatformCapabilities(): Promise<PlatformCapabilities>
+  /**
+   * Whether this page is the first one the window has shown since the app started, which main alone knows.
+   * A page loaded again after a reload or a crash is not a launch.
+   */
+  isLaunchPage(): Promise<boolean>
   /** Whether the global hotkey is off in the settings, registered, or refused by the OS. */
   hotkeyStatus(): Promise<HotkeyStatus>
   /** Colours the window's minimize, maximize and close buttons where the OS draws them over the page. */

@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '../src/shared/i18n'
 import { errorText } from '../src/shared/i18n/error-text'
-import type { CalendarEvent } from '../src/shared/calendar'
+import { calendarChangeSchema, isoWithOffset, type CalendarEvent } from '../src/shared/calendar'
 import type { AppSettings } from '../src/shared/settings'
 import { CalendarView } from '../src/renderer/src/ui/calendar/CalendarView'
 import { EditorCard, changeFromDraft, draftFromEvent, moveStart, newDraft, setEndTime, type Draft } from '../src/renderer/src/ui/calendar/cards'
@@ -156,6 +156,22 @@ it('edits an event that crosses midnight with its end day shown, and saves it wi
   })
 })
 
+it('keeps the event being written on the Escape that cancels an IME conversion in its title, and closes it on the next Escape', async () => {
+  await render()
+  await act(async () => container.querySelector<HTMLButtonElement>('.cal-create')!.click())
+  const title = container.querySelector<HTMLInputElement>('.cal-create-form .cal-title-input')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(title, 'ていれい')
+    title.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  // Chromium on macOS sends the Escape that cancels an IME conversion with isComposing set.
+  await act(async () => void title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })))
+  expect(container.querySelector<HTMLInputElement>('.cal-create-form .cal-title-input')?.value).toBe('ていれい')
+  await act(async () => void title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(container.querySelector('.cal-create-form')).toBeNull()
+  expect(useViewStore.getState().open?.app).toBe('calendar')
+})
+
 it('shows why the events could not be listed while the calendar is ready, and lists them on retry', async () => {
   calendarEvents.mockRejectedValue(new Error(errorText('calendar.errors.noReadCalendars')))
   await render()
@@ -261,6 +277,31 @@ describe('the draft of the event editor', () => {
     expect(moveStart(trip, { startDate: '2026-09-29' })).toMatchObject({ startDate: '2026-09-29', endDate: '2026-10-01' })
     const late = newDraft('2026-09-15', { startTime: '00:00', endTime: '01:00' })
     expect(moveStart(late, { startTime: '23:30' })).toMatchObject({ endDate: '2026-09-16', endTime: '00:30' })
+  })
+
+  describe('on a computer in another time zone than the event', () => {
+    let zone: string | undefined
+    beforeEach(() => {
+      zone = process.env.TZ
+      process.env.TZ = 'America/Los_Angeles'
+    })
+    afterEach(() => {
+      if (zone === undefined) delete process.env.TZ
+      else process.env.TZ = zone
+    })
+
+    it('saves an event with times turned into an all-day one on the days the editor shows', () => {
+      const draft = { ...draftFromEvent(event({ start: day(15, 10), end: day(15, 11), timeZone: 'Asia/Tokyo' })), allDay: true }
+      const change = calendarChangeSchema.parse(changeFromDraft(draft))
+      if (change.operation === 'delete') throw new Error('the draft was not saved as an event')
+      const dayOf = (iso: string): string => isoWithOffset(Date.parse(iso), change.event.timeZone).slice(0, 10)
+      expect([dayOf(change.event.start), dayOf(change.event.end)]).toEqual(['2026-09-15', '2026-09-16'])
+    })
+
+    it('keeps the time zone of an event with times that stays one', () => {
+      const change = changeFromDraft(draftFromEvent(event({ start: day(15, 10), end: day(15, 11), timeZone: 'Asia/Tokyo' })))
+      expect(change?.operation === 'update' && change.event.timeZone).toBe('Asia/Tokyo')
+    })
   })
 
   it('cannot be saved while a date or a time is cleared', () => {
