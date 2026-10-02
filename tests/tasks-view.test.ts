@@ -222,6 +222,67 @@ describe('editor', () => {
     ])
   })
 
+  it('gives way to a change from the conversation after main refused the typed notes, and does not write them over it', async () => {
+    api.taskUpdate.mockRejectedValueOnce(new Error('tasks.json に書けません'))
+    const editor = await openEditor()
+    await act(async () => setValue(notesField(editor), 'ユーザーの補足'))
+    await act(async () => void leave(notesField(editor)))
+    await act(async () => changeInMain({ notes: 'モデルの補足' }))
+    expect(notesField(editor).value).toBe('モデルの補足')
+    await act(async () => void leave(notesField(editor)))
+    expect(api.taskUpdate.mock.calls).toEqual([['c', { notes: 'ユーザーの補足' }]])
+  })
+
+  it('saves a title typed back to the saved one while the save of the first edit is under way', async () => {
+    let answerFirst!: () => void
+    api.taskUpdate.mockImplementationOnce((id: string) => new Promise((resolve) => (answerFirst = () => resolve(tasks.find((item) => item.id === id)!))))
+    const editor = await openEditor()
+    const title = titleField(editor)
+    await act(async () => setValue(title, 'レビュー2'))
+    await act(async () => void leave(title))
+    await act(async () => setValue(title, 'レビュー'))
+    await act(async () => void leave(title))
+    await act(async () => {
+      changeInMain({ title: 'レビュー2' })
+      answerFirst()
+    })
+    expect(api.taskUpdate.mock.calls).toEqual([
+      ['c', { title: 'レビュー2' }],
+      ['c', { title: 'レビュー' }]
+    ])
+  })
+
+  it('keeps a second title main refused after the first one arrived from main', async () => {
+    let answerFirst!: () => void
+    let refuseSecond!: () => void
+    api.taskUpdate
+      .mockImplementationOnce((id: string) => new Promise((resolve) => (answerFirst = () => resolve(tasks.find((item) => item.id === id)!))))
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (refuseSecond = () => reject(new Error('tasks.json に書けません')))))
+    const editor = await openEditor()
+    const title = titleField(editor)
+    await act(async () => setValue(title, '一回目'))
+    await act(async () => void leave(title))
+    await act(async () => setValue(title, '二回目'))
+    await act(async () => void leave(title))
+    await act(async () => {
+      changeInMain({ title: '一回目' })
+      answerFirst()
+    })
+    expect(title.value).toBe('二回目')
+    await act(async () => refuseSecond())
+    expect(title.value).toBe('二回目')
+    expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', title: t('tasks.updateFailed') })
+  })
+
+  it('saves the notes being typed when the editor closes while they still have focus, as when the model opens another task', async () => {
+    const editor = await openEditor()
+    const notes = notesField(editor)
+    notes.focus()
+    await act(async () => setValue(notes, '打ちかけの補足'))
+    await act(async () => useViewStore.getState().update('tasks', { taskId: 'a' }))
+    expect(api.taskUpdate.mock.calls).toEqual([['c', { notes: '打ちかけの補足' }]])
+  })
+
   it('puts the title back and saves nothing when Escape is pressed in the title field', async () => {
     const editor = await openEditor()
     const title = titleField(editor)
