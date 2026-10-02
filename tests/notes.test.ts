@@ -114,25 +114,54 @@ describe('note service', () => {
   const showsWhatIsOnDisk = (shown: () => NoteSummary[]): Promise<void> =>
     vi.waitFor(() => expect(shown()).toEqual(onDisk()), { timeout: 10_000, interval: 20 })
   /**
-   * What the notes screen shows: the list it read once, with every change it was told from then on. It
-   * returns once the watch reports: on macOS a watch reports only from a moment after it opens, so a note is
-   * written again until the screen shows it, and then removed.
+   * Returns once the watch reports: on macOS a watch reports only from a moment after it opens. A note is
+   * written again until the screen shows what was last written twice in a row, since a look at the whole
+   * folder can show the first, and is then removed.
    */
+  const watching = async (shown: () => NoteSummary[]): Promise<void> => {
+    const probe = '20200101-000000-0000'
+    let streak = 0
+    for (let attempt = 0; attempt < 50 && streak < 2; attempt++) {
+      const title = String(attempt)
+      fs.writeFileSync(fileOf(probe), `# ${title}\n`)
+      const seen = await vi.waitFor(() => expect(shown().find((note) => note.id === probe)?.title).toBe(title), { timeout: 200, interval: 10 }).then(
+        () => true,
+        () => false
+      )
+      streak = seen ? streak + 1 : 0
+    }
+    fs.rmSync(fileOf(probe))
+    await showsWhatIsOnDisk(shown)
+  }
+  /** What the notes screen shows: the list it read once, with every change it was told from then on. */
   const screen = async (service: NoteService, changed: Mock): Promise<() => NoteSummary[]> => {
     const from = changed.mock.calls.length
     const list = await service.list()
     const shown = (): NoteSummary[] =>
       changed.mock.calls.slice(from).reduce<NoteSummary[]>((notes, [changes]) => applyNoteChanges(notes, changes as NoteChange[]), list)
-    const probe = '20200101-000000-0000'
-    const showsProbe = (): boolean => shown().some((note) => note.id === probe)
-    for (let attempt = 0; attempt < 25 && !showsProbe(); attempt++) {
-      fs.writeFileSync(fileOf(probe), `# ${'a'.repeat(attempt + 1)}\n`)
-      await vi.waitFor(() => expect(showsProbe()).toBe(true), { timeout: 200, interval: 20 }).catch(() => undefined)
-    }
-    fs.rmSync(fileOf(probe))
-    await showsWhatIsOnDisk(shown)
+    await watching(shown)
     return shown
   }
+  /** Stands between fs.watch and the service, to keep events from it or to hand it events the system did not send. */
+  const tapWatches = () => {
+    const watch = fs.watch.bind(fs)
+    const tap = { deaf: false, folder: [] as Array<{ listener: (event: string, name: string | null) => void; watcher: fs.FSWatcher }>, open: new Set<fs.FSWatcher>() }
+    vi.spyOn(fs, 'watch').mockImplementation(((target: string, options: fs.WatchOptions, listener: (event: string, name: string | null) => void) => {
+      const watcher = watch(target, options, (event, name) => {
+        if (!tap.deaf) listener(event, name)
+      })
+      const close = watcher.close.bind(watcher)
+      watcher.close = () => {
+        tap.open.delete(watcher)
+        close()
+      }
+      tap.open.add(watcher)
+      if (target === folderOf()) tap.folder.push({ listener, watcher })
+      return watcher
+    }) as typeof fs.watch)
+    return tap
+  }
+  const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
   it('writes each note to its own markdown file named by its id, and lists the most recently changed first', async () => {
     const { service, changed } = setup()
@@ -310,34 +339,131 @@ describe('note service', () => {
     expect(await service.list()).toEqual(onDisk())
   }, 30_000)
 
-  it('looks at the whole folder again when an event names no entry or the folder itself, as Windows reports lost events and a folder being deleted', async () => {
-    const watch = fs.watch.bind(fs)
-    const listeners: Array<(event: string, name: string | null) => void> = []
-    let deaf = false
-    vi.spyOn(fs, 'watch').mockImplementation(((target: string, options: fs.WatchOptions, listener: (event: string, name: string | null) => void) => {
-      if (target === folderOf()) listeners.push(listener)
-      return watch(target, options, (event, name) => {
-        if (!deaf) listener(event, name)
-      })
-    }) as typeof fs.watch)
+  it('looks at the whole folder again when an event names no entry, the folder itself or a short 8.3 name, as Windows reports lost events, a folder being deleted and a note removed under its short name', async () => {
+    const tap = tapWatches()
     const { service, changed } = setup()
     const trip = await service.create('# 旅行\n')
+    const plan = await service.create('# 提案書\n')
     const shown = await screen(service, changed)
-    deaf = true
+    tap.deaf = true
     fs.writeFileSync(fileOf('20260920-080000-0e0e'), '# 届かなかったメモ\n')
     fs.rmSync(fileOf(trip.id))
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await pause(300)
     expect(shown()).not.toEqual(onDisk())
-    deaf = false
-    listeners.at(-1)!('rename', null)
+    tap.deaf = false
+    tap.folder.at(-1)!.listener('rename', null)
     await showsWhatIsOnDisk(shown)
-    deaf = true
+    tap.deaf = true
+    fs.rmSync(fileOf(plan.id))
+    await pause(300)
+    tap.deaf = false
+    tap.folder.at(-1)!.listener('rename', '202609~1.MD')
+    await showsWhatIsOnDisk(shown)
+    expect(shown().map((note) => note.title)).toEqual(['届かなかったメモ'])
+    tap.deaf = true
     fs.rmSync(folderOf(), { recursive: true })
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    deaf = false
-    listeners.at(-1)!('rename', folderOf())
+    await pause(300)
+    tap.deaf = false
+    tap.folder.at(-1)!.listener('rename', folderOf())
     await showsWhatIsOnDisk(shown)
     expect(shown()).toEqual([])
   }, 30_000)
-})
 
+  it('looks at the whole folder again when its watch fails and is opened again', async () => {
+    const tap = tapWatches()
+    const { service, changed } = setup()
+    await service.create('# 旅行\n')
+    const shown = await screen(service, changed)
+    tap.deaf = true
+    fs.writeFileSync(fileOf('20260920-080000-0e0e'), '# 届かなかったメモ\n')
+    await pause(300)
+    tap.deaf = false
+    tap.folder.at(-1)!.watcher.emit('error', Object.assign(new Error('EPERM: operation not permitted, watch'), { code: 'EPERM' }))
+    await showsWhatIsOnDisk(shown)
+    expect(shown()).toHaveLength(2)
+  }, 30_000)
+
+  it('folds the events that arrive while it looks at the whole folder into one more look, so that a search waits for one look at most', async () => {
+    const tap = tapWatches()
+    fs.mkdirSync(folderOf())
+    for (let i = 0; i < 500; i++) fs.writeFileSync(fileOf(`20250101-0000${String(i % 60).padStart(2, '0')}-${i.toString(16).padStart(4, '0')}`), `# メモ ${i}\n`)
+    const { service } = setup()
+    await service.list()
+    const readdir = fsp.readdir.bind(fsp)
+    // Each look at the whole folder is made to take 300 ms more, as one of 40,000 notes takes under load.
+    const reads = vi.spyOn(fsp, 'readdir').mockImplementation((async (folder: fs.PathLike, options?: unknown) => {
+      if (String(folder) === folderOf()) await pause(300)
+      return readdir(folder, options as never)
+    }) as typeof fsp.readdir)
+    const waits: Promise<number>[] = []
+    const end = Date.now() + 1500
+    for (let i = 0; Date.now() < end; i++) {
+      tap.folder.at(-1)!.listener('change', null)
+      if (i % 10 === 0) {
+        const start = Date.now()
+        waits.push(service.search('メモ 1').then(() => Date.now() - start))
+      }
+      await pause(20)
+    }
+    const waited = Math.max(...(await Promise.all(waits)))
+    const looks = reads.mock.calls.filter(([folder]) => String(folder) === folderOf()).length
+    // Events every 20 ms for 1.5 s would make fifteen looks if each 100 ms of them made one.
+    expect(looks).toBeLessThan(8)
+    expect(waited).toBeLessThan(2000)
+  }, 30_000)
+
+  it('lists, finds and reads the other notes when one cannot be read, reads each note once, and says why that one cannot be read', async () => {
+    const { service } = setup()
+    const trip = await service.create('# 旅行\n\n傘\n')
+    const plan = await service.create('# 提案書\n\n傘\n')
+    const readFile = fsp.readFile.bind(fsp)
+    const reads = vi.spyOn(fsp, 'readFile').mockImplementation((async (file: fs.PathLike, options?: unknown) => {
+      if (String(file) === fileOf(plan.id)) throw Object.assign(new Error('EACCES: permission denied, open'), { code: 'EACCES' })
+      return readFile(file, options as never)
+    }) as typeof fsp.readFile)
+    expect((await service.list()).map((note) => note.id)).toEqual([trip.id])
+    expect((await service.search('傘')).map((note) => note.id)).toEqual([trip.id])
+    expect(await service.read(trip.id)).toBe('# 旅行\n\n傘\n')
+    await expect(service.read(plan.id)).rejects.toThrow('EACCES')
+    expect(reads).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves nothing watching when it is closed while it reads the folder', async () => {
+    const tap = tapWatches()
+    const { service } = setup()
+    await service.create('# 旅行\n')
+    const readdir = fsp.readdir.bind(fsp)
+    let reading!: () => void
+    const read = new Promise<void>((resolve) => (reading = resolve))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    vi.spyOn(fsp, 'readdir').mockImplementation((async (folder: fs.PathLike, options?: unknown) => {
+      if (String(folder) === folderOf()) {
+        reading()
+        await gate
+      }
+      return readdir(folder, options as never)
+    }) as typeof fsp.readdir)
+    const listed = service.list()
+    await read
+    expect(tap.open.size).toBeGreaterThan(0)
+    service.close()
+    release()
+    await listed
+    expect(tap.open.size).toBe(0)
+  })
+
+  it('follows the folder when it is moved elsewhere and a link to it is put in its place, as a synced folder is set up', async () => {
+    const { service, changed } = setup()
+    await service.create('# 旅行\n')
+    const shown = await screen(service, changed)
+    const elsewhere = path.join(directory, 'synced', 'notes')
+    fs.mkdirSync(path.dirname(elsewhere))
+    fs.renameSync(folderOf(), elsewhere)
+    fs.symlinkSync(elsewhere, folderOf(), 'junction')
+    await watching(shown)
+    fs.writeFileSync(fileOf('20260920-080000-0e0e'), '# リンクの先で書いたメモ\n')
+    await showsWhatIsOnDisk(shown)
+    expect(shown()).toHaveLength(2)
+  }, 60_000)
+})

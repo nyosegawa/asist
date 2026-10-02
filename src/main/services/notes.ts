@@ -66,7 +66,11 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
   const fileOf = (id: string): string => path.join(options.directory, `${id}.md`)
   let tail: Promise<void> = Promise.resolve()
   let held: Map<string, HeldNote> | null = null
+  // The error of each note whose file could not be read when it was first looked at, which a read of it gives.
+  const unreadable = new Map<string, unknown>()
   let watch: FolderWatch | null = null
+  // Counts the closes, so that a first read of the folder that a close overtook leaves nothing watching.
+  let closes = 0
 
   const enqueue = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = tail.then(operation, operation)
@@ -93,26 +97,24 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
   const look = async (notes: Map<string, HeldNote>, id: string): Promise<NoteChange | null> => {
     const file = fileOf(id)
     const known = notes.get(id)
-    const gone = (): NoteChange | null => (notes.delete(id) ? { type: 'removed', id } : null)
-    let stat
+    const gone = (): NoteChange | null => {
+      unreadable.delete(id)
+      return notes.delete(id) ? { type: 'removed', id } : null
+    }
     try {
-      stat = await fs.stat(file)
+      const stat = await fs.stat(file)
+      if (!stat.isFile()) return gone()
+      if (known && known.record.updatedAt === stat.mtimeMs && known.size === stat.size) return null
+      const markdown = await fs.readFile(file, 'utf8')
+      const note = summarizeNote(id, markdown, stat.mtimeMs)
+      notes.set(id, { record: { ...note, markdown }, size: stat.size })
+      unreadable.delete(id)
+      return { type: 'saved', note }
     } catch (error) {
       if (isMissing(error)) return gone()
+      unreadable.set(id, error)
       throw error
     }
-    if (!stat.isFile()) return gone()
-    if (known && known.record.updatedAt === stat.mtimeMs && known.size === stat.size) return null
-    let markdown: string
-    try {
-      markdown = await fs.readFile(file, 'utf8')
-    } catch (error) {
-      if (isMissing(error)) return gone()
-      throw error
-    }
-    const note = summarizeNote(id, markdown, stat.mtimeMs)
-    notes.set(id, { record: { ...note, markdown }, size: stat.size })
-    return { type: 'saved', note }
   }
   // A note whose file cannot be read is left as it was held and its error is returned beside the changes
   // found, so that the changes taken in are still passed on.
@@ -135,28 +137,35 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
     const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason as unknown)
     return { changes, failures }
   }
-  const follow = (change: FolderChange): void => {
-    void enqueue(async () => {
+  const follow = (change: FolderChange): Promise<void> =>
+    enqueue(async () => {
       if (!held) return
       const { changes, failures } = await lookAt(held, 'all' in change ? 'all' : noteIdsIn(change.names))
       notify(changes)
       for (const error of failures) console.error('notes: a note changed outside ASIST could not be read:', error)
     }).catch((error: unknown) => console.error('notes: the notes folder could not be read after a change outside ASIST:', error))
-  }
   // The watch starts before the folder is read, so that no change made during the read is missed. The folder
-  // is made first, so that its watch opens now rather than when the first note is saved: on macOS each watch
-  // opened leaves a moment in which changes go unreported.
+  // is made first, so that its watch opens now and not again at the first save: on macOS every watch opened
+  // or closed in the process leaves a moment in which changes go unreported. A note that cannot be read is
+  // left out, and a read of it gives its error, so that it takes no other note down with it.
   const ready = async (): Promise<Map<string, HeldNote>> => {
     if (held) return held
+    const begun = closes
     const notes = new Map<string, HeldNote>()
+    unreadable.clear()
     await fs.mkdir(options.directory, { recursive: true })
     const started = await watchFolder(options.directory, follow)
+    let looked: Awaited<ReturnType<typeof lookAt>>
     try {
-      const { failures } = await lookAt(notes, 'all')
-      if (failures.length > 0) throw failures[0]
+      looked = await lookAt(notes, 'all')
     } catch (error) {
       started.close()
       throw error
+    }
+    for (const error of looked.failures) console.error('notes: a note could not be read:', error)
+    if (begun !== closes) {
+      started.close()
+      return notes
     }
     watch = started
     held = notes
@@ -190,8 +199,9 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
       enqueue(async () => {
         const checked = checkedId(id)
         const note = (await ready()).get(checked)
-        if (!note) throw new Error(errorText('notes.errors.notFound'))
-        return note.record.markdown
+        if (note) return note.record.markdown
+        if (unreadable.has(checked)) throw unreadable.get(checked)
+        throw new Error(errorText('notes.errors.notFound'))
       }),
 
     search: (query) => enqueue(async () => (await records()).filter((note) => noteMatches(note, query)).sort(byUpdated)),
@@ -223,9 +233,11 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
       }),
 
     close: () => {
+      closes += 1
       watch?.close()
       watch = null
       held = null
+      unreadable.clear()
     }
   }
 }
