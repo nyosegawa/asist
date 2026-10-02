@@ -280,7 +280,7 @@ describe('reading a zip by ranges', () => {
   it('says the file changed when asist-file serves it saved again at the same length, which only its ETag shows', async () => {
     const folder = longTempFolder('asist-zip-')
     try {
-      handleFileScheme(() => [folder])
+      handleFileScheme({ handle: electron.handle } as unknown as Protocol, () => [folder])
       const handler = electron.handle.mock.calls.at(-1)![1] as (request: { url: string; headers: Headers }) => Response
       vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => handler({ url, headers: new Headers(init?.headers) }))
       const target = path.join(folder, 'report.docx')
