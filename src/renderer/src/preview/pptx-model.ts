@@ -7,8 +7,8 @@ import { errorKey } from '@shared/i18n/error-key'
  *   in the file names.
  * - A shape's position is a:xfrm in EMU divided by the slide size, a share between 0 and 1, which the
  *   drawing side places as a percentage.
- * - A placeholder without an xfrm inherits its position from the same placeholder in the layout, and then
- *   from the master.
+ * - A placeholder without an xfrm, a picture placeholder included, inherits its position from the same
+ *   placeholder in the layout, and then from the master.
  * - Font sizes are in pt. Where a size is missing, the default for that kind of placeholder is used, which
  *   is the typical value found in the master's txStyles.
  * A shape inside a group (p:grpSp) is read as it is, without the group's transform applied.
@@ -215,7 +215,9 @@ export function parseSlide(xml: string, size: PptxSize, rels: Map<string, string
         const embed = blip?.getAttribute('r:embed')
         const target = embed ? rels.get(embed) : undefined
         if (!target) continue
-        shapes.push({ kind: 'picture', frame: frameOf(firstNS(el, NS.p, 'spPr'), size), target })
+        const ph = placeholderOf(el)
+        const frame = frameOf(firstNS(el, NS.p, 'spPr'), size) ?? (ph ? inheritedFrame(ph, inherited) : null)
+        shapes.push({ kind: 'picture', frame, target })
       }
     }
   }

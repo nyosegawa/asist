@@ -17,6 +17,12 @@ export interface PptxDeck {
   slideCount: number
 }
 
+/**
+ * A picture as the viewer shows it: a bitmap decoded at the size it is drawn, or an SVG as a data URL, or null for
+ * one Chromium does not decode, which is left out of the slide.
+ */
+export type PptxPicture = { bitmap: ImageBitmap } | { svg: string } | null
+
 const decoder = new TextDecoder()
 const readText = async (zip: RangedZip, path: string): Promise<string> => decoder.decode(await zip.read(path))
 
@@ -36,8 +42,9 @@ const targetOf = (rels: Map<string, string>, kind: string): string | undefined =
 /**
  * Decodes a picture to fit inside a box of device pixels, as the viewer draws it (object-fit: contain), and never
  * larger than the picture itself. Its own size is known only once it is decoded, and a box of another shape would
- * stretch it, so it is decoded whole first and then scaled. A picture in a format Chromium does not decode, such as
- * the EMF or WMF Office writes for a drawing pasted from another program, gives null and is left out of the slide.
+ * stretch it, so it is decoded whole first and then scaled. A picture Chromium does not decode gives null: one in a
+ * format it does not read, such as the EMF or WMF Office writes for a drawing pasted from another program, and one
+ * larger than it decodes at all, as a PNG of 625 megapixels was (headless Chrome 154 on an M5, 2026-10-02).
  */
 async function decodeToFit(bytes: Uint8Array<ArrayBuffer>, width: number, height: number): Promise<ImageBitmap | null> {
   let whole: ImageBitmap
@@ -59,6 +66,19 @@ async function decodeToFit(bytes: Uint8Array<ArrayBuffer>, width: number, height
     whole.close()
   }
 }
+
+/**
+ * An SVG picture as a data URL, which the viewer shows in an img. createImageBitmap takes no SVG from bytes, and
+ * drawing one through an img here would need blob: images in the preview page's policy, while the app's page
+ * already shows data: images and an SVG drawn there stays sharp at any size.
+ */
+const svgUrl = (bytes: Uint8Array<ArrayBuffer>): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(new Blob([bytes], { type: 'image/svg+xml' }))
+  })
 
 const openPptx = async (url: string) => {
   const zip = await openZip(url)
@@ -106,7 +126,9 @@ const openPptx = async (url: string) => {
       /** The shapes of a slide, a picture's target given as its path inside the zip. */
       slide: async ({ index }: { index: number }): Promise<PptxShape[]> => {
         const path = slides[index]
-        if (path === undefined) throw new Error(`the deck has no slide ${index}`)
+        // A viewer asks only for the slides the deck had when it opened it, so a slide past the end means the
+        // document was opened again, in a frame started after the last one stopped, from a file saved since.
+        if (path === undefined) throw new Error(errorKey('files.errors.changedWhileReading'))
         const [xml, rels] = await Promise.all([readText(zip, path), relsOf(zip, path)])
         const layoutTarget = targetOf(rels, 'slideLayout')
         const shapes = parseSlide(xml, size, rels, layoutTarget ? await inheritedOf(resolveTarget(dirOf(path), layoutTarget)) : [])
@@ -119,8 +141,12 @@ const openPptx = async (url: string) => {
       },
 
       /** A picture of a slide, fitted inside a box of `width` × `height` device pixels. */
-      picture: async ({ path, width, height }: { path: string; width: number; height: number }): Promise<ImageBitmap | null> =>
-        decodeToFit(await zip.read(path), width, height)
+      picture: async ({ path, width, height }: { path: string; width: number; height: number }): Promise<PptxPicture> => {
+        const bytes = await zip.read(path)
+        if (path.toLowerCase().endsWith('.svg')) return { svg: await svgUrl(bytes) }
+        const bitmap = await decodeToFit(bytes, width, height)
+        return bitmap && { bitmap }
+      }
     }
   }
 }

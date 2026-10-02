@@ -811,6 +811,19 @@ export const files = defineMessages({
       'es-419': 'No se pudieron leer las diapositivas: {message}',
       'es-ES': 'No se han podido leer las diapositivas: {message}'
     },
+    pptxPictureFailed: {
+      'ja-JP': 'スライドの画像を読めません: {message}',
+      'en-US': "Couldn't read a picture on the slide: {message}",
+      'fr-FR': 'Impossible de lire une image de la diapositive : {message}',
+      'de-DE': 'Ein Bild der Folie ließ sich nicht lesen: {message}',
+      'hi-IN': 'स्लाइड की एक तस्वीर पढ़ी नहीं जा सकी: {message}',
+      'id-ID': 'Tidak bisa membaca gambar di slide ini: {message}',
+      'it-IT': "Impossibile leggere un'immagine della slide: {message}",
+      'ko-KR': '슬라이드의 이미지를 읽을 수 없습니다: {message}',
+      'pt-BR': 'Não foi possível ler uma imagem do slide: {message}',
+      'es-419': 'No se pudo leer una imagen de la diapositiva: {message}',
+      'es-ES': 'No se ha podido leer una imagen de la diapositiva: {message}'
+    },
     pptxEmpty: {
       'ja-JP': 'スライドがありません',
       'en-US': 'There are no slides',

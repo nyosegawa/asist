@@ -1,4 +1,5 @@
 import type { FileItem } from '@shared/files'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { errorText } from '@shared/i18n/error-text'
 import { PREVIEW_PAGE_URL } from '@shared/preview-page'
 import { CONNECTED, type OpenPreviewDocument, type PreviewReply, type PreviewRequest } from '@/preview/serve'
@@ -32,14 +33,21 @@ export interface PreviewHandle<Open extends OpenPreviewDocument> {
     method: Name,
     args: Parameters<Methods<Open>[Name]>[0]
   ): Promise<Awaited<ReturnType<Methods<Open>[Name]>>>
+  /**
+   * Calls the listener when a request finds the file changed since its document was opened, as a file saved again
+   * while a card shows it is. The client has then let that document go, and the next request of any viewer of the
+   * file opens it again as it is now, so the viewer starts over and asks again for everything it shows; the request
+   * that found the change fails after the listener has run. Returns what stops the listening.
+   */
+  onChanged(listener: () => void): () => void
   /** Lets go of the document, which the page closes once no viewer holds it. */
   release(): void
 }
 
 interface Running {
   frame: PreviewFrame
-  /** The requests the frame has not answered yet, by id. */
-  pending: Map<number, { resolve(value: unknown): void; reject(error: Error): void }>
+  /** The requests the frame has not answered yet, by id, with the page's key of the document each one asked. */
+  pending: Map<number, { key: string; sent: string; resolve(value: unknown): void; reject(error: Error): void }>
 }
 
 /** The file a document is opened from: its URL, and the size and time of change that tell one version from another. */
@@ -61,6 +69,22 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
   let nextId = 0
   /** How many handles hold each open document, by documentKey. */
   const holders = new Map<string, number>()
+  /**
+   * How many times each document was found out of date, by documentKey. The page knows a document by its key and
+   * this count, so a file saved again since its card was made is opened again under the same documentKey.
+   */
+  const outdated = new Map<string, number>()
+  const pageKey = (key: string): string => `${outdated.get(key) ?? 0} ${key}`
+  /** What the handles of each document listen for its change with, by documentKey. */
+  const listeners = new Map<string, Set<() => void>>()
+
+  /** Lets go of a document the file has changed under, once for all the requests that find it. */
+  function changed(frame: PreviewFrame, key: string, sent: string): void {
+    if (sent !== pageKey(key)) return
+    outdated.set(key, (outdated.get(key) ?? 0) + 1)
+    frame.port.postMessage({ type: 'close', key: sent } satisfies PreviewRequest)
+    for (const listener of [...(listeners.get(key) ?? [])]) listener()
+  }
 
   function end(ended: Running): void {
     if (running === ended) running = null
@@ -78,8 +102,10 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
       const request = started.pending.get(data.id)
       if (!request) return
       started.pending.delete(data.id)
-      if ('error' in data) request.reject(new Error(data.error))
-      else request.resolve(data.value)
+      if ('error' in data) {
+        if (errorKeyOf(data.error) === 'files.errors.changedWhileReading') changed(started.frame, request.key, request.sent)
+        request.reject(new Error(data.error))
+      } else request.resolve(data.value)
     })
     port.start()
     void started.frame.gone.then(() => end(started))
@@ -92,7 +118,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
    */
   function settle(key: string): void {
     if (holders.has(key) || !running) return
-    running.frame.port.postMessage({ type: 'close', key } satisfies PreviewRequest)
+    running.frame.port.postMessage({ type: 'close', key: pageKey(key) } satisfies PreviewRequest)
     if (holders.size === 0) end(running)
   }
 
@@ -102,20 +128,36 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
       const { url } = file
       holders.set(key, (holders.get(key) ?? 0) + 1)
       let held = true
+      /** This handle's listeners, which its release stops. */
+      const own = new Set<() => void>()
+      const unlisten = (heard: () => void): void => {
+        own.delete(heard)
+        const all = listeners.get(key)
+        all?.delete(heard)
+        if (all?.size === 0) listeners.delete(key)
+      }
       return {
         call(method, args) {
           if (!held) throw new Error(`the ${kind} document of ${url} was released`)
           running ??= start()
           const { frame, pending } = running
           const id = nextId++
+          const sent = pageKey(key)
           return new Promise((resolve, reject) => {
-            pending.set(id, { resolve: (value) => resolve(value as never), reject })
-            frame.port.postMessage({ type: 'call', id, key, kind, url, method, args } satisfies PreviewRequest)
+            pending.set(id, { key, sent, resolve: (value) => resolve(value as never), reject })
+            frame.port.postMessage({ type: 'call', id, key: sent, kind, url, method, args } satisfies PreviewRequest)
           })
+        },
+        onChanged(listener) {
+          const heard = (): void => listener()
+          own.add(heard)
+          listeners.set(key, (listeners.get(key) ?? new Set()).add(heard))
+          return () => unlisten(heard)
         },
         release() {
           if (!held) return
           held = false
+          for (const heard of [...own]) unlisten(heard)
           const left = holders.get(key)! - 1
           if (left > 0) holders.set(key, left)
           else holders.delete(key)
