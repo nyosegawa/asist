@@ -189,6 +189,32 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(before + 1)
   })
 
+  it('keeps the whole document when writing the new text stops part way, so that the next curation does not commit it cut short', () => {
+    const dir = store.memoryDir()
+    const file = path.join(dir, 'pages', '松葉軒.md')
+    fs.writeFileSync(file, MATSUBAKEN)
+    store.ensureRepo()
+    const draft = MATSUBAKEN.replace('本人の行きつけのラーメン屋。', '本人の行きつけの店。駅前にある。')
+    const write = fs.writeFileSync
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, data, options) => {
+      if (data !== draft) return write(target, data, options)
+      // The disk fills after the first half of the new text.
+      write(target, draft.slice(0, Math.floor(draft.length / 2)), options)
+      throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' })
+    })
+    try {
+      expect(() => store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)).toThrow('ENOSPC')
+    } finally {
+      vi.restoreAllMocks()
+    }
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    // Every curation commits what is on disk before it cuts its worktree.
+    store.ensureRepo()
+    expect(git(dir, ['show', 'HEAD:pages/松葉軒.md'])).toBe(MATSUBAKEN)
+    store.writeDocument('pages/松葉軒.md', draft, MATSUBAKEN)
+    expect(git(dir, ['show', 'HEAD:pages/松葉軒.md'])).toBe(draft)
+  })
+
   it('leaves nothing staged when a commit fails after the file was staged, so that a curation can still start', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
