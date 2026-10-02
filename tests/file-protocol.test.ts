@@ -192,7 +192,7 @@ function corsLets(response: Response, origin: string, exposed: string[] = []): b
 }
 
 describe('the preview page reading a file by ranges', () => {
-  it('answers the preflight of a suffix range and lets the preview page alone read where the range sits', async () => {
+  it('answers the preflight of a suffix range and lets the preview page alone read where the range sits and which version of the file it holds', async () => {
     const { fileUrl, handleFileScheme } = await load()
     const folder = mkdtempSync(path.join(tmpdir(), 'asist-file-protocol-'))
     writeFileSync(path.join(folder, 'book.docx'), Buffer.alloc(100_000, 1))
@@ -209,7 +209,7 @@ describe('the preview page reading a file by ranges', () => {
     const response = handler({ method: 'GET', url, headers: new Headers({ origin: PREVIEW_ORIGIN, range: 'bytes=-65577' }) })
     expect(response.status).toBe(206)
     expect(response.headers.get('content-range')).toBe('bytes 34423-99999/100000')
-    expect(corsLets(response, PREVIEW_ORIGIN, ['Content-Range'])).toBe(true)
+    expect(corsLets(response, PREVIEW_ORIGIN, ['Content-Range', 'ETag'])).toBe(true)
     // An HTML page shown in the files card has an opaque origin, which CORS writes as null.
     expect(corsLets(response, 'null')).toBe(false)
   })

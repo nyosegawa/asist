@@ -1,34 +1,146 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { resolve } from 'node:path'
+import JSZip from 'jszip'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import type { FileItem } from '@shared/files'
 import { DEMO_OFFICE_ITEMS } from '@/demo/fixtures/files-office'
-import { fontSizeCqw, parsePresentation, parseRels, parseSlide, placeholderFrames, resolveTarget } from '@/panels/viewers/pptx-model'
+import { parsePresentation, parseRels, parseSlide, placeholderFrames, resolveTarget } from '@/preview/pptx-model'
 import { FileViewer } from '@/panels/viewers'
+import { fontSizeCqw } from '@/panels/viewers/PptxViewer'
+import { LayoutIntersectionObserver } from './helpers/intersection-observer'
 
 /**
- * The PowerPoint viewer. Turning pptx XML into shapes and positions runs on string fixtures, while the rendering
- * reads the real demo file in place of fetch and checks the DOM.
+ * The PowerPoint viewer. Turning pptx XML into shapes and positions runs on string fixtures. The rendering runs the
+ * preview page's PowerPoint kind in the test itself, in place of the iframe, with the file served by ranges as
+ * asist-file serves it: a server counts the bytes it sends. happy-dom decodes no picture and draws no canvas, so a
+ * decoded picture is a bitmap that remembers whether it was closed, and a canvas remembers the bitmap it shows.
+ * Nothing is laid out either: a slide is placed in the window by the test, and an observer that computes
+ * intersections as a browser does tells the viewer which slides are near. A file saved again while it is shown is
+ * tested with the real client in viewer-pptx-saved.test.tsx.
  */
+
+/** The requests of each method that fail as when the preview frame stops before it answers, from the next one on. */
+const stops = vi.hoisted(() => new Map<string, number>())
+
+vi.mock('@/panels/viewers/preview-client', async () => {
+  const { default: openPptx } = await import('@/preview/methods/pptx')
+  const { errorKey } = await import('@shared/i18n/error-key')
+  return {
+    // The document's methods are called directly, and a bitmap reaches the viewer as the real channel moves it:
+    // the same object, which the viewer then owns.
+    openPreviewDocument: (_kind: string, file: { url: string }) => {
+      const opening = openPptx(file.url)
+      return {
+        call: async (method: string, args: never) => {
+          const stopping = stops.get(method) ?? 0
+          if (stopping > 0) {
+            stops.set(method, stopping - 1)
+            throw new Error(errorKey('files.errors.previewStopped'))
+          }
+          return ((await opening).methods as Record<string, (args: never) => unknown>)[method](args)
+        },
+        onChanged: () => () => undefined,
+        release: () => undefined
+      }
+    }
+  }
+})
 
 const t = createTranslator('ja-JP')
 const DEMO_DIR = resolve('src/renderer/demo-public')
-const item = DEMO_OFFICE_ITEMS.find((office) => office.kind === 'pptx')!
+const demoItem = DEMO_OFFICE_ITEMS.find((office) => office.kind === 'pptx')!
+
+/** The files the server answers for, by URL. */
+const files = new Map<string, Uint8Array>()
+let sent = 0
+
+/** A decoded picture: its size, and whether it was closed or handed to a canvas. */
+class FakeBitmap {
+  closed = false
+  shown = false
+  constructor(
+    readonly width: number,
+    readonly height: number
+  ) {
+    bitmaps.push(this)
+  }
+  close(): void {
+    this.closed = true
+  }
+}
+let bitmaps: FakeBitmap[] = []
+/** The bitmap each canvas shows. */
+const shownBy = new Map<HTMLCanvasElement, FakeBitmap | null>()
+/** The size a photo decodes to before it is scaled. */
+const PHOTO = { width: 2400, height: 1600 }
+/** While set, a picture waits here before it is decoded. */
+let decoding: Promise<void> | null = null
+/** Whether a picture fails to decode, as one in a format Chromium does not read does. */
+let undecodable = false
+/** What is told when the device pixel ratio no longer holds, as matchMedia tells it. */
+let ratioChanged: (() => void) | null = null
+/** Whether the server fails the reads past 100 KB other than the end of the file: the pictures, and a padded layout. */
+let largeReadsFail = false
 
 let container: HTMLDivElement
 let root: Root
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-  vi.stubGlobal('fetch', async (url: string) => {
-    const bytes = readFileSync(resolve(DEMO_DIR, `.${url}`))
-    return { ok: true, status: 200, arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) }
+  vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
+  vi.stubGlobal('IntersectionObserver', LayoutIntersectionObserver)
+  sent = 0
+  vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    const file = files.get(url) ?? new Uint8Array(readFileSync(resolve(DEMO_DIR, `.${url}`)))
+    const range = /^bytes=(\d*)-(\d*)$/.exec(new Headers(init?.headers).get('range') ?? '')
+    const suffix = range?.[1] === ''
+    const start = !range ? 0 : suffix ? Math.max(0, file.length - Number(range[2])) : Number(range[1])
+    const end = !range || suffix || range[2] === '' ? file.length - 1 : Math.min(Number(range[2]), file.length - 1)
+    if (!range) {
+      sent += file.length
+      return new Response(file.slice(), { status: 200 })
+    }
+    if (largeReadsFail && !suffix && end - start > 100 * 1024) return new Response(null, { status: 500 })
+    const body = file.slice(start, end + 1)
+    sent += body.length
+    return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
   })
+  bitmaps = []
+  shownBy.clear()
+  stops.clear()
+  decoding = null
+  undecodable = false
+  largeReadsFail = false
+  vi.stubGlobal('ImageBitmap', FakeBitmap)
+  vi.stubGlobal('createImageBitmap', async (source: Blob | FakeBitmap, options?: ImageBitmapOptions) => {
+    if (source instanceof FakeBitmap) return new FakeBitmap(options!.resizeWidth!, options!.resizeHeight!)
+    await decoding
+    if (undecodable) throw new DOMException('The source image could not be decoded.', 'InvalidStateError')
+    return new FakeBitmap(PHOTO.width, PHOTO.height)
+  })
+  vi.stubGlobal('devicePixelRatio', 2)
+  ratioChanged = null
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    media: query,
+    addEventListener: (_type: string, listener: () => void) => (ratioChanged = listener),
+    removeEventListener: () => undefined
+  }))
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement, type: string) {
+    if (type !== 'bitmaprenderer') return null
+    return {
+      transferFromImageBitmap: (bitmap: FakeBitmap | null) => {
+        if (bitmap) bitmap.shown = true
+        shownBy.set(this, bitmap)
+      }
+    } as unknown as ImageBitmapRenderingContext
+  })
+  // A slide 712 px wide in the focus view, as at window size l.
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 712 })
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -36,29 +148,127 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
+  files.clear()
+  delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth
+  LayoutIntersectionObserver.reset()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
-/** Renders the viewer and waits until it has finished loading. */
-async function render(file: FileItem, mode: 'card' | 'focus'): Promise<HTMLElement> {
-  await act(async () => {
-    root.render(<FileViewer item={file} mode={mode} size={mode === 'card' ? 'l' : 'focus'} />)
-  })
-  for (let i = 0; i < 50 && container.textContent?.includes(t('files.viewer.loading')); i++) {
-    await act(async () => new Promise((r) => setTimeout(r, 20)))
+/** Lets the observers report, as a browser does after a frame. */
+const frame = (): Promise<void> => act(async () => LayoutIntersectionObserver.update())
+
+/** Waits, letting the preview's reads and the viewer's renders run, until the check passes. */
+async function until(check: () => void): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      check()
+      return
+    } catch (error) {
+      if (i >= 100) throw error
+    }
+    await act(async () => new Promise((r) => setTimeout(r, 10)))
   }
+}
+
+async function render(item: FileItem, mode: 'card' | 'focus'): Promise<HTMLElement> {
+  await act(async () => {
+    root.render(<FileViewer item={item} mode={mode} size={mode === 'card' ? 'l' : 'focus'} />)
+  })
+  await until(() => expect(container.querySelector('.fv-pptx-slide')).not.toBeNull())
   return container.querySelector<HTMLElement>('.fv-frame')!
+}
+
+/**
+ * Lays the focus view's slides out down the window, each half a window tall with a gap, `scrolled` pixels down.
+ * The watcher counts a slide within one window above or below the window as near.
+ */
+function layOutSlides(scrolled: () => number): void {
+  const screen = window.innerHeight
+  container.querySelectorAll<HTMLElement>('.fv-pptx-slide').forEach((slide, index) => {
+    slide.getBoundingClientRect = () => {
+      const top = 10 + (index * screen) / 2 - scrolled()
+      return { top, bottom: top + screen / 2 - 10, left: 0, right: 712, width: 712, height: screen / 2 - 10, x: 0, y: top } as DOMRect
+    }
+  })
+}
+
+const slideIndex = (element: Element): number => [...container.querySelectorAll('.fv-pptx-figure')].indexOf(element.closest('.fv-pptx-figure')!)
+
+/** The slides whose text is drawn, by index. */
+const drawnSlides = (): number[] => [...container.querySelectorAll('.fv-pptx-figure')].flatMap((figure, index) => (figure.querySelector('.fv-pptx-para') ? [index] : []))
+
+/** The error notes, by the index of their slide. */
+const errorsBySlide = (): Array<[number, string | null]> => [...container.querySelectorAll('.fv-note[data-tone="error"]')].map((note) => [slideIndex(note), note.textContent])
+
+/** The widths of the bitmaps the canvases on the page show. */
+const shownWidths = (): number[] => [...shownBy].flatMap(([canvas, bitmap]) => (bitmap && canvas.isConnected ? [bitmap.width] : []))
+
+/** The slides whose picture a canvas shows, by index, and whether any bitmap is held where no canvas on the page shows it. */
+function heldPictures(): { slides: number[]; elsewhere: number } {
+  const slides = [...shownBy].flatMap(([canvas, bitmap]) => (bitmap && canvas.isConnected ? [slideIndex(canvas)] : [])).sort((a, b) => a - b)
+  const offPage = [...shownBy].filter(([canvas, bitmap]) => bitmap && !canvas.isConnected).length
+  const loose = bitmaps.filter((bitmap) => !bitmap.closed && !bitmap.shown).length
+  return { slides, elsewhere: offPage + loose }
 }
 
 const PPT_NS =
   'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"'
+const RELS_NS = 'xmlns="http://schemas.openxmlformats.org/package/2006/relationships"'
 const SIZE = { cx: 12192000, cy: 6858000 }
+/** The size of a slide's photo, four times the 64 KB a reader takes from the end of the file first. */
+const PICTURE = 256 * 1024
+
+/** An SVG picture, as Office writes one when the deck's author inserts an icon. */
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96"><circle cx="48" cy="48" r="40" fill="#3c6fa8"/></svg>'
+
+/**
+ * A deck of 16:9 slides, each with a title and a photo of PICTURE bytes stored as it is, or with `svg` an SVG, in
+ * the order a writer puts them: presentation.xml first, then each slide followed by its picture. A slide given as
+ * null is listed in presentation.xml and missing from the file. With `layout`, every slide uses one layout of more
+ * than 100 KB, stored as it is, as a layout full of drawings is.
+ */
+async function deckOf(slides: Array<string | null>, { svg = false, layout = false } = {}): Promise<Uint8Array> {
+  const zip = new JSZip()
+  const options = { createFolders: false }
+  const ids = slides.map((_, i) => `<p:sldId id="${256 + i}" r:id="rId${i + 1}"/>`).join('')
+  zip.file('ppt/presentation.xml', `<p:presentation ${PPT_NS}><p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="${SIZE.cx}" cy="${SIZE.cy}"/></p:presentation>`, options)
+  const rels = slides.map((_, i) => `<Relationship Id="rId${i + 1}" Type="x" Target="slides/slide${i + 1}.xml"/>`).join('')
+  zip.file('ppt/_rels/presentation.xml.rels', `<Relationships ${RELS_NS}>${rels}</Relationships>`, options)
+  if (layout) {
+    zip.file('ppt/slideLayouts/slideLayout1.xml', `<p:sldLayout ${PPT_NS}><!--${'図'.repeat(40_000)}--><p:cSld><p:spTree/></p:cSld></p:sldLayout>`, { ...options, compression: 'STORE' })
+  }
+  slides.forEach((title, i) => {
+    if (title === null) return
+    zip.file(
+      `ppt/slides/slide${i + 1}.xml`,
+      `<p:sld ${PPT_NS}><p:cSld><p:spTree>
+        <p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="12192000" cy="1371600"/></a:xfrm></p:spPr><p:txBody><a:p><a:r><a:t>${title}</a:t></a:r></a:p></p:txBody></p:sp>
+        <p:pic><p:nvPicPr><p:cNvPr id="3" name="P"/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId2"/></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="1371600"/><a:ext cx="6096000" cy="4064000"/></a:xfrm></p:spPr></p:pic>
+      </p:spTree></p:cSld></p:sld>`,
+      options
+    )
+    const picture = `media/image${i + 1}.${svg ? 'svg' : 'jpeg'}`
+    const layoutRel = layout ? '<Relationship Id="rId1" Type="x" Target="../slideLayouts/slideLayout1.xml"/>' : ''
+    zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, `<Relationships ${RELS_NS}>${layoutRel}<Relationship Id="rId2" Type="x" Target="../${picture}"/></Relationships>`, options)
+    zip.file(`ppt/${picture}`, svg ? SVG : randomBytes(PICTURE), { ...options, compression: 'STORE' })
+  })
+  return zip.generateAsync({ type: 'uint8array' })
+}
+
+async function serveDeck(name: string, slides: Array<string | null>, options?: { svg?: boolean; layout?: boolean }): Promise<FileItem> {
+  const url = `asist-file:///Users/me/${name}`
+  const file = await deckOf(slides, options)
+  files.set(url, file)
+  return { path: `/Users/me/${name}`, name, kind: 'pptx', sizeBytes: file.length, url }
+}
+
+const titles = (count: number): string[] => Array.from({ length: count }, (_, i) => `スライド ${i + 1}`)
 
 describe('pptx XML into slide shapes', () => {
   it('orders the slides by the r:id entries of sldIdLst resolved through the rels, not by the file name', () => {
     const presentation = `<p:presentation ${PPT_NS}><p:sldIdLst><p:sldId id="1" r:id="rId3"/><p:sldId id="2" r:id="rId2"/></p:sldIdLst><p:sldSz cx="9144000" cy="6858000"/></p:presentation>`
-    const rels =
-      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId2" Type="x" Target="slides/slide1.xml"/><Relationship Id="rId3" Type="x" Target="slides/slide2.xml"/></Relationships>'
+    const rels = `<Relationships ${RELS_NS}><Relationship Id="rId2" Type="x" Target="slides/slide1.xml"/><Relationship Id="rId3" Type="x" Target="slides/slide2.xml"/></Relationships>`
     const parsed = parsePresentation(presentation)
     expect(parsed.size).toEqual({ cx: 9144000, cy: 6858000 })
     const map = parseRels(rels)
@@ -99,9 +309,10 @@ describe('pptx XML into slide shapes', () => {
     expect(fontSizeCqw(36, SIZE)).toBeCloseTo(3.75)
   })
 
-  it('inherits the position of a placeholder without an xfrm from the layout, then from the master', () => {
+  it('inherits the position of a placeholder without an xfrm, a picture placeholder included, from the layout, then from the master', () => {
     const layout = `<p:sldLayout ${PPT_NS}><p:cSld><p:spTree>
       <p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:nvPr><p:ph type="ctrTitle"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="1371600"/><a:ext cx="12192000" cy="1371600"/></a:xfrm></p:spPr></p:sp>
+      <p:sp><p:nvSpPr><p:cNvPr id="5" name="Picture Placeholder"/><p:nvPr><p:ph type="pic" idx="13"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="6096000" y="3429000"/><a:ext cx="6096000" cy="3429000"/></a:xfrm></p:spPr></p:sp>
     </p:spTree></p:cSld></p:sldLayout>`
     const master = `<p:sldMaster ${PPT_NS}><p:cSld><p:spTree>
       <p:sp><p:nvSpPr><p:cNvPr id="3" name="B"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="3429000"/><a:ext cx="12192000" cy="3429000"/></a:xfrm></p:spPr></p:sp>
@@ -110,38 +321,196 @@ describe('pptx XML into slide shapes', () => {
       <p:sp><p:nvSpPr><p:cNvPr id="2" name="T"/><p:nvPr><p:ph type="ctrTitle"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:p><a:r><a:t>題</a:t></a:r></a:p></p:txBody></p:sp>
       <p:sp><p:nvSpPr><p:cNvPr id="3" name="S"/><p:nvPr><p:ph type="subTitle" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:p><a:r><a:t>副題</a:t></a:r></a:p></p:txBody></p:sp>
       <p:sp><p:nvSpPr><p:cNvPr id="4" name="X"/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:p><a:r><a:t>位置なし</a:t></a:r></a:p></p:txBody></p:sp>
+      <p:pic><p:nvPicPr><p:cNvPr id="5" name="P"/><p:cNvPicPr/><p:nvPr><p:ph type="pic" idx="13"/></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed="rId2"/></p:blipFill><p:spPr/></p:pic>
     </p:spTree></p:cSld></p:sld>`
     const inherited = [placeholderFrames(layout, SIZE), placeholderFrames(master, SIZE)]
-    const shapes = parseSlide(slide, SIZE, new Map(), inherited)
+    const shapes = parseSlide(slide, SIZE, new Map([['rId2', '../media/image1.png']]), inherited)
     expect(shapes.map((shape) => shape.frame)).toEqual([
       { x: 0, y: 0.2, w: 1, h: 0.2 },
       { x: 0, y: 0.5, w: 1, h: 0.5 },
-      null
+      null,
+      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }
     ])
   })
 })
 
 describe('PowerPoint viewer rendering with the demo file', () => {
   it('shows the first slide and the count in a card and every numbered slide in the focus view, placing shapes by fraction', async () => {
-    const card = await render(item, 'card')
+    const card = await render(demoItem, 'card')
+    await frame()
+    await until(() => expect(card.querySelector('.fv-pptx-text[data-placeholder="ctrTitle"]')).not.toBeNull())
     expect(card.querySelectorAll('.fv-pptx-slide')).toHaveLength(1)
-    expect(card.querySelector('.fv-note')?.textContent).toContain(t('files.viewer.pptxCountMore', { count: 3 }))
+    expect(card.querySelector('.fv-scroll > .fv-note')?.textContent).toContain(t('files.viewer.pptxCountMore', { count: 3 }))
     // The title of the first slide has no xfrm and inherits its position from the layout.
     const title = card.querySelector<HTMLElement>('.fv-pptx-text[data-placeholder="ctrTitle"]')!
     expect(title.textContent).toBe('競合サービスの比較')
     expect(title.style.top).toBe('16.37%')
     expect(title.style.width).toBe('75.00%')
 
-    const focus = await render(item, 'focus')
+    const focus = await render(demoItem, 'focus')
+    layOutSlides(() => 0)
+    await frame()
+    await until(() => expect(heldPictures().slides).toEqual([2]))
     const slides = focus.querySelectorAll('.fv-pptx-slide')
     expect(slides).toHaveLength(3)
     expect([...focus.querySelectorAll('.fv-pptx-number')].map((el) => el.textContent)).toEqual(['1', '2', '3'])
     const bullets = [...slides[1].querySelectorAll<HTMLElement>('.fv-pptx-para[data-bullet="true"]')]
     expect(bullets.map((p) => p.textContent)).toEqual(['個人で使うなら C で足りる', '5 人以上のチームは B 一択', '同時接続の上限が決め手', 'A は年払いの割引で C と差が縮まる'])
     expect(bullets[2].style.marginLeft).toBe('1.5em')
-    const picture = slides[2].querySelector<HTMLImageElement>('.fv-pptx-picture')!
-    expect(picture.src).toMatch(/^data:image\/png;base64,iVBOR/)
+    const picture = slides[2].querySelector<HTMLCanvasElement>('canvas.fv-pptx-picture')!
     expect(picture.style.left).toBe('12.50%')
     expect(picture.style.width).toBe('50.00%')
+  })
+})
+
+describe('what the PowerPoint viewer reads and keeps', () => {
+  it('reads the end of the zip, presentation.xml and the first slide with its picture for the card, however large the file', async () => {
+    const item = await serveDeck('deck.pptx', titles(30))
+    expect(item.sizeBytes).toBeGreaterThan(30 * PICTURE)
+    const card = await render({ ...item, sizeBytes: 2 ** 40 }, 'card')
+    await frame()
+    await until(() => expect(heldPictures().slides).toEqual([0]))
+    expect(card.querySelector('.fv-pptx-para')?.textContent).toBe('スライド 1')
+    expect(card.querySelector('.fv-scroll > .fv-note')?.textContent).toContain(t('files.viewer.pptxCountMore', { count: 30 }))
+    // The 64 KB at the end hold the central directory, and one picture more would pass the bound.
+    expect(sent).toBeLessThan(64 * 1024 + 1.5 * PICTURE)
+  })
+
+  it('draws the slides within a screen of the view, and lets go of a slide picture when the slide leaves', async () => {
+    const item = await serveDeck('deck.pptx', titles(10))
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    await until(() => expect(heldPictures()).toEqual({ slides: [0, 1, 2, 3], elsewhere: 0 }))
+    expect(drawnSlides()).toEqual([0, 1, 2, 3])
+    // A picture is decoded to the box it is drawn in: half of the 712 px slide at a pixel ratio of 2.
+    expect(bitmaps.filter((bitmap) => bitmap.shown).map((bitmap) => bitmap.width)).toEqual([712, 712, 712, 712])
+
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    await until(() => expect(heldPictures()).toEqual({ slides: [4, 5, 6, 7, 8, 9], elsewhere: 0 }))
+    expect(drawnSlides()).toEqual([4, 5, 6, 7, 8, 9])
+  })
+
+  it('shows the error of a slide missing from the file at that slide, in the interface language, and draws the others', async () => {
+    const item = await serveDeck('deck.pptx', ['一枚目', null, '三枚目'])
+    const focus = await render(item, 'focus')
+    layOutSlides(() => 0)
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([0, 2]))
+    const errors = [...focus.querySelectorAll('.fv-note[data-tone="error"]')]
+    expect(errors.map((note) => [slideIndex(note), note.textContent])).toEqual([
+      [1, t('files.viewer.pptxFailed', { message: t('files.errors.zipEntryMissing', { path: 'ppt/slides/slide2.xml' }) })]
+    ])
+  })
+
+  it('closes a picture that arrives after its slide has left', async () => {
+    const item = await serveDeck('deck.pptx', titles(10))
+    let decode = (): void => undefined
+    decoding = new Promise((resolve) => (decode = resolve))
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([0, 1, 2, 3]))
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([4, 5, 6, 7, 8, 9]))
+    await act(async () => decode())
+    await until(() => expect(heldPictures()).toEqual({ slides: [4, 5, 6, 7, 8, 9], elsewhere: 0 }))
+    // The pictures of the first four slides arrived after their slides left.
+    expect(bitmaps.filter((bitmap) => bitmap.width === 712 && bitmap.closed)).toHaveLength(4)
+  })
+
+  it('leaves out a picture Chromium does not decode, without an error, and draws the rest of the slide', async () => {
+    undecodable = true
+    const item = await serveDeck('deck.pptx', titles(2))
+    const focus = await render(item, 'focus')
+    layOutSlides(() => 0)
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([0, 1]))
+    await until(() => expect(focus.querySelectorAll('.fv-pptx-picture')).toHaveLength(0))
+    expect(errorsBySlide()).toEqual([])
+    expect(heldPictures()).toEqual({ slides: [], elsewhere: 0 })
+  })
+
+  it('shows a picture that cannot be read as the picture\'s error under its slide, keeps the slide, and asks for the picture again when the slide comes back', async () => {
+    largeReadsFail = true
+    const item = await serveDeck('deck.pptx', titles(10))
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    const failed = t('files.viewer.pptxPictureFailed', { message: t('files.errors.loadFailed', { status: 500 }) })
+    await until(() => expect(errorsBySlide()).toEqual([0, 1, 2, 3].map((index) => [index, failed])))
+    expect(drawnSlides()).toEqual([0, 1, 2, 3])
+
+    largeReadsFail = false
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    scrolled = 0
+    await frame()
+    await until(() => expect(heldPictures()).toEqual({ slides: [0, 1, 2, 3], elsewhere: 0 }))
+    expect(errorsBySlide()).toEqual([])
+  })
+
+  it('reads a slide again when the preview frame stopped before it answered, and shows a second stop in a row until the slide comes back', async () => {
+    const item = await serveDeck('deck.pptx', titles(1))
+    stops.set('slide', 1)
+    const card = await render(item, 'card')
+    await frame()
+    await until(() => expect(card.querySelector('.fv-pptx-para')?.textContent).toBe('スライド 1'))
+    expect(errorsBySlide()).toEqual([])
+
+    stops.set('slide', 2)
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    await until(() => expect(errorsBySlide()).toEqual([[0, t('files.viewer.pptxFailed', { message: t('files.errors.previewStopped') })]]))
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    scrolled = 0
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([0]))
+    expect(errorsBySlide()).toEqual([])
+  })
+
+  it('asks for the pictures again at the new size when the device pixel ratio changes', async () => {
+    const item = await serveDeck('deck.pptx', titles(2))
+    await render(item, 'focus')
+    layOutSlides(() => 0)
+    await frame()
+    await until(() => expect(shownWidths()).toEqual([712, 712]))
+    vi.stubGlobal('devicePixelRatio', 3)
+    await act(async () => ratioChanged!())
+    await until(() => expect(shownWidths()).toEqual([1068, 1068]))
+    expect(heldPictures()).toEqual({ slides: [0, 1], elsewhere: 0 })
+  })
+
+  it('shows an SVG picture from its own source rather than decoding it into a bitmap', async () => {
+    const item = await serveDeck('deck.pptx', ['図'], { svg: true })
+    const card = await render(item, 'card')
+    await frame()
+    await until(() => expect(card.querySelector('img.fv-pptx-picture')).not.toBeNull())
+    expect(card.querySelector('img.fv-pptx-picture')!.getAttribute('src')).toBe(`data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`)
+    expect(bitmaps).toEqual([])
+  })
+
+  it('reads a layout again for the next slide after a read of it failed, rather than failing every slide of the layout', async () => {
+    const item = await serveDeck('deck.pptx', titles(10), { layout: true })
+    largeReadsFail = true
+    await render(item, 'focus')
+    let scrolled = 0
+    layOutSlides(() => scrolled)
+    await frame()
+    const failed = t('files.viewer.pptxFailed', { message: t('files.errors.loadFailed', { status: 500 }) })
+    await until(() => expect(errorsBySlide()).toEqual([0, 1, 2, 3].map((index) => [index, failed])))
+
+    largeReadsFail = false
+    scrolled = 3.2 * window.innerHeight
+    await frame()
+    await until(() => expect(drawnSlides()).toEqual([4, 5, 6, 7, 8, 9]))
   })
 })
