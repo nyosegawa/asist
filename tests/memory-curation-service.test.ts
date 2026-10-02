@@ -232,7 +232,13 @@ it('asks again on a later check whether the Agent of a curation cut off by a res
         resolve()
       }
     })
-    return { completion, stop: () => queueMicrotask(settle) }
+    return {
+      completion,
+      stop: () => {
+        queueMicrotask(settle)
+        return completion
+      }
+    }
   })
   const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
   const restored = await restart(now + DAY)
