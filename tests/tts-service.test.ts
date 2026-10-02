@@ -65,26 +65,26 @@ afterEach(() => {
 describe('TTS process startup', () => {
   it('serves concurrent start requests, and a repeat request made before HTTP is ready, from one owned process', async () => {
     const tts = await import('../src/main/services/tts')
-    const first = tts.ensureEngine('voicevox')
-    const second = tts.ensureEngine('voicevox')
+    const first = tts.ensureEngine()
+    const second = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(1))
     children[0].emit('spawn')
     await Promise.all([first, second])
 
     // The watchdog's next request does not spawn a second process while /version still answers 503.
-    await tts.ensureEngine('voicevox')
+    await tts.ensureEngine()
     expect(mocks.spawn).toHaveBeenCalledTimes(1)
   })
 
   it('can start the engine again after the owned process exits', async () => {
     const tts = await import('../src/main/services/tts')
-    const first = tts.ensureEngine('voicevox')
+    const first = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(1))
     children[0].emit('spawn')
     await first
     children[0].emit('exit', 1)
 
-    const retry = tts.ensureEngine('voicevox')
+    const retry = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(2))
     children[1].emit('spawn')
     await retry
@@ -92,13 +92,13 @@ describe('TTS process startup', () => {
 
   it('reports a spawn failure to every concurrent caller and retries on the next request', async () => {
     const tts = await import('../src/main/services/tts')
-    const first = expect(tts.ensureEngine('voicevox')).rejects.toThrow('spawn failed')
-    const second = expect(tts.ensureEngine('voicevox')).rejects.toThrow('spawn failed')
+    const first = expect(tts.ensureEngine()).rejects.toThrow('spawn failed')
+    const second = expect(tts.ensureEngine()).rejects.toThrow('spawn failed')
     await vi.waitFor(() => expect(children).toHaveLength(1))
     children[0].emit('error', new Error('spawn failed'))
     await Promise.all([first, second])
 
-    const retry = tts.ensureEngine('voicevox')
+    const retry = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(2))
     children[1].emit('spawn')
     await retry
@@ -107,9 +107,9 @@ describe('TTS process startup', () => {
   it('retries on the next request when spawn throws synchronously', async () => {
     const tts = await import('../src/main/services/tts')
     mocks.spawn.mockImplementationOnce(() => { throw new Error('sync failure') })
-    await expect(tts.ensureEngine('voicevox')).rejects.toThrow('sync failure')
+    await expect(tts.ensureEngine()).rejects.toThrow('sync failure')
 
-    const retry = tts.ensureEngine('voicevox')
+    const retry = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(1))
     children[0].emit('spawn')
     await retry
@@ -118,27 +118,36 @@ describe('TTS process startup', () => {
   it('does not start an engine that is already running', async () => {
     fetchMock.mockResolvedValue(new Response('ready'))
     const tts = await import('../src/main/services/tts')
-    await tts.ensureEngine('voicevox')
+    await tts.ensureEngine()
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
-  it('starts another engine independently while the first one is still starting', async () => {
+  it('starts nothing for an engine the choice moved away from while it was asked whether it runs', async () => {
+    mocks.spawn.mockImplementation(() => {
+      const child = Object.assign(new EventEmitter(), { kill: vi.fn() })
+      children.push(child)
+      queueMicrotask(() => child.emit('spawn'))
+      return child
+    })
+    const probe = deferred<Response>()
+    fetchMock.mockReturnValueOnce(probe.promise)
     const tts = await import('../src/main/services/tts')
-    const voicevox = tts.ensureEngine('voicevox')
-    const aivis = tts.ensureEngine('aivisspeech')
-    await vi.waitFor(() => expect(children).toHaveLength(2))
-    for (const child of children) child.emit('spawn')
+    const voicevox = tts.ensureEngine()
+    mocks.settings.ttsEngine = 'aivisspeech'
+    const aivis = tts.ensureEngine()
+    await vi.waitFor(() => expect(children).toHaveLength(1))
+    probe.resolve(new Response('', { status: 503 }))
     await Promise.all([voicevox, aivis])
-    expect(mocks.spawn.mock.calls.map(([binary]) => binary)).toEqual([
-      expect.stringContaining('voicevox_engine'), expect.stringContaining('aivisspeech_engine')
-    ])
+    // Nothing would stop a VOICEVOX started now: the watchdog asks for no start while AivisSpeech answers.
+    expect(mocks.spawn.mock.calls.map(([binary]) => binary)).toEqual([expect.stringContaining('aivisspeech_engine')])
   })
 })
 
 describe('an engine this app started', () => {
   async function started(engine: 'voicevox' | 'aivisspeech'): Promise<typeof import('../src/main/services/tts')> {
+    mocks.settings.ttsEngine = engine
     const tts = await import('../src/main/services/tts')
-    const starting = tts.ensureEngine(engine)
+    const starting = tts.ensureEngine()
     await vi.waitFor(() => expect(children).toHaveLength(1))
     children[0].emit('spawn')
     await starting
@@ -160,8 +169,32 @@ describe('an engine this app started', () => {
 
   it('keeps running while it is the engine the settings choose', async () => {
     const tts = await started('voicevox')
-    await tts.ensureEngine('voicevox')
+    await tts.ensureEngine()
     expect(children[0].kill).not.toHaveBeenCalled()
+  })
+
+  it('is started anew when chosen again while it still exits, rather than taken for running until it is gone', async () => {
+    const tts = await started('voicevox')
+    // The process started for VOICEVOX answers, and keeps answering for the moment it takes to exit.
+    fetchMock.mockImplementation(async (input) => new Response('"0.25.2"', { status: String(input).startsWith('http://voicevox.test') ? 200 : 503 }))
+    mocks.settings.ttsEngine = 'aivisspeech'
+    const aivis = tts.ensureEngine()
+    await vi.waitFor(() => expect(children).toHaveLength(2))
+    children[1].emit('spawn')
+    await aivis
+    expect(children[0].kill).toHaveBeenCalled()
+
+    mocks.settings.ttsEngine = 'voicevox'
+    const again = tts.ensureEngine()
+    await expect(tts.available('voicevox')).resolves.toBe(false)
+    fetchMock.mockResolvedValue(new Response('', { status: 503 }))
+    children[0].emit('exit', null, 'SIGTERM')
+    await vi.waitFor(() => expect(children).toHaveLength(3))
+    expect(mocks.spawn.mock.calls[2][0]).toContain('voicevox_engine')
+    children[2].emit('spawn')
+    await again
+    expect(children[1].kill).toHaveBeenCalled()
+    expect(children[2].kill).not.toHaveBeenCalled()
   })
 })
 
@@ -190,13 +223,14 @@ describe('where an engine is started from', () => {
   })
 
   async function startWith(engine: 'voicevox' | 'aivisspeech', installed: readonly string[]): Promise<string[]> {
+    mocks.settings.ttsEngine = engine
     const tts = await import('../src/main/services/tts')
     const looked: string[] = []
     vi.mocked(fs.existsSync).mockImplementation((file) => {
       looked.push(String(file))
       return installed.includes(String(file))
     })
-    const started = tts.ensureEngine(engine)
+    const started = tts.ensureEngine()
     if (installed.length > 0) {
       await vi.waitFor(() => expect(children).toHaveLength(1))
       children[0].emit('spawn')
