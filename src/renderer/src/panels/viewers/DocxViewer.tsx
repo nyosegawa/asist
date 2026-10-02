@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FileItem } from '@shared/files'
-import { ERROR_MARKER } from '@shared/i18n/error-key'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { cleanDocxHtml, PICTURE_CLASS } from './docx-html'
 import { Frame } from './Frame'
 import { openPreviewDocument, type PreviewHandle } from './preview-client'
@@ -8,7 +8,7 @@ import { TooLargeViewer } from './StubViewer'
 import type { Viewer, ViewerProps } from './types'
 import { useNearWatch, type NearReport } from './use-near'
 import './DocxViewer.css'
-import { displayError, errorMessageOf } from '@/display-error'
+import { displayError } from '@/display-error'
 import { translate, useT } from '@/i18n'
 import { openLink } from '@/open-link'
 import type openDocx from '@/preview/methods/docx'
@@ -35,11 +35,8 @@ type Shown =
 
 const nextFrame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()))
 
-/** The dictionary key an error was thrown with, as the preview page and its client throw them. */
-const keyOf = (error: unknown): string | undefined => new RegExp(ERROR_MARKER).exec(errorMessageOf(error))?.[1]
-
 /** The preview page stopped before it answered, as when another file took its process down; a new one answers. */
-const stopped = (error: unknown): boolean => keyOf(error) === 'files.errors.previewStopped'
+const stopped = (error: unknown): boolean => errorKeyOf(error) === 'files.errors.previewStopped'
 
 /** Asks again once when the preview page stopped before it answered, since the request starts a new one. */
 async function askAgainIfStopped<T>(ask: () => Promise<T>): Promise<T> {
@@ -161,7 +158,7 @@ function documentPictures(docx: OpenedDocx, watchNear: WatchNear, column: HTMLEl
         void draw(canvas, picture)
         return
       }
-      if (stopped(error) || keyOf(error) === 'files.errors.changedWhileReading') return
+      if (stopped(error) || errorKeyOf(error) === 'files.errors.changedWhileReading') return
       forget(canvas)
       const failed = document.createElement('span')
       failed.className = PICTURE_CLASS
@@ -229,6 +226,8 @@ function DocxDocument({ item, mode, onTooLarge }: { item: FileItem; mode: Viewer
   const watchNear = useNearWatch()
   const docRef = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState<Shown>({ status: 'loading' })
+  /** How many times the file was found saved again while it was shown, each of which draws it anew from its head. */
+  const [saves, setSaves] = useState(0)
   // A link followed in the focus view before the rest of the document is mounted is followed once it is.
   const waitingLink = useRef<string | null>(null)
   const tooLarge = useRef(onTooLarge)
@@ -245,10 +244,14 @@ function DocxDocument({ item, mode, onTooLarge }: { item: FileItem; mode: Viewer
     const docx = openPreviewDocument<typeof openDocx>('docx', { url, sizeBytes, modifiedAt })
     const pictures = documentPictures(docx, watchNear, column)
     let ended = false
-    // Draws the document from its head, in place of anything drawn before.
+    // Nothing read from the old version may stay beside the new one, the paths of its pictures included, so a file
+    // saved again is drawn by a run of its own, from its head, after this one has let everything go.
+    const stopListening = docx.onChanged(() => {
+      if (ended) return
+      ended = true
+      setSaves((count) => count + 1)
+    })
     const show = async (): Promise<void> => {
-      pictures.dispose()
-      column.replaceChildren()
       const head = await askAgainIfStopped(() => docx.call('head', undefined))
       if (ended) return
       const headPiece = pieceOf(head.html)
@@ -276,16 +279,17 @@ function DocxDocument({ item, mode, onTooLarge }: { item: FileItem; mode: Viewer
     }
     show().catch((error: unknown) => {
       if (ended) return
-      if (keyOf(error) === 'files.viewer.tooLarge') tooLarge.current()
+      if (errorKeyOf(error) === 'files.viewer.tooLarge') tooLarge.current()
       else setShown({ status: 'error', message: displayError(error) })
     })
     return () => {
       ended = true
+      stopListening()
       pictures.dispose()
       column.replaceChildren()
       docx.release()
     }
-  }, [url, sizeBytes, modifiedAt, mode, watchNear])
+  }, [url, sizeBytes, modifiedAt, mode, watchNear, saves])
 
   const follow = (container: HTMLElement, href: string): void => {
     if (!href.startsWith('#')) return openLink(href)

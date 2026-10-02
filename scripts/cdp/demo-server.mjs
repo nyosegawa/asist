@@ -99,11 +99,12 @@ export function serveFolder(folder, parseRange) {
         return
       }
       const file = path.join(folder, name)
-      const { size } = await stat(file)
+      const { size, mtimeMs } = await stat(file)
       const headers = {
         'Content-Type': TYPES[path.extname(name).toLowerCase()] ?? 'application/octet-stream',
         'Accept-Ranges': 'bytes',
-        'Cache-Control': 'no-store'
+        'Cache-Control': 'no-store',
+        ETag: `"${size}-${mtimeMs}"`
       }
       const range = parseRange(req.headers.range ?? null, size)
       const { start, end } = range ?? { start: 0, end: size - 1 }

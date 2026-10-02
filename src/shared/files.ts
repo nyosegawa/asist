@@ -132,7 +132,6 @@ const MB = 1024 * 1024
  * shows it within a few seconds. audio is set higher, for the files it most often is.
  * - xlsx, 8 MB: sales records took 1.2 s for 9.3 MB and 4.9 s for 37 MB, and a grid of small numbers 1.1 s for 5.8 MB
  *   and 2.0 s for 11.6 MB, all of it holding the page's thread.
- * - pptx, 32 MB: a photo on every slide took 0.9 s for 36 MB and 1.8 s for 69 MB, holding the thread at most 0.1 s.
  * - pdf, 256 MB: scanned pages took 0.7 s for 281 MB and grew the page by 0.6 GB, and 1.7 s for 1.1 GB by 2.3 GB.
  *   Little of it holds the thread, so the memory sets the limit.
  * - audio, 8 MB: an ordinary song keeps its waveform. 9.2 MB of 128 kbps stereo (10 minutes) grew the page by 0.68 GB
@@ -141,7 +140,6 @@ const MB = 1024 * 1024
  */
 export const WHOLE_READ_LIMIT: Partial<Record<FileKind, number>> = {
   xlsx: 8 * MB,
-  pptx: 32 * MB,
   pdf: 256 * MB,
   audio: 8 * MB,
   notebook: MAX_TEXT_BYTES

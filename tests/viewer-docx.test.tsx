@@ -66,8 +66,15 @@ let refuseNext = false
 /** A URL of its own for each file, so that no test meets a document another test opened. */
 let fileNumber = 0
 
-/** Serves a file at every URL as asist-file answers a Range request: a suffix range, a range, or the whole file. */
+/** How many times a file was served, which stands for its time of change in the ETag. */
+let saved = 0
+
+/**
+ * Serves a file at every URL as asist-file answers a Range request: a suffix range, a range, or the whole file,
+ * with an ETag of its length and its time of change. Each call stands for the file saved again.
+ */
 function serve(file: Uint8Array): void {
+  const etag = `"${file.length}-${++saved}"`
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     const header = new Headers(init?.headers).get('range') ?? ''
     ranges.push(header)
@@ -85,7 +92,7 @@ function serve(file: Uint8Array): void {
     }
     const body = file.slice(start, end + 1)
     sent += body.length
-    return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
+    return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}`, ETag: etag } })
   })
 }
 
@@ -168,7 +175,7 @@ const drawing = (rel: string, name: string): string =>
   `<pic:blipFill><a:blip r:embed="${rel}"/></pic:blipFill><pic:spPr/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
 
 /** A docx of the body's blocks, with the photos it names stored as Word stores them, in its media folder. */
-async function docxOf(blocks: string[], { photos = [] as string[], rels = '', parts = {} as Record<string, string> } = {}): Promise<Uint8Array> {
+async function docxOf(blocks: string[], { photos = [] as string[], rels = '', parts = {} as Record<string, string>, store = false } = {}): Promise<Uint8Array> {
   const zip = new JSZip()
   zip.file('[Content_Types].xml', CONTENT_TYPES)
   zip.file('_rels/.rels', PACKAGE_RELS)
@@ -177,7 +184,7 @@ async function docxOf(blocks: string[], { photos = [] as string[], rels = '', pa
   zip.file('word/_rels/document.xml.rels', `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${pictureRels.join('')}${rels}</Relationships>`)
   for (const [name, content] of Object.entries(parts)) zip.file(name, content, { compression: 'STORE' })
   for (const photo of photos) zip.file(`word/media/${photo}`, randomBytes(PICTURE), { compression: 'STORE' })
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
+  return zip.generateAsync({ type: 'uint8array', compression: store ? 'STORE' : 'DEFLATE' })
 }
 
 /** Puts an element at a place, from top to bottom, as the layout would. */
@@ -318,14 +325,14 @@ describe('Word viewer rendering', () => {
     expect(decoded).toHaveLength(1)
   })
 
-  it('shows a picture it cannot decode as unreadable, asks again for one the preview page stopped on, and asks again for one read while the file was being saved, once it comes near again', async () => {
-    const file = await docxOf([drawing('rIdP0', '図1'), drawing('rIdP1', '図2'), drawing('rIdP2', '図3')], { photos: ['image1.jpeg', 'image2.jpeg', 'image3.jpeg'] })
+  it('shows a picture it cannot decode as unreadable, and asks again for one the preview page stopped on', async () => {
+    const file = await docxOf([drawing('rIdP0', '図1'), drawing('rIdP1', '図2')], { photos: ['image1.jpeg', 'image2.jpeg'] })
     serve(file)
     const frame = await render(docxItem(nextUrl(), file.length), 'card')
     place(frame.querySelector('.fv-scroll')!, 0, 420)
     Object.defineProperty(frame.querySelector('.fv-doc')!, 'clientWidth', { value: 400 })
-    const [damaged, stopped, saved] = frame.querySelectorAll('canvas')
-    for (const canvas of [stopped, saved]) place(canvas, 5000, 150)
+    const [damaged, stopped] = frame.querySelectorAll('canvas')
+    place(stopped, 5000, 150)
 
     decodeFailures.push(new Error('The source image could not be decoded.'))
     await moveTo(damaged, 100)
@@ -337,20 +344,42 @@ describe('Word viewer rendering', () => {
     await moveTo(stopped, 100)
     await settle(() => stopped.getAttribute('data-state') === 'drawn', 'the picture asked for again')
     expect(decoded).toHaveLength(3)
+  })
 
-    // While the file is one byte longer, the picture cannot be read; it stays a picture to read, not an unreadable one.
-    const longer = new Uint8Array(file.length + 1)
-    longer.set(file)
-    serve(longer)
-    await moveTo(saved, 100)
-    await act(async () => new Promise((r) => setTimeout(r, 100)))
-    expect(saved.isConnected).toBe(true)
-    expect(saved.getAttribute('data-state')).toBeNull()
-    expect(frame.querySelectorAll('span.fv-doc-picture')).toHaveLength(1)
-    serve(file)
-    await moveTo(saved, 3000)
-    await moveTo(saved, 100)
-    await settle(() => saved.getAttribute('data-state') === 'drawn', 'the picture read again')
+  it('draws a file saved again while it is shown in its new version from its head, saved at another length or at the same length', async () => {
+    const version = (word: string): Promise<Uint8Array> => docxOf([paragraph(`${word}の本文`), drawing('rIdP0', '図1')], { photos: ['image1.jpeg'], store: true })
+    const first = await version('初版')
+    serve(first)
+    const item = docxItem(nextUrl(), first.length)
+    const frame = await render(item, 'card')
+    place(frame.querySelector('.fv-scroll')!, 0, 420)
+    expect(frame.querySelector('.fv-doc p')!.textContent).toBe('初版の本文')
+
+    /** Saves the file again, and lets the picture come near so that the viewer reads the file. */
+    const saveAndRead = async (file: Uint8Array): Promise<void> => {
+      serve(file)
+      const canvas = frame.querySelector('canvas')!
+      place(canvas, 3000, 150)
+      await act(async () => LayoutIntersectionObserver.update())
+      await moveTo(canvas, 100)
+    }
+    const longer = await version('第二版')
+    expect(longer.length).not.toBe(first.length)
+    await saveAndRead(longer)
+    await settle(() => frame.querySelector('.fv-doc p')?.textContent === '第二版の本文', 'the second version from its head')
+    // The second version is drawn alone: its paragraph and its picture's, and nothing of the first.
+    expect(frame.querySelectorAll('.fv-doc p')).toHaveLength(2)
+    expect(frame.querySelectorAll('.fv-doc canvas')).toHaveLength(1)
+
+    const sameLength = await version('第三版')
+    expect(sameLength.length).toBe(longer.length)
+    await saveAndRead(sameLength)
+    await settle(() => frame.querySelector('.fv-doc p')?.textContent === '第三版の本文', 'the third version, saved at the same length')
+    const canvas = frame.querySelector('canvas')!
+    await moveTo(canvas, 3000)
+    await moveTo(canvas, 100)
+    await settle(() => canvas.getAttribute('data-state') === 'drawn', 'the third version\'s picture')
+    expect(frame.querySelector('span.fv-doc-picture')).toBeNull()
   })
 
   it('reads the document again for the focus view after the card failed to read it, rather than keeping the failure', async () => {
@@ -453,6 +482,17 @@ describe('Word viewer rendering', () => {
       return range ? [{ start: Number(range[1]), end: Number(range[2]) + 1 }] : []
     })
     expect(asked.filter((range) => unread.some((entry) => range.start < entry.end && entry.start < range.end))).toEqual([])
+  })
+
+  it('reports the version of the file it opened, which a file saved again at the same length changes', async () => {
+    const { default: openDocx } = await import('@/preview/methods/docx')
+    const file = await docxOf([paragraph('版を確かめる段落')], { store: true })
+    serve(file)
+    const before = (await openDocx(nextUrl())).version
+    serve(file)
+    const after = (await openDocx(nextUrl())).version
+    expect(before).toBeDefined()
+    expect(after).not.toBe(before)
   })
 
   /** A docx with a table of contents entry, a link to a removed bookmark and a mail link. */

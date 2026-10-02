@@ -325,6 +325,7 @@ export default async function openDocx(url: string) {
   })
   const whole = once(async () => piecesOf(await convert((await parts()).contents), (await head()).html.length))
   return {
+    version: zip.version,
     methods: {
       head: () => head(),
       /** The whole document as pieces of HTML, in order. */
