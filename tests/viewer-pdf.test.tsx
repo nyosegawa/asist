@@ -29,7 +29,20 @@ const preview = vi.hoisted(() => ({ open: vi.fn() }))
 vi.mock('@/panels/viewers/preview-client', () => ({ openPreviewDocument: (...args: unknown[]) => preview.open(...args) }))
 
 /** A document in the preview page, which counts what the viewer asks of it. */
-function fakePdf({ pageCount, title, sizes = {}, failing = {} }: { pageCount: number; title?: string; sizes?: Record<number, PageSize>; failing?: Record<number, string> }) {
+function fakePdf({
+  pageCount,
+  title,
+  sizes = {},
+  failing = {},
+  leftOut = []
+}: {
+  pageCount: number
+  title?: string
+  sizes?: Record<number, PageSize>
+  failing?: Record<number, string>
+  /** The pages drawn without a picture too large for pdf.js to decode. */
+  leftOut?: number[]
+}) {
   const drawings = new Map<number, number>()
   const drawn: Array<{ number: number; scale: number }> = []
   let released = false
@@ -53,7 +66,8 @@ function fakePdf({ pageCount, title, sizes = {}, failing = {} }: { pageCount: nu
         drawings.set(id, number)
         drawn.push({ number, scale })
         const size = sizes[number] ?? A4
-        return { width: Math.round(size.width * scale), height: Math.round(size.height * scale), close: vi.fn() }
+        const bitmap = { width: Math.round(size.width * scale), height: Math.round(size.height * scale), close: vi.fn() }
+        return { bitmap, pictureLeftOut: leftOut.includes(number) }
       }
       if (method === 'release') {
         drawings.delete(args)
@@ -217,15 +231,24 @@ describe('the PDF card', () => {
     expect(container.querySelector('canvas')).toBeNull()
   })
 
-  it('lets go of the document when the viewer goes, without asking anything of a document it has given up', async () => {
+  it('releases its drawings in the preview page before it lets go of the document, and asks nothing of the document after', async () => {
     const pdf = fakePdf({ pageCount: 3 })
     preview.open.mockReturnValue(pdf)
     await act(async () => root.render(<PdfViewer item={item} mode="card" size="l" />))
     await settle()
+    expect(pdf.held()).toEqual([1])
     await act(async () => root.render(<div />))
     await settle()
+    expect(pdf.held()).toEqual([])
     expect(pdf.release).toHaveBeenCalledTimes(1)
     expect(pdf.afterRelease).toBe(0)
+  })
+
+  it('says under a page that a picture too large to show was left out of it', async () => {
+    preview.open.mockReturnValue(fakePdf({ pageCount: 3, leftOut: [1] }))
+    await act(async () => root.render(<PdfViewer item={item} mode="card" size="l" />))
+    await settle()
+    expect(container.querySelector('.fv-pdf-page[data-page="1"]')?.textContent).toContain(t('files.viewer.pdfPictureLeftOut'))
   })
 })
 

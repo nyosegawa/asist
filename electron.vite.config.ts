@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import { loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -6,20 +6,34 @@ import tailwindcss from '@tailwindcss/vite'
 import { previewFiles } from './scripts/preview-files'
 import { PREVIEW_FILES, PREVIEW_PAGE } from './src/shared/preview-page'
 
+/** pdfjs-dist's JavaScript decoders of pictures, which take the place of its WebAssembly. */
+const PDFJS_DECODER = /^\w+_nowasm_fallback\.js$/
+
 /**
  * Adds bundled-packages-<name>.json to the output of a bundle: the folders of the npm packages whose code
- * it took in, from which scripts/third-party-notices.mjs collects their licenses. The renderer and its
- * workers take in development dependencies such as Transformers.js, which package.json alone would not
- * show. Each worker is a bundle of its own, so the name comes from the bundle's entries.
+ * it took in, and the folders inside packages it copied files from as they are, such as pdf.js's decoders,
+ * from which scripts/third-party-notices.mjs collects their licenses. The renderer and its workers take in
+ * development dependencies such as Transformers.js, which package.json alone would not show. Each worker is a
+ * bundle of its own, so the name comes from the bundle's entries.
  */
 function bundledPackages(): Plugin {
+  let root!: string
   return {
     name: 'bundled-packages',
+    configResolved(config) {
+      root = config.root
+    },
     generateBundle(_options, bundle) {
       const dirs = new Set<string>()
       const entries: string[] = []
       for (const output of Object.values(bundle)) {
-        if (output.type !== 'chunk') continue
+        if (output.type === 'asset') {
+          for (const original of output.originalFileNames) {
+            const file = resolve(root, original)
+            if (/[\\/]node_modules[\\/]/.test(file)) dirs.add(dirname(file))
+          }
+          continue
+        }
         if (output.isEntry) entries.push(output.name)
         for (const id of Object.keys(output.modules)) {
           // The last node_modules in the path is the package itself when one package nests another.
@@ -75,7 +89,12 @@ export default defineConfig(({ mode }) => ({
     },
     build: {
       rollupOptions: {
-        input: { index: resolve('src/renderer/index.html'), preview: resolve('src/renderer/preview.html') }
+        input: { index: resolve('src/renderer/index.html'), preview: resolve('src/renderer/preview.html') },
+        output: {
+          // pdf.js imports its decoders of JBIG2, CCITT fax and JPEG 2000 pictures by their own names from one folder
+          // (src/renderer/src/preview/methods/pdf.ts), so they keep their names.
+          assetFileNames: ({ names }) => (names.some((name) => PDFJS_DECODER.test(name)) ? 'assets/pdfjs/[name][extname]' : 'assets/[name]-[hash][extname]')
+        }
       }
     }
   }

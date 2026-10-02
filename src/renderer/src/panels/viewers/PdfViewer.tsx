@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type openPdf from '@/preview/methods/pdf'
-import type { PageSize, PdfSummary } from '@/preview/methods/pdf'
+import type { DrawnPage, PageSize, PdfSummary } from '@/preview/methods/pdf'
 import { Frame, FRAME_MAX_HEIGHT } from './Frame'
 import { openPreviewDocument, type PreviewFile } from './preview-client'
 import type { Viewer, ViewerProps } from './types'
@@ -63,7 +63,7 @@ let nextDrawing = 0
 
 /** A page being drawn into a bitmap: null when it was released before it was done. */
 interface PageDrawing {
-  bitmap: Promise<ImageBitmap | null>
+  drawn: Promise<DrawnPage | null>
   release(): void
 }
 
@@ -76,27 +76,28 @@ interface PdfPages {
 }
 
 /**
- * Opens the file in the preview page. Closing the document ends its drawings there, so a drawing released after
- * the close, as a page's canvas does when the whole viewer goes, asks nothing of the page.
+ * Opens the file in the preview page. Closing releases there every drawing still held before it lets go of the
+ * document: the card of the same file can keep the document open after the focus view closes, and React runs the
+ * viewer's own cleanup before its pages', whose releases then ask nothing of the document.
  */
 function openPdfPages(file: PreviewFile): PdfPages {
   const doc = openPreviewDocument<typeof openPdf>('pdf', file)
-  let open = true
+  const held = new Set<number>()
+  const release = (id: number): void => {
+    if (!held.delete(id)) return
+    // A frame that died took the drawing with it, which leaves nothing to release.
+    doc.call('release', id).catch(() => undefined)
+  }
   return {
     summary: () => doc.call('summary', undefined),
     size: (number) => doc.call('size', number),
     draw(number, scale) {
       const id = nextDrawing++
-      return {
-        bitmap: doc.call('draw', { id, number, scale }),
-        release() {
-          // A frame that died took the drawing with it, which leaves nothing to release.
-          if (open) doc.call('release', id).catch(() => undefined)
-        }
-      }
+      held.add(id)
+      return { drawn: doc.call('draw', { id, number, scale }), release: () => release(id) }
     },
     close() {
-      open = false
+      for (const id of [...held]) release(id)
       doc.release()
     }
   }
@@ -175,11 +176,19 @@ function PageFailed({ number, message }: { number: number; message: string }): R
   )
 }
 
+/** The note under a page that pdf.js drew without a picture larger than it decodes. */
+function PictureLeftOut(): React.JSX.Element {
+  const t = useT()
+  return <p className="fv-note">{t('files.viewer.pdfPictureLeftOut')}</p>
+}
+
 function CardPage({ pages, box }: { pages: PdfPages; box: PageBox }): React.JSX.Element {
   const [failed, setFailed] = useState<string | null>(null)
+  const [leftOut, setLeftOut] = useState(false)
   return (
     <div className="fv-pdf-page" data-page={1}>
-      {failed ? <PageFailed number={1} message={failed} /> : <PageCanvas pages={pages} number={1} box={box} onFailed={setFailed} />}
+      {failed ? <PageFailed number={1} message={failed} /> : <PageCanvas pages={pages} number={1} box={box} onFailed={setFailed} onLeftOut={setLeftOut} />}
+      {leftOut && <PictureLeftOut />}
     </div>
   )
 }
@@ -189,6 +198,7 @@ function FocusPage({ pages, number, pageCount, firstPage, width }: { pages: PdfP
   const near = useNear(ref)
   const [size, setSize] = useState<PageSize | null>(number === 1 ? firstPage : null)
   const [failed, setFailed] = useState<string | null>(null)
+  const [leftOut, setLeftOut] = useState(false)
 
   useEffect(() => {
     if (!near || size) return
@@ -209,11 +219,12 @@ function FocusPage({ pages, number, pageCount, firstPage, width }: { pages: PdfP
   const box = fitToWidth(size ?? firstPage, width)
   let content: React.JSX.Element
   if (failed) content = <PageFailed number={number} message={failed} />
-  else if (near && size) content = <PageCanvas pages={pages} number={number} box={box} onFailed={setFailed} />
+  else if (near && size) content = <PageCanvas pages={pages} number={number} box={box} onFailed={setFailed} onLeftOut={setLeftOut} />
   else content = <div className="fv-pdf-blank" style={{ width: `${box.width}px`, height: `${box.height}px` }} />
   return (
     <div className="fv-pdf-page" ref={ref} data-page={number}>
       {content}
+      {leftOut && <PictureLeftOut />}
       <span className="fv-pdf-num">
         {number} / {pageCount}
       </span>
@@ -225,7 +236,19 @@ function FocusPage({ pages, number, pageCount, firstPage, width }: { pages: PdfP
  * A page's canvas, blank until its bitmap arrives. The bitmap moves into the canvas without a copy, and the canvas
  * gives it up when it goes or is drawn again at another size, rather than when it is collected.
  */
-function PageCanvas({ pages, number, box, onFailed }: { pages: PdfPages; number: number; box: PageBox; onFailed: (message: string) => void }): React.JSX.Element {
+function PageCanvas({
+  pages,
+  number,
+  box,
+  onFailed,
+  onLeftOut
+}: {
+  pages: PdfPages
+  number: number
+  box: PageBox
+  onFailed: (message: string) => void
+  onLeftOut: (leftOut: boolean) => void
+}): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement>(null)
   const scale = box.scale * (window.devicePixelRatio || 1)
 
@@ -233,15 +256,17 @@ function PageCanvas({ pages, number, box, onFailed }: { pages: PdfPages; number:
     const canvas = ref.current!
     const drawing = pages.draw(number, scale)
     let current = true
-    drawing.bitmap.then(
-      (bitmap) => {
-        if (!current || !bitmap) {
-          bitmap?.close()
+    drawing.drawn.then(
+      (drawn) => {
+        if (!current || !drawn) {
+          drawn?.bitmap.close()
           return
         }
+        const { bitmap } = drawn
         canvas.width = bitmap.width
         canvas.height = bitmap.height
         canvas.getContext('bitmaprenderer')!.transferFromImageBitmap(bitmap)
+        onLeftOut(drawn.pictureLeftOut)
       },
       (error: unknown) => {
         if (current) onFailed(displayError(error))
@@ -252,7 +277,7 @@ function PageCanvas({ pages, number, box, onFailed }: { pages: PdfPages; number:
       drawing.release()
       canvas.getContext('bitmaprenderer')?.transferFromImageBitmap(null)
     }
-  }, [pages, number, scale, onFailed])
+  }, [pages, number, scale, onFailed, onLeftOut])
 
   return <canvas ref={ref} style={{ width: `${box.width}px`, height: `${box.height}px` }} />
 }

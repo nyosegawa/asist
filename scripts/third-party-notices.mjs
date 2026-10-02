@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url'
 /*
  * Writes build/THIRD_PARTY_NOTICES.txt, which electron-builder puts into the app's resources folder next to
  * LICENSE.txt: ASIST's own license, the programs bundled beside the app, and the license of every npm
- * package that reaches the app. Those packages are the ones electron-vite put into a bundle
- * (the bundled-packages-*.json files the plugin in electron.vite.config.ts adds to out/) and the
+ * package that reaches the app. Those packages are the ones electron-vite put into a bundle or copied files
+ * from (the bundled-packages-*.json files the plugin in electron.vite.config.ts adds to out/) and the
  * production dependencies that stay in node_modules inside app.asar. It runs after every `npm run build`.
  */
 
-const LICENSE_FILE = /^(licen[cs]e|copying|notice)([.-].*)?$/i
+const LICENSE_FILE = /^(licen[cs]e|copying|notice)([._-].*)?$/i
 
 /** The license a package.json declares, in the forms npm has accepted over the years, or null. */
 export function declaredLicense(manifest) {
@@ -22,7 +22,7 @@ export function declaredLicense(manifest) {
   return null
 }
 
-/** The license and notice files at the top of a package's folder, sorted by name. */
+/** The license and notice files at the top of a folder, sorted by name. */
 export function licenseFiles(dir) {
   return fs
     .readdirSync(dir, { withFileTypes: true })
@@ -39,26 +39,44 @@ export function productionPackageDirs(lock, root) {
     .filter((dir) => fs.existsSync(path.join(dir, 'package.json')))
 }
 
+/** The package a folder lies in: the nearest folder above it, itself included, whose package.json names one. */
+function packageFolderOf(dir) {
+  for (let folder = dir; ; folder = path.dirname(folder)) {
+    const manifest = path.join(folder, 'package.json')
+    if (fs.existsSync(manifest) && JSON.parse(fs.readFileSync(manifest, 'utf8')).name) return folder
+    if (path.dirname(folder) === folder) throw new Error(`${dir} lies in no npm package`)
+  }
+}
+
 /**
- * One section for each package, name@version once however many copies are installed. A package that
- * declares no license stops the build, since nothing could be shipped for it.
+ * One section for each package, name@version once however many copies are installed. A folder inside a
+ * package, which the build copied files from, adds its own license files to the package's section, such as
+ * the licenses of the decoders pdf.js ships in a folder of its own. A package that declares no license
+ * stops the build, since nothing could be shipped for it.
  */
 export function packageSections(dirs) {
   const seen = new Map()
   const undeclared = []
   for (const dir of dirs) {
-    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))
     // Some packages carry a package.json in a subfolder only to mark its module type; it names nothing.
-    if (!manifest.name) continue
+    if (fs.existsSync(path.join(dir, 'package.json')) && !JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name) continue
+    const packageDir = packageFolderOf(dir)
+    const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8'))
     const id = `${manifest.name}@${manifest.version}`
-    if (seen.has(id)) continue
     const license = declaredLicense(manifest)
     if (!license) {
       undeclared.push(id)
       continue
     }
-    const files = licenseFiles(dir).map((name) => fs.readFileSync(path.join(dir, name), 'utf8').trim())
-    seen.set(id, { id, license, files })
+    const section = seen.get(id) ?? { id, license, files: [] }
+    seen.set(id, section)
+    const folders = packageDir === dir ? [dir] : [packageDir, dir]
+    for (const folder of folders) {
+      for (const name of licenseFiles(folder)) {
+        const text = fs.readFileSync(path.join(folder, name), 'utf8').trim()
+        if (!section.files.includes(text)) section.files.push(text)
+      }
+    }
   }
   if (undeclared.length > 0) throw new Error(`These packages declare no license: ${undeclared.join(', ')}`)
   return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id))

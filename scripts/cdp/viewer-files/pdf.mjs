@@ -1,19 +1,26 @@
 import { closeSync, openSync, writeSync } from 'node:fs'
+import { PAGE_MARK } from './pdf-writer.mjs'
 import { PHOTO } from './photos.mjs'
 import { escapeXml, heading, paragraph, random, sentence, title } from './text.mjs'
 
 /**
  * A PDF as Chrome's "Save as PDF" writes one: Skia's page tree, balanced with eight pages under each node, the
  * Japanese fonts embedded as subsets, and each photo's JPEG embedded as it is (DCTDecode). Every page is one A4
- * sheet of a report: a heading, prose, a table now and then, and a photo on every `photoEvery`-th page. The photos
- * are loaded but never decoded, since Skia embeds a JPEG as it is: decoded, the 500 photos of 1,000 pages with a
- * photo on every other one (237 MB, printed in 41 s on an M5 on 2026-10-02) would hold 3.8 GB of pixels.
+ * sheet of a report: its number as a mark (PAGE_MARK) at the top of the margin's box, a heading, prose, a table now
+ * and then, and a photo on every `photoEvery`-th page. The photos are loaded but never decoded, since Skia embeds a
+ * JPEG as it is: decoded, the 500 photos of 1,000 pages with a photo on every other one (237 MB, printed in 41 s on
+ * an M5 on 2026-10-02) would hold 3.8 GB of pixels.
  */
 
+const MARGIN_MM = PAGE_MARK.top
+
 const STYLE = `
-@page { size: A4; margin: 18mm }
+@page { size: A4; margin: ${MARGIN_MM}mm }
 body { margin: 0; font: 10.5pt/1.75 "Hiragino Mincho ProN", "Yu Mincho", serif; color: #222 }
-section { height: 258mm; overflow: hidden }
+section { position: relative; box-sizing: border-box; height: 258mm; padding-top: ${PAGE_MARK.square + 2}mm; overflow: hidden }
+.mark { position: absolute; top: 0; left: ${PAGE_MARK.left - MARGIN_MM}mm; display: flex }
+.mark i { display: block; width: ${PAGE_MARK.square}mm; height: ${PAGE_MARK.square}mm }
+.mark i.on { background: #000 }
 section + section { break-before: page }
 h1, h2, figcaption, th { font-family: "Hiragino Sans", "Yu Gothic", sans-serif }
 h1 { font-size: 20pt; margin: 0 0 4mm }
@@ -30,7 +37,8 @@ th, td { border: 0.5pt solid #888; padding: 1mm 2mm; text-align: right }
 const BATCH = 50
 
 function pageHtml(next, number, { photoEvery }) {
-  const parts = []
+  const squares = Array.from({ length: PAGE_MARK.squares }, (_, i) => (i === 0 || (number >> (PAGE_MARK.squares - 1 - i)) & 1 ? '<i class="on"></i>' : '<i></i>'))
+  const parts = [`<div class="mark">${squares.join('')}</div>`]
   if (number % 10 === 1) parts.push(`<h1>${escapeXml(heading(next, Math.ceil(number / 10)))}</h1>`)
   parts.push(`<h2>${number}. ${escapeXml(title(next))}</h2>`)
   const withPhoto = number % photoEvery === 1 || photoEvery === 1

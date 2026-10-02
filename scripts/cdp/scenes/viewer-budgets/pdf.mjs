@@ -1,19 +1,21 @@
 /**
- * The PDF viewer's cases. In six runs of each on an M5 under a load average of 15 to 50 on 2026-10-02, the card
- * showed page 1 in 0.4 to 2.5 s, most of it the preview frame starting and loading pdf.js and its worker as the
- * demo's development server serves them, and the focus view showed its first screen in 0.1 to 0.3 s and every
- * later screen within 0.18 s. The renderers grew by 0.43 to 0.6 GB at the peak, the preview frame's process holding
- * 0.2 to 0.3 GB of it with a document open, and the GPU process by 0.09 to 0.15 GB. The main thread was held for
- * 0.03 to 0.14 s, and up to 0.42 s in the runs under the heaviest load. In three runs on the macOS runner of GitHub
- * Actions on 2026-10-02 and 03, the renderers grew by 0.52 to 0.7 GB at the peak and still held 0.34 to 0.41 GB at
- * the end, with the card's document open, and the GPU process grew by 0.12 to 0.19 GB.
+ * The PDF viewer's cases: two reports Chrome printed, whose page trees are balanced, and a PDF of 1,000 pages written
+ * with one node holding every page, as LibreOffice writes it (viewer-files/pdf-writer.mjs).
  *
- * Every page in view has to be drawn. The viewer gives a canvas only to the pages within a screen of the view, and
- * the rest are blank boxes of their size, so a screen can show a drawn page beside one still blank, which the
- * default check takes for shown because it finds a drawn canvas somewhere in view. A page is drawn once its canvas
- * holds pdf.js's bitmap, which is opaque paper; a canvas still waiting for it is transparent.
+ * Every page in view has to be drawn, and drawn right. The viewer gives a canvas only to the pages within a screen of
+ * the view, and the rest are blank boxes of their size, so a screen can show a drawn page beside one still blank,
+ * which the default check takes for shown because it finds a drawn canvas somewhere in view. Every generated page
+ * carries its number as a mark (PAGE_MARK of viewer-files/pdf-writer.mjs, repeated in the check, which runs in the
+ * page with nothing from outside its body), so the check reads the number back from each canvas in view, and takes
+ * the canvas for drawn when the number is its page's and the canvas holds devicePixelRatio times the pixels of its
+ * size on the screen.
  */
 function everyPageInViewDrawn(root) {
+  const SQUARES = 12
+  const SQUARE_MM = 5
+  const LEFT_MM = 132
+  const TOP_MM = 18
+  const A4_MM = [210, 297]
   const frame = root.querySelector('.fv-frame')
   if (!frame || window.__budgetRefusal(root)) return false
   const clips = [root, frame.querySelector('.fv-scroll') ?? frame].map((el) => el.getBoundingClientRect())
@@ -24,14 +26,22 @@ function everyPageInViewDrawn(root) {
     return Math.min(box.bottom, bottom) - Math.max(box.top, top) >= 1
   })
   if (pages.length === 0) return false
-  const sample = (window.__pdfBudgetSample ??= new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true }))
-  sample.imageSmoothingQuality = 'high'
+  const sample = (window.__pdfMarkSample ??= new OffscreenCanvas(SQUARES, 1).getContext('2d', { willReadFrequently: true }))
   return pages.every((page) => {
     const canvas = page.querySelector('canvas')
-    if (!canvas) return false
-    sample.clearRect(0, 0, 1, 1)
-    sample.drawImage(canvas, 0, 0, 1, 1)
-    return sample.getImageData(0, 0, 1, 1).data[3] === 255
+    if (!canvas || Math.abs(canvas.width - parseFloat(canvas.style.width) * devicePixelRatio) > 2) return false
+    sample.clearRect(0, 0, SQUARES, 1)
+    // The middle of each square, a quarter of the square in from each side.
+    const width = ((SQUARE_MM / 2) * canvas.width) / A4_MM[0]
+    const height = ((SQUARE_MM / 2) * canvas.height) / A4_MM[1]
+    const y = ((TOP_MM + SQUARE_MM / 4) * canvas.height) / A4_MM[1]
+    for (let i = 0; i < SQUARES; i++) sample.drawImage(canvas, ((LEFT_MM + (i + 0.25) * SQUARE_MM) * canvas.width) / A4_MM[0], y, width, height, i, 0, 1, 1)
+    const data = sample.getImageData(0, 0, SQUARES, 1).data
+    const dark = (i) => data[i * 4 + 3] === 255 && data[i * 4] < 96 && data[i * 4 + 1] < 96 && data[i * 4 + 2] < 96
+    if (!dark(0)) return false
+    let number = 0
+    for (let i = 1; i < SQUARES; i++) number = number * 2 + (dark(i) ? 1 : 0)
+    return number === Number(page.dataset.page)
   })
 }
 
@@ -49,5 +59,8 @@ const budget = {
 
 export const cases = [
   { name: 'pdf-200', file: 'pdf-200', shown: everyPageInViewDrawn, budget },
-  { name: 'pdf-1000', file: 'pdf-1000', shown: everyPageInViewDrawn, budget }
+  { name: 'pdf-1000', file: 'pdf-1000', shown: everyPageInViewDrawn, budget },
+  // The card reads most of this file, in 18 reads, to check the page count through the page tree; on 2026-10-03 its
+  // peak was 0.35 GB.
+  { name: 'pdf-flat', file: 'pdf-flat', shown: everyPageInViewDrawn, budget: { ...budget, cardPeakMb: 450 } }
 ]
