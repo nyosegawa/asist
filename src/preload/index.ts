@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   IpcChannel,
   type JobEvent,
+  type LiveAudio,
   type LiveEvent,
   type PanelEvent,
   type RendererApi,
@@ -38,6 +39,7 @@ const api: RendererApi = {
   vapStatus: () => ipcRenderer.invoke(IpcChannel.VapStatus),
   vapPrepare: () => ipcRenderer.invoke(IpcChannel.VapPrepare),
   vapPrepareCancel: () => ipcRenderer.invoke(IpcChannel.VapPrepareCancel),
+  vapStop: () => ipcRenderer.invoke(IpcChannel.VapStop),
   embeddingStatus: () => ipcRenderer.invoke(IpcChannel.EmbeddingStatus),
   embeddingPrepare: () => ipcRenderer.invoke(IpcChannel.EmbeddingPrepare),
   embeddingPrepareCancel: () => ipcRenderer.invoke(IpcChannel.EmbeddingPrepareCancel),
@@ -57,7 +59,7 @@ const api: RendererApi = {
   livePush: (samples) => ipcRenderer.invoke(IpcChannel.LivePush, samples),
   liveActivity: (active) => ipcRenderer.invoke(IpcChannel.LiveActivity, active),
   liveText: (text) => ipcRenderer.invoke(IpcChannel.LiveText, text),
-  onLiveAudio: subscribe<Float32Array>(IpcChannel.LiveAudio),
+  onLiveAudio: subscribe<LiveAudio>(IpcChannel.LiveAudio),
   onLiveEvent: subscribe<LiveEvent>(IpcChannel.LiveEvent),
 
   panelFetch: (type, props) => ipcRenderer.invoke(IpcChannel.PanelFetch, type, props),
@@ -147,7 +149,7 @@ const api: RendererApi = {
   mailDraftCreate: (input) => ipcRenderer.invoke(IpcChannel.MailDraftCreate, input),
   mailDraftUpdate: (id, patch) => ipcRenderer.invoke(IpcChannel.MailDraftUpdate, id, patch),
   mailDraftRemove: (id) => ipcRenderer.invoke(IpcChannel.MailDraftRemove, id),
-  mailDraftSend: (id) => ipcRenderer.invoke(IpcChannel.MailDraftSend, id),
+  mailDraftSend: (id, updatedAt) => ipcRenderer.invoke(IpcChannel.MailDraftSend, id, updatedAt),
   onConfirmEvent: subscribe<ConfirmEvent>(IpcChannel.ConfirmEvent),
   confirmPending: () => ipcRenderer.invoke(IpcChannel.ConfirmPending),
   confirmResolve: (id, approved) => ipcRenderer.invoke(IpcChannel.ConfirmResolve, id, approved),

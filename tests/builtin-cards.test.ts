@@ -191,6 +191,19 @@ describe('actions on a news or search result row', () => {
     await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="この見出しについて聞く"]')!.click())
     expect(sendTypedMessage).toHaveBeenCalledWith(expect.stringContaining(DEMO_NEWS.items[0].title))
   })
+
+  it.each([
+    ['news', DEMO_NEWS],
+    ['search-results', DEMO_SEARCH]
+  ] as const)('asks once for a double click on the bubble button of a %s row', async (type, props) => {
+    const card = await renderAt(spec(type, props as unknown as Record<string, unknown>), L)
+    const ask = card.querySelector<HTMLButtonElement>('.card-icon-button')!
+    await act(async () => {
+      ask.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+      ask.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 2 }))
+    })
+    expect(sendTypedMessage).toHaveBeenCalledOnce()
+  })
 })
 
 describe('a search answered by Gemini', () => {
@@ -907,7 +920,7 @@ describe('mail draft card', () => {
       expect(api.mailDraftUpdate).toHaveBeenCalledWith(draft.id, { to: ['田中 誠 <tanaka@example.co.jp>'], cc: [], subject: '季節のご挨拶', body: '拝啓\n直しました' })
       const [send] = [...card.querySelectorAll<HTMLButtonElement>('.card-action')]
       await act(async () => send.click())
-      expect(api.mailDraftSend).toHaveBeenCalledWith(draft.id)
+      expect(api.mailDraftSend).toHaveBeenCalledWith(draft.id, draft.updatedAt)
       expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'ok', title: t('mail.done.send') })
     } finally {
       vi.useRealTimers()
