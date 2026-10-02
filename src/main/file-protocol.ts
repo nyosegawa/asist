@@ -3,6 +3,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { protocol, type CustomScheme } from 'electron'
+import { PREVIEW_ORIGIN } from '@shared/preview-page'
 import { allowedPath } from './services/file-preview'
 
 /**
@@ -162,9 +163,25 @@ export function parseRange(header: string | null, size: number): { start: number
   return start > end ? null : { start, end }
 }
 
+/**
+ * What CORS asks of a file the preview page (asist-preview://) reads by a range, and of no other origin. A
+ * suffix range, such as the bytes=-65577 that finds the end of a zip, is not a safelisted Range, so it is
+ * preceded by a preflight, and the page learns the file's length from Content-Range, which it reads only when
+ * the header is exposed. Electron 43.7.7 checks none of this for asist-file: it sends the requests with no
+ * Origin, asks no preflight and lets any page read the answer (measured 2026-10-02). The answers follow what
+ * CORS asks, so that the preview page keeps reading wherever its requests are checked.
+ */
+const PREVIEW_CORS = { 'Access-Control-Allow-Origin': PREVIEW_ORIGIN, 'Access-Control-Expose-Headers': 'Content-Range' }
+
 /** Has to be called after app.whenReady. allowedRoots is read per request, because a new job adds roots. */
 export function handleFileScheme(allowedRoots: () => string[]): void {
   protocol.handle(FILE_SCHEME, (request) => {
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: { ...PREVIEW_CORS, 'Access-Control-Allow-Methods': 'GET', 'Access-Control-Allow-Headers': 'Range' }
+      })
+    }
     const requested = filePathFromUrl(request.url)
     const filePath = requested === null ? null : allowedPath(requested, allowedRoots())
     if (filePath === null) return new Response('forbidden', { status: 403 })
@@ -178,6 +195,7 @@ export function handleFileScheme(allowedRoots: () => string[]): void {
     const range = parseRange(request.headers.get('range'), stat.size)
     const headers: Record<string, string> = {
       ...contentHeaders(filePath),
+      ...PREVIEW_CORS,
       'Accept-Ranges': 'bytes',
       'Cache-Control': 'no-store'
     }
