@@ -176,6 +176,7 @@ export function mailTools(locale: ConversationLocale): ToolDefinition<ToolContex
           'send / reply は送らない。下書きカードを画面に出して { drafted: true, draftId, summary } を返し、ユーザーがカードの「送信」を押すと送られる。文面を直してと言われたら update_mail_draft。',
           'archive / trash / markRead / star は実行前に確認画面を表示し、ユーザーのクリック承認後に行う。',
           'send: to/cc は「名前 <addr>」か「addr」の配列、subject と body は文字列、accountId を省くと既定の差出人。reply: id と body(引用は自動で付く)、replyAll で全員に返信。archive / trash / star(starred): id を指定。markRead(read): ids に複数まとめて渡せる(「全部既読にして」は list_mail の unreadOnly で集めた id を全部渡す)。',
+          'send も reply も、差出人は必ずそのアカウントの email になる。list_mail の otherAddresses からは送れないので、そのアドレスから送ってと頼まれたら、アカウントの email から送ることになると伝える。',
           '結果は { saved, operation, id, summary } か { cancelled: true } か { drafted: true, draftId, summary }。失敗や時間切れ時は自動で再実行しない。本文の内容はユーザーの言った通りにし、勝手に足さない。宛先や本文が曖昧なら聞き返す。'
         ].join('\n'),
         en: [
@@ -183,6 +184,7 @@ export function mailTools(locale: ConversationLocale): ToolDefinition<ToolContex
           'send and reply do not send anything. They put a draft card on screen and return { drafted: true, draftId, summary }, and the message goes out when the user presses send on that card. When asked to reword it, use update_mail_draft.',
           'archive, trash, markRead and star bring up a confirmation window first and act once the user has clicked it through.',
           'send: to and cc are arrays of either "Name <addr>" or "addr", subject and body are strings, and leaving accountId out uses the default sender. reply: id and body, with the quoted original added by itself, and replyAll to answer everyone. archive, trash and star (starred): give id. markRead (read): ids takes several at once, so marking everything read means passing every id collected with unreadOnly in list_mail.',
+          "Both send and reply always go out from the account's own email. Nothing can be sent from the otherAddresses in list_mail, so when asked to send from one of them, tell the user the mail will go out from the account's email instead.",
           'The result is { saved, operation, id, summary }, or { cancelled: true }, or { drafted: true, draftId, summary }. Never retry by yourself after a failure or a timeout. Write the body as the user said it and add nothing of your own. Ask again when the recipient or the body is unclear.'
         ].join('\n')
       },

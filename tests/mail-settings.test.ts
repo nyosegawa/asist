@@ -103,6 +103,23 @@ it('shows the other addresses an account sends from and saves the ones typed, on
   expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'ok', title: t('settingsMail.account.otherAddressesSaved') })
 })
 
+it('reopens the other addresses on what is saved after a save that main refused', async () => {
+  api.mailAccountUpdate.mockRejectedValueOnce(new Error('refused'))
+  const group = await render()
+  const row = group.querySelector('[data-account="demo-work"]')!
+  const toggle = () => act(async () => [...row.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('settingsMail.account.otherAddresses'))!.click())
+  const field = () => group.querySelector<HTMLTextAreaElement>(`[aria-label="${t('settingsMail.account.otherAddressesLabel', { label: DEMO_MAIL_ACCOUNTS[0].label })}"]`)
+  await toggle()
+  await act(async () => setValue(field()!, DEMO_MAIL_ACCOUNTS[0].email))
+  await act(async () => field()!.form!.requestSubmit())
+  expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', title: t('settingsMail.account.otherAddressesSaveFailed') })
+  expect(field()!.value).toBe(DEMO_MAIL_ACCOUNTS[0].email)
+  await toggle()
+  expect(field()).toBeNull()
+  await toggle()
+  expect(field()!.value.split('\n')).toEqual(DEMO_MAIL_ACCOUNTS[0].otherAddresses)
+})
+
 it('saves only the option that changed, and ignores a day count outside the allowed range', async () => {
   const group = await render()
   await act(async () => group.querySelector<HTMLButtonElement>(`[aria-label="${t('settingsMail.notify')}"]`)!.click())

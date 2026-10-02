@@ -631,7 +631,7 @@ export const settingsMail = defineMessages({
       'es-ES': 'Otras direcciones de envío'
     },
     otherAddressesLabel: {
-      'ja-JP': '{label} のほかに送信に使っているアドレス',
+      'ja-JP': '{label} で、ほかに送信に使っているアドレス',
       'en-US': 'Other addresses you send from with {label}',
       'fr-FR': "Autres adresses d'envoi de {label}",
       'de-DE': 'Weitere Absenderadressen von {label}',

@@ -175,7 +175,7 @@ function AccountRow({
   const [open, setOpen] = useState<'password' | 'folders' | 'otherAddresses' | null>(null)
   const [password, setPassword] = useState('')
   const [folders, setFolders] = useState({ sent: account.folders.sent ?? '', archive: account.folders.archive ?? '', trash: account.folders.trash ?? '' })
-  const [otherAddresses, setOtherAddresses] = useState(account.otherAddresses.join('\n'))
+  const [otherAddresses, setOtherAddresses] = useState('')
   const [busy, setBusy] = useState(false)
   const state = enabled ? (status?.state ?? 'off') : 'off'
   const hintParts = [account.email, providerLabel(t, account.provider)]
@@ -240,7 +240,15 @@ function AccountRow({
         <Btn tone="quiet" disabled={busy} onClick={() => setOpen(open === 'folders' ? null : 'folders')}>
           {t('settingsMail.account.folders')}
         </Btn>
-        <Btn tone="quiet" disabled={busy} onClick={() => setOpen(open === 'otherAddresses' ? null : 'otherAddresses')}>
+        <Btn
+          tone="quiet"
+          disabled={busy}
+          onClick={() => {
+            // Text typed before, whether its save was refused or saved in another spelling, would otherwise reopen as if it were what is saved.
+            setOtherAddresses(account.otherAddresses.join('\n'))
+            setOpen(open === 'otherAddresses' ? null : 'otherAddresses')
+          }}
+        >
           {t('settingsMail.account.otherAddresses')}
         </Btn>
         <Btn tone="danger" disabled={busy} onClick={onRemove}>
