@@ -6,18 +6,27 @@ import forecast from './fixtures/weather/munich-forecast.json'
 import fahrenheit from './fixtures/weather/munich-forecast-fahrenheit.json'
 import fallBack from './fixtures/weather/munich-forecast-fall-back.json'
 import sydney from './fixtures/weather/sydney-forecast.json'
+import helsinki from './fixtures/weather/helsinki-forecast-spring-forward.json'
+import chatham from './fixtures/weather/chatham-forecast-spring-forward.json'
+import santiago from './fixtures/weather/santiago-forecast-midnight-skipped.json'
+import clockChangeAnswers from './fixtures/weather/clock-change-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
 
 /**
  * The recorded answers stand in for the network: the geocoding one holds the three places called Munich
  * that Open-Meteo returns, and the forecast ones hold two September days of Munich in each set of units.
  * The namesakes are the geocoding's answers of 2026-10-02 for names that several countries share, keyed
- * by the language asked in and the name. Two answers hold a day on which the clocks change, each written
- * in the one offset it began in: Sydney's of 2026-10-02 holds 2026-10-04, when its clocks go forward,
- * and Munich's from Open-Meteo's historical forecasts holds 2025-10-26, when they went back, because no
- * zone's clocks go back within a week of the day it was recorded.
+ * by the language asked in and the name. Five answers hold a day on which the clocks change, each written
+ * in one offset throughout. Sydney's forecast of 2026-10-02 is in the offset before its change on
+ * 2026-10-04 at 02:00. The others are Open-Meteo's historical forecasts, asked for on 2026-10-02 and
+ * written in the offset each place kept that day: Helsinki's around its change on 2026-03-29 at 03:00, the
+ * Chatham Islands' (Waitangi) around 2025-09-28 at 02:45, Santiago's around 2025-09-07, whose midnight its
+ * clocks skip, and Munich's around 2025-10-26, when its clocks went back, since no zone's clocks go back
+ * within a week of the day they were recorded. The clock-change geocoding holds the answers for their
+ * names.
  */
 const namesakes = namesakeAnswers as Record<string, { results: unknown[] }>
+const clockChangePlaces = clockChangeAnswers as Record<string, { results: unknown[] }>
 
 const NOW = Date.parse('2026-09-15T18:20:00+02:00')
 const mocks = vi.hoisted(() => ({ settings: { region: 'DE', conversationLocale: 'de-DE' } }))
@@ -280,60 +289,74 @@ describe('the worldwide weather source', () => {
 })
 
 describe('a day on which the clocks change', () => {
-  const SYDNEY = { place: 'Sydney', region: 'AU', places: namesakes['en:Sydney'], days: sydney }
-  const MUNICH = { place: 'Munich', region: 'DE', places: geocoding, days: fallBack }
+  interface Answer {
+    place: string
+    region: string
+    places: unknown
+    days: unknown
+  }
+  const SYDNEY: Answer = { place: 'Sydney', region: 'AU', places: namesakes['en:Sydney'], days: sydney }
+  const HELSINKI: Answer = { place: 'Helsinki', region: 'FI', places: clockChangePlaces.Helsinki, days: helsinki }
+  const CHATHAM: Answer = { place: 'Waitangi', region: 'NZ', places: clockChangePlaces.Waitangi, days: chatham }
+  const SANTIAGO: Answer = { place: 'Santiago', region: 'CL', places: clockChangePlaces.Santiago, days: santiago }
+  const MUNICH: Answer = { place: 'Munich', region: 'DE', places: geocoding, days: fallBack }
   /**
    * The card of a place with the clock set to a moment, written with the place's offset at that moment. The
    * module is loaded afresh for each card, because its cache keeps the fetch it was loaded with.
    */
-  async function cardAt(
-    now: string,
-    date: 'today' | 'tomorrow',
-    answer: typeof SYDNEY | typeof MUNICH
-  ): Promise<WeatherData> {
+  async function cardAt(now: string, date: 'today' | 'tomorrow', answer: Answer): Promise<WeatherData> {
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse(now))
     serve({ places: answer.places, days: answer.days })
     vi.resetModules()
     const { fetchGlobalWeather } = await import('../src/main/services/weather/open-meteo')
     return fetchGlobalWeather({ place: answer.place, date, language: 'en', region: answer.region }, signal())
   }
+  /**
+   * The hours of another day as they read on a day whose clock skips an hour: a step that would begin with
+   * the skipped hour begins with the hour after it, and every other step begins where it always does.
+   */
+  const skipping = (hours: number[], skipped: number | null): number[] =>
+    hours.map((hour) => (hour === skipped ? hour + 1 : hour))
 
-  it('shows the day Sydney moves its clocks forward, and the day after, at the hours of any other day', async () => {
-    const before = await cardAt('2026-10-02T12:00:00+10:00', 'tomorrow', SYDNEY)
-    const change = await cardAt('2026-10-03T12:00:00+10:00', 'tomorrow', SYDNEY)
-    const after = await cardAt('2026-10-04T12:00:00+11:00', 'tomorrow', SYDNEY)
-    expect([before, change, after].map((w) => w.targetDate)).toEqual(['2026-10-03', '2026-10-04', '2026-10-05'])
-    expect(hoursOf(change)).toEqual(hoursOf(before))
-    expect(hoursOf(after)).toEqual(hoursOf(before))
-    for (const w of [before, change, after]) expectRestOfDay(w)
-  })
-
-  it('shows the day Munich moved its clocks back, and the day after, at the hours of any other day', async () => {
-    const before = await cardAt('2025-10-24T12:00:00+02:00', 'tomorrow', MUNICH)
-    const change = await cardAt('2025-10-25T12:00:00+02:00', 'tomorrow', MUNICH)
-    const after = await cardAt('2025-10-26T12:00:00+01:00', 'tomorrow', MUNICH)
-    expect([before, change, after].map((w) => w.targetDate)).toEqual(['2025-10-25', '2025-10-26', '2025-10-27'])
-    expect(hoursOf(change)).toEqual(hoursOf(before))
+  it.each([
+    ['Sydney moves its clocks forward at 02:00', SYDNEY, ['2026-10-02T12:00:00+10:00', '2026-10-03T12:00:00+10:00', '2026-10-04T12:00:00+11:00'], '2026-10-04', 2],
+    ['Helsinki moves its clocks forward at 03:00', HELSINKI, ['2026-03-27T12:00:00+02:00', '2026-03-28T12:00:00+02:00', '2026-03-29T12:00:00+03:00'], '2026-03-29', 3],
+    ['the Chatham Islands move their clocks forward at 02:45', CHATHAM, ['2025-09-26T12:00:00+12:45', '2025-09-27T12:00:00+12:45', '2025-09-28T12:00:00+13:45'], '2025-09-28', 3],
+    ['Santiago skips its midnight', SANTIAGO, ['2025-09-05T12:00:00-04:00', '2025-09-06T12:00:00-04:00', '2025-09-07T12:00:00-03:00'], '2025-09-07', 0],
+    ['Munich moves its clocks back', MUNICH, ['2025-10-24T12:00:00+02:00', '2025-10-25T12:00:00+02:00', '2025-10-26T12:00:00+01:00'], '2025-10-26', null]
+  ] as const)('shows the day %s, and the day after, at the hours of the day before but the one it skips', async (_, answer, moments, changeDate, skipped) => {
+    const [before, change, after] = [
+      await cardAt(moments[0], 'tomorrow', answer),
+      await cardAt(moments[1], 'tomorrow', answer),
+      await cardAt(moments[2], 'tomorrow', answer)
+    ]
+    expect(change.targetDate).toBe(changeDate)
+    expect(hoursOf(change)).toEqual(skipping(hoursOf(before), skipped))
     expect(hoursOf(after)).toEqual(hoursOf(before))
     for (const w of [before, change, after]) expectRestOfDay(w)
   })
 
   it.each([
-    ['forward', SYDNEY, '2026-10-04T01:20:00+10:00', '2026-10-03T01:20:00+10:00'],
-    ['back', MUNICH, '2025-10-26T01:20:00+02:00', '2025-10-25T01:20:00+02:00']
-  ] as const)('shows the rest of the day from the running hour when the clocks go %s later that day', async (_, answer, change, dayBefore) => {
+    ['go forward at 02:00', SYDNEY, '2026-10-04T01:20:00+10:00', '2026-10-03T01:20:00+10:00', 2],
+    ['go forward at 03:00', HELSINKI, '2026-03-29T00:20:00+02:00', '2026-03-28T00:20:00+02:00', 3],
+    ['go back', MUNICH, '2025-10-26T01:20:00+02:00', '2025-10-25T01:20:00+02:00', null]
+  ] as const)('shows the rest of the day from the running hour when the clocks %s later that day', async (_, answer, change, dayBefore, skipped) => {
     const w = await cardAt(change, 'today', answer)
-    expect(hoursOf(w)).toEqual(hoursOf(await cardAt(dayBefore, 'today', answer)))
+    expect(hoursOf(w)).toEqual(skipping(hoursOf(await cardAt(dayBefore, 'today', answer)), skipped))
     expectRestOfDay(w)
   })
 
-  it('tells the model the hours of the day the clocks change on the clock of the place', async () => {
-    const before = weatherForModel(await cardAt('2026-10-02T12:00:00+10:00', 'tomorrow', SYDNEY), 'en-US')
-    const change = weatherForModel(await cardAt('2026-10-03T12:00:00+10:00', 'tomorrow', SYDNEY), 'en-US')
-    const clock = (periods: typeof change.precipitationPeriods): string[][] =>
-      periods.map((period) => [period.from.slice(11), period.to.slice(11)])
-    expect(clock(change.precipitationPeriods)).toEqual(clock(before.precipitationPeriods))
-    expect(change.precipitationPeriods.at(-1)?.to.slice(0, 10)).toBe('2026-10-05')
+  it.each([
+    ['Sydney', SYDNEY, '2026-10-02T12:00:00+10:00', '2026-10-03T12:00:00+10:00', 2],
+    ['Helsinki', HELSINKI, '2026-03-27T12:00:00+02:00', '2026-03-28T12:00:00+02:00', 3]
+  ] as const)('tells the model the hours of the day %s moves its clocks forward on the clock of the place', async (_, answer, dayBefore, change, skipped) => {
+    // Each period as the hours of the place's clock it runs between, with the end of the day as 24.
+    const periods = (w: WeatherData): number[][] =>
+      weatherForModel(w, 'en-US').precipitationPeriods.map((period) =>
+        [period.from, period.to].map((time) => (time.slice(0, 10) === w.targetDate ? Number(time.slice(11, 13)) : 24))
+      )
+    const before = periods(await cardAt(dayBefore, 'tomorrow', answer))
+    expect(periods(await cardAt(change, 'tomorrow', answer))).toEqual(before.map((period) => skipping(period, skipped)))
   })
 })
 

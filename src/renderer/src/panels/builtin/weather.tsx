@@ -35,8 +35,12 @@ const number = (value: number | null): string => (value === null ? '—' : Strin
 /** The degree sign alone reads as Celsius, so only another unit is named beside the number. */
 const degree = (units: WeatherUnits): string => (units.temperature === '°C' ? '°' : units.temperature)
 const hour = (at: string, timeZone: string): number => zonedHour(Date.parse(at), timeZone)
+/**
+ * The hour a period ends at, as 24 when it ends with its day. That end is not always 0:00 on the clock:
+ * where the next day's midnight is skipped (Santiago, 2025-09-07), the day ends at 1:00.
+ */
 const endHour = (from: string, to: string, timeZone: string): number =>
-  hour(to, timeZone) === 0 && Date.parse(to) > Date.parse(from) ? 24 : hour(to, timeZone)
+  zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone) ? 24 : hour(to, timeZone)
 const time = (at: string, locale: string, timeZone: string): string =>
   new Date(at).toLocaleTimeString(locale, { ...timeFields(locale), timeZone })
 const dayOf = (date: string, locale: string, fields: Intl.DateTimeFormatOptions): string =>

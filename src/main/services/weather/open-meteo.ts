@@ -212,22 +212,24 @@ export async function fetchGlobalWeather(
   const hourTemperature = column(hours, 'temperature_2m')
   const hourPercent = column(hours, 'precipitation_probability')
   // The card shows the target day from the hour that is still running, as the card of Japan does, in
-  // steps of three hours on the clock of the place. On a day the clocks change, the step whose clock
-  // skips an hour holds two hours and the step whose clock repeats one holds four.
+  // steps of three hours of the place's clock, counted from that hour today and from midnight tomorrow.
+  // The steps lie on that grid of the clock, so an hour the clock skips or repeats changes how many hours
+  // its own step holds and never moves the steps after it: a step whose first hour is skipped begins
+  // with the hour after it.
   const kept = hours.time.flatMap((local, i) => {
     const at = Date.parse(instant(local, offset))
     if (zonedDate(at, timeZone) !== targetDate || at + 3600_000 <= now) return []
     return [{ at, clock: zonedHour(at, timeZone), index: i }]
   })
-  const steps: Array<typeof kept> = []
+  const base = request.date === 'today' && kept.length ? kept[0].clock : 0
+  const steps = new Map<number, typeof kept>()
   for (const hour of kept) {
-    const step = steps.at(-1)
-    if (step && hour.clock < step[0].clock + HOURS_STEP) step.push(hour)
-    else steps.push([hour])
+    const step = Math.floor((hour.clock - base) / HOURS_STEP)
+    steps.set(step, [...(steps.get(step) ?? []), hour])
   }
   const hourly: WeatherData['hourly'] = []
   const precipitationPeriods: WeatherData['precipitationPeriods'] = []
-  for (const step of steps) {
+  for (const step of steps.values()) {
     const { at, index } = step[0]
     const from = new Date(at).toISOString()
     // A step ends with its last hour, so the last step of the day ends at the place's midnight.
