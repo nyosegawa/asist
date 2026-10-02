@@ -217,7 +217,7 @@ export const cardsWeather = defineMessages({
       'es-419': '{hour}:00',
       'es-ES': '{hour}:00'
     },
-    /** A time off the hour, with its minute as two digits, where a place's clock is half an hour off its forecast's hours. */
+    /** A time with its minute as two digits, which the hourly row writes for all its times when one of them is off the hour. */
     time: {
       'ja-JP': '{hour}:{minute}',
       'en-US': '{hour}:{minute}',
@@ -244,7 +244,7 @@ export const cardsWeather = defineMessages({
       'es-419': '{from}:00–{to}:00',
       'es-ES': '{from}:00–{to}:00'
     },
-    /** A period that begins or ends off the hour, between two times written as `time`. */
+    /** A period between two times written as `time`, in a row whose times are written with minutes. */
     timeRange: {
       'ja-JP': '{from}–{to}',
       'en-US': '{from}–{to}',

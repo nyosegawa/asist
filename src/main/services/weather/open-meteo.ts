@@ -152,6 +152,23 @@ function offsetTag(seconds: number): string {
 const instant = (local: string, offset: string): string =>
   `${local}${local.length === 16 ? ':00' : ''}${offset}`
 
+/**
+ * The moment a day of the place's clock ends, found from the moment of its last row as the first minute
+ * after it at which the clock reads another date. The row is the day's last and the next comes an hour
+ * later, so the date turns within that hour, and clocks move by whole minutes, so halving the hour finds
+ * the minute in six readings. It is half an hour after the row where the rows lie on the half hours of the
+ * clock, as Lord Howe Island's do while its clock is half an hour off the answer's offset.
+ */
+function dayEnd(last: number, date: string, timeZone: string): number {
+  let [on, past] = [0, 60]
+  while (past - on > 1) {
+    const middle = Math.floor((on + past) / 2)
+    if (zonedDate(last + middle * 60_000, timeZone) === date) on = middle
+    else past = middle
+  }
+  return last + past * 60_000
+}
+
 /** The hourly columns the card reads, each holding one value for every hour of the answer. */
 interface Forecast {
   codes: unknown[]
@@ -227,7 +244,7 @@ export async function fetchGlobalWeather(
   }
   const rows = hours.time.map((local, index) => {
     const at = Date.parse(instant(local, offset))
-    return { at, date: zonedDate(at, timeZone), clock: zonedTime(at, timeZone), index }
+    return { at, date: zonedDate(at, timeZone), hour: zonedTime(at, timeZone).hour, index }
   })
   const hoursOn = new Map<string, typeof rows>()
   for (const row of rows) hoursOn.set(row.date, [...(hoursOn.get(row.date) ?? []), row])
@@ -254,10 +271,10 @@ export async function fetchGlobalWeather(
   // with the hour after it. A step begins at its first row, which lies on a half hour of the clock while
   // the clock is half an hour off the answer's offset, as Lord Howe Island's is on one side of each change.
   const kept = rows.filter((row) => row.date === targetDate && row.at + 3600_000 > now)
-  const base = request.date === 'today' && kept.length ? kept[0].clock.hour : 0
+  const base = request.date === 'today' && kept.length ? kept[0].hour : 0
   const grid = new Map<number, typeof kept>()
   for (const hour of kept) {
-    const step = Math.floor((hour.clock.hour - base) / HOURS_STEP)
+    const step = Math.floor((hour.hour - base) / HOURS_STEP)
     grid.set(step, [...(grid.get(step) ?? []), hour])
   }
   const steps = [...grid.values()]
@@ -265,14 +282,8 @@ export async function fetchGlobalWeather(
   const precipitationPeriods: WeatherData['precipitationPeriods'] = []
   for (const [position, step] of steps.entries()) {
     const { at, index } = step[0]
-    const last = step[step.length - 1]
     const from = new Date(at).toISOString()
-    // A step ends where the next begins, and the last where the place's day ends, which is when the hour of
-    // the clock that the day's last row falls in runs out: an hour after that row where the rows lie on the
-    // clock's hours, and half an hour after it where they lie on its half hours. Over every change of every
-    // zone's clock from 2000 to 2040, with the rows of either offset around it, that is where the day ends
-    // but for Pyongyang's two changes across midnight in 2015 and 2018 (Node 22's zones, 2026-10-02).
-    const end = steps[position + 1]?.[0].at ?? last.at + (60 - last.clock.minute) * 60_000
+    const end = steps[position + 1]?.[0].at ?? dayEnd(step[step.length - 1].at, targetDate, timeZone)
     const until = new Date(end).toISOString()
     hourly.push({
       at: from,

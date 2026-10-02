@@ -263,33 +263,34 @@ describe('the hours a weather card shows', () => {
     expect(dock.querySelector('.wx-pop span')?.textContent).toBe(t('cardsWeather.hourly.range', { from: 21, to: 24 }))
   })
 
-  it('writes the minutes of a time off the hour, where the rows fall on the half hours of the clock', async () => {
-    // Lord Howe Island's clock goes from 2026-10-04 02:00 at +10:30 to 02:30 at +11:00, and the rows of a
-    // forecast written in +10:30 lie on its half hours after that.
-    const starts = [
-      '2026-10-04T00:00:00+10:30',
-      ...[3, 6, 9, 12, 15, 18, 21].map((hour) => `2026-10-04T${String(hour).padStart(2, '0')}:30:00+11:00`)
-    ]
-    const ends = [...starts.slice(1), '2026-10-05T00:00:00+11:00']
+  // Lord Howe Island's clock went back from +11:00 to +10:30 on 2026-04-05 at 02:00 and goes forward again on
+  // 2026-10-04 at 02:00. A forecast written in +10:30 has its rows on the half hours of the clock while it
+  // reads +11:00, so the first step of the day in April and the steps after 02:00 in October are off the hour.
+  it.each([
+    ['back', '2026-04-05', ['2026-04-05T00:30:00+11:00', ...[3, 6, 9, 12, 15, 18, 21].map((hour) => `2026-04-05T${String(hour).padStart(2, '0')}:00:00+10:30`)], '2026-04-06T00:00:00+10:30'],
+    ['forward', '2026-10-04', ['2026-10-04T00:00:00+10:30', ...[3, 6, 9, 12, 15, 18, 21].map((hour) => `2026-10-04T${String(hour).padStart(2, '0')}:30:00+11:00`)], '2026-10-05T00:00:00+11:00']
+  ] as const)('writes every time of the hourly row with its minutes on the day a clock goes %s by half an hour', async (_, date, starts, midnight) => {
+    const ends = [...starts.slice(1), midnight]
     const lordHowe: WeatherData = {
       ...DEMO_WEATHER_MUNICH,
       location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'Australia/Lord_Howe' },
-      targetDate: '2026-10-04',
+      targetDate: date,
       date: 'tomorrow',
       observation: null,
       hourly: starts.map((at, k) => ({ at, until: ends[k], temperature: 18, condition: null })),
       precipitationPeriods: starts.map((from, k) => ({ from, to: ends[k], percent: 1 }))
     }
-    const dock = await render([weather({ key: 'weather:place:lord howe island:2026-10-04', props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
-    const time = (hour: number, minute: string): string => t('cardsWeather.hourly.time', { hour, minute })
-    const halfHours = [3, 6, 9, 12, 15, 18, 21].map((hour) => time(hour, '30'))
-    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual([
-      t('cardsWeather.hourly.hour', { hour: 0 }),
-      ...halfHours
-    ])
-    const until = [...halfHours, time(24, '00')]
+    const dock = await render([weather({ key: `weather:place:lord howe island:${date}`, props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
+    // Each time as the clock of the island reads it, with the end of the day as 24:00.
+    const time = (at: string): string => {
+      const [hour, minute] = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Lord_Howe', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })
+        .format(new Date(at))
+        .split(':')
+      return t('cardsWeather.hourly.time', { hour: at === midnight ? 24 : Number(hour), minute })
+    }
+    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual(starts.map(time))
     expect([...dock.querySelectorAll('.wx-pop span')].map((label) => label.textContent)).toEqual(
-      [time(0, '00'), ...halfHours].map((from, k) => t('cardsWeather.hourly.timeRange', { from, to: until[k] }))
+      starts.map((from, k) => t('cardsWeather.hourly.timeRange', { from: time(from), to: time(ends[k]) }))
     )
   })
 })

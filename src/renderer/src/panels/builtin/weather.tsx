@@ -50,20 +50,23 @@ const endClock = (from: string, to: string, timeZone: string): ClockTime =>
   zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone)
     ? { hour: 24, minute: 0 }
     : clock(to, timeZone)
-/** A time with its minutes, as the hourly row writes a time off the hour and both ends of a period that has one. */
+/**
+ * Whether the hourly box writes its times with minutes. Most clocks need the hour alone, but where any time
+ * is off the hour, as Lord Howe Island's are while its clock is half an hour off the forecast's offset,
+ * every time of the box is written with minutes, so that a row never sets 「0時」 beside 「3:30」.
+ */
+const offTheHour = (w: WeatherData): boolean =>
+  [...w.hourly.map((h) => h.at), ...w.precipitationPeriods.flatMap((p) => [p.from, p.to])].some(
+    (at) => clock(at, w.location.timeZone).minute !== 0
+  )
 const withMinutes = ({ hour, minute }: ClockTime, t: Translate): string =>
   t('cardsWeather.hourly.time', { hour, minute: String(minute).padStart(2, '0') })
-/**
- * A time of the hourly row: the hour alone, as on most clocks, or with its minutes where the rows fall on the
- * half hours of the clock, as Lord Howe Island's do while its clock is half an hour off the forecast's offset.
- */
-const timeLabel = (at: ClockTime, t: Translate): string =>
-  at.minute ? withMinutes(at, t) : t('cardsWeather.hourly.hour', { hour: at.hour })
-/** A period of the hourly row, written in hours alone when both of its ends are on the hour. */
-function rangeLabel(from: string, to: string, timeZone: string, t: Translate): string {
+const timeLabel = (at: ClockTime, minutes: boolean, t: Translate): string =>
+  minutes ? withMinutes(at, t) : t('cardsWeather.hourly.hour', { hour: at.hour })
+function rangeLabel(from: string, to: string, timeZone: string, minutes: boolean, t: Translate): string {
   const start = clock(from, timeZone)
   const end = endClock(from, to, timeZone)
-  return start.minute || end.minute
+  return minutes
     ? t('cardsWeather.hourly.timeRange', { from: withMinutes(start, t), to: withMinutes(end, t) })
     : t('cardsWeather.hourly.range', { from: start.hour, to: end.hour })
 }
@@ -195,6 +198,7 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
   const unit = degree(w.units)
   const setFocused = usePanelStore((s) => s.setFocused)
   const hourly = w.hourly
+  const minutes = offTheHour(w)
   const style = { '--wx-columns': Math.max(hourly.length, 1) } as CSSProperties
   const wide = size === 'l' || size === 'focus'
   const weekly = size !== 's'
@@ -237,7 +241,7 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
             <div className="wx-hours" style={style}>
               {hourly.map((h, i) => (
                 <div className="wx-hour" key={h.at} style={{ gridColumn: i + 1, gridRow: 1 }}>
-                  <time dateTime={h.at}>{timeLabel(clock(h.at, zone), t)}</time>
+                  <time dateTime={h.at}>{timeLabel(clock(h.at, zone), minutes, t)}</time>
                   <Condition value={h.condition} />
                   <b>{number(h.temperature)}°</b>
                 </div>
@@ -255,7 +259,7 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
                     key={p.from}
                     style={{ gridColumn: `${indexes[0] + 1} / span ${indexes.length}`, gridRow: 2 }}
                   >
-                    <span>{rangeLabel(p.from, p.to, zone, t)}</span>
+                    <span>{rangeLabel(p.from, p.to, zone, minutes, t)}</span>
                     <b>{t('cardsWeather.hourly.rain', { percent: number(p.percent) })}</b>
                   </div>
                 )

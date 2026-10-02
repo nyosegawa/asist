@@ -401,6 +401,8 @@ const SANTIAGO: Answer = { place: 'Santiago', region: 'CL', places: clockChangeP
 const MUNICH_FALL_BACK: Answer = { place: 'Munich', region: 'DE', places: geocoding, days: fallBack }
 const LORD_HOWE_FORWARD: Answer = { place: 'Lord Howe Island', region: 'AU', places: clockChangePlaces['Lord Howe Island'], days: recording(lordHoweForward) }
 const LORD_HOWE_BACK: Answer = { ...LORD_HOWE_FORWARD, days: recording(lordHoweBack) }
+const LORD_HOWE_FORWARD_IN_SUMMER: Answer = { ...LORD_HOWE_FORWARD, days: rowsIn(recording(lordHoweForward), 39600) }
+const LORD_HOWE_BACK_IN_SUMMER: Answer = { ...LORD_HOWE_FORWARD, days: rowsIn(recording(lordHoweBack), 39600) }
 const MUMBAI: Answer = { place: 'Mumbai', region: 'IN', places: mumbaiPlaces, days: recording(mumbaiForecast) }
 const KATHMANDU: Answer = { place: 'Kathmandu', region: 'NP', places: kathmanduPlaces, days: recording(kathmanduForecast) }
 /**
@@ -421,6 +423,16 @@ async function cardAt(now: string, date: 'today' | 'tomorrow', answer: Answer): 
 function writtenIn(answer: Recorded, seconds: number): Recorded {
   const time = answer.hourly.time.map((local) => writtenAt({ ...answer, utc_offset_seconds: seconds }, momentOf(answer, local)))
   return { utc_offset_seconds: seconds, timezone: answer.timezone, hourly: { ...answer.hourly, time } }
+}
+
+/**
+ * A recording as an answer written in another offset holds its rows: every time as written, read in that
+ * offset, so each row comes half an hour earlier or later. Lord Howe Island's answers fetched while its clock
+ * reads +11:00 are written in +11:00, with the rows on the whole hours of that offset. The values stay with
+ * their rows, off the moments the recording gave them, which the tests of steps do not read.
+ */
+function rowsIn(answer: Recorded, seconds: number): Recorded {
+  return { utc_offset_seconds: seconds, timezone: answer.timezone, hourly: answer.hourly }
 }
 
 describe('the days of the week', () => {
@@ -567,11 +579,37 @@ describe('a clock that is not on the hours of the answer', () => {
     ['the day after Lord Howe Island moves its clock forward', LORD_HOWE_FORWARD, '2026-10-04T12:00:00+11:00', '2026-10-05', everyThreeHours('30')],
     ['the day before Lord Howe Island moves its clock back by half an hour', LORD_HOWE_BACK, '2026-04-03T12:00:00+11:00', '2026-04-04', everyThreeHours('30')],
     ['the day Lord Howe Island moves its clock back', LORD_HOWE_BACK, '2026-04-04T12:00:00+11:00', '2026-04-05', ['00:30', ...everyThreeHours('00').slice(1)]],
-    ['the day after Lord Howe Island moves its clock back', LORD_HOWE_BACK, '2026-04-05T12:00:00+10:30', '2026-04-06', everyThreeHours('00')]
+    ['the day after Lord Howe Island moves its clock back', LORD_HOWE_BACK, '2026-04-05T12:00:00+10:30', '2026-04-06', everyThreeHours('00')],
+    // Written in +11:00, as answers fetched before the clock goes back and after it goes forward are.
+    ['the day before the clock goes back, in +11:00', LORD_HOWE_BACK_IN_SUMMER, '2026-04-03T12:00:00+11:00', '2026-04-04', everyThreeHours('00')],
+    ['the day the clock goes back, in +11:00', LORD_HOWE_BACK_IN_SUMMER, '2026-04-04T12:00:00+11:00', '2026-04-05', ['00:00', ...everyThreeHours('30').slice(1)]],
+    ['the day after the clock goes back, in +11:00', LORD_HOWE_BACK_IN_SUMMER, '2026-04-05T12:00:00+10:30', '2026-04-06', everyThreeHours('30')],
+    ['the day before the clock goes forward, in +11:00', LORD_HOWE_FORWARD_IN_SUMMER, '2026-10-02T12:00:00+10:30', '2026-10-03', everyThreeHours('30')],
+    ['the day the clock goes forward, in +11:00', LORD_HOWE_FORWARD_IN_SUMMER, '2026-10-03T12:00:00+10:30', '2026-10-04', ['00:30', ...everyThreeHours('00').slice(1)]],
+    ['the day after the clock goes forward, in +11:00', LORD_HOWE_FORWARD_IN_SUMMER, '2026-10-04T12:00:00+11:00', '2026-10-05', everyThreeHours('00')]
   ] as const)('shows %s from the times its rows fall on to the midnight of the place', async (_, answer, now, date, starts) => {
     const w = await cardAt(now, 'tomorrow', answer)
     expect(w.targetDate).toBe(date)
     expect(steps(w)).toEqual(stepsFrom(date, [...starts]))
+    expectRestOfDay(w)
+  })
+
+  it('ends the day where the date of the place turns when the clock moves in the last hour of the day', async () => {
+    // Pyongyang's clock went from 2015-08-15 00:00 at +09:00 back to 23:30 at +08:30, so 2015-08-14 ended at
+    // 15:30 UTC. An answer written in +08:30 has its last row of that day at 23:30 on the clock of +09:00.
+    // Its hours are Mumbai's, written on the days around the change.
+    const times = Array.from({ length: 240 }, (_, k) =>
+      new Date(Date.UTC(2015, 7, 10) + k * 3600_000).toISOString().slice(0, 16)
+    )
+    const answer: Answer = {
+      place: 'Pyongyang',
+      region: 'KP',
+      places: { results: [{ name: 'Pyongyang', latitude: 39.03, longitude: 125.75, timezone: 'Asia/Pyongyang', country_code: 'KP', population: 3_222_000 }] },
+      days: { utc_offset_seconds: 30600, timezone: 'Asia/Pyongyang', hourly: { ...recording(mumbaiForecast).hourly, time: times } }
+    }
+    const w = await cardAt('2015-08-13T12:00:00+09:00', 'tomorrow', answer)
+    expect(w.targetDate).toBe('2015-08-14')
+    expect(w.hourly.at(-1)?.until).toBe('2015-08-14T15:30:00.000Z')
     expectRestOfDay(w)
   })
 
