@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FileItem } from '@shared/files'
 import { baseName } from '@shared/file-path'
 import { Frame } from './Frame'
-import { formatTime, waveformBars } from './media'
+import { formatTime } from './media'
 import { MediaControls, useMediaState } from './MediaControls'
 import { openPreviewDocument } from './preview-client'
 import type { Viewer } from './types'
@@ -14,10 +14,11 @@ import type openAudio from '@/preview/methods/audio'
 /**
  * Audio. The <audio> element stays hidden and the waveform together with MediaControls drives it; it plays the file
  * by ranges, at any size. The waveform is built in the preview page (preview/methods/audio.ts), which reads the
- * file from its start a piece at a time, and is drawn as its peaks come, the part not read yet as a flat line.
- * Pressing the waveform seeks to that position.
+ * file from its start a piece at a time and sends the bars of what it has read, which are drawn as they come, the
+ * part not read yet as a flat line. Pressing the waveform seeks to that position.
  */
 const BARS = 400
+const NO_BARS = new Float32Array(0)
 
 /** The recordings that get a waveform. FLAC and OGG play without one. */
 const WITH_WAVEFORM = new Set(['.mp3', '.m4a', '.aac', '.wav'])
@@ -30,7 +31,7 @@ function drawsWaveform(path: string): boolean {
 
 type Waveform =
   | { state: 'loading' | 'unsupported' }
-  | { state: 'drawing' | 'ready'; peaks: Float32Array; peakSeconds: number; seconds: number }
+  | { state: 'drawing' | 'ready'; bars: Float32Array; seconds: number }
   | { state: 'failed'; message: string }
 
 function useWaveform({ path, url, sizeBytes, modifiedAt }: FileItem): Waveform {
@@ -45,20 +46,17 @@ function useWaveform({ path, url, sizeBytes, modifiedAt }: FileItem): Waveform {
     const preview = openPreviewDocument<typeof openAudio>('audio', { url, sizeBytes, modifiedAt })
     let cancelled = false
     void (async () => {
-      let peaks = new Float32Array(0)
+      let version = 0
       try {
         for (;;) {
-          const answer = await preview.call('peaks', { from: peaks.length })
+          const answer = await preview.call('waveform', { bars: BARS, after: version })
           if (cancelled) return
           if (!answer.supported) {
             setWaveform({ state: 'unsupported' })
             return
           }
-          const grown = new Float32Array(peaks.length + answer.peaks.length)
-          grown.set(peaks)
-          grown.set(answer.peaks, peaks.length)
-          peaks = grown
-          setWaveform({ state: answer.done ? 'ready' : 'drawing', peaks, peakSeconds: answer.peakSeconds, seconds: answer.seconds })
+          version = answer.version
+          setWaveform({ state: answer.done ? 'ready' : 'drawing', bars: answer.bars, seconds: answer.seconds })
           if (answer.done) return
         }
       } catch (error) {
@@ -120,10 +118,7 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
   const waveform = useWaveform(item)
   const [error, setError] = useState<string | null>(null)
   const progress = state.duration > 0 ? state.current / state.duration : 0
-  const bars = useMemo(
-    () => (waveform.state === 'drawing' || waveform.state === 'ready' ? waveformBars(waveform.peaks, waveform.peakSeconds, waveform.seconds, BARS) : new Float32Array(0)),
-    [waveform]
-  )
+  const bars = waveform.state === 'drawing' || waveform.state === 'ready' ? waveform.bars : NO_BARS
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -164,6 +159,8 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
         role="img"
         aria-label={t('files.viewer.waveform')}
         data-state={waveform.state}
+        data-bars={bars.length}
+        data-seconds={waveform.state === 'drawing' || waveform.state === 'ready' ? waveform.seconds : undefined}
         onClick={(event) => {
           const el = ref.current
           if (!el || !state.duration) return

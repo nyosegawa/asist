@@ -383,7 +383,7 @@ export async function measureFile({ origin, path, url, sizeBytes, scrolls = true
     const show = `window.demoShowFile(${JSON.stringify({ path, url, sizeBytes })})`
     await client.evaluate(resetHeld)
     const card = { firstMs: succeeded(await guard(client.evaluate(timed(show, CARD, shown, 'card', 'the card')))).ms }
-    if (complete) card.completeMs = card.firstMs + succeeded(await guard(client.evaluate(timed('', CARD, complete, 'card', 'the card')))).ms
+    if (complete) card.completeMs = card.firstMs + succeeded(await guard(client.evaluate(timed('', CARD, complete, 'card', 'the whole content of the card')))).ms
     await sleep(SETTLE_MS)
     card.heldMs = await guard(client.evaluate(readHeld))
     card.widthPx = await client.evaluate(`Math.round(document.querySelector(${JSON.stringify(CARD)}).getBoundingClientRect().width)`)

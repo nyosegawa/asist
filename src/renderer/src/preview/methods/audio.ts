@@ -1,6 +1,7 @@
 import { HeldBytes } from '../audio/held-bytes'
 import { mp4Samples, readMp4Track } from '../audio/mp4-samples'
-import { afterId3, infoFrame, mpegFrames, type MpegHeader } from '../audio/mpeg-frames'
+import { errorKey } from '@shared/i18n/error-key'
+import { afterId3, isInfoFrame, mpegFrames } from '../audio/mpeg-frames'
 import { PeakTrack } from '../audio/peaks'
 import { audioDamaged, openRangedFile, type RangedFile } from '../audio/ranged-file'
 import { isWav, readWavFormat, wavPeak } from '../audio/wav'
@@ -15,17 +16,21 @@ import type { OpenPreviewDocument } from '../serve'
  * on until the end of the file or until the document is closed.
  */
 
-/** What a viewer is told each time it asks for the peaks. */
-export type PeaksAnswer =
+/** What a viewer is told each time it asks for the waveform. */
+export type WaveformAnswer =
   /** The file is none whose waveform is drawn here, or its codec is one the decoder does not take. */
   | { supported: false }
   | {
       supported: true
-      /** The peaks from where the viewer asked on, each the largest amplitude over `peakSeconds` of the recording. */
-      peaks: Float32Array
-      peakSeconds: number
-      /** How long the recording is: as its header gives it while it is read, and as decoded once `done`. */
+      /**
+       * The heights of the bars of the part decoded so far, from 0 to 1, as many as the viewer asked for once the
+       * whole recording is decoded.
+       */
+      bars: Float32Array
+      /** How long the recording is: as far as can be told while it is read, and as decoded once `done`. */
       seconds: number
+      /** What the viewer gives back to be answered once there is more. */
+      version: number
       done: boolean
     }
 
@@ -42,16 +47,17 @@ const DECODE_AHEAD = 64
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 class Waveform {
-  /** How long the recording is by its header, until it is decoded. */
-  seconds = 0
   track: PeakTrack | null = null
+  /** How long the recording is, as far as can be told from what has been read so far. */
+  estimate: () => number = () => 0
+  private version = 0
   private state: 'reading' | 'done' | 'unsupported' | 'failed' = 'reading'
   private error: unknown = null
   private waiting: Array<() => void> = []
 
   /** Adds the decoded frames, each channel copied into its own buffer, which `planes` keeps for the next. */
   addDecoded(data: AudioData, planes: Float32Array[]): void {
-    this.track ??= new PeakTrack(data.sampleRate, this.seconds)
+    this.track ??= new PeakTrack(data.sampleRate)
     const frames = data.numberOfFrames
     for (let c = 0; c < data.numberOfChannels; c++) {
       if (!planes[c] || planes[c].length < frames) planes[c] = new Float32Array(frames)
@@ -62,6 +68,7 @@ class Waveform {
   }
 
   changed(): void {
+    this.version++
     for (const resolve of this.waiting.splice(0)) resolve()
   }
 
@@ -79,21 +86,17 @@ class Waveform {
     this.settle('failed')
   }
 
-  async after(from: number): Promise<PeaksAnswer> {
-    while (this.state === 'reading' && (this.track?.count ?? 0) <= from) await new Promise<void>((resolve) => this.waiting.push(resolve))
+  /** The waveform `bars` wide, once it has changed since `after`, the version of the last answer. */
+  async answer(bars: number, after: number): Promise<WaveformAnswer> {
+    while (this.state === 'reading' && this.version <= after) await new Promise<void>((resolve) => this.waiting.push(resolve))
     // The first answer goes at once, so that the first peaks are drawn as soon as they are decoded.
-    if (from > 0 && this.state === 'reading') await sleep(GATHER_MS)
+    if (after > 0 && this.state === 'reading') await sleep(GATHER_MS)
     if (this.state === 'failed') throw this.error
     if (this.state === 'unsupported') return { supported: false }
     const done = this.state === 'done'
     const track = this.track
-    return {
-      supported: true,
-      peaks: track?.peaks(from) ?? new Float32Array(0),
-      peakSeconds: track?.peakSeconds ?? 0,
-      seconds: done && track ? track.seconds : this.seconds,
-      done
-    }
+    const seconds = done ? (track?.seconds ?? 0) : this.estimate()
+    return { supported: true, bars: track?.bars(bars, seconds) ?? new Float32Array(0), seconds, version: this.version, done }
   }
 
   private settle(state: 'done' | 'unsupported' | 'failed'): void {
@@ -157,8 +160,9 @@ async function buildWav(file: RangedFile, waveform: Waveform, signal: AbortSigna
   const format = await readWavFormat(file)
   if (!format) return waveform.unsupported()
   const { dataStart, dataEnd, blockAlign, sampleRate } = format
-  waveform.seconds = (dataEnd - dataStart) / blockAlign / sampleRate
-  const track = (waveform.track = new PeakTrack(sampleRate, waveform.seconds))
+  const seconds = (dataEnd - dataStart) / blockAlign / sampleRate
+  waveform.estimate = () => seconds
+  const track = (waveform.track = new PeakTrack(sampleRate))
   const held = new HeldBytes(file.pieces(dataStart, dataEnd), dataStart)
   try {
     for (let at = dataStart; at < dataEnd && !signal.aborted; ) {
@@ -181,15 +185,9 @@ async function buildWav(file: RangedFile, waveform: Waveform, signal: AbortSigna
   }
 }
 
-/**
- * How long an MPEG stream lasts: by the frame count of its Xing or VBRI frame, or else by the bitrate of its first
- * frame, which is exact for a constant bitrate. A stream of variable bitrate without such a frame is only
- * estimated, and the waveform is redrawn to its decoded length at the end.
- */
-function mpegSeconds(header: MpegHeader, frames: number | null, bytes: number): number {
-  if (frames !== null) return (frames * header.samples) / header.sampleRate
-  if (header.bitrate !== null) return (bytes * 8) / header.bitrate
-  return (bytes / header.length) * (header.samples / header.sampleRate)
+async function* withFirst<T>(first: T, rest: AsyncIterable<T>): AsyncGenerator<T> {
+  yield first
+  yield* rest
 }
 
 async function buildMpeg(file: RangedFile, waveform: Waveform, signal: AbortSignal): Promise<void> {
@@ -199,19 +197,22 @@ async function buildMpeg(file: RangedFile, waveform: Waveform, signal: AbortSign
   try {
     const first = await frames.next()
     if (first.done) return waveform.unsupported()
-    const { header } = first.value
-    const info = infoFrame(first.value)
-    waveform.seconds = mpegSeconds(header, info?.frames ?? null, file.size - first.value.at)
+    const { header, at: audioStart } = first.value
+    // The stream's length is told from the frames given to the decoder so far: their samples, stretched by the
+    // part of the file their bytes are. Neither a header nor the first frame is trusted for it: ffmpeg stopped
+    // partway leaves a Xing frame that counts no frames, a short jingle joined to a long recording keeps the
+    // jingle's count, a file downloaded in part keeps the whole one's, and the first frame of an AAC stream is
+    // often a few bytes of silence (13 from afconvert), which would make an hour of a minute.
+    let samples = 0
+    let bytes = 0
+    waveform.estimate = () => (bytes > 0 ? (samples / header.sampleRate) * ((file.size - audioStart) / bytes) : 0)
     async function* chunks(): AsyncGenerator<Chunk> {
-      let samples = 0
       const timestamp = (): number => Math.round((samples / header.sampleRate) * 1e6)
-      if (!info) {
-        yield { bytes: first.value.bytes, timestamp: timestamp() }
-        samples += header.samples
-      }
-      for await (const frame of frames) {
+      // A Xing, Info or VBRI frame holds no audio.
+      for await (const frame of isInfoFrame(first.value) ? frames : withFirst(first.value, frames)) {
         yield { bytes: frame.bytes, timestamp: timestamp() }
         samples += frame.header.samples
+        bytes += frame.bytes.length
       }
     }
     const config = { codec: header.codec, sampleRate: header.sampleRate, numberOfChannels: header.channels }
@@ -225,7 +226,7 @@ async function buildMpeg(file: RangedFile, waveform: Waveform, signal: AbortSign
 async function buildMp4(file: RangedFile, waveform: Waveform, signal: AbortSignal): Promise<void> {
   const track = await readMp4Track(file)
   if (!track) return waveform.unsupported()
-  waveform.seconds = track.seconds
+  waveform.estimate = () => track.seconds
   if (!(await decodeInto(track.config, mp4Samples(track, file), waveform, signal))) waveform.unsupported()
 }
 
@@ -240,16 +241,20 @@ async function build(url: string, waveform: Waveform, signal: AbortSignal): Prom
 const openAudio = async (url: string) => {
   const waveform = new Waveform()
   const stop = new AbortController()
-  // A document closed partway leaves its waveform unfinished, since no viewer asks for it any more.
   void build(url, waveform, stop.signal).then(
-    () => (stop.signal.aborted ? undefined : waveform.end()),
+    () => waveform.end(),
     (error: unknown) => waveform.fail(error)
   )
   return {
     methods: {
-      peaks: ({ from }: { from: number }): Promise<PeaksAnswer> => waveform.after(from)
+      waveform: ({ bars, after }: { bars: number; after: number }): Promise<WaveformAnswer> => waveform.answer(bars, after)
     },
-    close: () => stop.abort()
+    // Closing stops the reading and fails every request still waiting, so that none of them stays open in the page
+    // and in the viewers' client.
+    close: () => {
+      stop.abort()
+      waveform.fail(new Error(errorKey('files.errors.previewStopped')))
+    }
   }
 }
 

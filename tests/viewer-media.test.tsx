@@ -7,13 +7,13 @@ import { createTranslator } from '@shared/i18n'
 import { errorKey } from '@shared/i18n/error-key'
 import { FileViewer } from '@/panels/viewers'
 import { AudioViewer } from '@/panels/viewers/AudioViewer'
-import { formatTime, waveformBars } from '@/panels/viewers/media'
+import { formatTime } from '@/panels/viewers/media'
 import { VideoViewer } from '@/panels/viewers/VideoViewer'
 import type { ViewerProps } from '@/panels/viewers/types'
-import type { PeaksAnswer } from '@/preview/methods/audio'
+import type { WaveformAnswer } from '@/preview/methods/audio'
 
 /**
- * The video and audio viewers, the pure logic (time formatting, the bars of a waveform) and the DOM behavior of the
+ * The video and audio viewers, the pure logic (time formatting) and the DOM behavior of the
  * controls, and the placard a zip gets. happy-dom does not play media, so play and pause on the media element are
  * replaced and the events are dispatched by hand. The audio viewer's waveform comes from the preview page, which
  * happy-dom cannot run, so the document it opens there is one whose answers each test gives by hand.
@@ -21,7 +21,7 @@ import type { PeaksAnswer } from '@/preview/methods/audio'
 
 const preview = vi.hoisted(() => ({
   open: vi.fn(),
-  calls: [] as Array<{ from: number; answer: (value: unknown) => void; fail: (error: Error) => void }>,
+  calls: [] as Array<{ args: { bars: number; after: number }; answer: (value: unknown) => void; fail: (error: Error) => void }>,
   release: vi.fn()
 }))
 vi.mock('@/panels/viewers/preview-client', () => ({ openPreviewDocument: preview.open }))
@@ -33,30 +33,6 @@ describe('time formatting', () => {
     expect(formatTime(3723)).toBe('1:02:03')
     expect(formatTime(NaN)).toBe('0:00')
     expect(formatTime(Infinity)).toBe('0:00')
-  })
-})
-
-describe('the bars of a waveform', () => {
-  const bars = (peaks: number[], peakSeconds: number, seconds: number, count: number): number[] =>
-    [...waveformBars(Float32Array.from(peaks), peakSeconds, seconds, count)].map((height) => Math.round(height * 1000) / 1000)
-
-  it('takes the largest peak within each bar and scales the largest bar to 1', () => {
-    expect(bars([0.1, 0.5, 0.2, 0.8], 1, 4, 2)).toEqual([0.625, 1])
-    expect(bars([0, 0, 0, 0], 1, 4, 2)).toEqual([0, 0])
-  })
-
-  it('gives only the bars the peaks read so far reach, while the recording is still read', () => {
-    expect(bars([0.2, 0.4], 1, 10, 10)).toEqual([0.5, 1])
-    expect(bars([0.2, 0.4, 0.1], 1, 10, 4)).toEqual([1, 0.25])
-    expect(bars([], 1, 10, 10)).toEqual([])
-  })
-
-  it('gives each bar narrower than a peak the peak it starts in', () => {
-    expect(bars([0.5, 1], 2, 4, 4)).toEqual([0.5, 0.5, 1, 1])
-  })
-
-  it('draws a recording longer than its header said to the end of its peaks', () => {
-    expect(bars([0.2, 0.4, 0.6, 0.8], 1, 2, 2)).toEqual([0.5, 1])
   })
 })
 
@@ -81,8 +57,8 @@ describe('viewer rendering', () => {
     preview.release.mockClear()
     preview.open.mockReset()
     preview.open.mockImplementation(() => ({
-      call: (_method: string, { from }: { from: number }) =>
-        new Promise((resolve, reject) => preview.calls.push({ from, answer: resolve, fail: reject })),
+      call: (_method: string, args: { bars: number; after: number }) =>
+        new Promise((resolve, reject) => preview.calls.push({ args, answer: resolve, fail: reject })),
       release: preview.release
     }))
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(play)
@@ -176,29 +152,33 @@ describe('viewer rendering', () => {
   })
 
   /** Answers the viewer's last request for the peaks. */
-  async function answer(value: PeaksAnswer | Error): Promise<void> {
+  async function answer(value: WaveformAnswer | Error): Promise<void> {
     const call = preview.calls.at(-1)!
     await act(async () => {
       if (value instanceof Error) call.fail(value)
       else call.answer(value)
     })
   }
-  const peaks = (values: number[], done: boolean): PeaksAnswer => ({ supported: true, peaks: Float32Array.from(values), peakSeconds: 1, seconds: 8, done })
+  let versions = 0
+  const bars = (values: number[], done: boolean): WaveformAnswer => ({ supported: true, bars: Float32Array.from(values), seconds: 8, version: ++versions * 10, done })
   const t = createTranslator('ja-JP')
 
-  it('draws the waveform of a recording of any size as its peaks come from the preview page, asking each time from where it has got to', async () => {
+  it('draws the waveform of a recording of any size as its bars come from the preview page, asking each time for what is newer', async () => {
     const huge = { ...audio, sizeBytes: 2 ** 40, modifiedAt: 1_790_000_000_000 }
     const card = await render(AudioViewer, huge)
     expect(preview.open).toHaveBeenCalledWith('audio', { url: huge.url, sizeBytes: huge.sizeBytes, modifiedAt: huge.modifiedAt })
     const wave = card.querySelector('.fv-media-wave')!
     expect(wave.getAttribute('data-state')).toBe('loading')
-    expect(preview.calls.map((call) => call.from)).toEqual([0])
+    expect(preview.calls.map((call) => call.args)).toEqual([{ bars: 400, after: 0 }])
 
-    await answer(peaks([0.2, 0.9, 0.4], false))
+    await answer(bars([0.2, 0.9, 0.4], false))
     expect(wave.getAttribute('data-state')).toBe('drawing')
-    await answer(peaks([0.3, 0.1, 0.5, 0.6, 0.2], true))
+    expect(wave.getAttribute('data-bars')).toBe('3')
+    await answer(bars(Array.from({ length: 400 }, () => 0.5), true))
     expect(wave.getAttribute('data-state')).toBe('ready')
-    expect(preview.calls.map((call) => call.from)).toEqual([0, 3])
+    expect(wave.getAttribute('data-bars')).toBe('400')
+    expect(wave.getAttribute('data-seconds')).toBe('8')
+    expect(preview.calls.map((call) => call.args.after)).toEqual([0, versions * 10 - 10])
     await loadMetadata(card.querySelector('audio')!, 8)
     expect(card.querySelector('.fv-note')?.textContent).toBe('0:08')
     expect(preview.release).not.toHaveBeenCalled()
@@ -222,7 +202,7 @@ describe('viewer rendering', () => {
 
   it('says why the waveform failed, in the language of the screen, when the preview page fails it', async () => {
     const card = await render(AudioViewer, audio)
-    await answer(peaks([0.5], false))
+    await answer(bars([0.5], false))
     await answer(new Error(errorKey('files.errors.audioDamaged')))
     await loadMetadata(card.querySelector('audio')!, 2)
     const note = card.querySelector('.fv-note')!
@@ -234,7 +214,7 @@ describe('viewer rendering', () => {
     await render(AudioViewer, audio)
     await act(async () => root.render(null))
     expect(preview.release).toHaveBeenCalledTimes(1)
-    await answer(peaks([0.5], false))
+    await answer(bars([0.5], false))
     expect(preview.calls).toHaveLength(1)
   })
 

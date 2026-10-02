@@ -18,8 +18,6 @@ export interface MpegHeader {
   channels: number
   /** How many samples of each channel the frame decodes to. */
   samples: number
-  /** Bits per second, from an MP3 header; ADTS gives none. */
-  bitrate: number | null
 }
 
 export interface MpegFrame {
@@ -63,8 +61,7 @@ function mp3Header(bytes: Bytes, at: number): MpegHeader | null {
     length: Math.floor((samples / 8) * (bitrate / sampleRate)) + padding,
     sampleRate,
     channels: bytes[at + 3] >> 6 === 3 ? 1 : 2,
-    samples,
-    bitrate
+    samples
   }
 }
 
@@ -82,8 +79,7 @@ function adtsHeader(bytes: Bytes, at: number): MpegHeader | null {
     length,
     sampleRate: ADTS_RATES[rateIndex],
     channels: channelConfig === 7 ? 8 : channelConfig,
-    samples: 1024 * ((bytes[at + 6] & 3) + 1),
-    bitrate: null
+    samples: 1024 * ((bytes[at + 6] & 3) + 1)
   }
 }
 
@@ -166,20 +162,13 @@ export async function afterId3(size: number, read: (start: number, end: number) 
 }
 
 /**
- * Whether the frame is a Xing, Info or VBRI frame, which an encoder writes first in a stream: it holds no audio
- * and is not decoded, and it gives the number of frames the stream holds, unless that is left out. null says the
- * frame is audio.
+ * Whether the frame is a Xing, Info or VBRI frame, which an encoder writes first in a stream: it holds no audio and
+ * is not decoded. The frame count it may hold is not used, since a stream can hold other frames than it counts.
  */
-export function infoFrame({ header, bytes }: MpegFrame): { frames: number | null } | null {
-  if (header.codec !== 'mp3') return null
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+export function isInfoFrame({ header, bytes }: MpegFrame): boolean {
+  if (header.codec !== 'mp3') return false
   // The Xing tag follows the side information, whose length depends on the version and the channels.
   const xing = 4 + (header.samples === 1152 ? (header.channels === 1 ? 17 : 32) : header.channels === 1 ? 9 : 17)
-  if (startsWith(bytes, xing, 'Xing') || startsWith(bytes, xing, 'Info')) {
-    const counted = xing + 12 <= bytes.length && (view.getUint32(xing + 4) & 1) === 1
-    return { frames: counted ? view.getUint32(xing + 8) : null }
-  }
   // The VBRI tag sits 32 bytes after the header whatever the stream.
-  if (startsWith(bytes, 36, 'VBRI')) return { frames: 36 + 18 <= bytes.length ? view.getUint32(36 + 14) : null }
-  return null
+  return startsWith(bytes, xing, 'Xing') || startsWith(bytes, xing, 'Info') || startsWith(bytes, 36, 'VBRI')
 }

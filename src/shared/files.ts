@@ -169,9 +169,8 @@ const hasNoViewer = (kind: FileKind): kind is KindWithoutViewer => (KINDS_WITHOU
  * What the files card shows of an item: all of it; only its first part (the text carried up to MAX_TEXT_BYTES, or the
  * first entries of a large folder) with a note that says so; or, in its place, why it could not be read, or a placard
  * saying that it is too large to show here or that its kind cannot be shown. The card's viewers and the result
- * show_files gives the model both read it, so that the model is told what the card did. Audio is shown at any size,
- * since <audio> plays it by ranges and only its waveform asks tooLargeToRead, and an HTML page is shown whole, since
- * its frame loads the page itself and only its source is cut short.
+ * show_files gives the model both read it, so that the model is told what the card did. An HTML page is shown whole,
+ * since its frame loads the page itself and only its source is cut short.
  */
 export type CardView =
   | { shows: 'all' | 'firstPart'; kind: ViewedKind }
