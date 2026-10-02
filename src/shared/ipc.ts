@@ -196,6 +196,18 @@ export interface BridgePlan {
   bridge: string
 }
 
+/** What the look-ahead is given: the partial transcript and the assistant's previous line. */
+export interface BridgePlanRequest {
+  text: string
+  lastAssistantText: string
+  /**
+   * An aizuchi can sound right before the phrase: the aizuchi are on, the conversation has them and the
+   * classifier runs. Whether one does is settled when speech ends, by the classification and the
+   * frequency, after the phrase has been asked for.
+   */
+  afterAizuchi: boolean
+}
+
 /** The state of the aizuchi classifier worker (ModernBERT-ja 70m). */
 export interface AizuchiClassifierStatus {
   runtimeInstalled: boolean
@@ -1020,7 +1032,7 @@ export interface RendererApi {
   /** Main threw the bank away, after a change of the voice or the language or when TTS came back, and a new one is on its way. */
   onAizuchiBankChanged(callback: () => void): () => void
   /** The look-ahead on a fast model. It is called on every update of the partial transcript, and the last result before the utterance ends is used. */
-  bridgePlan(input: { text: string; lastAssistantText: string }): Promise<BridgePlan>
+  bridgePlan(input: BridgePlanRequest): Promise<BridgePlan>
   /** Synthesizes the bridge phrase. */
   bridgeSynthesize(text: string): Promise<BridgeClip>
   /**
@@ -1166,8 +1178,11 @@ export interface RendererApi {
   mailDraftCreate(input: MailDraftInput): Promise<MailDraft>
   mailDraftUpdate(id: string, patch: MailDraftPatch): Promise<MailDraft>
   mailDraftRemove(id: string): Promise<void>
-  /** Sends a draft. Pressing the button is the approval, so no confirmation screen appears, and the draft is removed once it is sent. */
-  mailDraftSend(id: string): Promise<MailChangeResult>
+  /**
+   * Sends a draft. Pressing the button is the approval, so no confirmation screen appears, and the draft is removed
+   * once it is sent. `updatedAt` is that of the draft as the screen showed it, and a draft changed since is not sent.
+   */
+  mailDraftSend(id: string, updatedAt: number): Promise<MailChangeResult>
   /** The confirmations main asks for, in mail, calendar and agent jobs. `open` shows the screen and `close` takes it away. */
   onConfirmEvent(callback: (event: ConfirmEvent) => void): () => void
   /** The requests main is waiting on, oldest first, whose `open` a page that loaded after them never heard. */
