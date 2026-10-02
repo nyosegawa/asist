@@ -705,6 +705,12 @@ export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
 export const keyReadable = (state: ApiKeyState): boolean => state === 'saved' || state === 'verified'
 
 export interface AppStatus {
+  /**
+   * The order in which main began to read this status: a status with a lower number was read before it. The
+   * page keeps the status read last, since the answer to a read and a push do not reach it in the order main
+   * read them.
+   */
+  sequence: number
   /** Whether both the conversation model and the bridge phrase model could be fetched from the real API with their providers' keys. */
   llm: boolean
   conversationModel: ConversationModel
@@ -869,6 +875,7 @@ export const IpcChannel = {
   NotesChanged: 'notes-changed',
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
+  ToggleMic: 'toggle-mic',
   GetSetupStatus: 'get-setup-status',
   RecheckAgentCli: 'recheck-agent-cli',
   CompleteSetup: 'complete-setup',
@@ -1075,8 +1082,10 @@ export interface RendererApi {
   notify(title: string, body: string): Promise<void>
   /** Tells main which mini app is open and what it shows, or null when none is; sent on every change. */
   reportMiniAppView(view: MiniAppView | null): Promise<void>
-  /** The request to toggle the microphone, from the global hotkey or the tray. */
+  /** The global hotkey called the window up, and a microphone that is off is to be turned on. */
   onHotkeyMic(callback: () => void): () => void
+  /** The tray's item that turns the microphone on when it is off and off when it is on. */
+  onToggleMic(callback: () => void): () => void
 
   getSetupStatus(): Promise<SetupStatus>
   /** Looks for the agent CLI again, on the PATH the user's shell gives now; a new status follows once the search ends. */
@@ -1182,7 +1191,11 @@ export interface RendererApi {
   ttsTest(): Promise<SpeechSegment>
   /** Opens a web page in the browser or a mail address in the mail app, and refuses any other link. */
   openExternal(url: string): Promise<void>
-  /** Reveals a file in Finder. Only paths belonging to a job are allowed. */
+  /**
+   * Shows a file or folder in Finder or File Explorer. Only a path the files card may read is shown: one under a
+   * job's folder, the agent's workspace, the memory folder or a folder allowed in the settings. Any other path, a
+   * path that is gone and one the OS refuses reject with the reason the files card gives for it.
+   */
   revealPath(path: string): Promise<void>
   /** The version of the packaged application, which only the main process knows. */
   appVersion(): Promise<string>
