@@ -249,7 +249,7 @@ export function demoReplyOf(message: MailMessage, replyAll: boolean): MailReply 
     subject: message.subject,
     from: message.from,
     replyAll,
-    ...replyRecipients(message, [account.email], replyAll),
+    ...replyRecipients(message, account.email, replyAll),
     inReplyTo: message.messageId,
     references: [message.messageId],
     quote: quotation({ date: message.date, from: message.from, text: DEMO_MAIL_BODIES.get(message.id) ?? '' })

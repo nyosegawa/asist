@@ -3,7 +3,7 @@ import { messageIdOf, type MailAccount, type MailMessage } from '@shared/mail'
 import { errorText } from '@shared/i18n/error-text'
 import { createTranslator } from '@shared/i18n'
 import { MailCache } from '../src/main/services/mail-cache'
-import { MailAccountSync, bodyPartsOf, htmlToPlain, type MailSyncState } from '../src/main/services/mail-sync'
+import { MailAccountSync, type MailSyncState } from '../src/main/services/mail-sync'
 import { FakeImap } from './helpers/fake-imap'
 
 // The sync writes its own status text in the interface language, which it reads from the settings.
@@ -429,22 +429,33 @@ describe('MailAccountSync', () => {
     await sync.stop()
   })
 
-  it('reads an HTML-only body in the charset its meta tag declares when the MIME header declares none', async () => {
+  it('reads an HTML-only body whose MIME header names no charset as a browser does: by its BOM, then by a meta tag the Encoding Standard knows', async () => {
     const { imap, cache, sync } = setup()
     // 「見積もりの件です」 in each encoding.
-    const encoded = { shiftJis: Buffer.from('8ca990cf82e082e882cc8c8f82c582b7', 'hex'), eucJp: Buffer.from('b8abc0d1a4e2a4eaa4ceb7efa4c7a4b9', 'hex'), utf8: Buffer.from('見積もりの件です') }
+    const encoded = {
+      shiftJis: Buffer.from('8ca990cf82e082e882cc8c8f82c582b7', 'hex'),
+      eucJp: Buffer.from('b8abc0d1a4e2a4eaa4ceb7efa4c7a4b9', 'hex'),
+      utf8: Buffer.from('見積もりの件です'),
+      utf16le: Buffer.from('見積もりの件です', 'utf16le')
+    }
     const html = (meta: string, text: Buffer) => Buffer.concat([Buffer.from(`<html><head>${meta}</head><body><p>`), text, Buffer.from('</p></body></html>')])
-    imap.put('INBOX', { subject: 'http-equiv', from: tanaka, to: me, date: new Date(NOW - HOUR), html: html('<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">', encoded.shiftJis) })
-    imap.put('INBOX', { subject: 'charset', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), html: html("<meta charset='euc-jp'>", encoded.eucJp) })
-    imap.put('INBOX', { subject: 'none', from: tanaka, to: me, date: new Date(NOW - 3 * HOUR), html: html('', encoded.utf8) })
+    const cases: Array<[string, Buffer]> = [
+      ['http-equiv', html('<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">', encoded.shiftJis)],
+      ['charset', html("<meta charset='euc-jp'>", encoded.eucJp)],
+      ['none', html('', encoded.utf8)],
+      // cp932 is no label of the Encoding Standard, so the next meta tag decides.
+      ['unknown label', html('<meta charset="cp932"><meta charset="shift_jis">', encoded.shiftJis)],
+      ['only an unknown label', html('<meta charset="cp932">', encoded.utf8)],
+      // A browser reads a document that declares UTF-16 in a meta tag as UTF-8.
+      ['utf-16 declared', html('<meta charset="utf-16">', encoded.utf8)],
+      ['bom over meta', Buffer.concat([Buffer.from('efbbbf', 'hex'), html('<meta charset="shift_jis">', encoded.utf8)])],
+      ['utf-16 bom', Buffer.concat([Buffer.from('fffe', 'hex'), Buffer.from('<p>', 'utf16le'), encoded.utf16le, Buffer.from('</p>', 'utf16le')])]
+    ]
+    cases.forEach(([subject, body], index) => imap.put('INBOX', { subject, from: tanaka, to: me, date: new Date(NOW - (index + 1) * HOUR), html: body }))
     sync.start()
     await vi.advanceTimersByTimeAsync(300)
     const bodies = cache.list({ view: 'inbox' }).messages.map((message) => [message.subject, cache.body(message.id)])
-    expect(bodies).toEqual([
-      ['http-equiv', '見積もりの件です'],
-      ['charset', '見積もりの件です'],
-      ['none', '見積もりの件です']
-    ])
+    expect(bodies).toEqual(cases.map(([subject]) => [subject, '見積もりの件です']))
     await sync.stop()
   })
 
@@ -464,6 +475,41 @@ describe('MailAccountSync', () => {
     await sync.stop()
   })
 
+  it('applies a flag notice to the generation of the folder as it is open, after the connection went back to an inbox the server renewed', async () => {
+    const { imap, cache, sync } = setup()
+    const old = imap.put('INBOX', { subject: '前の世代', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    imap.put('Sent', { subject: '送った', from: me, to: tanaka, date: new Date(NOW - HOUR), text: 's' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const oldId = cache.list({ view: 'inbox' }).messages[0].id
+    // The server recreates the inbox, and another message takes over the UID.
+    const inbox = imap.folders.get('INBOX')!
+    inbox.uidValidity = 2n
+    inbox.messages.clear()
+    imap.put('INBOX', { uid: old.uid, subject: '新しい世代', from: tanaka, to: me, date: new Date(NOW), text: 'b' })
+    // An operation on a sent message selects Sent, and the connection then goes back to the inbox.
+    await sync.byUid('sent', cache.uidValidity('a1', 'sent')!, async () => undefined)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(imap.mailbox && imap.mailbox.path).toBe('INBOX')
+    imap.emit('flags', { path: 'INBOX', seq: 1, uid: old.uid, flags: new Set(['\\Seen', '\\Flagged']) })
+    expect(cache.get(oldId)).toBeNull()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(cache.list({ view: 'inbox' }).messages.map((message) => message.subject)).toEqual(['新しい世代'])
+    await sync.stop()
+  })
+
+  it('shows as the account error a folder whose server gives no UIDVALIDITY, and files none of its messages under an id no operation accepts', async () => {
+    const { imap, cache, sync } = setup()
+    ;(imap.folders.get('INBOX') as unknown as { uidValidity: unknown }).uidValidity = undefined
+    imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    expect(cache.list({ view: 'inbox' }).total).toBe(0)
+    expect(sync.state).toBe('error')
+    expect(sync.error).toBe(t('mail.errors.sync.folderFailed', { box: t('mail.boxes.inbox'), reason: t('mail.errors.folder.noUidValidity', { path: 'INBOX' }) }))
+    await sync.stop()
+  })
+
   it('reports why it cannot connect, instead of staying in "connecting", when the password cannot be read', async () => {
     const { sync, states } = setup({
       password: () => {
@@ -475,38 +521,5 @@ describe('MailAccountSync', () => {
     expect(states.at(-1)).toEqual(['error', t('mail.errors.account.passwordMissing')])
     expect(sync.state).toBe('error')
     await sync.stop()
-  })
-})
-
-describe('reading a bodyStructure', () => {
-  it('separates the text and html body parts from the attachments, and numbers a single part 1', () => {
-    const single = bodyPartsOf({ type: 'text/plain', size: 3 })
-    expect(single).toEqual({ parts: { textPart: '1', htmlPart: null }, attachments: [] })
-    const mixed = bodyPartsOf({
-      type: 'multipart/mixed',
-      childNodes: [
-        {
-          type: 'multipart/alternative',
-          childNodes: [
-            { part: '1.1', type: 'text/plain', size: 10 },
-            { part: '1.2', type: 'text/html', size: 20 }
-          ]
-        },
-        { part: '2', type: 'application/pdf', size: 500, disposition: 'attachment', dispositionParameters: { filename: '資料.pdf' } },
-        { part: '3', type: 'image/png', size: 40, parameters: { name: 'logo.png' }, disposition: 'inline' },
-        { part: '4', type: 'text/plain', size: 8, disposition: 'attachment', dispositionParameters: { filename: 'notes.txt' } }
-      ]
-    })
-    expect(mixed.parts).toEqual({ textPart: '1.1', htmlPart: '1.2' })
-    expect(mixed.attachments).toEqual([
-      { filename: '資料.pdf', contentType: 'application/pdf', size: 500 },
-      { filename: 'logo.png', contentType: 'image/png', size: 40 },
-      { filename: 'notes.txt', contentType: 'text/plain', size: 8 }
-    ])
-    expect(bodyPartsOf(undefined)).toEqual({ parts: { textPart: null, htmlPart: null }, attachments: [] })
-  })
-
-  it('turns HTML into plain text, dropping link targets, images and styles', () => {
-    expect(htmlToPlain('<style>p{}</style><p>こんにちは <a href="https://x.example">サイト</a></p><img src="a.png"><script>x()</script>')).toBe('こんにちは サイト')
   })
 })

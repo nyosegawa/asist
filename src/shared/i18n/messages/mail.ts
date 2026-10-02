@@ -1772,6 +1772,19 @@ export const mail = defineMessages({
         'pt-BR': 'Não foi possível abrir a pasta no servidor: {path}',
         'es-419': 'No se pudo abrir la carpeta en el servidor: {path}',
         'es-ES': 'No se ha podido abrir la carpeta del servidor: {path}'
+      },
+      noUidValidity: {
+        'ja-JP': 'サーバーがフォルダ {path} の UIDVALIDITY を返さないため、メールを見分けられません',
+        'en-US': "The server gives no UIDVALIDITY for the folder {path}, so its messages can't be told apart",
+        'fr-FR': "Le serveur ne fournit pas d'UIDVALIDITY pour le dossier {path}, ses messages ne peuvent donc pas être distingués",
+        'de-DE': 'Der Server liefert für den Ordner {path} keine UIDVALIDITY, deshalb lassen sich seine Nachrichten nicht unterscheiden',
+        'hi-IN': 'सर्वर फ़ोल्डर {path} के लिए UIDVALIDITY नहीं देता, इसलिए उसके ईमेल अलग-अलग नहीं पहचाने जा सकते',
+        'id-ID': 'Server tidak memberikan UIDVALIDITY untuk folder {path}, jadi pesan-pesannya tidak bisa dibedakan',
+        'it-IT': "Il server non fornisce l'UIDVALIDITY della cartella {path}, quindi i suoi messaggi non si possono distinguere",
+        'ko-KR': '서버가 폴더 {path}의 UIDVALIDITY를 주지 않아 메일을 구별할 수 없습니다',
+        'pt-BR': 'O servidor não informa o UIDVALIDITY da pasta {path}, então as mensagens dela não podem ser distinguidas',
+        'es-419': 'El servidor no da el UIDVALIDITY de la carpeta {path}, así que sus mensajes no se pueden distinguir',
+        'es-ES': 'El servidor no proporciona el UIDVALIDITY de la carpeta {path}, así que sus mensajes no se pueden distinguir'
       }
     },
     draft: {

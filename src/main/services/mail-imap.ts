@@ -10,6 +10,7 @@ export type ImapClient = Pick<
   | 'connect'
   | 'logout'
   | 'close'
+  | 'noop'
   | 'list'
   | 'getMailboxLock'
   | 'search'

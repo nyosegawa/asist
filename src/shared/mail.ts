@@ -442,16 +442,16 @@ export function replySubject(subject: string): string {
 /**
  * The recipients of a reply. It goes to the original Reply-To, or to From when there is none, and a
  * reply-all adds the original recipients and Cc. A reply to the user's own message goes on to the people
- * that message went to, as mail programs do. The user's own addresses, `self`, are left out of both, unless
- * nobody else is there to answer, as for a message the user sent to themselves.
+ * that message went to, as mail programs do. The user's own address is left out of both, unless nobody
+ * else is there to answer, as for a message the user sent to themselves.
  */
-export function replyRecipients(message: Pick<MailMessage, 'from' | 'to' | 'cc' | 'replyTo'>, self: readonly string[], replyAll: boolean): { to: MailAddress[]; cc: MailAddress[] } {
-  const own = new Set(self.map((address) => address.toLowerCase()))
-  const others = (list: readonly MailAddress[]): MailAddress[] => list.filter((address) => !own.has(address.address.toLowerCase()))
+export function replyRecipients(message: Pick<MailMessage, 'from' | 'to' | 'cc' | 'replyTo'>, self: string, replyAll: boolean): { to: MailAddress[]; cc: MailAddress[] } {
+  const others = (list: readonly MailAddress[]): MailAddress[] => list.filter((address) => address.address.toLowerCase() !== self.toLowerCase())
   const sender = message.replyTo.length ? message.replyTo : [message.from]
   const to = [others(sender), others(message.to), [...sender]].find((list) => list.length > 0)!
   if (!replyAll) return { to, cc: [] }
-  const seen = new Set([...own, ...to.map((address) => address.address.toLowerCase())])
+  const seen = new Set(to.map((address) => address.address.toLowerCase()))
+  seen.add(self.toLowerCase())
   const rest: MailAddress[] = []
   for (const address of [...message.to, ...message.cc]) {
     const key = address.address.toLowerCase()

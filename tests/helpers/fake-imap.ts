@@ -59,6 +59,8 @@ export class FakeImap extends EventEmitter {
    * open, every command waits for an answer that never comes, and only closing the connection ends the wait.
    */
   silent = false
+  /** True while a new connection, made by reconnectable() as well, never finishes its handshake until it is closed. */
+  hangConnect = false
   private readonly unanswered: Array<(error: Error) => void> = []
   private readonly gmail: boolean
   private currentPath = ''
@@ -84,6 +86,7 @@ export class FakeImap extends EventEmitter {
         if (!last.usable && last.calls.includes('connect')) {
           const created = new FakeImap({ gmail: this.gmail, folders: this.folders })
           created.failConnect = this.failConnect
+          created.hangConnect = this.hangConnect
           instances.push(created)
         }
         return instances[instances.length - 1]
@@ -127,7 +130,13 @@ export class FakeImap extends EventEmitter {
   async connect(): Promise<void> {
     this.calls.push('connect')
     if (this.failConnect) throw this.failConnect
+    if (this.hangConnect) await new Promise<never>((_, reject) => this.unanswered.push(reject))
     this.usable = true
+  }
+
+  async noop(): Promise<void> {
+    this.calls.push('noop')
+    await this.answer()
   }
 
   async logout(): Promise<void> {
@@ -182,13 +191,16 @@ export class FakeImap extends EventEmitter {
   }
 
   /** Like the real client, it answers an empty list when nothing matches and false when the server rejects the command. */
-  async search(query: { since?: Date | string; all?: boolean }): Promise<number[] | false> {
+  async search(query: { since?: Date | string; all?: boolean; header?: Record<string, string> }): Promise<number[] | false> {
     const folder = this.current()
     this.calls.push(`search:${this.currentPath}`)
     await this.answer()
     if (this.failSearch) return false
     const since = query.since ? new Date(query.since).getTime() : 0
-    return [...folder.messages.values()].filter((mail) => mail.date.getTime() >= since).map((mail) => mail.uid)
+    const messageId = Object.entries(query.header ?? {}).find(([name]) => name.toLowerCase() === 'message-id')?.[1]
+    return [...folder.messages.values()]
+      .filter((mail) => mail.date.getTime() >= since && (messageId === undefined || mail.messageId === messageId))
+      .map((mail) => mail.uid)
   }
 
   async fetchAll(range: number[] | string, query: FetchQueryObject): Promise<FetchMessageObject[]> {

@@ -102,22 +102,40 @@ const BROKEN_FILE_CODES: ReadonlySet<unknown> = new Set([11, 26])
 
 /**
  * Opens the cache file. One that is damaged or is not a database is replaced by an empty cache, which the
- * sync fills from the server again, so nothing it held is lost; kept, it would stop every start of the app.
- * Any other failure, such as a file that cannot be opened at all, is thrown.
+ * sync fills from the server again, so nothing it held is lost; kept, it would stop every start of the app,
+ * or fail every listing when the damage lies in pages the schema does not touch. Any other failure, such as a
+ * file that cannot be opened at all, is thrown.
  */
 function openCache(file: string): DatabaseSync {
   const db = new DatabaseSync(file)
-  try {
+  const damage = damageOf(db)
+  if (damage === null) {
     prepareSchema(db)
     return db
+  }
+  db.close()
+  console.warn(`mail cache: ${file} is replaced by an empty cache:`, damage)
+  for (const suffix of ['', '-journal', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true })
+  const rebuilt = new DatabaseSync(file)
+  prepareSchema(rebuilt)
+  return rebuilt
+}
+
+/**
+ * What PRAGMA quick_check finds wrong with the file, or null when it finds nothing. A file that is not a
+ * database at all, or whose first page is damaged, fails the check itself. It took 36 to 64 ms on a file of
+ * 126 MB just written, so still in the disk cache (Apple M5, 2026-10-02).
+ */
+function damageOf(db: DatabaseSync): string | null {
+  try {
+    const problems = (db.prepare('PRAGMA quick_check').all() as Row[]).map((row) => String(row.quick_check)).filter((line) => line !== 'ok')
+    return problems.length ? problems.slice(0, 3).join('; ') : null
   } catch (error) {
-    db.close()
-    if (!BROKEN_FILE_CODES.has((error as { errcode?: unknown }).errcode)) throw error
-    console.warn(`mail cache: ${file} is replaced by an empty cache:`, error instanceof Error ? error.message : error)
-    for (const suffix of ['', '-journal', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true })
-    const rebuilt = new DatabaseSync(file)
-    prepareSchema(rebuilt)
-    return rebuilt
+    if (!BROKEN_FILE_CODES.has((error as { errcode?: unknown }).errcode)) {
+      db.close()
+      throw error
+    }
+    return error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -282,15 +300,6 @@ export class MailCache {
     if (!messageId) return null
     const row = this.db.prepare('SELECT thread_id FROM messages WHERE account_id = ? AND message_id = ? LIMIT 1').get(accountId, messageId) as Row | undefined
     return row ? String(row.thread_id) : null
-  }
-
-  /**
-   * The addresses the account's Sent folder holds mail from. They include the other addresses the user sends
-   * from, such as a send-as address of Gmail, which the account's settings do not know.
-   */
-  sentFromAddresses(accountId: string): string[] {
-    const rows = this.db.prepare("SELECT DISTINCT from_address FROM messages WHERE account_id = ? AND folder = 'sent'").all(accountId) as Row[]
-    return rows.map((row) => String(row.from_address))
   }
 
   updateFlags(accountId: string, folder: MailFolder, updates: readonly MailFlagUpdate[]): void {

@@ -16,6 +16,7 @@ import {
   replyRecipients,
   replyReferences,
   replySubject,
+  syncSince,
   type MailAccount,
   type MailAccountStatus,
   type MailAddress,
@@ -335,9 +336,9 @@ export class MailService {
     return Promise.all([...this.syncs.values()].map((sync) => sync.syncNow())).then(() => undefined)
   }
 
-  /** Fetches every account over a new connection, for when the machine wakes from sleep. */
-  reconnect(): Promise<void> {
-    return Promise.all([...this.syncs.values()].map((sync) => sync.reconnect())).then(() => undefined)
+  /** Fetches every account again when the machine wakes from sleep, over a new connection where the old one no longer answers. */
+  wake(): Promise<void> {
+    return Promise.all([...this.syncs.values()].map((sync) => sync.wake())).then(() => undefined)
   }
 
   private requireSync(accountId: string): MailAccountSync {
@@ -511,7 +512,7 @@ export class MailService {
       if (!fetched) throw new Error(errorText('mail.errors.message.notFound'))
       return { inReplyTo: fetched.envelope?.inReplyTo ?? '', references: parseReferences(fetched.headers?.toString('latin1')) }
     })
-    const { to, cc } = replyRecipients(message, [account.email, ...this.deps.cache.sentFromAddresses(account.id)], replyAll)
+    const { to, cc } = replyRecipients(message, account.email, replyAll)
     return {
       id: message.id,
       subject: message.subject,
@@ -537,7 +538,7 @@ export class MailService {
         inReplyTo: reply.inReplyTo || undefined,
         references: reply.references
       },
-      reply.id
+      { id: reply.id, messageId: reply.inReplyTo }
     )
   }
 
@@ -684,7 +685,7 @@ export class MailService {
    * did not leave or that its outcome is unknown. Whatever fails after SMTP accepted the message becomes a
    * note on the result, since an error would read as "not sent" and invite a second send to the same people.
    */
-  private async send(account: MailAccount, outgoing: OutgoingMail, answered: string | null): Promise<MailChangeResult> {
+  private async send(account: MailAccount, outgoing: OutgoingMail, answered: { id: string; messageId: string } | null): Promise<MailChangeResult> {
     const password = this.passwordOf(account.id)
     const replying = answered !== null
     let sent: { messageId: string; raw: Buffer }
@@ -697,7 +698,7 @@ export class MailService {
     }
     const notes: string[] = []
     try {
-      await this.afterSent(account, sent.raw, answered, notes)
+      await this.afterSent(account, sent, answered, notes)
     } catch (error) {
       notes.push(t('mail.result.afterSendFailed', { reason: errorMessage(error) }))
     }
@@ -711,24 +712,37 @@ export class MailService {
   }
 
   /**
-   * What follows a message SMTP accepted. Outside Gmail the same bytes are appended to the Sent folder, and a
-   * reply puts the \Answered flag on the message it answers, the id `answered`, while that message is still in
-   * the cache. A step that fails adds its note to `notes`.
+   * What follows a message SMTP accepted. The same bytes go into the Sent folder unless the server filed the
+   * message there itself, as Gmail, Exchange Online and Yahoo do, and a reply puts the \Answered flag on the
+   * message it answers, `answered`, while that message is still in the cache. A step that fails adds its note
+   * to `notes`.
    */
-  private async afterSent(account: MailAccount, raw: Buffer, answered: string | null, notes: string[]): Promise<void> {
+  private async afterSent(account: MailAccount, sent: { messageId: string; raw: Buffer }, answered: { id: string; messageId: string } | null, notes: string[]): Promise<void> {
     const sync = this.syncs.get(account.id)
-    if (sync && account.provider !== 'gmail' && account.folders.sent) {
-      const sentFolder = account.folders.sent
+    const sentFolder = account.folders.sent
+    if (sync && sentFolder) {
       try {
-        await sync.run((client) => client.append(sentFolder, raw, ['\\Seen'], new Date(this.now())))
+        await sync.run(async (client) => {
+          const lock = await client.getMailboxLock(sentFolder)
+          try {
+            // A server that files its copy only some time after accepting the message still ends up with two.
+            const filed = await client.search({ header: { 'message-id': sent.messageId }, since: syncSince(new Date(this.now()), 1) }, { uid: true })
+            if (!Array.isArray(filed)) throw new Error(errorText('mail.errors.sync.noMessageList'))
+            if (filed.length === 0) await client.append(sentFolder, sent.raw, ['\\Seen'], new Date(this.now()))
+          } finally {
+            lock.release()
+          }
+        })
       } catch (error) {
         notes.push(t('mail.result.sentFolderFailed', { reason: errorMessage(error) }))
       }
     }
     if (sync && answered !== null) {
       try {
-        const original = this.deps.cache.get(answered)
-        if (!original) throw new Error(errorText('mail.errors.message.notFound'))
+        // The id names its folder by role, and a folder pointed at another mailbox with the same UIDVALIDITY can
+        // have filed another message under it since the reply was settled.
+        const original = this.deps.cache.get(answered.id)
+        if (!original || original.messageId !== answered.messageId) throw new Error(errorText('mail.errors.message.notFound'))
         await sync.byUid(original.folder, parseMessageId(original.id).uidValidity, (client) => storeFlag(client, [original.uid], '\\Answered', true))
         this.deps.cache.setFlags(original.id, { answered: true })
       } catch (error) {

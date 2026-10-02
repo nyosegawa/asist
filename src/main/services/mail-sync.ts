@@ -1,5 +1,4 @@
-import type { FetchMessageObject, MailboxLockObject, MessageAddressObject, MessageStructureObject } from 'imapflow'
-import { htmlToText } from 'html-to-text'
+import type { FetchMessageObject, MailboxLockObject, MessageAddressObject } from 'imapflow'
 import {
   MAIL_FOLDERS,
   isRecent,
@@ -12,14 +11,14 @@ import {
   type MailAccount,
   type MailAccountStatus,
   type MailAddress,
-  type MailAttachment,
   type MailFolder,
   type MailMessage
 } from '@shared/mail'
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
 import type { MailBodyParts, MailCache, MailFlagUpdate } from './mail-cache'
-import { disconnect, readBytes, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
+import { bodyPartsOf, fetchText } from './mail-body'
+import { disconnect, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
 
 /**
  * The sync of one account. It holds a single connection and runs every operation on it (fetching
@@ -43,12 +42,19 @@ export interface MailSyncIntervals {
   reconnectMs: readonly number[]
   /** How long an IDLE arrival or flag notification is held before the folder is fetched. */
   debounceMs: number
+  /**
+   * How long the connection kept across the machine's sleep has to answer a NOOP before it is replaced. A server
+   * answers one in well under a second; the rest leaves room for a network still coming back after the wake, and
+   * for a command under way, which the NOOP waits behind.
+   */
+  wakeCheckMs: number
 }
 
 export const DEFAULT_SYNC_INTERVALS: MailSyncIntervals = {
   periodicMs: 5 * 60_000,
   reconnectMs: [5_000, 15_000, 60_000, 300_000],
-  debounceMs: 1_500
+  debounceMs: 1_500,
+  wakeCheckMs: 10_000
 }
 
 export interface MailSyncOptions {
@@ -70,8 +76,6 @@ export interface MailSyncOptions {
 /** How many messages of metadata one fetch asks for, and how many bodies one hydrate pass takes per folder. */
 const META_CHUNK = 200
 const HYDRATE_BATCH: Record<MailFolder, number> = { inbox: 25, sent: 10, archive: 10 }
-/** The byte limit of a body download. A longer body is stored truncated at this point. */
-export const MAX_BODY_BYTES = 512 * 1024
 
 const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
@@ -80,6 +84,8 @@ export class MailAccountSync {
   private readonly options: MailSyncOptions
   private readonly intervals: MailSyncIntervals
   private client: ImapClient | null = null
+  /** The connection being made, until its handshake ends. */
+  private connecting: ImapClient | null = null
   private gmail = false
   private queue: Promise<unknown> = Promise.resolve()
   private stopped = false
@@ -141,14 +147,22 @@ export class MailAccountSync {
   }
 
   /**
-   * Fetches every folder over a new connection. A connection kept across the machine's sleep still looks open
-   * when the server or the network has forgotten it, and the first command on it waits out imapflow's socket
-   * timeout of 5 minutes, with every operation queued behind it. Closing it also ends an operation stuck on it.
+   * Fetches every folder again after the machine wakes from sleep. A connection kept across sleep can look open
+   * when the server or the network has forgotten it, and the first command on it then waits out imapflow's socket
+   * timeout of 5 minutes, with every operation queued behind it. So the connection is asked first and replaced
+   * only when it does not answer, which also ends an operation stuck on it; one that answers is kept, so that a
+   * MOVE or an APPEND under way on it is not cut. A connection still being made is given up, since its handshake
+   * can wait as long.
    */
-  reconnect(): Promise<void> {
+  async wake(): Promise<void> {
+    const connecting = this.connecting
+    this.connecting = null
+    connecting?.close()
     const client = this.client
-    this.client = null
-    client?.close()
+    if (client && !(await answers(client, this.intervals.wakeCheckMs)) && this.client === client) {
+      this.client = null
+      client.close()
+    }
     return this.syncNow()
   }
 
@@ -232,7 +246,12 @@ export class MailAccountSync {
     if (client.mailbox && client.mailbox.path === 'INBOX') return
     try {
       const lock = await client.getMailboxLock('INBOX')
-      lock.release()
+      try {
+        // IDLE reports flags by the UIDs of the generation opened here, which may be one the cache does not hold yet.
+        this.noticeGeneration(client, 'inbox', 'INBOX')
+      } finally {
+        lock.release()
+      }
     } catch (error) {
       if (!client.usable) this.dropClient(client, errorMessage(error))
       else this.setState('error', t('mail.errors.sync.folderFailed', { box: t('mail.boxes.inbox'), reason: errorMessage(error) }))
@@ -272,18 +291,25 @@ export class MailAccountSync {
     const path = this.requirePath(folder)
     const lock = await client.getMailboxLock(path)
     try {
-      const opened = this.recordGeneration(client, folder, path)
-      // The cache of a renewed folder is dropped here already, so that its UIDs reach nothing before the next fetch.
-      if (opened.renewed) {
-        this.options.onChanged()
-        this.scheduleFolderSync(folder)
-      }
-      if (opened.uidValidity !== uidValidity) throw new Error(errorText('mail.errors.message.notFound'))
+      if (this.noticeGeneration(client, folder, path) !== uidValidity) throw new Error(errorText('mail.errors.message.notFound'))
       return lock
     } catch (error) {
       lock.release()
       throw error
     }
+  }
+
+  /**
+   * Records the generation of a folder opened outside its fetch, and returns it. The cache of a renewed folder is
+   * dropped here already, so that its UIDs reach nothing before the folder's next fetch, which follows shortly.
+   */
+  private noticeGeneration(client: ImapClient, folder: MailFolder, path: string): string {
+    const opened = this.recordGeneration(client, folder, path)
+    if (opened.renewed) {
+      this.options.onChanged()
+      this.scheduleFolderSync(folder)
+    }
+    return opened.uidValidity
   }
 
   /**
@@ -293,7 +319,11 @@ export class MailAccountSync {
   private recordGeneration(client: ImapClient, folder: MailFolder, path: string): { uidValidity: string; renewed: boolean } {
     const mailbox = client.mailbox
     if (!mailbox) throw new Error(errorText('mail.errors.folder.openFailed', { path }))
-    const uidValidity = String(mailbox.uidValidity)
+    // RFC 3501 requires UIDVALIDITY, and imapflow leaves it undefined when a server sends none. Without it no
+    // UID can be told apart from the same UID of a later generation.
+    const generation: bigint | undefined = mailbox.uidValidity
+    if (generation === undefined) throw new Error(errorText('mail.errors.folder.noUidValidity', { path }))
+    const uidValidity = String(generation)
     const renewed = this.options.cache.setUidValidity(this.account.id, folder, uidValidity)
     if (renewed) {
       this.failedBodies[folder].clear()
@@ -330,22 +360,32 @@ export class MailAccountSync {
     client.on('flags', (event: { path?: string; uid?: number; flags?: Set<string> }) => {
       const folder = this.folderOf(event.path)
       if (!folder) return
-      if (event.uid && event.flags) this.applyFlags(folder, event.uid, event.flags)
+      if (event.uid && event.flags) this.applyFlags(client, folder, event.uid, event.flags)
       else this.scheduleFolderSync(folder)
     })
     client.on('expunge', (event: { path?: string }) => {
       const folder = this.folderOf(event.path)
       if (folder) this.scheduleFolderSync(folder)
     })
+    this.connecting = client
     try {
       await client.connect()
     } catch (error) {
       client.close()
+      // wake() gave this connection up and makes its own, so the failure it caused is no reason to report or retry.
+      if (this.connecting !== client) throw error
+      this.connecting = null
       const message = errorMessage(error)
       this.setState('error', message)
       this.scheduleReconnect()
       throw new Error(errorText('mail.errors.account.connectFailedFor', { label: this.account.label, reason: errMessage(error) }))
     }
+    // wake() gave it up just as the handshake ended.
+    if (this.connecting !== client) {
+      client.close()
+      throw new Error(errorText('mail.errors.sync.disconnected'))
+    }
+    this.connecting = null
     // stop() ran while the connection was being made and found no client to end.
     if (this.stopped) {
       await disconnect(client)
@@ -382,11 +422,15 @@ export class MailAccountSync {
     return MAIL_FOLDERS.find((folder) => this.pathOf(folder) === path) ?? null
   }
 
-  /** Writes the flags the server reported straight into the cache. A uid that is not cached is ignored. */
-  private applyFlags(folder: MailFolder, uid: number, flags: Set<string>): void {
-    const uidValidity = this.options.cache.uidValidity(this.account.id, folder)
-    if (uidValidity === null) return
-    const id = messageIdOf(this.account.id, folder, uidValidity, uid)
+  /**
+   * Writes the flags the server reported for a UID of the folder open now straight into the cache, under the
+   * generation it is open with. A uid that is not cached is ignored.
+   */
+  private applyFlags(client: ImapClient, folder: MailFolder, uid: number, flags: Set<string>): void {
+    const mailbox = client.mailbox
+    const generation: bigint | undefined = mailbox && mailbox.path === this.pathOf(folder) ? mailbox.uidValidity : undefined
+    if (generation === undefined) return
+    const id = messageIdOf(this.account.id, folder, String(generation), uid)
     const before = this.options.cache.get(id)
     if (!before) return
     const next = flagsOf({ flags })
@@ -568,6 +612,17 @@ export class MailAccountSync {
   }
 }
 
+/** Whether the server answers a NOOP within `ms`. */
+async function answers(client: Pick<ImapClient, 'noop'>, ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const silence = new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), ms)))
+  try {
+    return await Promise.race([client.noop().then(() => true, () => false), silence])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 function* chunks<T>(items: readonly T[], size: number): Generator<T[]> {
   for (let index = 0; index < items.length; index += size) yield items.slice(index, index + size)
 }
@@ -587,67 +642,3 @@ function dateOf(value: Date | string | undefined): number | null {
   const time = value instanceof Date ? value.getTime() : Date.parse(value)
   return Number.isFinite(time) ? time : null
 }
-
-/**
- * Picks, from the bodyStructure, the part numbers of the text/plain and text/html parts to use as the
- * body, along with the attachments. A part counts as an attachment when its disposition is attachment,
- * or when it has a filename and is not a text part. A single-part message has no part number, so '1' is
- * used, which imapflow resolves to TEXT.
- */
-export function bodyPartsOf(structure: MessageStructureObject | undefined): { parts: MailBodyParts; attachments: MailAttachment[] } {
-  const parts: MailBodyParts = { textPart: null, htmlPart: null }
-  const attachments: MailAttachment[] = []
-  const walk = (node: MessageStructureObject): void => {
-    const type = node.type.toLowerCase()
-    if (type.startsWith('multipart/')) {
-      for (const child of node.childNodes ?? []) walk(child)
-      return
-    }
-    const filename = node.dispositionParameters?.filename ?? node.parameters?.name ?? ''
-    const attachment = node.disposition?.toLowerCase() === 'attachment' || (filename !== '' && !type.startsWith('text/'))
-    if (attachment) {
-      attachments.push({ filename, contentType: type, size: node.size ?? 0 })
-      return
-    }
-    if (type === 'text/plain' && parts.textPart === null) parts.textPart = node.part ?? '1'
-    else if (type === 'text/html' && parts.htmlPart === null) parts.htmlPart = node.part ?? '1'
-  }
-  if (structure) walk(structure)
-  return { parts, attachments }
-}
-
-/** Prefers the text/plain part, falls back to flattening the HTML part, and returns '' when there is neither. */
-export async function fetchText(client: Pick<ImapClient, 'download'>, uid: number, parts: MailBodyParts): Promise<string> {
-  if (parts.textPart) {
-    const { content } = await client.download(uid, parts.textPart, { uid: true, maxBytes: MAX_BODY_BYTES })
-    return normalizeText((await readBytes(content)).toString('utf8'))
-  }
-  if (parts.htmlPart) {
-    const { meta, content } = await client.download(uid, parts.htmlPart, { uid: true, maxBytes: MAX_BODY_BYTES })
-    const html = await readBytes(content)
-    // imapflow converts a part to UTF-8 by the charset its MIME header declares, and passes on as written a part
-    // whose header declares none. Such an HTML part is in the charset its own meta tag declares, as a browser reads it.
-    const charset = meta?.charset ? 'utf-8' : (declaredCharset(html) ?? 'utf-8')
-    return normalizeText(htmlToPlain(new TextDecoder(charset).decode(html)))
-  }
-  return ''
-}
-
-/** The charset a meta tag of the HTML declares, in either form: `<meta charset>` or the Content-Type of `<meta http-equiv>`. */
-function declaredCharset(html: Buffer): string | null {
-  return /<meta\b[^>]*?\bcharset\s*=\s*["']?([^\s"'>;/]+)/i.exec(html.toString('latin1'))?.[1] ?? null
-}
-
-export function htmlToPlain(html: string): string {
-  return htmlToText(html, {
-    wordwrap: false,
-    selectors: [
-      { selector: 'a', options: { ignoreHref: true } },
-      { selector: 'img', format: 'skip' },
-      { selector: 'style', format: 'skip' },
-      { selector: 'script', format: 'skip' }
-    ]
-  })
-}
-
-const normalizeText = (text: string): string => text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()

@@ -228,7 +228,7 @@ describe('flag changes', () => {
 })
 
 describe('sending and replying', () => {
-  it('sends without a confirmation from the screen, parses the recipients, and appends nothing to Sent on Gmail', async () => {
+  it('sends without a confirmation from the screen and parses the recipients', async () => {
     const f = await setup()
     const result = await f.service.change(
       { operation: 'send', to: ['田中 <t@example.com>', 's@example.com'], cc: ['cc@example.com'], subject: '来週の件', body: 'よろしくお願いします。' },
@@ -245,18 +245,31 @@ describe('sending and replying', () => {
       subject: '来週の件',
       text: 'よろしくお願いします。'
     })
-    expect(f.imap.calls.some((call) => call.startsWith('append:'))).toBe(false)
     expect(result).toMatchObject({ saved: true, operation: 'send', id: '<sent-1@me>' })
     expect((result as { summary: string }).summary).toBe(t('mail.result.send', { recipients: '田中, s@example.com' }))
     await f.service.stop()
   })
 
-  it('appends the raw sent message to the Sent folder on providers other than Gmail', async () => {
+  it('appends the raw sent message to the Sent folder when the server did not file it there', async () => {
     const f = await setup({ provider: 'icloud' })
     await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
     expect(f.imap.calls).toContain('append:Sent')
     expect([...f.imap.folders.get('Sent')!.messages.values()].some((mail) => mail.text === 'raw message' && mail.flags.includes('\\Seen'))).toBe(true)
     await f.service.stop()
+  })
+
+  it('appends nothing to Sent when the server filed the sent message there itself, as Gmail, Exchange Online and Yahoo do', async () => {
+    for (const provider of ['custom', 'gmail'] as const) {
+      const f = await setup({ provider })
+      f.smtp.send.mockImplementationOnce(async () => {
+        f.imap.put('Sent', { subject: 'x', from: me, to: tanaka, date: new Date(), text: 'y', flags: ['\\Seen'], messageId: '<sent-1@me>' })
+        return { messageId: '<sent-1@me>', raw: Buffer.from('raw message') }
+      })
+      await f.service.change({ operation: 'send', to: ['t@example.com'], subject: 'x', body: 'y' }, f.signal.signal, 'screen')
+      expect(f.imap.calls).not.toContain('append:Sent')
+      expect([...f.imap.folders.get('Sent')!.messages.values()].filter((mail) => mail.messageId === '<sent-1@me>')).toHaveLength(1)
+      await f.service.stop()
+    }
   })
 
   it('replies to the sender with Re:, quotes the original body, carries the thread headers, and flags the original as answered', async () => {
@@ -297,19 +310,6 @@ describe('sending and replying', () => {
     await f.service.stop()
   })
 
-  it('treats another address the user sends from as the user, answering their message to its recipients and leaving that address out of a reply-all', async () => {
-    const f = await setup()
-    const alias = [{ name: '私', address: 'taro@company.example' }]
-    f.imap.put('Sent', { subject: '別名で送った', from: alias, to: tanaka, cc: suzuki, date: new Date(NOW - 2 * HOUR), text: 'いかがでしょうか', flags: ['\\Seen'], messageId: '<alias@me>' })
-    f.imap.put('INBOX', { subject: '別名あて', from: tanaka, to: [...alias, ...suzuki], date: new Date(NOW - HOUR), text: 'ご確認ください', messageId: '<to-alias@x>' })
-    await f.service.syncNow()
-    const idOf = (view: 'inbox' | 'sent', subject: string) => f.service.list({ view }).messages.find((message) => message.subject === subject)!.id
-    expect(await f.service.replySettle(idOf('sent', '別名で送った'), false)).toMatchObject({ to: tanaka, cc: [] })
-    expect(await f.service.replySettle(idOf('sent', '別名で送った'), true)).toMatchObject({ to: tanaka, cc: suzuki })
-    expect(await f.service.replySettle(idOf('inbox', '別名あて'), true)).toMatchObject({ to: tanaka, cc: suzuki })
-    await f.service.stop()
-  })
-
   it('sends a reply from the reader to exactly the To and Cc it settled for the form, which follow Reply-To rather than the sender', async () => {
     const f = await setup()
     const elsewhere = { name: '上司', address: 'attacker@evil.example' }
@@ -341,6 +341,23 @@ describe('sending and replying', () => {
     // The thread the sync puts the sent copy in, from the headers the reply carries.
     const replyThread = threadIdOf({ messageId: '<sent-1@me>', inReplyTo: f.outgoing().inReplyTo ?? '', references: f.outgoing().references ?? [], fallback: 'x' })
     expect(replyThread).toBe(f.cache.get(id)?.threadId)
+    await f.service.stop()
+  })
+
+  it('marks no other message answered when the folder of the original now points at a mailbox with the same UIDVALIDITY', async () => {
+    const f = await setup()
+    const archived = f.imap.put('Archive', { subject: '片付けた相談', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a', messageId: '<archived@x>' })
+    await f.service.syncNow()
+    const original = f.service.list({ view: 'archive' }).messages.find((message) => message.subject === '片付けた相談')!
+    const result = await f.service.change({ operation: 'reply', id: original.id, body: '了解です。' }, f.signal.signal, 'agent')
+    // The archive is pointed at another mailbox, whose UIDVALIDITY and first UID are the same.
+    const other = f.imap.addFolder('Archive2', { uidValidity: f.imap.folders.get('Archive')!.uidValidity })
+    f.imap.put('Archive2', { uid: archived.uid, subject: '別の箱のメール', from: suzuki, to: me, date: new Date(NOW - HOUR), text: 'b', messageId: '<elsewhere@x>' })
+    await f.service.updateAccount('a1', { folders: { sent: 'Sent', archive: 'Archive2', trash: 'Trash' } })
+    await f.service.syncNow()
+    const sent = await pressSend(f, (result as { draftId: string }).draftId)
+    expect(other.messages.get(archived.uid)?.flags).not.toContain('\\Answered')
+    expect((sent as { summary: string }).summary).toContain(t('mail.result.answeredFailed', { reason: t('mail.errors.message.notFound') }))
     await f.service.stop()
   })
 

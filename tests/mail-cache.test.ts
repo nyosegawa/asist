@@ -144,13 +144,21 @@ describe('MailCache', () => {
     try {
       const notDatabase = path.join(dir, 'not-a-database.sqlite')
       fs.writeFileSync(notDatabase, 'text written over the cache, long enough to fill the header of a database file')
-      const damaged = path.join(dir, 'damaged.sqlite')
-      const filled = new MailCache(damaged)
-      filled.upsert(Array.from({ length: 300 }, (_, index) => message('inbox', { uid: index + 1, subject: 'x'.repeat(400) })))
-      filled.close()
-      const bytes = fs.readFileSync(damaged)
-      fs.writeFileSync(damaged, Buffer.concat([bytes.subarray(0, 100), Buffer.alloc(4096, 7), bytes.subarray(4196)]))
-      for (const file of [notDatabase, damaged]) {
+      // Two caches of 2000 messages, one damaged in its first page, which holds the schema, and one in pages
+      // past it, which hold messages and open without an error.
+      const damaged = (name: string, from: (pages: number) => number, to: (pages: number) => number): string => {
+        const file = path.join(dir, name)
+        const filled = new MailCache(file)
+        filled.upsert(Array.from({ length: 2000 }, (_, index) => message('inbox', { uid: index + 1, subject: 'x'.repeat(400) })))
+        filled.close()
+        const bytes = fs.readFileSync(file)
+        const pages = bytes.length / 4096
+        fs.writeFileSync(file, Buffer.concat([bytes.subarray(0, from(pages)), Buffer.alloc(to(pages) - from(pages), 7), bytes.subarray(to(pages))]))
+        return file
+      }
+      const schemaPage = damaged('schema-page.sqlite', () => 100, () => 4096)
+      const dataPages = damaged('data-pages.sqlite', (pages) => Math.floor(pages * 0.2) * 4096, (pages) => Math.floor(pages * 0.3) * 4096)
+      for (const file of [notDatabase, schemaPage, dataPages]) {
         const cache = new MailCache(file)
         expect(cache.list({ view: 'inbox' }).total).toBe(0)
         cache.upsert([message('inbox', { uid: 1 })])
