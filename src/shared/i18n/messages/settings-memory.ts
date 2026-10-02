@@ -490,17 +490,17 @@ export const settingsMemory = defineMessages({
       'es-ES': 'Días que se conserva'
     },
     retentionHint: {
-      'ja-JP': '日付が変わるときに、保存日数を過ぎたファイルを削除します。',
-      'en-US': 'Files older than this are deleted when the date changes.',
-      'fr-FR': 'Au changement de date, les fichiers plus anciens que cette durée sont supprimés.',
-      'de-DE': 'Ältere Dateien werden gelöscht, sobald das Datum wechselt.',
-      'hi-IN': 'इससे पुरानी फ़ाइलें, दिन बदलने पर मिटा दी जाती हैं।',
-      'id-ID': 'File yang lebih tua dari itu dihapus saat tanggalnya berganti.',
-      'it-IT': 'Al cambio di data vengono eliminati i file che superano i giorni di conservazione.',
-      'ko-KR': '날짜가 바뀔 때, 보관 일수가 지난 파일을 삭제합니다.',
-      'pt-BR': 'Os arquivos mais antigos que isso são apagados na virada do dia.',
-      'es-419': 'Los archivos más antiguos que esto se eliminan al cambiar la fecha.',
-      'es-ES': 'Los archivos más antiguos que eso se eliminan al cambiar la fecha.'
+      'ja-JP': '日付が変わるときに、保存日数を過ぎたファイルを削除します。記憶の整理がまだ読んでいない日のファイルは、読み終えるまで残します。',
+      'en-US': 'Files older than this are deleted when the date changes. The file of a day that memory curation has not read yet stays until it has.',
+      'fr-FR': "Au changement de date, les fichiers plus anciens que cette durée sont supprimés. Le fichier d'un jour que l'organisation de la mémoire n'a pas encore lu est gardé jusqu'à ce qu'elle l'ait lu.",
+      'de-DE': 'Ältere Dateien werden gelöscht, sobald das Datum wechselt. Die Datei eines Tages, den die Gedächtnispflege noch nicht gelesen hat, bleibt, bis sie ihn gelesen hat.',
+      'hi-IN': 'इससे पुरानी फ़ाइलें, दिन बदलने पर मिटा दी जाती हैं। जिस दिन को याददाश्त की सफ़ाई ने अभी नहीं पढ़ा है, उसकी फ़ाइल पढ़े जाने तक रखी जाती है।',
+      'id-ID': 'File yang lebih tua dari itu dihapus saat tanggalnya berganti. File hari yang belum dibaca oleh penataan ingatan tetap disimpan sampai selesai dibaca.',
+      'it-IT': 'Al cambio di data vengono eliminati i file che superano i giorni di conservazione. Il file di un giorno che il riordino della memoria non ha ancora letto resta finché non lo legge.',
+      'ko-KR': '날짜가 바뀔 때, 보관 일수가 지난 파일을 삭제합니다. 기억 정리가 아직 읽지 않은 날의 파일은 다 읽을 때까지 남겨 둡니다.',
+      'pt-BR': 'Os arquivos mais antigos que isso são apagados na virada do dia. O arquivo de um dia que a organização da memória ainda não leu fica até ela terminar de ler.',
+      'es-419': 'Los archivos más antiguos que esto se eliminan al cambiar la fecha. El archivo de un día que la organización de la memoria aún no leyó se conserva hasta que lo lea.',
+      'es-ES': 'Los archivos más antiguos que eso se eliminan al cambiar la fecha. El archivo de un día que la organización de la memoria aún no ha leído se conserva hasta que lo lea.'
     },
     retentionLabel: {
       'ja-JP': '会話ログの保存日数',
