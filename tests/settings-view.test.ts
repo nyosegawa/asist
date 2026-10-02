@@ -437,6 +437,26 @@ describe('settings dialog', () => {
     expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ bridgePhrase: false })
   })
 
+  it('asks for the key of the bridge phrase model only while the bridge phrase is on', async () => {
+    const openAiKey = t('settingsConversation.models.apiKey', { provider: 'OpenAI' })
+    const inUse = (view: HTMLElement): string[] =>
+      [...view.querySelectorAll('.st-key')].filter((row) => [...row.querySelectorAll('.st-chip')].some((chip) => chip.textContent === t('settingsIntegrations.apiKeys.inUse'))).map((row) => row.getAttribute('data-provider')!)
+    // The conversation runs on Anthropic, whose key works; the bridge phrase model is OpenAI's, whose key is missing.
+    const models = { conversationModel: { provider: 'anthropic', id: 'claude-sonnet-5' }, bridgeModel: { provider: 'openai', id: 'gpt-5.6-luna' } } as const
+    useSettingsStore.setState({ settings: { ...settings, ...models, bridgePhrase: false } })
+    const view = await render()
+    expect(pendingLabels(view)).not.toContain(openAiKey)
+    // The current configuration names no bridge phrase model either.
+    expect(view.querySelector('.st-flow-tile[data-page="conversation"] .st-flow-sub')).toBeNull()
+    await act(async () => nav(view, 'apiKeys').click())
+    expect(inUse(view)).toEqual(['anthropic'])
+
+    await act(async () => useSettingsStore.setState({ settings: { ...settings, ...models, bridgePhrase: true } }))
+    expect(inUse(view)).toEqual(['anthropic', 'openai'])
+    await act(async () => nav(view, 'overview').click())
+    expect(pendingLabels(view)).toContain(openAiKey)
+  })
+
   it('saves a switch change to main and opens the key field only when a key is being entered', async () => {
     const view = await render()
     await act(async () => nav(view, 'voice').click())

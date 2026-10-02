@@ -22,11 +22,25 @@ describe('bridge-plan', () => {
   it('validates the output of the fast model and throws when it does not have the expected shape', async () => {
     const { plan } = await import('../src/main/services/bridge-plan')
     mocks.quickJson.mockResolvedValueOnce({ bridge: '京都の天気ですね。' })
-    await expect(plan({ text: '京都の天気', lastAssistantText: '' })).resolves.toEqual({ bridge: '京都の天気ですね。' })
+    await expect(plan({ text: '京都の天気', lastAssistantText: '', afterAizuchi: true })).resolves.toEqual({ bridge: '京都の天気ですね。' })
     const [, user] = mocks.quickJson.mock.calls[0] as [string, string]
     expect(user).toContain('京都の天気')
     mocks.quickJson.mockResolvedValueOnce({ intent: 'maybe' })
-    await expect(plan({ text: '京都の天気', lastAssistantText: '' })).rejects.toThrow()
+    await expect(plan({ text: '京都の天気', lastAssistantText: '', afterAizuchi: true })).rejects.toThrow()
+  })
+
+  it('tells the model that a backchannel has just played only when one goes before the line', async () => {
+    const { plan, AIZUCHI_BEFORE_BRIDGE } = await import('../src/main/services/bridge-plan')
+    const { promptText } = await import('../src/shared/conversation-locale')
+    mocks.quickJson.mockClear()
+    mocks.quickJson.mockResolvedValue({ bridge: '' })
+    await plan({ text: '京都の天気', lastAssistantText: '', afterAizuchi: true })
+    await plan({ text: '京都の天気', lastAssistantText: '', afterAizuchi: false })
+    const [[afterAizuchi], [alone]] = mocks.quickJson.mock.calls as Array<[string, string]>
+
+    expect(alone).not.toBe(afterAizuchi)
+    expect(afterAizuchi).toContain(promptText('ja-JP', AIZUCHI_BEFORE_BRIDGE))
+    expect(alone).not.toContain(promptText('ja-JP', AIZUCHI_BEFORE_BRIDGE))
   })
 
   it('strips quotation marks and whitespace from the bridge and rejects a bridge that is too long', async () => {

@@ -107,7 +107,7 @@ const classifier = new AizuchiClassifierFeed({
 function openingBridge(policy: OpeningPolicy, classification: AizuchiClassification | null, partialText: string): OpeningBridge | null {
   if (!policy.bridge) return null
   if (policy.aizuchi && (classification === null || !bridgeAllowed(classification.cls))) return null
-  return { plan: planner.finish({ text: partialText, lastAssistantText: lastAssistantText() }), screened: policy.aizuchi }
+  return { plan: planner.finish({ text: partialText, lastAssistantText: lastAssistantText(), afterAizuchi: policy.aizuchi }), screened: policy.aizuchi }
 }
 
 /**
@@ -268,7 +268,7 @@ async function initializeConversation(): Promise<void> {
   voiceController.events.on('partial', (text) => {
     useTurnStore.getState().setPartial(text)
     const policy = openingPolicy()
-    if (policy.bridge) planner.observe({ text, lastAssistantText: lastAssistantText() })
+    if (policy.bridge) planner.observe({ text, lastAssistantText: lastAssistantText(), afterAizuchi: policy.aizuchi })
     if (policy.aizuchi) classifier.observe({ prev: lastAssistantText(), text })
   })
 

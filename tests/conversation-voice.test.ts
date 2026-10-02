@@ -570,14 +570,18 @@ describe('the aizuchi and the bridge phrase, each turned on and off by its own s
     (turnStart.mock.calls[0] as unknown[])[1] as { aizuchi?: string; bridge?: string; bridgePending?: boolean }
 
   /** Speaks one utterance through to its turn, with a classifier and a look-ahead that answer at once. */
-  async function speakOnce(words: { partial: string; final: string }, phrase: string): Promise<Record<'aizuchiClassify' | 'bridgePlan' | 'bridgeSynthesize' | 'turnStart', Mock>> {
+  async function speakOnce(
+    words: { partial: string; final: string },
+    phrase: string,
+    overrides: Record<string, unknown> = {}
+  ): Promise<Record<'aizuchiClassify' | 'bridgePlan' | 'bridgeSynthesize' | 'turnStart', Mock>> {
     const asked = {
       aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })),
       bridgePlan: vi.fn(async () => ({ bridge: phrase })),
       bridgeSynthesize: vi.fn(async (text: string) => ({ text, audio: 'eA==' })),
       turnStart: vi.fn(async () => 42)
     }
-    await start(asked)
+    await start({ ...asked, ...overrides })
     voice().events.emit('state', 'capturing')
     await flush()
     voice().events.emit('partial', words.partial)
@@ -636,6 +640,24 @@ describe('the aizuchi and the bridge phrase, each turned on and off by its own s
     expect(bridgeSynthesize).toHaveBeenCalledWith("Tomorrow's weather, right.")
     expect(playedRoles()).toEqual(['bridge'])
     expect(startOptions(turnStart).bridge).toBe("Tomorrow's weather, right.")
+  })
+
+  it.each([
+    ['a Japanese conversation with the aizuchi on', {}, {}, true],
+    ['a Japanese conversation with the aizuchi off', { aizuchi: false }, {}, false],
+    [
+      'a Japanese conversation whose classifier does not run',
+      {},
+      { aizuchiClassifierStatus: async () => ({ runtimeInstalled: false, modelInstalled: false, running: false }) },
+      false
+    ],
+    ['an English conversation', { conversationLocale: 'en-US' }, {}, false]
+  ] as const)('tells the look-ahead whether an aizuchi can go before the phrase, in %s', async (_case, settings, api, afterAizuchi) => {
+    Object.assign(mocks.settings, settings)
+    const { bridgePlan } = await speakOnce(japanese, '会議の件ですね。', api)
+
+    expect(bridgePlan).toHaveBeenCalled()
+    for (const [input] of bridgePlan.mock.calls as Array<[{ afterAizuchi?: boolean }]>) expect(input.afterAizuchi).toBe(afterAizuchi)
   })
 
   it('says nothing before the reply with both switches on when there is no voice to say it in', async () => {
