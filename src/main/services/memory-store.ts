@@ -273,12 +273,13 @@ export function deleteDocument(file: string, dir = memoryDir()): void {
 }
 
 /**
- * Puts one file in its new state, removing it for null, and commits it; when the write or the commit fails
- * the file goes back to what it held. Each change from the screen is meant to be a commit: the curation cuts
- * its worktree from HEAD and would not see a change left on disk, and the screen would take such a change
- * for someone else's and refuse its own next save of the document. The text replaces the file only once it
- * is whole on the disk, because a document cut short by a full disk or a power loss would be committed as
- * the memory by the next curation, which commits whatever is on disk before it starts.
+ * Puts one file in its new state, removing it for null, and commits it; when the commit fails the file
+ * goes back to what it held. Each change from the screen is meant to be a commit: the curation cuts its
+ * worktree from HEAD and would not see a change left on disk, and the screen would take such a change for
+ * someone else's and refuse its own next save of the document. The text replaces the file only once it is
+ * whole on the disk, because a document cut short by a full disk or a power loss would be committed as the
+ * memory by the next curation, which commits whatever is on disk before it starts; a write that fails
+ * therefore leaves the file as it was, with nothing to put back.
  */
 function commitFile(dir: string, file: string, text: string | null, message: string): void {
   const full = path.join(dir, file)
@@ -287,8 +288,8 @@ function commitFile(dir: string, file: string, text: string | null, message: str
     else writeFileAtomicSync(full, content)
   }
   const before = readFileOf(dir, file)
+  put(text)
   try {
-    put(text)
     git.commitAll(dir, message)
   } catch (error) {
     put(before)
