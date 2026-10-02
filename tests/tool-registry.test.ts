@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import type { CalendarEventDetail } from '@shared/calendar'
 import {
   STOP_GRACE_MS,
   ToolError,
@@ -93,6 +94,32 @@ describe('formatToolResult', () => {
     expect(shown.c).toBe(value.c)
     expect(shown.a.length).toBe(shown.b.length)
     expect(shown.a.length).toBeGreaterThan(2500)
+  })
+
+  it('keeps fewer items rather than cutting the ids of a long list with several long fields', () => {
+    // The events of a shared calendar as show_calendar returns them, whose ids are long.
+    const events: CalendarEventDetail[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `${String(i).padStart(3, '0')}${'e'.repeat(116)}`,
+      title: `定例会議 ${i}`,
+      date: '2026-10-02(金)',
+      time: '10:00–11:00',
+      location: '会'.repeat(120),
+      calendar: 'team-calendar@group.calendar.google.com',
+      start: '2026-10-02T10:00:00+09:00',
+      end: '2026-10-02T11:00:00+09:00',
+      timeZone: 'Asia/Tokyo',
+      allDay: false,
+      notes: 'メ'.repeat(600),
+      recurring: false,
+      hasAttendees: false,
+      writable: true
+    }))
+    const result = formatToolResult({ today: '2026-10-02(金)', range: '2026-10-02(金)〜2026-10-08(木)', count: events.length, events }, 12_000, 'ja')
+    const shown = (JSON.parse(result.content.split('\n')[1]) as { events: unknown[] }).events.filter((event) => typeof event === 'object') as CalendarEventDetail[]
+    expect(result.content.length).toBeLessThanOrEqual(12_000)
+    expect(shown.length).toBeGreaterThan(0)
+    // An event whose id was cut cannot be changed or deleted.
+    expect(shown.map((event) => event.id)).toEqual(events.slice(0, shown.length).map((event) => event.id))
   })
 
   it('throws when shrinking still does not fit, rather than returning broken JSON', () => {

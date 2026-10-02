@@ -283,19 +283,28 @@ function shrink(
   return { value, changed: false }
 }
 
-/** How many items of each array are kept, one step after another, while the result does not fit. */
-const ARRAY_ITEM_STEPS = [20, 10, 5, 2, 1] as const
-/** The shortest a string leaf is cut to; a result that fits only with shorter strings keeps fewer array items instead. */
-const MIN_STRING_CHARS = 24
+/**
+ * The steps of the cut, taken one after another while the result does not fit: how many items of each
+ * array are kept, and the shortest a string leaf may be cut to with that many. A step is taken only
+ * when its strings fit at least that long, so with many items the short strings, such as the ids an
+ * item is changed by, stay whole and fewer items are kept instead.
+ */
+const CUT_STEPS: readonly ShrinkLimits[] = [
+  { arrayItems: 20, stringChars: 400 },
+  { arrayItems: 10, stringChars: 200 },
+  { arrayItems: 5, stringChars: 100 },
+  { arrayItems: 2, stringChars: 50 },
+  { arrayItems: 1, stringChars: 24 }
+]
 
 /**
  * Turns a tool's result into the string that goes into tool_result, and returns beside it the value that
  * string shows. A string is used as it is, with the middle dropped when it exceeds the limit. An object
- * becomes JSON, and when that exceeds the limit its arrays are cut by count step by step, and at each
- * step every string leaf is cut to the longest length with which the whole still fits, so one long body
- * keeps nearly the whole limit and the short strings beside it stay whole. The JSON is never cut off
- * mid-structure; a line saying so goes before it, which is why a caller that needs what the model saw
- * reads `value` rather than parsing content.
+ * becomes JSON, and when that exceeds the limit its arrays are cut by count step by step, and at the
+ * first step that fits every string leaf is cut to the longest length with which the whole still fits,
+ * so one long body keeps nearly the whole limit and the short strings beside it stay whole. The JSON is
+ * never cut off mid-structure; a line saying so goes before it, which is why a caller that needs what
+ * the model saw reads `value` rather than parsing content.
  */
 export function formatToolResult(
   value: unknown,
@@ -315,14 +324,14 @@ export function formatToolResult(
     const text = JSON.stringify(shrunk)
     return header.length + text.length <= maxChars ? { value: shrunk, text } : null
   }
-  for (const arrayItems of ARRAY_ITEM_STEPS) {
-    let fitting = shrinkToFit({ arrayItems, stringChars: MIN_STRING_CHARS })
+  for (const { arrayItems, stringChars } of CUT_STEPS) {
+    let fitting = shrinkToFit({ arrayItems, stringChars })
     if (!fitting) continue
     // A binary search for the longest cut that fits; no string longer than the limit can. The note of the
     // original length makes a string cut just short of its end longer than the string itself, so the
     // length is not monotonic near there and the search may settle a few characters short of the
     // longest; whatever it settles on fits.
-    let fits = MIN_STRING_CHARS
+    let fits = stringChars
     let tooLong = maxChars + 1
     while (tooLong - fits > 1) {
       const middle = Math.floor((fits + tooLong) / 2)
