@@ -56,12 +56,12 @@ export function mailTools(locale: ConversationLocale): ToolDefinition<ToolContex
       description: {
         ja: [
           `取り込み済みのメールの一覧を返す。view は ${MAIL_VIEWS.join(' / ')}(省略で inbox)。query は件名・差出人・本文の部分一致、unreadOnly で未読だけ、accountId でアカウントを絞る(省略で全部)。`,
-          '結果は { count, total, accounts: [{ id, label, email, unread }], messages: [{ id, account, from, subject, date, unread, starred, attachments?, snippet }] }。accounts の email が自分のアドレス(「自分宛て」はこれ)。取り込むのは設定の日数(既定 30 日)の範囲だけで、それより古いメールは出ない。',
+          '結果は { count, total, accounts: [{ id, label, email, otherAddresses?, unread }], messages: [{ id, account, from, subject, date, unread, starred, attachments?, snippet }] }。accounts の email と otherAddresses(そのアカウントでほかに送信に使っているアドレス)が自分のアドレス(「自分宛て」はこれ)。取り込むのは設定の日数(既定 30 日)の範囲だけで、それより古いメールは出ない。',
           '本文は read_mail で読む。id は read_mail と change_mail に使う。'
         ].join('\n'),
         en: [
           `Returns the list of messages already fetched. view is one of ${MAIL_VIEWS.join(' / ')}, the inbox when left out. query matches part of a subject, a sender or a body, unreadOnly keeps only the unread ones, and accountId narrows it to one account, all of them when left out.`,
-          "The result is { count, total, accounts: [{ id, label, email, unread }], messages: [{ id, account, from, subject, date, unread, starred, attachments?, snippet }] }. The email in accounts is the user's own address, which is what \"addressed to me\" means. Only the last however many days the settings say, 30 by default, are fetched, so nothing older appears.",
+          "The result is { count, total, accounts: [{ id, label, email, otherAddresses?, unread }], messages: [{ id, account, from, subject, date, unread, starred, attachments?, snippet }] }. The email in accounts and its otherAddresses, the other addresses the user sends from with that account, are the user's own, which is what \"addressed to me\" means. Only the last however many days the settings say, 30 by default, are fetched, so nothing older appears.",
           'The body is read with read_mail. id is what read_mail and change_mail take.'
         ].join('\n')
       },
@@ -116,7 +116,15 @@ export function mailTools(locale: ConversationLocale): ToolDefinition<ToolContex
         return {
           count: result.messages.length,
           total: result.total,
-          accounts: status.accounts.map((account) => ({ id: account.id, label: account.label, email: account.email, unread: account.unread, state: account.state, ...(account.error ? { error: account.error } : {}) })),
+          accounts: status.accounts.map((account) => ({
+            id: account.id,
+            label: account.label,
+            email: account.email,
+            ...(account.otherAddresses.length ? { otherAddresses: account.otherAddresses } : {}),
+            unread: account.unread,
+            state: account.state,
+            ...(account.error ? { error: account.error } : {})
+          })),
           messages: result.messages.map((message) => mailSummary(message, labels.get(message.accountId) ?? message.accountId))
         }
       }
