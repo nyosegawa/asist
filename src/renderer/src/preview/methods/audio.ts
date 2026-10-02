@@ -1,11 +1,11 @@
+import { errorKey } from '@shared/i18n/error-key'
 import { HeldBytes } from '../audio/held-bytes'
 import { mp4Samples, readMp4Track } from '../audio/mp4-samples'
-import { errorKey } from '@shared/i18n/error-key'
 import { afterId3, isInfoFrame, mpegFrames } from '../audio/mpeg-frames'
 import { PeakTrack } from '../audio/peaks'
 import { audioDamaged, openRangedFile, type RangedFile } from '../audio/ranged-file'
 import { isWav, readWavFormat, wavPeak } from '../audio/wav'
-import type { Bytes } from '../ranges'
+import { fetchRange, versionText, type Bytes } from '../ranges'
 import type { OpenPreviewDocument } from '../serve'
 
 /**
@@ -230,24 +230,42 @@ async function buildMp4(file: RangedFile, waveform: Waveform, signal: AbortSigna
   if (!(await decodeInto(track.config, mp4Samples(track, file), waveform, signal))) waveform.unsupported()
 }
 
-async function build(url: string, waveform: Waveform, signal: AbortSignal): Promise<void> {
-  const file = await openRangedFile(url, signal)
+async function build(file: RangedFile, waveform: Waveform, signal: AbortSignal): Promise<void> {
   const head = await file.read(0, Math.min(file.size, 12))
   if (isWav(head)) return buildWav(file, waveform, signal)
   if (String.fromCharCode(...head.subarray(4, 8)) === 'ftyp') return buildMp4(file, waveform, signal)
   return buildMpeg(file, waveform, signal)
 }
 
+/**
+ * Opens the recording by reading its first piece, which gives the version of the file the document reports, and
+ * starts reading the rest.
+ */
 const openAudio = async (url: string) => {
-  const waveform = new Waveform()
   const stop = new AbortController()
-  void build(url, waveform, stop.signal).then(
+  const file = await openRangedFile(url, stop.signal)
+  const waveform = new Waveform()
+  void build(file, waveform, stop.signal).then(
     () => waveform.end(),
     (error: unknown) => waveform.fail(error)
   )
+  let asked = false
   return {
+    version: file.version,
     methods: {
-      waveform: ({ bars, after }: { bars: number; after: number }): Promise<WaveformAnswer> => waveform.answer(bars, after)
+      /**
+       * A viewer that starts asking a document already read from, as the focus view does when it opens over the
+       * card, or the card when it is shown again, finds the file saved since by its version, which the reads have
+       * stopped checking once the whole file was read. The client then opens the file anew for every viewer of it.
+       */
+      waveform: async ({ bars, after }: { bars: number; after: number }): Promise<WaveformAnswer> => {
+        if (after === 0 && asked) {
+          const now = await fetchRange(url, 'bytes=0-0', stop.signal)
+          if (!now || versionText(now) !== file.version) throw new Error(errorKey('files.errors.changedWhileReading'))
+        }
+        asked = true
+        return waveform.answer(bars, after)
+      }
     },
     // Closing stops the reading and fails every request still waiting, so that none of them stays open in the page
     // and in the viewers' client.

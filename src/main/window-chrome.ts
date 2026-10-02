@@ -1,4 +1,12 @@
-import { app, Menu, type BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  MenuItem,
+  type BrowserWindowConstructorOptions,
+  type MenuItemConstructorOptions,
+  type WebContents
+} from 'electron'
 import type { WindowControlColors } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
 
@@ -28,10 +36,55 @@ const APP_USER_MODEL_ID = 'com.nyosegawa.asist'
  */
 const CLEAR = '#00000000'
 
+/**
+ * What the items of Electron's View menu do, done to the window's own page. Electron's roles for them act on the
+ * webContents that has the keyboard, which is the files card's HTML page, a <webview>, while it has the focus, so
+ * a reload, a zoom or the developer tools would reach that page instead of the app.
+ */
+const ON_APP_PAGE: Record<string, (page: WebContents) => void> = {
+  reload: (page) => page.reload(),
+  forcereload: (page) => page.reloadIgnoringCache(),
+  toggledevtools: (page) => page.toggleDevTools(),
+  resetzoom: (page) => {
+    page.zoomLevel = 0
+  },
+  zoomin: (page) => {
+    page.zoomLevel += 0.5
+  },
+  zoomout: (page) => {
+    page.zoomLevel -= 0.5
+  }
+}
+
+/**
+ * Electron's View menu with its labels and keys, each item acting on the page of the window it is chosen in. The
+ * separators and the full screen item, which acts on the window already, are left as Electron makes them.
+ */
+function viewMenu(): MenuItemConstructorOptions {
+  const view = new MenuItem({ role: 'viewMenu' })
+  const items = view.submenu!.items.map((item): MenuItemConstructorOptions => {
+    const act = item.role ? ON_APP_PAGE[item.role.toLowerCase()] : undefined
+    if (!act) return item.role ? { role: item.role } : { type: item.type }
+    return {
+      label: item.label,
+      accelerator: item.accelerator ?? undefined,
+      click: (_item, window) => {
+        if (window instanceof BrowserWindow) act(window.webContents)
+      }
+    }
+  })
+  return { label: view.label, submenu: items }
+}
+
 const CHROMES: Record<OsFamily, WindowChrome> = {
   macos: {
     frame: { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } },
-    prepare: () => {},
+    // Electron's own menu for macOS, but for its View menu.
+    prepare: () => {
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'fileMenu' }, { role: 'editMenu' }, viewMenu(), { role: 'windowMenu' }])
+      )
+    },
     // macOS draws the traffic lights in its own colours.
     paintControls: () => {}
   },

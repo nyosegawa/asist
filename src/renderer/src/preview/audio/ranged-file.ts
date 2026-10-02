@@ -1,5 +1,5 @@
 import { errorKey } from '@shared/i18n/error-key'
-import { fetchRange, loadFailed, readRange, type Bytes } from '../ranges'
+import { fetchRange, loadFailed, readRange, versionText, type Bytes } from '../ranges'
 
 /**
  * A recording read by HTTP ranges from its start to its end, a piece at a time, so that what is held of it at
@@ -12,8 +12,10 @@ export const PIECE_BYTES = 4 * 1024 * 1024
 export const audioDamaged = (): Error => new Error(errorKey('files.errors.audioDamaged'))
 
 export interface RangedFile {
-  /** The file's length when its first piece was read; every later answer has to come from a file of this length. */
+  /** The file's length when its first piece was read. */
   readonly size: number
+  /** The version of the file the first piece came from, which every later answer has to come from too. */
+  readonly version: string
   /** The bytes [start, end), from the first piece when it holds them. */
   read(start: number, end: number): Promise<Bytes>
   /**
@@ -24,7 +26,7 @@ export interface RangedFile {
 }
 
 /**
- * Opens the file at url by reading its first piece, whose answer gives the file's length as it is now. Once
+ * Opens the file at url by reading its first piece, whose answer gives the file's version as it is now. Once
  * `signal` aborts, the requests under way stop and no piece is asked for ahead.
  */
 export async function openRangedFile(url: string, signal?: AbortSignal): Promise<RangedFile> {
@@ -36,7 +38,7 @@ export async function openRangedFile(url: string, signal?: AbortSignal): Promise
   if (first.start !== 0 || head.length !== Math.min(size, PIECE_BYTES)) throw loadFailed(206)
 
   const read = (start: number, end: number): Promise<Bytes> =>
-    end <= head.length ? Promise.resolve(head.subarray(start, end)) : readRange(url, start, end, size, signal)
+    end <= head.length ? Promise.resolve(head.subarray(start, end)) : readRange(url, start, end, first, signal)
 
   async function* pieces(start: number, end: number): AsyncGenerator<Bytes> {
     const ask = (from: number): Promise<Bytes> | null => (from < end && !signal?.aborted ? read(from, Math.min(end, from + PIECE_BYTES)) : null)
@@ -64,5 +66,5 @@ export async function openRangedFile(url: string, signal?: AbortSignal): Promise
     }
   }
 
-  return { size, read, pieces }
+  return { size, version: versionText(first), read, pieces }
 }

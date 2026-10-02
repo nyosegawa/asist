@@ -1,5 +1,5 @@
 import { errorKey } from '@shared/i18n/error-key'
-import { fetchRange, loadFailed, readRange, type Bytes } from './ranges'
+import { fetchRange, loadFailed, readRange, versionText, type Bytes } from './ranges'
 
 /**
  * A zip container (docx, xlsx, pptx) read by HTTP ranges, so that a viewer reads the directory and the entries
@@ -35,6 +35,11 @@ interface CentralRecord extends ZipEntry {
 }
 
 export interface RangedZip {
+  /**
+   * The version of the file the zip is read from: its length and, where the server gives one, the ETag of the answer
+   * that gave it. Every later answer has to come from the same version.
+   */
+  readonly version: string
   readonly entries: ReadonlyMap<string, ZipEntry>
   /** The content of one entry, inflated. */
   read(name: string): Promise<Bytes>
@@ -275,7 +280,7 @@ function writeZip(written: Written[]): Bytes {
  * Opens the zip at url. It reads the last 64 KB by a suffix range, whose answer gives the file's length as it is
  * now, so a file saved again since it was listed is read as it is. Those bytes hold the end of central directory
  * record whatever its comment, and they are kept, so the part of the central directory or an entry inside them is
- * not read again. Every later answer has to come from a file of the same length.
+ * not read again. Every later answer has to come from the same version of the file.
  */
 export async function openZip(url: string): Promise<RangedZip> {
   const tail = await fetchRange(url, `bytes=-${TAIL_LENGTH}`)
@@ -286,9 +291,9 @@ export async function openZip(url: string): Promise<RangedZip> {
   if (tailStart !== Math.max(0, size - TAIL_LENGTH) || tail.bytes.length !== size - tailStart) throw loadFailed(206)
   const bytes = async (start: number, end: number): Promise<Bytes> => {
     if (start >= tailStart) return tail.bytes.subarray(start - tailStart, end - tailStart)
-    if (end <= tailStart) return readRange(url, start, end, size)
+    if (end <= tailStart) return readRange(url, start, end, tail)
     const joined = new Uint8Array(end - start)
-    joined.set(await readRange(url, start, tailStart, size))
+    joined.set(await readRange(url, start, tailStart, tail))
     joined.set(tail.bytes.subarray(0, end - tailStart), tailStart - start)
     return joined
   }
@@ -325,6 +330,7 @@ export async function openZip(url: string): Promise<RangedZip> {
   const byName = new Map(records.map((record) => [record.name, record]))
 
   return {
+    version: versionText(tail),
     entries: byName,
 
     async read(name) {

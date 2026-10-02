@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { addDays, lastInstant, parseDayKey } from './calendar-layout'
+import { addDays, dayKey, lastInstant, parseDayKey } from './calendar-layout'
 import { dateLabel, promptText, type ConversationLocale, type PromptText } from './conversation-locale'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
@@ -44,16 +44,27 @@ export const calendarEventSchema = z.object({
 })
 export type CalendarEvent = z.infer<typeof calendarEventSchema>
 const instant = z.iso.datetime({ offset: true })
+const day = z.iso.date()
+/**
+ * An event as change_calendar and the editor give it. An event with times runs between two instants, and
+ * an all-day event over days, from its first to its last, as Google keeps it. The days are not given as
+ * the instants they begin at, which the model gets wrong where a clock skips midnight: asked on 2026-10-02
+ * for an all-day event on 2026-09-06 in America/Santiago, where that day begins at 01:00, Gemini 3.8 Flash
+ * wrote instants that day does not begin at in 32 of 40 runs, and the day itself right in 40 of 40.
+ */
 export const calendarEventInputSchema = z
   .strictObject({
     title: z.string().trim().min(1).max(500),
-    start: instant.describe(
-      bilingual({ ja: 'UTCオフセット付きISO日時', en: 'An ISO timestamp carrying its offset from UTC' })
-    ),
-    end: instant.describe(
+    start: z.string().describe(
       bilingual({
-        ja: '終了日時。終日は最終日の翌日0時',
-        en: 'When it ends. An all-day event ends at midnight of the day after its last day.'
+        ja: '時刻のある予定はUTCオフセット付きISO日時。終日の予定は初日(YYYY-MM-DD)',
+        en: 'For an event with times, an ISO timestamp carrying its offset from UTC. For an all-day event, its first day (YYYY-MM-DD).'
+      })
+    ),
+    end: z.string().describe(
+      bilingual({
+        ja: '時刻のある予定は終了日時。終日の予定は最終日(YYYY-MM-DD)で、その日も含む',
+        en: 'For an event with times, when it ends. For an all-day event, its last day (YYYY-MM-DD), which the event includes.'
       })
     ),
     allDay: z.boolean(),
@@ -72,17 +83,19 @@ export const calendarEventInputSchema = z
     notes: z.string().max(10000)
   })
   .refine(
-    (value) => Date.parse(value.end) > Date.parse(value.start),
-    errorText('calendar.errors.endBeforeStart')
+    (value) => [value.start, value.end].every((bound) => (value.allDay ? day : instant).safeParse(bound).success),
+    errorText('calendar.errors.boundsFormat')
   )
-  // zod runs a check of the whole object even after a field failed its own, and these read the time zone
-  // and the instants, which Intl refuses to work with when they are not valid.
-  .refine((value) => !value.allDay || [value.start, value.end].every((date) => beginsDay(Date.parse(date), value.timeZone)), {
-    message: errorText('calendar.errors.allDayNotMidnight'),
+  // zod runs a check of the whole object even after a field failed its own, and a bound that is not a
+  // date or an instant has no order. An all-day event may end on the day it starts, so it has a message of
+  // its own: the one for an event with times asks for an end after the start, which a model would meet by
+  // moving the last day one later.
+  .refine((value) => !value.allDay || value.end >= value.start, {
+    message: errorText('calendar.errors.lastDayBeforeFirst'),
     when: (payload) => payload.issues.length === 0
   })
-  .refine((value) => !value.allDay || dateIn(Date.parse(value.start), value.timeZone) < dateIn(Date.parse(value.end), value.timeZone), {
-    message: errorText('calendar.errors.allDayEmpty'),
+  .refine((value) => value.allDay || Date.parse(value.end) > Date.parse(value.start), {
+    message: errorText('calendar.errors.endBeforeStart'),
     when: (payload) => payload.issues.length === 0
   })
 export type CalendarEventInput = z.infer<typeof calendarEventInputSchema>
@@ -218,7 +231,10 @@ export interface CalendarEventSummary {
   location?: string
   calendar: string
 }
-/** One event as show_calendar returns it. It also carries what an update or a delete needs: ISO timestamps and the flags. */
+/**
+ * One event as show_calendar and change_calendar return it. It also carries what an update or a delete
+ * needs, in the form change_calendar takes it: the bounds, the time zone and the flags.
+ */
 export interface CalendarEventDetail extends CalendarEventSummary {
   start: string
   end: string
@@ -258,61 +274,53 @@ export function isoWithOffset(at: number, timeZone: string): string {
   return `${clock.year}-${clock.month}-${clock.day}T${clock.hour}:${clock.minute}:${clock.second}${offset}`
 }
 
-/** The date an instant falls on in the time zone, as "2026-09-06", which sorts in the order of the dates. */
-function dateIn(at: number, timeZone: string): string {
-  const clock = clockIn(at, timeZone)
-  return `${clock.year}-${clock.month}-${clock.day}`
+const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone
+
+/** The scripts a line may break inside of between any two characters, with no space between them. */
+const IDEOGRAPHIC = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+
+/**
+ * A date, or a date with its time, as one piece that a line never breaks inside, so that a long line of the
+ * confirmation breaks only between the start and the end: its spaces become no-break spaces, and a word
+ * joiner goes on each side of an ideograph, a kana or a Hangul syllable and after a hyphen, as in the
+ * Portuguese terça-feira, where a line may otherwise break with no space. Nothing is put between other
+ * letters, which would change how Devanagari is drawn.
+ */
+function unbroken(text: string): string {
+  const characters = [...text.replaceAll(' ', '\u00a0')]
+  const joined = (before: string, after: string): boolean => IDEOGRAPHIC.test(before) || IDEOGRAPHIC.test(after) || before === '-'
+  return characters.map((character, i) => (i > 0 && joined(characters[i - 1], character) ? `\u2060${character}` : character)).join('')
 }
 
 /**
- * Whether a day begins at the instant in the time zone, as the bounds of an all-day event do. A day
- * begins at midnight, except where daylight saving time starts by skipping midnight: there it begins at
- * the first moment after the skipped hour, as 2026-09-06 begins at 01:00 in America/Santiago. Where the
- * clock turns back over midnight, as at 01:00 on 2026-10-25 in Atlantic/Azores, midnight comes twice and
- * either reading names that day. A clock turned back into the day before, as St. John's did from 00:01 to
- * 23:01 on 2010-11-06, begins no day there.
+ * When an event happens, as the confirmation window writes it, in lines. An all-day event shows the days
+ * it covers, as the event card does. An event with times shows its start and its end on this computer's
+ * clock, the one the model is given them in, so that what the model says and what the window shows
+ * agree; where the clock of the zone the event is kept in reads otherwise, a second line shows them there.
+ * The arrow stays with the start, so a line too long breaks after it.
  */
-function beginsDay(at: number, timeZone: string): boolean {
-  const clock = clockIn(at, timeZone)
-  const midnight = clock.hour === '00' && clock.minute === '00' && clock.second === '00' && new Date(at).getUTCMilliseconds() === 0
-  return midnight || dateIn(at - 1, timeZone) < dateIn(at, timeZone)
-}
-
-/** The instant a date written "2026-09-06" begins in UTC, where every day is 24 hours long. */
-function utcDay(date: string): number {
-  const [year, month, day] = date.split('-').map(Number)
-  return Date.UTC(year, month - 1, day)
-}
-
-type DescribedEvent = Pick<CalendarEvent, 'title' | 'start' | 'end' | 'allDay' | 'timeZone' | 'location' | 'notes'>
-
-/**
- * When an event happens, as the confirmation window writes it. An event with times shows its start and its
- * end on the clock of its time zone. An all-day event shows the days it covers, the last one included, as
- * the event card does: its bounds only mark where its days begin in its time zone, which on a day whose
- * midnight is skipped is 01:00, and Google keeps nothing of it but the dates.
- */
-function describeWhen(t: Translate, locale: string, event: DescribedEvent): string {
-  if (!event.allDay) {
-    const format = new Intl.DateTimeFormat(locale, { timeZone: event.timeZone, dateStyle: 'full', timeStyle: 'short' })
-    return `${format.format(event.start)} → ${format.format(event.end)}`
+function describeWhen(t: Translate, locale: string, event: CalendarEventInput): string[] {
+  if (event.allDay) {
+    // Date.parse reads a date without a time as the beginning of that day in UTC.
+    const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
+    const date = (day: string): string => unbroken(format.format(Date.parse(day)))
+    return [event.start === event.end ? date(event.start) : t('calendar.dateRange', { from: date(event.start), until: date(event.end) }), t('calendar.allDay')]
   }
-  // The last day is the date before the end's, counted on the calendar: the instant before the end lies on
-  // the end's own date when the end is the second of the two midnights of a day whose clock turns back.
-  // An event without length covers the day it starts on, as lastInstant has it.
-  const first = utcDay(dateIn(event.start, event.timeZone))
-  const last = Math.max(first, utcDay(dateIn(event.end, event.timeZone)) - DAY_MS)
-  const format = new Intl.DateTimeFormat(locale, { timeZone: 'UTC', dateStyle: 'full' })
-  return first === last ? format.format(first) : t('calendar.dateRange', { from: format.format(first), until: format.format(last) })
+  const span = (timeZone: string): string => {
+    const format = new Intl.DateTimeFormat(locale, { timeZone, dateStyle: 'full', timeStyle: 'short' })
+    return `${unbroken(format.format(Date.parse(event.start)))}\u00a0→ ${unbroken(format.format(Date.parse(event.end)))}`
+  }
+  const here = span(localZone())
+  const there = span(event.timeZone)
+  return there === here ? [here] : [here, t('calendar.confirm.inZone', { zone: event.timeZone, when: there })]
 }
 
 /** An event as the confirmation window of a change shows it, in the language of `t` and the formats of `locale`. */
-export function describeCalendarEvent(t: Translate, locale: string, event: DescribedEvent): string {
+export function describeCalendarEvent(t: Translate, locale: string, event: CalendarEventInput): string {
   const none = t('calendar.confirm.none')
   return [
     event.title,
-    describeWhen(t, locale, event),
-    event.allDay ? t('calendar.allDay') : event.timeZone,
+    ...describeWhen(t, locale, event),
     t('calendar.confirm.location', { location: event.location || none }),
     t('calendar.confirm.notes', { notes: event.notes || none })
   ].join('\n')
@@ -323,8 +331,30 @@ export function describeCalendarEvent(t: Translate, locale: string, event: Descr
  * carries local time, so a UTC stamp would put mail that arrived, or a task finished, before 9 a.m. in
  * Japan on the day before.
  */
-export const localIsoWithOffset = (at: number): string =>
-  isoWithOffset(at, Intl.DateTimeFormat().resolvedOptions().timeZone)
+export const localIsoWithOffset = (at: number): string => isoWithOffset(at, localZone())
+
+/**
+ * An event in the form change_calendar and the editor give it. An event with times is written on this
+ * machine's clock, the one the confirmation window shows it on and everything else the model reads is
+ * written in, whatever zone keeps it. timeZone names that zone, and the model works out the time there
+ * when asked: for a call at 9:00 in New York read on a machine in Tokyo, Gemini 3.8 Flash gave it in 40
+ * of 40 runs on 2026-10-02. An all-day event, which ASIST places at the beginning of its days on this
+ * machine, is written as those days, the last one included; an event without length covers the day it
+ * starts on, as lastInstant has it. Given the instant such a day begins at, which is 01:00 on 2026-09-06
+ * in America/Santiago, and asked in English when the event starts, Gemini 3.8 Flash said one in the
+ * morning in 8 of 20 runs on 2026-10-02; given the day, in none of 19.
+ */
+export function calendarEventInput(event: CalendarEvent): CalendarEventInput {
+  return {
+    title: event.title,
+    start: event.allDay ? dayKey(new Date(event.start)) : localIsoWithOffset(event.start),
+    end: event.allDay ? dayKey(new Date(lastInstant(event))) : localIsoWithOffset(event.end),
+    allDay: event.allDay,
+    timeZone: event.timeZone,
+    location: event.location,
+    notes: event.notes
+  }
+}
 
 export function summarizeCalendarEvent(locale: ConversationLocale, event: CalendarEvent): CalendarEventSummary {
   const lastDay = dateLabel(locale, lastInstant(event))
@@ -340,10 +370,11 @@ export function summarizeCalendarEvent(locale: ConversationLocale, event: Calend
 }
 
 export function detailCalendarEvent(locale: ConversationLocale, event: CalendarEvent): CalendarEventDetail {
+  const { start, end } = calendarEventInput(event)
   return {
     ...summarizeCalendarEvent(locale, event),
-    start: isoWithOffset(event.start, event.timeZone),
-    end: isoWithOffset(event.end, event.timeZone),
+    start,
+    end,
     timeZone: event.timeZone,
     allDay: event.allDay,
     notes: event.notes,

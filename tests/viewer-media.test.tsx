@@ -22,7 +22,8 @@ import type { WaveformAnswer } from '@/preview/methods/audio'
 const preview = vi.hoisted(() => ({
   open: vi.fn(),
   calls: [] as Array<{ args: { bars: number; after: number }; answer: (value: unknown) => void; fail: (error: Error) => void }>,
-  release: vi.fn()
+  release: vi.fn(),
+  stopListening: vi.fn()
 }))
 vi.mock('@/panels/viewers/preview-client', () => ({ openPreviewDocument: preview.open }))
 
@@ -55,10 +56,12 @@ describe('viewer rendering', () => {
     pause.mockClear()
     preview.calls.length = 0
     preview.release.mockClear()
+    preview.stopListening.mockClear()
     preview.open.mockReset()
     preview.open.mockImplementation(() => ({
       call: (_method: string, args: { bars: number; after: number }) =>
         new Promise((resolve, reject) => preview.calls.push({ args, answer: resolve, fail: reject })),
+      onChanged: () => preview.stopListening,
       release: preview.release
     }))
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(play)
@@ -214,6 +217,7 @@ describe('viewer rendering', () => {
     await render(AudioViewer, audio)
     await act(async () => root.render(null))
     expect(preview.release).toHaveBeenCalledTimes(1)
+    expect(preview.stopListening).toHaveBeenCalledTimes(1)
     await answer(bars([0.5], false))
     expect(preview.calls).toHaveLength(1)
   })

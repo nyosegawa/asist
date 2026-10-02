@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FileItem } from '@shared/files'
 import { baseName } from '@shared/file-path'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { Frame } from './Frame'
 import { formatTime } from './media'
 import { MediaControls, useMediaState } from './MediaControls'
@@ -15,7 +16,8 @@ import type openAudio from '@/preview/methods/audio'
  * Audio. The <audio> element stays hidden and the waveform together with MediaControls drives it; it plays the file
  * by ranges, at any size. The waveform is built in the preview page (preview/methods/audio.ts), which reads the
  * file from its start a piece at a time and sends the bars of what it has read, which are drawn as they come, the
- * part not read yet as a flat line. Pressing the waveform seeks to that position.
+ * part not read yet as a flat line. A file saved again while it is shown is read anew and drawn as it is now.
+ * Pressing the waveform seeks to that position.
  */
 const BARS = 400
 const NO_BARS = new Float32Array(0)
@@ -34,8 +36,12 @@ type Waveform =
   | { state: 'drawing' | 'ready'; bars: Float32Array; seconds: number }
   | { state: 'failed'; message: string }
 
+const STOPPED = 'files.errors.previewStopped'
+
 function useWaveform({ path, url, sizeBytes, modifiedAt }: FileItem): Waveform {
   const [waveform, setWaveform] = useState<Waveform>({ state: 'loading' })
+  /** How many times the file was found saved again while it was shown, each of which builds the waveform anew. */
+  const [saves, setSaves] = useState(0)
   useEffect(() => {
     if (!url) return
     if (!drawsWaveform(path)) {
@@ -44,30 +50,49 @@ function useWaveform({ path, url, sizeBytes, modifiedAt }: FileItem): Waveform {
     }
     setWaveform({ state: 'loading' })
     const preview = openPreviewDocument<typeof openAudio>('audio', { url, sizeBytes, modifiedAt })
-    let cancelled = false
+    let current = true
+    const stopListening = preview.onChanged(() => {
+      if (!current) return
+      current = false
+      setSaves((count) => count + 1)
+    })
     void (async () => {
-      let version = 0
-      try {
-        for (;;) {
-          const answer = await preview.call('waveform', { bars: BARS, after: version })
-          if (cancelled) return
-          if (!answer.supported) {
-            setWaveform({ state: 'unsupported' })
-            return
+      let after = 0
+      let stopped = false
+      for (;;) {
+        let answer
+        try {
+          answer = await preview.call('waveform', { bars: BARS, after })
+        } catch (error) {
+          if (!current) return
+          // A frame that stopped before it answered, as another viewer's file can make it, is started anew and
+          // reads the file from its start, so the waveform is asked for from its start once more. A second stop in
+          // a row is shown, so that a file that stops the frame itself is not read again and again.
+          if (errorKeyOf(error) === STOPPED && !stopped) {
+            stopped = true
+            after = 0
+            continue
           }
-          version = answer.version
-          setWaveform({ state: answer.done ? 'ready' : 'drawing', bars: answer.bars, seconds: answer.seconds })
-          if (answer.done) return
+          setWaveform({ state: 'failed', message: displayError(error) })
+          return
         }
-      } catch (error) {
-        if (!cancelled) setWaveform({ state: 'failed', message: displayError(error) })
+        if (!current) return
+        stopped = false
+        if (!answer.supported) {
+          setWaveform({ state: 'unsupported' })
+          return
+        }
+        after = answer.version
+        setWaveform({ state: answer.done ? 'ready' : 'drawing', bars: answer.bars, seconds: answer.seconds })
+        if (answer.done) return
       }
     })()
     return () => {
-      cancelled = true
+      current = false
+      stopListening()
       preview.release()
     }
-  }, [path, url, sizeBytes, modifiedAt])
+  }, [path, url, sizeBytes, modifiedAt, saves])
   return waveform
 }
 

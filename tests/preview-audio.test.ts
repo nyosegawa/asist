@@ -1,5 +1,6 @@
 import { rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import type { Protocol } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorKey } from '@shared/i18n/error-key'
 import { HeldBytes } from '@/preview/audio/held-bytes'
@@ -364,8 +365,8 @@ describe('the audio document', () => {
   it('reads a file through the asist-file scheme itself', async () => {
     const folder = longTempFolder('asist-audio-')
     try {
-      handleFileScheme(() => [folder])
-      const handler = electron.handle.mock.calls[0][1] as (request: { url: string; headers: Headers }) => Response
+      handleFileScheme({ handle: electron.handle } as unknown as Protocol, () => [folder])
+      const handler = electron.handle.mock.calls.at(-1)![1] as (request: { url: string; headers: Headers }) => Response
       vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => handler({ url, headers: new Headers(init?.headers) }))
       const target = path.join(folder, 'memo.wav')
       writeFileSync(target, wavFile({ bits: 16, channels: 1, sampleRate: 16_000 }, 3_000_000, (frame) => (frame === 2_999_999 ? 1 : 0.25)))
@@ -378,16 +379,21 @@ describe('the audio document', () => {
     }
   })
 
-  it('says the file changed when a later piece comes from a file of another length', async () => {
+  it.each([
+    { saved: 'at another length', length: 4, etag: '"saved"' },
+    { saved: 'at the same length', length: 0, etag: '"saved"' }
+  ])('says the file changed when a later piece comes from the file saved $saved', async ({ length, etag }) => {
     const file = wavFile({ bits: 16, channels: 2, sampleRate: 44_100 }, 2_000_000, () => 0.5)
     serve(file)
     const fetchFile = globalThis.fetch
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
       const response = await fetchFile(url, init)
       const range = response.headers.get('Content-Range')!
-      return range.startsWith('bytes 0-') ? response : new Response(await response.arrayBuffer(), { status: 206, headers: { 'Content-Range': range.replace(/\/\d+$/, `/${file.length + 4}`) } })
+      if (range.startsWith('bytes 0-')) return new Response(await response.arrayBuffer(), { status: 206, headers: { 'Content-Range': range, ETag: '"first"' } })
+      return new Response(await response.arrayBuffer(), { status: 206, headers: { 'Content-Range': range.replace(/\/\d+$/, `/${file.length + length}`), ETag: etag } })
     })
     const document = await openAudio(URL)
+    expect(document.version).toBe(JSON.stringify([file.length, '"first"']))
     await expect(answers(document)).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
   })
 
