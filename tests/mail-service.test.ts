@@ -88,13 +88,18 @@ async function setup(options: { provider?: MailAccount['provider']; enabled?: bo
   service.start()
   if (settings.enabled) await service.syncNow()
   const ids = {
-    question: messageIdOf('a1', 'inbox', question.uid),
-    other: messageIdOf('a1', 'inbox', other.uid),
-    sent: messageIdOf('a1', 'sent', sentOne.uid)
+    question: messageIdOf('a1', 'inbox', '1', question.uid),
+    other: messageIdOf('a1', 'inbox', '1', other.uid),
+    sent: messageIdOf('a1', 'sent', '1', sentOne.uid)
   }
   const signal = new AbortController()
   const outgoing = (): OutgoingMail => smtp.send.mock.calls[0][2] as OutgoingMail
   return { imap, server, cache, drafts, draftsFile, service, secrets, smtp, confirm, events, saveSettings, settings: () => settings, ids, signal, outgoing, question, other }
+}
+
+/** What the send button of a draft does when the screen shows the draft as it is stored. */
+function pressSend(f: Awaited<ReturnType<typeof setup>>, id: string) {
+  return f.service.draftSend(id, f.signal.signal, f.drafts.get(id)?.updatedAt ?? 0)
 }
 
 /** What the reader's reply form does: main settles the reply the form shows, and the same reply is sent. */
@@ -204,7 +209,7 @@ describe('flag changes', () => {
     expect(f.imap.calls.filter((call) => call.startsWith('flags+:INBOX'))).toHaveLength(1)
     expect(f.imap.calls.filter((call) => call.startsWith('flags+:Sent'))).toHaveLength(1)
     expect(f.service.list({ view: 'inbox' }).unread).toBe(0)
-    await expect(f.service.change({ operation: 'markRead', ids: ['a1:inbox:999'], read: true }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    await expect(f.service.change({ operation: 'markRead', ids: ['a1:inbox:1:999'], read: true }, f.signal.signal, 'screen')).rejects.toThrow(errorText('mail.errors.message.notFound'))
     await f.service.stop()
   })
 
@@ -286,9 +291,22 @@ describe('sending and replying', () => {
     const f = await setup()
     const sent = f.imap.put('Sent', { subject: '日程のご相談', from: me, to: tanaka, cc: suzuki, date: new Date(NOW - 2 * HOUR), text: 'いかがでしょうか', flags: ['\\Seen'], messageId: '<ask@me>' })
     await f.service.syncNow()
-    const id = messageIdOf('a1', 'sent', sent.uid)
+    const id = messageIdOf('a1', 'sent', '1', sent.uid)
     expect(await f.service.replySettle(id, false)).toMatchObject({ to: tanaka, cc: [] })
     expect(await f.service.replySettle(id, true)).toMatchObject({ to: tanaka, cc: suzuki })
+    await f.service.stop()
+  })
+
+  it('treats another address the user sends from as the user, answering their message to its recipients and leaving that address out of a reply-all', async () => {
+    const f = await setup()
+    const alias = [{ name: '私', address: 'taro@company.example' }]
+    f.imap.put('Sent', { subject: '別名で送った', from: alias, to: tanaka, cc: suzuki, date: new Date(NOW - 2 * HOUR), text: 'いかがでしょうか', flags: ['\\Seen'], messageId: '<alias@me>' })
+    f.imap.put('INBOX', { subject: '別名あて', from: tanaka, to: [...alias, ...suzuki], date: new Date(NOW - HOUR), text: 'ご確認ください', messageId: '<to-alias@x>' })
+    await f.service.syncNow()
+    const idOf = (view: 'inbox' | 'sent', subject: string) => f.service.list({ view }).messages.find((message) => message.subject === subject)!.id
+    expect(await f.service.replySettle(idOf('sent', '別名で送った'), false)).toMatchObject({ to: tanaka, cc: [] })
+    expect(await f.service.replySettle(idOf('sent', '別名で送った'), true)).toMatchObject({ to: tanaka, cc: suzuki })
+    expect(await f.service.replySettle(idOf('inbox', '別名あて'), true)).toMatchObject({ to: tanaka, cc: suzuki })
     await f.service.stop()
   })
 
@@ -297,7 +315,7 @@ describe('sending and replying', () => {
     const elsewhere = { name: '上司', address: 'attacker@evil.example' }
     const phishing = f.imap.put('INBOX', { subject: '請求書の件', from: [{ name: '上司', address: 'boss@company.example' }], replyTo: [elsewhere], to: [...me, ...suzuki], date: new Date(NOW - HOUR), text: '至急返信して', messageId: '<m1@x>' })
     await f.service.syncNow()
-    const reply = await f.service.replySettle(messageIdOf('a1', 'inbox', phishing.uid), true)
+    const reply = await f.service.replySettle(messageIdOf('a1', 'inbox', '1', phishing.uid), true)
     expect({ to: reply.to, cc: reply.cc }).toEqual({ to: [elsewhere], cc: suzuki })
     await f.service.replySend({ reply, body: '確認します' }, f.signal.signal)
     expect({ to: f.outgoing().to, cc: f.outgoing().cc }).toEqual({ to: reply.to, cc: reply.cc })
@@ -317,7 +335,7 @@ describe('sending and replying', () => {
     const f = await setup({ provider: 'icloud' })
     const second = f.imap.put('INBOX', { subject: 'Re: 打合せ', from: tanaka, to: me, date: new Date(NOW - HOUR), text: '二通目', messageId: '<p2@x>', inReplyTo: '<p1@x>', references: '<root@x> <p1@x>' })
     await f.service.syncNow()
-    const id = messageIdOf('a1', 'inbox', second.uid)
+    const id = messageIdOf('a1', 'inbox', '1', second.uid)
     await replyFromReader(f, id, '了解です。')
     expect(f.outgoing()).toMatchObject({ inReplyTo: '<p2@x>', references: ['<root@x>', '<p1@x>', '<p2@x>'] })
     // The thread the sync puts the sent copy in, from the headers the reply carries.
@@ -332,7 +350,7 @@ describe('sending and replying', () => {
     const draftId = (result as { draftId: string }).draftId
     // The message has gone from the server while the cache still lists it, so the STORE matches nothing.
     f.imap.folders.get('INBOX')!.messages.delete(f.question.uid)
-    const sent = await f.service.draftSend(draftId, f.signal.signal)
+    const sent = await pressSend(f, draftId)
     expect(sent).toMatchObject({ saved: true, operation: 'reply' })
     expect((sent as { summary: string }).summary).toContain(t('mail.result.answeredFailed', { reason: t('mail.errors.change.rejected') }))
     expect(f.cache.get(f.ids.question)?.answered).toBe(false)
@@ -371,12 +389,12 @@ describe('drafts', () => {
     expect(f.drafts.get(draftId)).toMatchObject({ accountId: 'a1', to: ['田中 <t@example.com>'], subject: '季節のご挨拶', body: '拝啓', reply: null, origin: 'agent' })
     expect(f.events.some((event) => event.type === 'drafts' && event.drafts.length === 1)).toBe(true)
     f.service.draftUpdate(draftId, { body: '拝啓\n時節柄ご自愛ください。' })
-    const sent = await f.service.draftSend(draftId, f.signal.signal)
+    const sent = await pressSend(f, draftId)
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.outgoing()).toMatchObject({ to: [{ name: '田中', address: 't@example.com' }], subject: '季節のご挨拶', text: '拝啓\n時節柄ご自愛ください。' })
     expect(sent).toMatchObject({ saved: true, operation: 'send' })
     expect(f.drafts.get(draftId)).toBeNull()
-    await expect(f.service.draftSend(draftId, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.gone'))
+    await expect(pressSend(f, draftId)).rejects.toThrow(errorText('mail.errors.draft.gone'))
     await f.service.stop()
   })
 
@@ -398,7 +416,7 @@ describe('drafts', () => {
       subject: ''
     })
     expect(f.service.draftUpdate(draftId, { to: ['x@example.com'], subject: 'x', body: 'では。' })).toMatchObject({ to: [], subject: '', body: 'では。' })
-    await f.service.draftSend(draftId, f.signal.signal)
+    await pressSend(f, draftId)
     expect(f.outgoing()).toMatchObject({ subject: 'Re: 見積もりの相談', inReplyTo: '<q@x>', references: ['<q@x>'] })
     expect(f.outgoing().text).toMatch(/^では。\n\n.*> 一行目/s)
     expect(f.cache.get(f.ids.question)?.answered).toBe(true)
@@ -411,12 +429,12 @@ describe('drafts', () => {
     const elsewhere = { name: '上司', address: 'attacker@evil.example' }
     const phishing = f.imap.put('INBOX', { subject: '請求書の件', from: [boss], replyTo: [elsewhere], to: [...me, ...suzuki], date: new Date(NOW - HOUR), text: '至急返信して', messageId: '<m1@x>' })
     await f.service.syncNow()
-    const result = await f.service.change({ operation: 'reply', id: messageIdOf('a1', 'inbox', phishing.uid), body: '確認します', replyAll: true }, f.signal.signal, 'agent')
+    const result = await f.service.change({ operation: 'reply', id: messageIdOf('a1', 'inbox', '1', phishing.uid), body: '確認します', replyAll: true }, f.signal.signal, 'agent')
     const draft = f.drafts.get((result as { draftId: string }).draftId)!
     // The card and the composer show these addresses in full; the sender's name alone would hide where the reply goes.
     expect(draft.reply).toMatchObject({ from: boss, to: [elsewhere], cc: suzuki })
     expect((result as { summary: string }).summary).toContain(elsewhere.address)
-    await f.service.draftSend(draft.id, f.signal.signal)
+    await pressSend(f, draft.id)
     expect({ to: f.outgoing().to, cc: f.outgoing().cc }).toEqual({ to: draft.reply!.to, cc: draft.reply!.cc })
     await f.service.stop()
   })
@@ -428,10 +446,28 @@ describe('drafts', () => {
     await f.service.change({ operation: 'archive', id: f.ids.question }, f.signal.signal, 'screen')
     await f.service.syncNow()
     expect(f.cache.get(f.ids.question)).toBeNull()
-    await expect(f.service.draftSend(draftId, f.signal.signal)).resolves.toMatchObject({ saved: true, operation: 'reply' })
+    await expect(pressSend(f, draftId)).resolves.toMatchObject({ saved: true, operation: 'reply' })
     expect(f.outgoing()).toMatchObject({ to: [{ name: '田中', address: 't@example.com' }], subject: 'Re: 見積もりの相談', inReplyTo: '<q@x>' })
     expect(f.outgoing().text).toMatch(/^明日お送りします\n\n.*> 一行目\n> 二行目\n$/s)
     expect(f.drafts.get(draftId)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('refuses to send a draft that changed after the version the screen showed, and sends the version it shows', async () => {
+    const f = await setup()
+    const shown = f.service.draftCreate({ to: ['t@example.com'], subject: '日程', body: '月曜でお願いします' }, 'agent')
+    // The Agent's edit reaches main, within the same millisecond, while the screen still draws the version before it.
+    f.service.draftUpdate(shown.id, { to: ['other@example.com'], body: '火曜でお願いします' })
+    const refused = await f.service.draftSend(shown.id, f.signal.signal, shown.updatedAt).then(
+      () => null,
+      (error: Error) => error.message
+    )
+    expect(f.smtp.send).not.toHaveBeenCalled()
+    expect(refused).toBe(errorText('mail.errors.draft.changed'))
+    expect(f.drafts.get(shown.id)).toMatchObject({ body: '火曜でお願いします', sendStartedAt: null })
+    const redrawn = f.drafts.get(shown.id)!
+    await expect(f.service.draftSend(shown.id, f.signal.signal, redrawn.updatedAt)).resolves.toMatchObject({ saved: true, operation: 'send' })
+    expect(f.outgoing()).toMatchObject({ to: [{ name: '', address: 'other@example.com' }], text: '火曜でお願いします' })
     await f.service.stop()
   })
 
@@ -440,9 +476,9 @@ describe('drafts', () => {
     const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
     let release!: (value: { messageId: string; raw: Buffer }) => void
     f.smtp.send.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
-    const first = f.service.draftSend(draft.id, f.signal.signal)
+    const first = pressSend(f, draft.id)
     await vi.waitFor(() => expect(f.smtp.send).toHaveBeenCalled())
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sending'))
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.draft.sending'))
     expect(() => f.service.draftUpdate(draft.id, { body: 'z' })).toThrow(errorText('mail.errors.draft.sending'))
     expect(() => f.service.draftRemove(draft.id)).toThrow(errorText('mail.errors.draft.sending'))
     release({ messageId: '<sent-1@me>', raw: Buffer.from('raw') })
@@ -464,15 +500,15 @@ describe('drafts', () => {
       })
       return { messageId: '<sent-1@me>', raw: Buffer.from('raw') }
     })
-    const sent = await f.service.draftSend(draft.id, f.signal.signal)
+    const sent = await pressSend(f, draft.id)
     expect(sent).toMatchObject({ saved: true, operation: 'send' })
     expect((sent as { summary: string }).summary).toContain(t('mail.result.draftNotRemoved', { reason: 'disk full' }))
     expect(f.drafts.get(draft.id)).not.toBeNull()
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
     await f.service.stop()
     // The app starts again with the same drafts file.
     const restarted = await setup({ draftsFile: f.draftsFile })
-    await expect(restarted.service.draftSend(draft.id, restarted.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    await expect(pressSend(restarted, draft.id)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
     expect(restarted.smtp.send).not.toHaveBeenCalled()
     restarted.service.draftRemove(draft.id)
     expect(restarted.service.draftList()).toEqual([])
@@ -491,10 +527,10 @@ describe('drafts', () => {
       })
       return { messageId: '<sent-1@me>', raw: Buffer.from('raw') }
     })
-    const sent = await f.service.draftSend(draft.id, f.signal.signal)
+    const sent = await pressSend(f, draft.id)
     expect(sent).toMatchObject({ saved: true, operation: 'send' })
     expect((sent as { summary: string }).summary).toContain(t('mail.result.afterSendFailed', { reason: 'disk I/O error' }))
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.gone'))
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.draft.gone'))
     expect(f.smtp.send).toHaveBeenCalledOnce()
     await f.service.stop()
   })
@@ -515,10 +551,10 @@ describe('drafts', () => {
     const f = await setup()
     const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
     f.smtp.send.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'EAUTH' }))
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
     f.smtp.send.mockRejectedValueOnce(new Error('connection reset after DATA'))
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendUnknown', { reason: 'connection reset after DATA' }))
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).resolves.toMatchObject({ saved: true, operation: 'send' })
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.send.sendUnknown', { reason: 'connection reset after DATA' }))
+    await expect(pressSend(f, draft.id)).resolves.toMatchObject({ saved: true, operation: 'send' })
     expect(f.smtp.send).toHaveBeenCalledTimes(3)
     expect(f.drafts.get(draft.id)).toBeNull()
     await f.service.stop()
@@ -534,8 +570,8 @@ describe('drafts', () => {
       })
       throw Object.assign(new Error('Invalid login'), { code: 'EAUTH' })
     })
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(/mail\.errors\.draft\.lockedAfterFailure .*disk full/)
-    await expect(f.service.draftSend(draft.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
+    await expect(pressSend(f, draft.id)).rejects.toThrow(/mail\.errors\.draft\.lockedAfterFailure .*disk full/)
+    await expect(pressSend(f, draft.id)).rejects.toThrow(errorText('mail.errors.draft.sendStarted'))
     expect(f.smtp.send).toHaveBeenCalledOnce()
     await f.service.stop()
   })
@@ -554,10 +590,10 @@ describe('drafts', () => {
     expect(() => f.service.draftCreate({ to: ['not an address'], body: 'x' }, 'screen')).toThrow(errorText('mail.errors.form.badAddress', { text: 'not an address' }))
     expect(() => f.service.draftCreate({ accountId: 'nope', body: 'x' }, 'screen')).toThrow(errorText('mail.errors.account.notFound'))
     const empty = f.service.draftCreate({ to: ['t@example.com'], subject: 'x' }, 'screen')
-    await expect(f.service.draftSend(empty.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.draft.emptyBody'))
+    await expect(pressSend(f, empty.id)).rejects.toThrow(errorText('mail.errors.draft.emptyBody'))
     f.service.draftUpdate(empty.id, { body: 'y' })
     f.smtp.send.mockRejectedValueOnce(Object.assign(new Error('Invalid login'), { code: 'EAUTH' }))
-    await expect(f.service.draftSend(empty.id, f.signal.signal)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
+    await expect(pressSend(f, empty.id)).rejects.toThrow(errorText('mail.errors.send.sendFailed', { reason: 'Invalid login' }))
     expect(f.drafts.get(empty.id)).not.toBeNull()
     f.service.draftRemove(empty.id)
     expect(f.service.draftList()).toEqual([])
@@ -575,7 +611,7 @@ describe('reading', () => {
     await f.service.read(f.ids.question)
     expect(f.imap.calls.filter((call) => call.startsWith('download:')).length).toBe(downloads)
     expect(f.imap.calls.some((call) => call.includes('\\Seen'))).toBe(false)
-    await expect(f.service.read('a1:inbox:999')).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    await expect(f.service.read('a1:inbox:1:999')).rejects.toThrow(errorText('mail.errors.message.notFound'))
     expect(f.service.thread('a1', f.cache.get(f.ids.question)!.threadId).map((m) => m.id)).toEqual([f.ids.question])
     await f.service.stop()
   })
@@ -627,6 +663,29 @@ describe('a UIDVALIDITY the server renewed', () => {
     expect(f.service.list({ view: 'inbox' }).messages.map((m) => m.subject)).toEqual(['別のメール'])
     expect(f.events.filter((event) => event.type === 'arrived')).toEqual([])
     await f.service.stop()
+  })
+
+  it('reaches neither by an operation nor by a read the message a resync filed under the UID of one the screen still shows', async () => {
+    const operations: Array<(f: Awaited<ReturnType<typeof setup>>, id: string) => Promise<unknown>> = [
+      (f, id) => f.service.change({ operation: 'star', id, starred: true }, f.signal.signal, 'screen'),
+      (f, id) => f.service.change({ operation: 'markRead', ids: [id], read: true }, f.signal.signal, 'screen'),
+      (f, id) => f.service.change({ operation: 'archive', id }, f.signal.signal, 'screen'),
+      (f, id) => f.service.change({ operation: 'trash', id }, f.signal.signal, 'agent'),
+      (f, id) => f.service.read(id),
+      (f, id) => f.service.replySettle(id, false)
+    ]
+    for (const operation of operations) {
+      const f = await setup()
+      const shown = f.service.list({ view: 'inbox' }).messages.find((message) => message.subject === '見積もりの相談')!.id
+      const other = recreateInbox(f)
+      await f.service.syncNow()
+      expect(f.service.list({ view: 'inbox' }).messages.map((message) => message.subject)).toEqual(['別のメール'])
+      await expect(operation(f, shown)).rejects.toThrow(errorText('mail.errors.message.notFound'))
+      expect(f.confirm).not.toHaveBeenCalled()
+      expect(f.imap.folders.get('INBOX')!.messages.get(other.uid)).toMatchObject({ subject: '別のメール', flags: [] })
+      expect(f.imap.calls.filter((call) => call.startsWith('download:') || call.startsWith('flags') || call.startsWith('move:'))).toEqual([])
+      await f.service.stop()
+    }
   })
 
   it('stops an operation whose message a fetch replaced while its confirmation was open', async () => {

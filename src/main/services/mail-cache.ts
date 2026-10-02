@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 import {
   MAIL_FOLDERS,
@@ -6,6 +7,7 @@ import {
   mailListQuerySchema,
   parseMailInput,
   snippetOf,
+  threadIdOf,
   type MailAddress,
   type MailAttachment,
   type MailFolder,
@@ -21,7 +23,7 @@ import {
  * folder whose UIDVALIDITY changed is dropped and fetched again.
  */
 
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 type Row = Record<string, SQLOutputValue>
 
@@ -95,58 +97,82 @@ function rowToMessage(row: Row): MailMessage {
 const COLUMNS =
   'id, account_id, folder, uid, message_id, thread_id, subject, from_name, from_address, to_json, cc_json, reply_to_json, date, snippet, unread, starred, answered, attachments_json, size, labels_json, duplicate, body_fetched'
 
+/** SQLite's result codes for a file that is damaged (SQLITE_CORRUPT) and for one that is not a database at all (SQLITE_NOTADB). */
+const BROKEN_FILE_CODES: ReadonlySet<unknown> = new Set([11, 26])
+
+/**
+ * Opens the cache file. One that is damaged or is not a database is replaced by an empty cache, which the
+ * sync fills from the server again, so nothing it held is lost; kept, it would stop every start of the app.
+ * Any other failure, such as a file that cannot be opened at all, is thrown.
+ */
+function openCache(file: string): DatabaseSync {
+  const db = new DatabaseSync(file)
+  try {
+    prepareSchema(db)
+    return db
+  } catch (error) {
+    db.close()
+    if (!BROKEN_FILE_CODES.has((error as { errcode?: unknown }).errcode)) throw error
+    console.warn(`mail cache: ${file} is replaced by an empty cache:`, error instanceof Error ? error.message : error)
+    for (const suffix of ['', '-journal', '-wal', '-shm']) fs.rmSync(`${file}${suffix}`, { force: true })
+    const rebuilt = new DatabaseSync(file)
+    prepareSchema(rebuilt)
+    return rebuilt
+  }
+}
+
+function prepareSchema(db: DatabaseSync): void {
+  db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+  const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as Row | undefined
+  if (row && Number(row.value) !== SCHEMA_VERSION) {
+    db.exec('DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS folders; DELETE FROM meta')
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS folders (
+      account_id TEXT NOT NULL,
+      folder TEXT NOT NULL,
+      uid_validity TEXT NOT NULL,
+      PRIMARY KEY (account_id, folder)
+    );
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL,
+      folder TEXT NOT NULL,
+      uid INTEGER NOT NULL,
+      message_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      from_name TEXT NOT NULL,
+      from_address TEXT NOT NULL,
+      to_json TEXT NOT NULL,
+      cc_json TEXT NOT NULL,
+      reply_to_json TEXT NOT NULL,
+      date INTEGER NOT NULL,
+      snippet TEXT NOT NULL,
+      unread INTEGER NOT NULL,
+      starred INTEGER NOT NULL,
+      answered INTEGER NOT NULL,
+      attachments_json TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      labels_json TEXT NOT NULL,
+      duplicate INTEGER NOT NULL,
+      body_fetched INTEGER NOT NULL,
+      text_part TEXT,
+      html_part TEXT,
+      text TEXT
+    );
+    CREATE INDEX IF NOT EXISTS messages_folder_date ON messages (account_id, folder, date DESC, uid DESC);
+    CREATE INDEX IF NOT EXISTS messages_thread ON messages (account_id, thread_id);
+    CREATE INDEX IF NOT EXISTS messages_message_id ON messages (account_id, message_id);
+  `)
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION))
+}
+
 export class MailCache {
   private readonly db: DatabaseSync
 
   constructor(file: string) {
-    this.db = new DatabaseSync(file)
-    this.initialize()
-  }
-
-  private initialize(): void {
-    this.db.exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
-    const row = this.db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as Row | undefined
-    if (row && Number(row.value) !== SCHEMA_VERSION) {
-      this.db.exec('DROP TABLE IF EXISTS messages; DROP TABLE IF EXISTS folders; DELETE FROM meta')
-    }
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS folders (
-        account_id TEXT NOT NULL,
-        folder TEXT NOT NULL,
-        uid_validity TEXT NOT NULL,
-        PRIMARY KEY (account_id, folder)
-      );
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        account_id TEXT NOT NULL,
-        folder TEXT NOT NULL,
-        uid INTEGER NOT NULL,
-        message_id TEXT NOT NULL,
-        thread_id TEXT NOT NULL,
-        subject TEXT NOT NULL,
-        from_name TEXT NOT NULL,
-        from_address TEXT NOT NULL,
-        to_json TEXT NOT NULL,
-        cc_json TEXT NOT NULL,
-        reply_to_json TEXT NOT NULL,
-        date INTEGER NOT NULL,
-        snippet TEXT NOT NULL,
-        unread INTEGER NOT NULL,
-        starred INTEGER NOT NULL,
-        answered INTEGER NOT NULL,
-        attachments_json TEXT NOT NULL,
-        size INTEGER NOT NULL,
-        labels_json TEXT NOT NULL,
-        duplicate INTEGER NOT NULL,
-        body_fetched INTEGER NOT NULL,
-        text_part TEXT,
-        html_part TEXT,
-        text TEXT
-      );
-      CREATE INDEX IF NOT EXISTS messages_folder_date ON messages (account_id, folder, date DESC, uid DESC);
-      CREATE INDEX IF NOT EXISTS messages_thread ON messages (account_id, thread_id);
-    `)
-    this.db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)").run(String(SCHEMA_VERSION))
+    this.db = openCache(file)
   }
 
   close(): void {
@@ -192,8 +218,16 @@ export class MailCache {
     )
   }
 
+  /**
+   * Stores fetched messages. A reply can arrive before the message it answers and name it as the start of its
+   * thread, as one does whose mailer wrote only In-Reply-To. Once the message it answers is stored, the replies
+   * that named it join the thread that message is in.
+   */
   upsert(messages: ReadonlyArray<MailMessage & { parts: MailBodyParts }>): void {
     if (messages.length === 0) return
+    const join = this.db.prepare(
+      'UPDATE messages SET thread_id = (SELECT thread_id FROM messages WHERE id = :id) WHERE account_id = :account AND thread_id = :startingHere AND thread_id <> (SELECT thread_id FROM messages WHERE id = :id)'
+    )
     const statement = this.db.prepare(
       `INSERT INTO messages (${COLUMNS}, text_part, html_part, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
        ON CONFLICT(id) DO UPDATE SET
@@ -234,7 +268,29 @@ export class MailCache {
           message.parts.htmlPart
         )
       }
+      for (const message of messages) {
+        if (!message.messageId) continue
+        // The thread key of the messages that name this one as the start of their thread.
+        const startingHere = threadIdOf({ messageId: message.messageId, inReplyTo: '', references: [], fallback: message.id })
+        join.run({ id: message.id, account: message.accountId, startingHere })
+      }
     })
+  }
+
+  /** The thread of a cached message with this Message-ID, or null when there is none. */
+  threadOf(accountId: string, messageId: string): string | null {
+    if (!messageId) return null
+    const row = this.db.prepare('SELECT thread_id FROM messages WHERE account_id = ? AND message_id = ? LIMIT 1').get(accountId, messageId) as Row | undefined
+    return row ? String(row.thread_id) : null
+  }
+
+  /**
+   * The addresses the account's Sent folder holds mail from. They include the other addresses the user sends
+   * from, such as a send-as address of Gmail, which the account's settings do not know.
+   */
+  sentFromAddresses(accountId: string): string[] {
+    const rows = this.db.prepare("SELECT DISTINCT from_address FROM messages WHERE account_id = ? AND folder = 'sent'").all(accountId) as Row[]
+    return rows.map((row) => String(row.from_address))
   }
 
   updateFlags(accountId: string, folder: MailFolder, updates: readonly MailFlagUpdate[]): void {
@@ -302,13 +358,13 @@ export class MailCache {
   }
 
   /** The messages whose body is still missing, newest first, leaving out the uids in `skip`. */
-  pendingBodies(accountId: string, folder: MailFolder, limit: number, skip: readonly number[]): Array<{ uid: number } & MailBodyParts> {
+  pendingBodies(accountId: string, folder: MailFolder, limit: number, skip: readonly number[]): Array<{ id: string; uid: number } & MailBodyParts> {
     const rows = this.db
       .prepare(
-        'SELECT uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 AND uid NOT IN (SELECT value FROM json_each(?)) ORDER BY date DESC, uid DESC LIMIT ?'
+        'SELECT id, uid, text_part, html_part FROM messages WHERE account_id = ? AND folder = ? AND body_fetched = 0 AND uid NOT IN (SELECT value FROM json_each(?)) ORDER BY date DESC, uid DESC LIMIT ?'
       )
       .all(accountId, folder, JSON.stringify(skip), limit) as Row[]
-    return rows.map((row) => ({ uid: Number(row.uid), textPart: row.text_part === null ? null : String(row.text_part), htmlPart: row.html_part === null ? null : String(row.html_part) }))
+    return rows.map((row) => ({ id: String(row.id), uid: Number(row.uid), textPart: row.text_part === null ? null : String(row.text_part), htmlPart: row.html_part === null ? null : String(row.html_part) }))
   }
 
   /** Returns null when the message itself is not in the cache. */

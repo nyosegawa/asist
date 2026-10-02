@@ -4,9 +4,11 @@ import {
   MAIL_FOLDERS,
   isRecent,
   messageIdOf,
+  parseMessageId,
   parseReferences,
   syncSince,
   threadIdOf,
+  threadRootOf,
   type MailAccount,
   type MailAccountStatus,
   type MailAddress,
@@ -17,7 +19,7 @@ import {
 import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './i18n'
 import type { MailBodyParts, MailCache, MailFlagUpdate } from './mail-cache'
-import { disconnect, readStream, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
+import { disconnect, readBytes, supportsGmail, type ImapClient, type ImapClientFactory } from './mail-imap'
 
 /**
  * The sync of one account. It holds a single connection and runs every operation on it (fetching
@@ -138,6 +140,18 @@ export class MailAccountSync {
     this.setState('off')
   }
 
+  /**
+   * Fetches every folder over a new connection. A connection kept across the machine's sleep still looks open
+   * when the server or the network has forgotten it, and the first command on it waits out imapflow's socket
+   * timeout of 5 minutes, with every operation queued behind it. Closing it also ends an operation stuck on it.
+   */
+  reconnect(): Promise<void> {
+    const client = this.client
+    this.client = null
+    client?.close()
+    return this.syncNow()
+  }
+
   /** Fetches every folder. It joins the queue, so it starts only once the operation in flight has finished. */
   syncNow(): Promise<void> {
     return this.run(async (client) => {
@@ -239,10 +253,10 @@ export class MailAccountSync {
   /**
    * Runs an operation on messages of `folder` named by UID, in the queue like every other operation. A UID
    * names a message only within one UIDVALIDITY of its folder, which the server can renew at any time, as
-   * when the mailbox is recreated. `uidValidity` is the value the cache had recorded when the caller read
-   * the UIDs, and the operation runs only while the folder still has it.
+   * when the mailbox is recreated. `uidValidity` is the generation the UIDs were read under, which the id of
+   * each message carries, and the operation runs only while the folder still has it.
    */
-  byUid<T>(folder: MailFolder, uidValidity: string | null, operation: (client: ImapClient) => Promise<T>): Promise<T> {
+  byUid<T>(folder: MailFolder, uidValidity: string, operation: (client: ImapClient) => Promise<T>): Promise<T> {
     return this.run(async (client) => {
       const lock = await this.openGeneration(client, folder, uidValidity)
       try {
@@ -254,7 +268,7 @@ export class MailAccountSync {
   }
 
   /** Opens `folder` for UIDs of the generation `uidValidity`, and fails as if their messages were gone once the server has renewed it. */
-  private async openGeneration(client: ImapClient, folder: MailFolder, uidValidity: string | null): Promise<MailboxLockObject> {
+  private async openGeneration(client: ImapClient, folder: MailFolder, uidValidity: string): Promise<MailboxLockObject> {
     const path = this.requirePath(folder)
     const lock = await client.getMailboxLock(path)
     try {
@@ -370,7 +384,9 @@ export class MailAccountSync {
 
   /** Writes the flags the server reported straight into the cache. A uid that is not cached is ignored. */
   private applyFlags(folder: MailFolder, uid: number, flags: Set<string>): void {
-    const id = messageIdOf(this.account.id, folder, uid)
+    const uidValidity = this.options.cache.uidValidity(this.account.id, folder)
+    if (uidValidity === null) return
+    const id = messageIdOf(this.account.id, folder, uidValidity, uid)
     const before = this.options.cache.get(id)
     if (!before) return
     const next = flagsOf({ flags })
@@ -403,8 +419,9 @@ export class MailAccountSync {
     let changed = false
     const arrived: MailMessage[] = []
     try {
+      const generation = this.recordGeneration(client, folder, path)
       // A folder dropped for a new UIDVALIDITY has changed even when nothing of its new generation is fetched.
-      changed = this.recordGeneration(client, folder, path).renewed
+      changed = generation.renewed
       const first = !this.synced.has(folder)
       const since = syncSince(new Date(this.now()), this.options.syncDays())
       const serverUids = await client.search({ since }, { uid: true })
@@ -442,7 +459,7 @@ export class MailAccountSync {
           { uid: true, flags: true, envelope: true, size: true, bodyStructure: true, internalDate: true, threadId: this.gmail, labels: this.gmail, headers: ['references'] },
           { uid: true }
         )
-        const messages = items.map((item) => this.toMessage(item, folder))
+        const messages = items.map((item) => this.toMessage(item, folder, generation.uidValidity))
         cache.upsert(messages)
         changed ||= messages.length > 0
         if (folder === 'inbox' && !first) {
@@ -458,12 +475,11 @@ export class MailAccountSync {
     if (arrived.length) this.options.onArrived(arrived)
   }
 
-  private toMessage(item: FetchMessageObject, folder: MailFolder): MailMessage & { parts: MailBodyParts } {
-    const { account } = this.options
+  private toMessage(item: FetchMessageObject, folder: MailFolder, uidValidity: string): MailMessage & { parts: MailBodyParts } {
+    const { account, cache } = this.options
     const envelope = item.envelope ?? {}
-    const id = messageIdOf(account.id, folder, item.uid)
-    const messageId = envelope.messageId ?? ''
-    const references = parseReferences(item.headers?.toString('latin1'))
+    const id = messageIdOf(account.id, folder, uidValidity, item.uid)
+    const headers = { messageId: envelope.messageId ?? '', inReplyTo: envelope.inReplyTo ?? '', references: parseReferences(item.headers?.toString('latin1')) }
     const labels = item.labels ? [...item.labels] : []
     const { parts, attachments } = bodyPartsOf(item.bodyStructure)
     return {
@@ -471,14 +487,11 @@ export class MailAccountSync {
       accountId: account.id,
       folder,
       uid: item.uid,
-      messageId,
-      threadId: threadIdOf({
-        gmailThreadId: this.gmail ? item.threadId : null,
-        messageId,
-        inReplyTo: envelope.inReplyTo ?? '',
-        references,
-        fallback: id
-      }),
+      messageId: headers.messageId,
+      // A mailer that writes In-Reply-To without References names the parent rather than the message the thread
+      // starts from, so a message whose root is cached joins the thread that root is in. The cache moves the
+      // replies that came first into the thread of the message they answer once it arrives.
+      threadId: (!this.gmail && cache.threadOf(account.id, threadRootOf(headers))) || threadIdOf({ gmailThreadId: this.gmail ? item.threadId : null, ...headers, fallback: id }),
       subject: envelope.subject ?? '',
       from: addressesOf(envelope.from)[0] ?? { name: '', address: '' },
       to: addressesOf(envelope.to),
@@ -518,12 +531,12 @@ export class MailAccountSync {
     const failed = this.failedBodies[folder]
     const pending = cache.pendingBodies(account.id, folder, limit, [...failed])
     if (pending.length === 0) return 0
-    const lock = await this.openGeneration(client, folder, cache.uidValidity(account.id, folder))
+    const lock = await this.openGeneration(client, folder, parseMessageId(pending[0].id).uidValidity)
     try {
       for (const item of pending) {
         try {
           const text = await fetchText(client, item.uid, item)
-          cache.setBody(messageIdOf(account.id, folder, item.uid), text)
+          cache.setBody(item.id, text)
         } catch (error) {
           if (!client.usable) throw error
           // A server can refuse one FETCH, and html-to-text throws RangeError on deeply nested HTML. The
@@ -540,14 +553,14 @@ export class MailAccountSync {
   }
 
   /** Fetches one body right away, for opening a message on screen or for read_mail, or serves the cached one. */
-  fetchBody(folder: MailFolder, uid: number): Promise<string> {
-    const { account, cache } = this.options
-    const id = messageIdOf(account.id, folder, uid)
+  fetchBody(id: string): Promise<string> {
+    const { cache } = this.options
+    const { folder, uidValidity, uid } = parseMessageId(id)
     const cached = cache.body(id)
     if (cached !== null) return Promise.resolve(cached)
     const parts = cache.bodyParts(id)
     if (!parts) return Promise.reject(new Error(errorText('mail.errors.message.notFound')))
-    return this.byUid(folder, cache.uidValidity(account.id, folder), async (client) => {
+    return this.byUid(folder, uidValidity, async (client) => {
       const text = await fetchText(client, uid, parts)
       cache.setBody(id, text)
       return text
@@ -607,13 +620,22 @@ export function bodyPartsOf(structure: MessageStructureObject | undefined): { pa
 export async function fetchText(client: Pick<ImapClient, 'download'>, uid: number, parts: MailBodyParts): Promise<string> {
   if (parts.textPart) {
     const { content } = await client.download(uid, parts.textPart, { uid: true, maxBytes: MAX_BODY_BYTES })
-    return normalizeText(await readStream(content))
+    return normalizeText((await readBytes(content)).toString('utf8'))
   }
   if (parts.htmlPart) {
-    const { content } = await client.download(uid, parts.htmlPart, { uid: true, maxBytes: MAX_BODY_BYTES })
-    return normalizeText(htmlToPlain(await readStream(content)))
+    const { meta, content } = await client.download(uid, parts.htmlPart, { uid: true, maxBytes: MAX_BODY_BYTES })
+    const html = await readBytes(content)
+    // imapflow converts a part to UTF-8 by the charset its MIME header declares, and passes on as written a part
+    // whose header declares none. Such an HTML part is in the charset its own meta tag declares, as a browser reads it.
+    const charset = meta?.charset ? 'utf-8' : (declaredCharset(html) ?? 'utf-8')
+    return normalizeText(htmlToPlain(new TextDecoder(charset).decode(html)))
   }
   return ''
+}
+
+/** The charset a meta tag of the HTML declares, in either form: `<meta charset>` or the Content-Type of `<meta http-equiv>`. */
+function declaredCharset(html: Buffer): string | null {
+  return /<meta\b[^>]*?\bcharset\s*=\s*["']?([^\s"'>;/]+)/i.exec(html.toString('latin1'))?.[1] ?? null
 }
 
 export function htmlToPlain(html: string): string {

@@ -106,7 +106,7 @@ describe('MailAccountSync', () => {
     await sync.syncNow()
     const inbox = cache.list({ view: 'inbox' }).messages
     expect(inbox.map((m) => m.subject)).toEqual(['既読で届いた', '新着', 'A', '昔に届いた未読'])
-    expect(cache.get(messageIdOf('a1', 'inbox', first.uid))).toMatchObject({ unread: false, starred: true })
+    expect(cache.get(messageIdOf('a1', 'inbox', '1', first.uid))).toMatchObject({ unread: false, starred: true })
     expect(arrived).toHaveLength(1)
     expect(arrived[0].map((m) => m.subject)).toEqual(['新着'])
   })
@@ -130,7 +130,7 @@ describe('MailAccountSync', () => {
     const first = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
     sync.start()
     await vi.advanceTimersByTimeAsync(300)
-    const id = messageIdOf('a1', 'inbox', first.uid)
+    const id = messageIdOf('a1', 'inbox', '1', first.uid)
     const fetches = imap.calls.filter((call) => call.startsWith('fetch:')).length
     onChanged.mockClear()
     imap.emit('flags', { path: 'INBOX', seq: 1, uid: first.uid, flags: new Set(['\\Seen', '\\Flagged']) })
@@ -164,7 +164,7 @@ describe('MailAccountSync', () => {
     first.labels = ['\\Inbox', '\\Important']
     await sync.syncNow()
     expect(onChanged).toHaveBeenCalledTimes(1)
-    expect(cache.get(messageIdOf('a1', 'inbox', first.uid))?.labels).toEqual(['\\Inbox', '\\Important'])
+    expect(cache.get(messageIdOf('a1', 'inbox', '1', first.uid))?.labels).toEqual(['\\Inbox', '\\Important'])
   })
 
   it('drops and refetches a folder whose UIDVALIDITY changed', async () => {
@@ -340,13 +340,13 @@ describe('MailAccountSync', () => {
     const mail = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
     sync.start()
     await sync.syncNow()
-    const id = messageIdOf('a1', 'inbox', mail.uid)
+    const id = messageIdOf('a1', 'inbox', '1', mail.uid)
     expect(cache.body(id)).toBeNull()
-    await expect(sync.fetchBody('inbox', mail.uid)).resolves.toBe('a')
+    await expect(sync.fetchBody(messageIdOf('a1', 'inbox', '1', mail.uid))).resolves.toBe('a')
     const downloads = imap.calls.filter((call) => call.startsWith('download:')).length
-    await expect(sync.fetchBody('inbox', mail.uid)).resolves.toBe('a')
+    await expect(sync.fetchBody(messageIdOf('a1', 'inbox', '1', mail.uid))).resolves.toBe('a')
     expect(imap.calls.filter((call) => call.startsWith('download:')).length).toBe(downloads)
-    await expect(sync.fetchBody('inbox', 999)).rejects.toThrow(errorText('mail.errors.message.notFound'))
+    await expect(sync.fetchBody(messageIdOf('a1', 'inbox', '1', 999))).rejects.toThrow(errorText('mail.errors.message.notFound'))
     await sync.stop()
   })
 
@@ -366,7 +366,7 @@ describe('MailAccountSync', () => {
     const mail = imap.put('INBOX', { subject: 'A', from: tanaka, to: me, date: new Date(NOW - HOUR), text: 'a' })
     sync.start()
     await vi.advanceTimersByTimeAsync(300)
-    const id = messageIdOf('a1', 'inbox', mail.uid)
+    const id = messageIdOf('a1', 'inbox', '1', mail.uid)
     expect(cache.body(id)).toBe('a')
     imap.failSearch = true
     await sync.syncNow()
@@ -389,14 +389,14 @@ describe('MailAccountSync', () => {
     sync.start()
     // The bodies of the inbox, then of sent mail and the archive, are fetched on this tick.
     await vi.advanceTimersByTimeAsync(300)
-    expect(cache.body(messageIdOf('a1', 'archive', archived.uid))).toBe('z')
+    expect(cache.body(messageIdOf('a1', 'archive', '1', archived.uid))).toBe('z')
     imap.arrive('INBOX', { subject: '届いた', from: tanaka, to: me, date: new Date(NOW), text: 'x' })
     await vi.advanceTimersByTimeAsync(1_000)
     expect(arrived.flat().map((m) => m.subject)).toEqual(['届いた'])
     // Opening a sent message whose body has not been fetched yet selects Sent.
     const later = imap.put('Sent', { subject: 'また送った', from: me, to: tanaka, date: new Date(NOW), text: 't' })
     await sync.syncNow()
-    await expect(sync.fetchBody('sent', later.uid)).resolves.toBe('t')
+    await expect(sync.fetchBody(messageIdOf('a1', 'sent', '1', later.uid))).resolves.toBe('t')
     imap.arrive('INBOX', { subject: 'もう一通', from: tanaka, to: me, date: new Date(NOW), text: 'y' })
     await vi.advanceTimersByTimeAsync(1_000)
     expect(arrived.flat().map((m) => m.subject)).toEqual(['届いた', 'もう一通'])
@@ -415,17 +415,52 @@ describe('MailAccountSync', () => {
     imap.failDownload.add(refused.uid)
     sync.start()
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(cache.body(messageIdOf('a1', 'inbox', older.uid))).toBe('普通の本文')
-    expect(cache.body(messageIdOf('a1', 'sent', sent.uid))).toBe('送った本文')
+    expect(cache.body(messageIdOf('a1', 'inbox', '1', older.uid))).toBe('普通の本文')
+    expect(cache.body(messageIdOf('a1', 'sent', '1', sent.uid))).toBe('送った本文')
     // Neither broken message is stored as having an empty body, and neither is retried pass after pass.
     for (const uid of [deep.uid, refused.uid]) {
-      expect(cache.get(messageIdOf('a1', 'inbox', uid))?.bodyFetched).toBe(false)
+      expect(cache.get(messageIdOf('a1', 'inbox', '1', uid))?.bodyFetched).toBe(false)
       expect(imap.calls.filter((call) => call.startsWith(`download:${uid}:`))).toHaveLength(1)
     }
-    await expect(sync.fetchBody('inbox', deep.uid)).rejects.toThrow(RangeError)
+    await expect(sync.fetchBody(messageIdOf('a1', 'inbox', '1', deep.uid))).rejects.toThrow(RangeError)
     imap.failDownload.delete(refused.uid)
-    await expect(sync.fetchBody('inbox', refused.uid)).resolves.toBe('拒まれた本文')
+    await expect(sync.fetchBody(messageIdOf('a1', 'inbox', '1', refused.uid))).resolves.toBe('拒まれた本文')
     warn.mockRestore()
+    await sync.stop()
+  })
+
+  it('reads an HTML-only body in the charset its meta tag declares when the MIME header declares none', async () => {
+    const { imap, cache, sync } = setup()
+    // 「見積もりの件です」 in each encoding.
+    const encoded = { shiftJis: Buffer.from('8ca990cf82e082e882cc8c8f82c582b7', 'hex'), eucJp: Buffer.from('b8abc0d1a4e2a4eaa4ceb7efa4c7a4b9', 'hex'), utf8: Buffer.from('見積もりの件です') }
+    const html = (meta: string, text: Buffer) => Buffer.concat([Buffer.from(`<html><head>${meta}</head><body><p>`), text, Buffer.from('</p></body></html>')])
+    imap.put('INBOX', { subject: 'http-equiv', from: tanaka, to: me, date: new Date(NOW - HOUR), html: html('<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">', encoded.shiftJis) })
+    imap.put('INBOX', { subject: 'charset', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), html: html("<meta charset='euc-jp'>", encoded.eucJp) })
+    imap.put('INBOX', { subject: 'none', from: tanaka, to: me, date: new Date(NOW - 3 * HOUR), html: html('', encoded.utf8) })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    const bodies = cache.list({ view: 'inbox' }).messages.map((message) => [message.subject, cache.body(message.id)])
+    expect(bodies).toEqual([
+      ['http-equiv', '見積もりの件です'],
+      ['charset', '見積もりの件です'],
+      ['none', '見積もりの件です']
+    ])
+    await sync.stop()
+  })
+
+  it('keeps a reply whose mailer wrote In-Reply-To without References in the thread of the message it answers, whichever arrives first', async () => {
+    const { imap, cache, sync } = setup()
+    imap.put('INBOX', { subject: '打合せ', from: tanaka, to: me, date: new Date(NOW - 5 * HOUR), text: 'a', messageId: '<a@x>' })
+    imap.put('INBOX', { subject: 'Re: 打合せ', from: tanaka, to: me, date: new Date(NOW - 4 * HOUR), text: 'b', messageId: '<b@x>', inReplyTo: '<a@x>', references: '<a@x>' })
+    // Sent is fetched before the inbox, so this reply is cached before the message it answers.
+    imap.put('Sent', { subject: 'Re: 打合せ', from: me, to: tanaka, date: new Date(NOW - 3 * HOUR), text: 'c', messageId: '<c@me>', inReplyTo: '<b@x>' })
+    sync.start()
+    await vi.advanceTimersByTimeAsync(300)
+    // This one is fetched after the message it answers.
+    imap.put('INBOX', { subject: 'Re: Re: 打合せ', from: tanaka, to: me, date: new Date(NOW - 2 * HOUR), text: 'd', messageId: '<d@x>', inReplyTo: '<c@me>' })
+    await sync.syncNow()
+    const first = cache.list({ view: 'inbox' }).messages.find((message) => message.messageId === '<a@x>')!
+    expect(cache.thread('a1', first.threadId).map((message) => message.messageId)).toEqual(['<a@x>', '<b@x>', '<c@me>', '<d@x>'])
     await sync.stop()
   })
 

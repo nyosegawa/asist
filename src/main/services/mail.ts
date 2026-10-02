@@ -65,7 +65,7 @@ export function initMail(): void {
       silent: false
     }).show()
   })
-  powerMonitor.on('resume', () => void mail.syncNow().catch(() => undefined))
+  powerMonitor.on('resume', () => void mail.reconnect().catch(() => undefined))
   app.once('will-quit', () => void mail.stop())
   mail.start()
 }

@@ -63,9 +63,9 @@ describe('replies', () => {
     expect(replySubject('RE: 打合せ ')).toBe('RE: 打合せ')
   })
   it('replies to the sender alone, or to Reply-To when it is set, while a reply-all adds the others without the account address or duplicates', () => {
-    expect(replyRecipients(message, 'me@example.com', false)).toEqual({ to: [message.from], cc: [] })
-    expect(replyRecipients({ ...message, replyTo: [{ name: '', address: 'list@example.com' }] }, 'me@example.com', false).to).toEqual([{ name: '', address: 'list@example.com' }])
-    expect(replyRecipients(message, 'ME@example.com', true)).toEqual({
+    expect(replyRecipients(message, ['me@example.com'], false)).toEqual({ to: [message.from], cc: [] })
+    expect(replyRecipients({ ...message, replyTo: [{ name: '', address: 'list@example.com' }] }, ['me@example.com'], false).to).toEqual([{ name: '', address: 'list@example.com' }])
+    expect(replyRecipients(message, ['ME@example.com'], true)).toEqual({
       to: [message.from],
       cc: [{ name: '鈴木', address: 's@example.com' }, { name: '', address: 'cc@example.com' }]
     })
@@ -75,12 +75,12 @@ describe('replies', () => {
     const tanaka = { name: '田中', address: 't@example.com' }
     const suzuki = { name: '鈴木', address: 's@example.com' }
     const sent = { from: me, to: [tanaka, { name: '', address: 'ME@example.com' }], cc: [suzuki, me], replyTo: [] }
-    expect(replyRecipients(sent, 'me@example.com', false)).toEqual({ to: [tanaka], cc: [] })
-    expect(replyRecipients(sent, 'me@example.com', true)).toEqual({ to: [tanaka], cc: [suzuki] })
+    expect(replyRecipients(sent, ['me@example.com'], false)).toEqual({ to: [tanaka], cc: [] })
+    expect(replyRecipients(sent, ['me@example.com'], true)).toEqual({ to: [tanaka], cc: [suzuki] })
     // A Reply-To that names the user along with a list answers the list alone.
-    expect(replyRecipients({ ...message, replyTo: [me, { name: '', address: 'list@example.com' }] }, 'me@example.com', false).to).toEqual([{ name: '', address: 'list@example.com' }])
+    expect(replyRecipients({ ...message, replyTo: [me, { name: '', address: 'list@example.com' }] }, ['me@example.com'], false).to).toEqual([{ name: '', address: 'list@example.com' }])
     // A message the user sent to themselves leaves nobody else to answer.
-    expect(replyRecipients({ ...sent, to: [me], cc: [] }, 'me@example.com', true)).toEqual({ to: [me], cc: [] })
+    expect(replyRecipients({ ...sent, to: [me], cc: [] }, ['me@example.com'], true)).toEqual({ to: [me], cc: [] })
   })
   it('quotes the original below a line with its date and sender', () => {
     const quote = quotation({ date: Date.UTC(2026, 8, 15, 1, 0), from: message.from, text: '一行目\r\n\r\n二行目\n' }, 'Asia/Tokyo')
@@ -116,12 +116,12 @@ describe('threading', () => {
 })
 
 describe('ids, snippets and the sync range', () => {
-  it('round-trips account, folder and uid through the message id, and throws on a broken one', () => {
-    const id = messageIdOf('acc:with:colons', 'inbox', 42)
-    expect(parseMessageId(id)).toEqual({ accountId: 'acc:with:colons', folder: 'inbox', uid: 42 })
-    expect(() => parseMessageId('acc:nowhere:1')).toThrow(errorText('mail.errors.message.badId', { id: 'acc:nowhere:1' }))
-    expect(() => parseMessageId('acc:inbox:x')).toThrow(errorText('mail.errors.message.badId', { id: 'acc:inbox:x' }))
-    expect(() => parseMessageId('inbox:1')).toThrow(errorText('mail.errors.message.badId', { id: 'inbox:1' }))
+  it('round-trips account, folder, UIDVALIDITY and uid through the message id, and throws on a broken one', () => {
+    const id = messageIdOf('acc:with:colons', 'inbox', '1700000000', 42)
+    expect(parseMessageId(id)).toEqual({ accountId: 'acc:with:colons', folder: 'inbox', uidValidity: '1700000000', uid: 42 })
+    for (const broken of ['acc:nowhere:1:1', 'acc:inbox:1:x', 'acc:inbox:x:1', 'inbox:1:1', 'acc:inbox:1']) {
+      expect(() => parseMessageId(broken)).toThrow(errorText('mail.errors.message.badId', { id: broken }))
+    }
   })
   it('drops blank lines and quotes from the snippet, collapses whitespace, and stops at 200 characters', () => {
     expect(snippetOf('一行目\r\n\r\n> 引用\n  二行目  \n')).toBe('一行目 二行目')
