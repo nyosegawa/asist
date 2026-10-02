@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CornerUpLeft, X } from 'lucide-react'
 import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailDraft } from '@shared/mail'
 import type { Toast } from '@/state/stores'
+import { keyForApp } from '@/ui/key-for-app'
 import { useAskBeforeDiscard } from './ask-before-discard'
 import { useDraftEditor } from './draft-editor'
 import { splitRecipients } from './format'
@@ -45,7 +46,7 @@ export function Composer({
 const stopEscapeWith =
   (onClose: () => void) =>
   (event: React.KeyboardEvent): void => {
-    if (event.key === 'Escape') {
+    if (keyForApp(event) === 'Escape') {
       event.stopPropagation()
       onClose()
     }
