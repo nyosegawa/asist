@@ -17,8 +17,12 @@ const mocks = vi.hoisted(() => ({
   conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
   /** The status of the agent jobs as the engine reads it when a session opens. */
   jobContext: null as string | null,
+  /** The memory block, me.md and user.md as the prompt carries them, as the engine reads it when a session opens. */
+  memoryBlock: '' as string | null,
   /** What connecting waits for before the session arrives, as the socket opening does. */
-  connected: Promise.resolve()
+  connected: Promise.resolve(),
+  /** The recent history a session that opens blank is seeded with. */
+  history: (): Array<{ role: 'user' | 'assistant'; content: string }> => [{ role: 'user', content: '前の話' }]
 }))
 
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ conversationLocale: mocks.conversationLocale, uiLocale: 'ja-JP' }) }))
@@ -96,7 +100,7 @@ async function setup(execute?: ExecuteTool): Promise<{
       await mocks.connected
       return session
     },
-    systemInstruction: () => 'SYSTEM',
+    systemInstruction: (block) => (block ? `SYSTEM\n${block}` : 'SYSTEM'),
     jobContext: () => mocks.jobContext,
     functionDeclarations: () => [{ name: 'show_weather', parametersJsonSchema: { type: 'object' }, behavior: 'NON_BLOCKING' }],
     executeTool: executeTool as never,
@@ -104,10 +108,10 @@ async function setup(execute?: ExecuteTool): Promise<{
     isParallel: (name) => name.startsWith('show_'),
     recordTool,
     findMemories,
-    memoryBlock: () => '',
+    memoryBlock: () => mocks.memoryBlock,
     recordNote: (turnId, text, memoryIds) => mocks.record({ kind: 'note', turnId, text, memoryIds }),
     recordUser: (turnId, text) => mocks.record({ kind: 'user', turnId, text }),
-    history: () => [{ role: 'user', content: '前の話' }],
+    history: () => mocks.history(),
     emitTurn: (event) => turnEvents.push(event)
   })
   engine.events.on('event', (event) => events.push(event))
@@ -158,7 +162,9 @@ describe('GeminiLiveEngine', () => {
     mocks.nextTurnId = 200
     mocks.conversationLocale = 'ja-JP'
     mocks.jobContext = null
+    mocks.memoryBlock = ''
     mocks.connected = Promise.resolve()
+    mocks.history = () => [{ role: 'user', content: '前の話' }]
   })
   afterEach(() => vi.useRealTimers())
 
@@ -335,7 +341,7 @@ describe('GeminiLiveEngine', () => {
     // The renderer already shows what was typed, so no transcript event repeats it.
     expect(events.slice(before).some((e) => e.type === 'userTranscript')).toBe(false)
     expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: '[文字入力] こんにちは' }] }], turnComplete: true })
-    await engine.notify('[システム通知] ジョブが完了した')
+    await engine.notify({ notice: 'job-done', text: '[システム通知] ジョブが完了した' })
     expect(session.contents.at(-1)).toEqual({
       turns: [{ role: 'user', parts: [{ text: stampUserMessage('ja-JP', '[システム通知] ジョブが完了した', new Date()) }] }],
       turnComplete: true
@@ -353,7 +359,7 @@ describe('GeminiLiveEngine', () => {
     const reportedAt = new Date(2026, 9, 2, 11, 30)
     vi.setSystemTime(reportedAt)
     const report = '[システム通知] ジョブ「調査」(jobId: j1)が完了した。'
-    const notified = engine.notify(report)
+    const notified = engine.notify({ notice: 'job-done', text: report })
     await vi.advanceTimersByTimeAsync(0)
     const resumed = sessions.at(-1)!
     expect(resumed.params.resumptionHandle).toBe('h1')
@@ -364,6 +370,32 @@ describe('GeminiLiveEngine', () => {
       { turns: [{ role: 'user', parts: [{ text: expect.stringContaining(noticeAt(reportedAt)) }] }], turnComplete: false },
       { turns: [{ role: 'user', parts: [{ text: stampUserMessage('ja-JP', report, reportedAt) }] }], turnComplete: true }
     ])
+    await engine.stop()
+  })
+
+  it('gives a session that opens blank for a job report the report once, after a history that does not hold it, and records the reply on its turn', async () => {
+    // The history is read from what was recorded, as the app derives it from the conversation log.
+    mocks.history = () => [
+      { role: 'user', content: '前の話' },
+      ...mocks.record.mock.calls.map(([recorded]: [{ kind: string; text: string }]) => ({
+        role: recorded.kind === 'assistant' ? ('assistant' as const) : ('user' as const),
+        content: recorded.text
+      }))
+    ]
+    const { engine, sessions } = await setup()
+    const report = '[システム通知] ジョブ「調査」(jobId: j1)が完了した。'
+    const notified = engine.notify({ notice: 'job-done', text: report })
+    await vi.advanceTimersByTimeAsync(0)
+    const [session] = sessions
+    expect(session.params.resumptionHandle).toBeNull()
+    session.message({ setupComplete: {} })
+    await notified
+    const texts = session.contents.flatMap((content) => (content as { turns: Array<{ parts: Array<{ text: string }> }> }).turns.map((turn) => turn.parts[0].text))
+    expect(texts.filter((text) => text.includes(report))).toEqual([stampUserMessage('ja-JP', report, new Date())])
+    expect(mocks.record).toHaveBeenCalledWith({ kind: 'notice', turnId: 200, notice: 'job-done', text: report })
+    session.message({ serverContent: { outputTranscription: { text: '調査が終わりました。' } } })
+    session.message({ serverContent: { turnComplete: true } })
+    expect(mocks.record).toHaveBeenLastCalledWith({ kind: 'assistant', turnId: 200, text: '調査が終わりました。' })
     await engine.stop()
   })
 
@@ -379,7 +411,7 @@ describe('GeminiLiveEngine', () => {
     expect(sessions).toEqual([session])
     expect(session.closed).toBe(false)
     const report = '[システム通知] ジョブ「調査」(jobId: j1)が完了した。'
-    await engine.notify(report)
+    await engine.notify({ notice: 'job-done', text: report })
     const sentAt = new Date(openedAt.getTime() + 7 * 60_000)
     expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: stampUserMessage('ja-JP', report, sentAt) }] }], turnComplete: true })
     call.finish()
@@ -428,6 +460,40 @@ describe('GeminiLiveEngine', () => {
     const second = await open(engine, sessions)
     expect(second.params.resumptionHandle).toBe('h1')
     expect(openingNote(second).startsWith(noticeAt(resumedAt))).toBe(true)
+    await engine.stop()
+  })
+
+  it('opens a session blank, with me.md and user.md as they are now and the recent history, once they changed since the session a handle continues read them, and resumes while they have not', async () => {
+    mocks.memoryBlock = '# ユーザー\n猫と暮らしている。'
+    const { engine, sessions } = await setup()
+    const first = await open(engine, sessions)
+    expect(first.params.systemInstruction).toBe('SYSTEM\n# ユーザー\n猫と暮らしている。')
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const second = await open(engine, sessions)
+    expect(second.params.resumptionHandle).toBe('h1')
+    second.message({ sessionResumptionUpdate: { newHandle: 'h2', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    // A save on the memory screen, which a resumed session would never read.
+    mocks.memoryBlock = '# ユーザー\n猫と暮らしている。辛いものは苦手。'
+    const third = await open(engine, sessions)
+    expect(third.params.resumptionHandle).toBeNull()
+    expect(third.params.systemInstruction).toBe('SYSTEM\n# ユーザー\n猫と暮らしている。辛いものは苦手。')
+    expect((third.contents[0] as { turns: unknown[] }).turns[0]).toEqual({ role: 'user', parts: [{ text: '前の話' }] })
+    third.message({ sessionResumptionUpdate: { newHandle: 'h3', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const fourth = await open(engine, sessions)
+    expect(fourth.params.resumptionHandle).toBe('h3')
+    await engine.stop()
+  })
+
+  it('leaves out of a memory note only what the session\'s own instruction holds, not a save it has not read', async () => {
+    const { engine, sessions } = await setup()
+    const session = await open(engine, sessions)
+    mocks.memoryBlock = `# ユーザー\n${CAFE.text}`
+    session.message({ serverContent: { inputTranscription: { text: 'いつもの店を教えて', finished: true } } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: CAFE_NOTE }] }], turnComplete: false })
     await engine.stop()
   })
 

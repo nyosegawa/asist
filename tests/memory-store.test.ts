@@ -15,6 +15,10 @@ import * as store from '../src/main/services/memory-store'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { MEMORY_GITIGNORE } from '@shared/memory-curation'
+import { PROMPT_DOCUMENTS, PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens, type DocumentIssue } from '@shared/memory-format'
+import { documentIssueText } from '@shared/memory-page'
+import CASES from './fixtures/memory-format-cases.json'
+import { sectionsOverTheLimit } from './helpers/memory'
 import { longTempFolder } from './helpers/temp'
 
 const ja = createTranslator('ja-JP')
@@ -26,6 +30,7 @@ const git = (dir: string, args: string[]): string => execFileSync('git', args, {
 const PAGE_TEMPLATE =
   '---\naliases: []\nupdated: YYYY-MM-DD\n---\n# 名前\n\n## 要約\nこれが何で、本人とどう関わるか。\n\n## 経緯\nいつ何があったか。\n\n## 私の印象\n私から見てどういう存在か。\n'
 const INSTRUCTION = '# いつも覚えておくこと\n\n## この人について\n- 予約サービスの企画担当\n- 猫のムギと暮らす\n'
+const USER = '---\nupdated: 2026-09-09\n---\n# ユーザー\n\n## 属性\n- 予約サービスの企画担当\n- 猫のムギと暮らす\n'
 const MATSUBAKEN = `---
 aliases: [松葉軒, ラーメン屋]
 updated: 2026-09-09
@@ -46,6 +51,28 @@ beforeEach(() => {
 })
 
 const subjects = (dir: string): string[] => git(dir, ['log', '--format=%s']).split('\n').filter(Boolean)
+
+type DirectoryProblem = { file: string; kind: string } & Record<string, unknown>
+
+/**
+ * The sentences ASIST refuses a merge with for a problem the curation's Python reports for a folder. A
+ * markdown file beside the documents and a page name another system cannot hold are refused by the Python
+ * alone, which only makes the Agent fix more than the merge needs.
+ */
+function mergeErrors({ file, kind, ...rest }: DirectoryProblem): string[] {
+  switch (kind) {
+    case 'journalFileName':
+      return [ja('memory.check.fileName', { file })]
+    case 'formerDocument':
+    case 'forgetFile':
+      return [ja('memory.check.obsoleteFile', { file })]
+    case 'strayFile':
+    case 'pageName':
+      return []
+    default:
+      return [documentIssueText(file, { kind, ...rest } as DocumentIssue, ja)]
+  }
+}
 
 describe('the memory store', () => {
   it('creates pages, journal and .gitignore with one initial commit, and adds nothing on a second call', () => {
@@ -71,32 +98,28 @@ describe('the memory store', () => {
     expect(fs.realpathSync(git(dir, ['rev-parse', '--show-toplevel']).trim())).toBe(fs.realpathSync(dir))
   })
 
-  it('reads user.md, me.md, the pages and the journal into units, leaves instruction.md out of them, and reports what to fix', () => {
+  it('reads the pages and the journal into units, leaves the two documents of the prompt out of them, and reports what to fix in all', () => {
     const dir = store.memoryDir()
-    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
     fs.writeFileSync(path.join(dir, 'user.md'), '---\nupdated: 2026-09-09\n---\n# ユーザー\n\n## 好み\nコーヒーは砂糖なし。\n')
     fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
     fs.writeFileSync(path.join(dir, 'pages', '壊れ.md'), '# 壊れ\n\n## 経緯\n書きかけのまま残った。\n')
     fs.writeFileSync(path.join(dir, 'me.md'), '---\nkind: me\n---\n# 私について\n\n## 私は誰か\n落ち着いた声で話す。\n')
     fs.writeFileSync(path.join(dir, 'journal', '2026-09-07.md'), '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n')
     const result = store.readAll()
-    expect(result.pages).toBe(5)
+    expect(result.pages).toBe(3)
     expect(result.errors).toEqual([
       ja('memory.check.frontmatterMissing', { file: 'pages/壊れ.md' }),
       ja('memory.check.firstHeading', { file: 'pages/壊れ.md', heading: '要約' }),
       ja('memory.check.obsoleteKey', { file: 'me.md', key: 'kind' })
     ])
     expect(result.units.map((u) => [u.file, u.kind, u.page, u.heading, u.text])).toEqual([
-      ['user.md', 'section', 'ユーザー', '好み', 'コーヒーは砂糖なし。'],
       ['pages/壊れ.md', 'section', '壊れ', '経緯', '書きかけのまま残った。'],
       ['pages/松葉軒.md', 'section', '松葉軒', '要約', '本人の行きつけのラーメン屋。'],
       ['pages/松葉軒.md', 'section', '松葉軒', '好み', '辛さは控えめが好みらしい。替え玉はしないようだ。'],
-      ['journal/2026-09-07.md', 'journal', '2026-09-07', '四季の話', '春は桜を勧めた。'],
-      ['me.md', 'section', '私について', '私は誰か', '落ち着いた声で話す。']
+      ['journal/2026-09-07.md', 'journal', '2026-09-07', '四季の話', '春は桜を勧めた。']
     ])
-    expect(result.units[2].aliases).toEqual(['松葉軒', 'ラーメン屋'])
+    expect(result.units[1].aliases).toEqual(['松葉軒', 'ラーメン屋'])
     expect(store.listDocuments().map((d) => [d.kind, d.title])).toEqual([
-      ['instruction', 'いつも覚えておくこと'],
       ['me', '私について'],
       ['user', 'ユーザー'],
       ['page', '壊れ'],
@@ -108,19 +131,54 @@ describe('the memory store', () => {
     expect(() => store.readDocument('../me.md')).toThrow(errorText('memory.errors.notADocument', { file: '../me.md' }))
   })
 
-  it('reports a missing instruction.md and the files an earlier form of the memory kept, so that a curation cannot be merged over them', () => {
+  it('reports the files an earlier form of the memory kept, instruction.md among them, so that a curation cannot be merged over them', () => {
     const dir = store.memoryDir()
-    expect(store.readAll().errors).toEqual([ja('memory.check.instructionMissing', { file: 'instruction.md' })])
+    expect(store.readAll().errors).toEqual([])
     fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
     fs.writeFileSync(path.join(dir, 'profile.md'), '# 要点\n- 猫のムギと暮らす\n')
     fs.writeFileSync(path.join(dir, 'forget.jsonl'), '')
     expect(store.readAll().errors).toEqual([
       ja('memory.check.obsoleteFile', { file: 'profile.md' }),
-      ja('memory.check.obsoleteFile', { file: 'forget.jsonl' })
+      ja('memory.check.obsoleteFile', { file: 'forget.jsonl' }),
+      ja('memory.check.obsoleteFile', { file: 'instruction.md' })
     ])
-    expect(store.listDocuments().map((d) => d.file)).toEqual(['instruction.md'])
-    fs.writeFileSync(path.join(dir, 'instruction.md'), '---\nupdated: 2026-09-09\n---\n' + INSTRUCTION)
-    expect(store.readAll().errors).toContain(ja('memory.check.frontmatterNotAllowed', { file: 'instruction.md' }))
+    expect(store.listDocuments()).toEqual([])
+  })
+
+  it('moves what instruction.md held into me.md and user.md in one commit as it prepares the memory, and leaves nothing for a second start', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), `${INSTRUCTION}\n## 私について\n落ち着いて短く話す。\n\n## 頼まれていること\n「一言で」と言われたら一言で返す。\n`)
+    fs.writeFileSync(path.join(dir, 'user.md'), USER)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'memory'])
+    const before = commits(dir)
+    store.ensureRepo()
+    expect(fs.existsSync(path.join(dir, 'instruction.md'))).toBe(false)
+    expect(store.readDocument('user.md')).toBe(`${USER}\n## この人について\n- 予約サービスの企画担当\n- 猫のムギと暮らす\n\n## 頼まれていること\n「一言で」と言われたら一言で返す。\n`)
+    expect(store.readDocument('me.md')).toMatch(/^---\nupdated: \d{4}-\d{2}-\d{2}\n---\n# 私について\n\n## 私について\n落ち着いて短く話す。\n$/)
+    expect(commits(dir)).toBe(before + 1)
+    expect(store.isClean()).toBe(true)
+    store.ensureRepo()
+    expect(commits(dir)).toBe(before + 1)
+  })
+
+  it('leaves instruction.md, me.md and user.md as they were when the commit of the move fails, so that the next start moves them again', () => {
+    const dir = store.memoryDir()
+    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
+    fs.writeFileSync(path.join(dir, 'user.md'), USER)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'memory'])
+    // A lock on the branch fails the commit only after the change is staged.
+    const lock = path.join(dir, '.git', 'refs', 'heads', 'main.lock')
+    fs.writeFileSync(lock, '')
+    expect(() => store.ensureRepo()).toThrow()
+    fs.rmSync(lock)
+    expect(fs.readFileSync(path.join(dir, 'instruction.md'), 'utf8')).toBe(INSTRUCTION)
+    expect(fs.readFileSync(path.join(dir, 'user.md'), 'utf8')).toBe(USER)
+    expect(fs.existsSync(path.join(dir, 'me.md'))).toBe(false)
+    store.ensureRepo()
+    expect(fs.existsSync(path.join(dir, 'instruction.md'))).toBe(false)
+    expect(store.readDocument('user.md')).toContain('## この人について\n- 予約サービスの企画担当')
   })
 
   it('rewrites a whole document and commits it, refuses a save that breaks the rules, creates a page from its template, and deletes a page with a commit', () => {
@@ -145,14 +203,13 @@ describe('the memory store', () => {
     expect(fs.existsSync(path.join(dir, 'pages', '田中さん.md'))).toBe(false)
     expect(commits(dir)).toBe(beforeDelete + 1)
     expect(() => store.deleteDocument('me.md')).toThrow(errorText('memory.errors.deleteKind'))
-    expect(() => store.deleteDocument('instruction.md')).toThrow(errorText('memory.errors.deleteKind'))
     expect(store.isClean()).toBe(true)
   })
 
   it('refuses to save over a document that changed after the screen read it, and keeps what the other writer added', () => {
     const dir = store.memoryDir()
-    const file = 'instruction.md'
-    fs.writeFileSync(path.join(dir, file), INSTRUCTION)
+    const file = 'user.md'
+    fs.writeFileSync(path.join(dir, file), USER)
     const opened = store.readDocument(file)!
     // A curation is merged while the user edits the copy read before it.
     const curated = opened.replace('- 猫のムギと暮らす', '- 猫のムギと暮らす\n- 最寄り駅は中野')
@@ -275,7 +332,6 @@ describe('the memory store', () => {
   // Windows has no named pipe in a folder (mkfifo); the refusal of a symbolic link below runs on both.
   it.runIf(process.platform !== 'win32')('refuses a named pipe at once instead of waiting for a writer, since git never shows one in a curation worktree', () => {
     const dir = store.memoryDir()
-    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
     const pipe = path.join(dir, 'pages', 'x.md')
     execFileSync('mkfifo', [pipe])
     // A writer opens the pipe after 1.5 seconds, so that a read that waits ends instead of hanging the run.
@@ -290,7 +346,6 @@ describe('the memory store', () => {
     const dir = store.memoryDir()
     const outside = mkdtempSync(path.join(tmpdir(), 'asist-memory-outside-'))
     fs.writeFileSync(path.join(outside, 'secret.md'), MATSUBAKEN)
-    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
     fs.symlinkSync(path.join(outside, 'secret.md'), path.join(dir, 'user.md'))
     expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
     expect(() => store.readDocument('user.md')).toThrow(errorText('memory.errors.notRegular', { file: 'user.md' }))
@@ -374,13 +429,43 @@ describe('the memory store', () => {
     }
   })
 
-  it('returns instruction.md without its title heading, and null when it is missing or empty', () => {
+  it('reads me.md and user.md for the prompt in that order, without their frontmatter and name lines, leaving out one with no body', () => {
     const dir = store.memoryDir()
-    expect(store.readInstruction()).toBeNull()
-    fs.writeFileSync(path.join(dir, 'instruction.md'), '# いつも覚えておくこと\n')
-    expect(store.readInstruction()).toBeNull()
-    fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
-    expect(store.readInstruction()).toBe('## この人について\n- 予約サービスの企画担当\n- 猫のムギと暮らす')
+    expect(store.readPromptDocuments()).toEqual([])
+    fs.writeFileSync(path.join(dir, 'user.md'), '---\nupdated: 2026-09-09\n---\n# ユーザー\n\n## 好み\nコーヒーは砂糖なし。\n')
+    fs.writeFileSync(path.join(dir, 'me.md'), '---\nupdated: 2026-09-09\n---\n# 私について\n')
+    expect(store.readPromptDocuments()).toEqual([{ kind: 'user', body: '## 好み\nコーヒーは砂糖なし。' }])
+    fs.writeFileSync(path.join(dir, 'me.md'), '---\nupdated: 2026-09-09\n---\n# 私について\n\n落ち着いた声で話す。\n')
+    expect(store.readPromptDocuments()).toEqual([
+      { kind: 'me', body: '落ち着いた声で話す。' },
+      { kind: 'user', body: '## 好み\nコーヒーは砂糖なし。' }
+    ])
+  })
+
+  it('refuses a save from the memory screen that takes a document of the prompt over its limit, and leaves the file as it was', () => {
+    const dir = store.memoryDir()
+    const user = '---\nupdated: 2026-09-09\n---\n# ユーザー\n\n## 好み\nコーヒーは砂糖なし。\n'
+    fs.writeFileSync(path.join(dir, 'user.md'), user)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'user'])
+    const long = user.replace('## 好み\nコーヒーは砂糖なし。', sectionsOverTheLimit('麺類が好きで、辛さは控えめを選ぶ。'))
+    let refused: unknown = null
+    try {
+      store.writeDocument('user.md', long, user)
+    } catch (error) {
+      refused = error
+    }
+    expect(fs.readFileSync(path.join(dir, 'user.md'), 'utf8')).toBe(user)
+    const size = promptSize(long)
+    expect((refused as Error | null)?.message).toBe(
+      ja('memory.check.tooManyTokens', {
+        file: 'user.md',
+        tokens: size.tokens,
+        limit: PROMPT_DOCUMENT_MAX_TOKENS,
+        characters: textForTokens(size, size.tokens - PROMPT_DOCUMENT_MAX_TOKENS).characters
+      })
+    )
+    expect(store.writeDocument('user.md', user.replace('砂糖なし', 'ミルク入り'), user).file).toBe('user.md')
   })
 
   it('writes its own commits in the language the memory is written in', () => {
@@ -398,5 +483,19 @@ describe('the memory store', () => {
       'asist: edit pages/Matsubaken.md',
       'asist: 記憶の置き場を作る'
     ])
+  })
+
+  it('reads every folder of the shared cases as the curation Python does, and refuses a merge for nothing the Python passes', () => {
+    for (const { name, files, problems, sizes } of CASES.directories) {
+      const dir = mkdtempSync(path.join(tmpdir(), 'asist-memory-case-'))
+      for (const [file, content] of Object.entries(files as Record<string, string | { hex: string }>)) {
+        fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true })
+        fs.writeFileSync(path.join(dir, file), typeof content === 'string' ? content : Buffer.from(content.hex, 'hex'))
+      }
+      const refused = (problems as DirectoryProblem[]).flatMap(mergeErrors)
+      expect([name, [...store.readAll(dir).errors].sort()]).toEqual([name, refused.sort()])
+      const read = Object.fromEntries(PROMPT_DOCUMENTS.map(({ file }) => [file, ((text) => (text === null ? null : promptSize(text)))(store.readDocument(file, dir))]))
+      expect([name, read]).toEqual([name, sizes])
+    }
   })
 })
