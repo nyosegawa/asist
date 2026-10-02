@@ -105,6 +105,17 @@ describe('asist-file:// URLs and paths', () => {
     expect(filePathFromUrl(new URL('img/Q1%2C%20Q2.png', page).href, windows)).toBe('\\\\nas\\team\\reports\\img\\Q1, Q2.png')
   })
 
+  it('reads back a file on a share of the server named localhost, which a file:// URL takes for this machine', async () => {
+    const { fileUrl, filePathFromUrl } = await load()
+    const windows = { windows: true }
+    for (const file of ['\\\\localhost\\C$\\proj\\a.png', '\\\\LocalHost\\team\\C# notes\\大川俊介 100%.png']) {
+      expect([file, filePathFromUrl(fileUrl(file, windows), windows)]).toEqual([file, file])
+    }
+    const page = fileUrl('\\\\localhost\\C$\\proj\\index.html', windows)
+    expect(filePathFromUrl(new URL('img/a.png', page).href, windows)).toBe('\\\\localhost\\C$\\proj\\img\\a.png')
+    expect(filePathFromUrl('asist-file://localhost/Users/me/a.png', MACOS)).toBe('/Users/me/a.png')
+  })
+
   it('reads the file a Windows page names in a relative link, and refuses a path without a drive or with an escaped separator', async () => {
     const { fileUrl, filePathFromUrl } = await load()
     const windows = { windows: true }
