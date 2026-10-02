@@ -22,7 +22,8 @@ import {
   useSettingsStore,
   useStatusStore,
   useToastStore,
-  useTurnStore
+  useTurnStore,
+  type Phase
 } from '@/state/stores'
 import { startStoreSync } from '@/state/store-sync'
 import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
@@ -127,6 +128,12 @@ const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
 /** What the speaker played and when, which tells what can have leaked back into the microphone during a capture. */
 const playback = new PlaybackLog()
 
+/** The phase once the user is no longer heard: a reply being read, a turn under way or on its way, or nothing. */
+function phaseAfterCapture(): Phase {
+  if (speechPlayer.readingTurn >= 0) return 'speak'
+  return pendingRequestId !== null || useTurnStore.getState().activeTurnId >= 0 ? 'think' : 'idle'
+}
+
 /**
  * The turn that takes the barge-ins and the user's aizuchi counted while it sounds: the turn under
  * way, or once brain has reported it done, the one whose reply is still being read.
@@ -226,6 +233,12 @@ async function initializeConversation(): Promise<void> {
       t.setPhase('listen')
       planner.reset()
       classifier.reset()
+    }
+    // The partial transcript and the listening phase last while a capture is under way or awaits its
+    // transcript, however it ends: as a turn, as echo, as nothing, or with the microphone turned off.
+    if (state === 'listening' || state === 'off') {
+      t.setPartial('')
+      if (t.phase === 'listen') t.setPhase(phaseAfterCapture())
     }
   })
 

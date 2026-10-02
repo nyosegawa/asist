@@ -9,17 +9,23 @@ import mitt from 'mitt'
 const mocks = vi.hoisted(() => {
   const turn = {
     phase: 'idle' as string,
+    /** Every phase set, in order, to tell a phase that only flickered past. */
+    phases: [] as string[],
+    partial: '',
     activeTurnId: -1,
     timings: {},
     setPhase: (phase: string) => {
       turn.phase = phase
+      turn.phases.push(phase)
     },
     setActiveTurn: (id: number) => {
       turn.activeTurnId = id
     },
     resetTimings: () => {},
     mergeTimings: () => {},
-    setPartial: () => {},
+    setPartial: (partial: string) => {
+      turn.partial = partial
+    },
     setRouterNote: () => {},
     setMic: () => {}
   }
@@ -241,6 +247,8 @@ beforeEach(() => {
   mocks.playing = false
   mocks.readingTurn = -1
   mocks.turn.phase = 'idle'
+  mocks.turn.phases = []
+  mocks.turn.partial = ''
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
   mocks.confirmOpened = []
@@ -635,6 +643,69 @@ describe('the phase shown after a turn', () => {
     mocks.playing = false
     player().events.emit('idle', { turnId: 42 })
 
+    expect(mocks.turn.phase).toBe('think')
+  })
+})
+
+describe('a capture that yields no turn', () => {
+  it('clears the partial transcript and goes back to the reply being read when the speech was its echo', async () => {
+    const turnStart = vi.fn(async () => 9)
+    await start({ turnStart })
+    // The assistant reads a reply and its voice leaks into the microphone.
+    mocks.playing = true
+    mocks.readingTurn = 7
+    player().events.emit('segmentstart', {
+      segment: { turnId: 7, index: 0, text: '明日の東京は晴れで、最高気温は28度です。', audio: 'eA==', phonemes: null },
+      durationMs: 4000
+    })
+    const startedAt = performance.now()
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', '明日の東京は晴れで')
+    expect(mocks.turn.phase).toBe('listen')
+    const end = speechEnd(startedAt, '明日の東京は晴れで')
+    voice().events.emit('state', 'transcribing')
+    utterance(end, '明日の東京は晴れで最高気温は28度です')
+    voice().events.emit('state', 'listening')
+    await flush()
+
+    expect(turnStart).not.toHaveBeenCalled()
+    expect(mocks.turn.partial).toBe('')
+    expect(mocks.turn.phase).toBe('speak')
+  })
+
+  it('clears the partial transcript and leaves the listening phase when the microphone goes off mid-capture', async () => {
+    await start({})
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', '明日の予定を')
+    expect(mocks.turn.phase).toBe('listen')
+    // disable() reports the capture dropped, then the state.
+    voice().events.emit('speechdropped', { startedAt: 1 })
+    voice().events.emit('state', 'off')
+
+    expect(mocks.turn.partial).toBe('')
+    expect(mocks.turn.phase).toBe('idle')
+  })
+
+  it('goes from listening to thinking with nothing between when the speech starts a turn after the previous one is aborted', async () => {
+    let aborted!: () => void
+    const turnAbort = vi.fn(() => new Promise<void>((resolve) => (aborted = resolve)))
+    const turnStart = vi.fn().mockResolvedValueOnce(42).mockResolvedValueOnce(43)
+    await start({ turnStart, turnAbort })
+    speak('明日の予定を登録して')
+    await flush()
+
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', 'やっぱり明後日')
+    const end = speechEnd(performance.now() - 2000, 'やっぱり明後日')
+    voice().events.emit('state', 'transcribing')
+    mocks.turn.phases = []
+    utterance(end, 'やっぱり明後日にして')
+    voice().events.emit('state', 'listening')
+    aborted()
+    await flush()
+
+    expect(turnStart).toHaveBeenLastCalledWith('やっぱり明後日にして', expect.anything())
+    expect(mocks.turn.phases).not.toContain('idle')
     expect(mocks.turn.phase).toBe('think')
   })
 })
