@@ -34,11 +34,10 @@ const shot = (name) => ({ op: 'shot', value: name })
 /** Ticks the box under the risks, which the next button waits for. */
 const acknowledge = { op: 'eval', value: `(() => { document.querySelector('.su-ack input').click(); return 'ticked' })()` }
 
-/**
- * Gets past the language screen, which opens on the language of the system, past the risks, and then
- * past the model screen, leaving the provider as it is and verifying a sample key.
- */
-const passModel = [wait(1000), press('次へ'), wait(300), acknowledge, wait(200), press('次へ'), wait(300), type('#su-key', 'demo-key-not-a-real-one'), press('検証して保存'), wait(1300), press('次へ'), wait(300)]
+/** Gets past the language screen, which opens on the language of the system, and past the risks, to the model screen. */
+const passSafety = [wait(1000), press('次へ'), wait(300), acknowledge, wait(200), press('次へ'), wait(300)]
+/** Gets past the screens before the model and then past the model screen, leaving the provider as it is and verifying a sample key. */
+const passModel = [...passSafety, type('#su-key', 'demo-key-not-a-real-one'), press('検証して保存'), wait(1300), press('次へ'), wait(300)]
 
 await main(
   [
@@ -145,7 +144,7 @@ await main(
 
     // Branch: the saved key could not be verified.
     { op: 'goto', value: view('setup/key-failed') },
-    wait(1200),
+    ...passSafety,
     shot('setup-30-model-key-failed'),
 
     // Branch: text only, which skips listening, speech and the microphone.
@@ -161,11 +160,14 @@ await main(
     wait(300),
     shot('setup-33-summary-text-only'),
 
-    // Branch: the speech app is not installed, so verifying it fails.
+    // Branch: the speech app is not installed, so verifying it fails. The step opens on Irodori-TTS, a model
+    // ASIST prepares, so an app to verify is chosen first.
     { op: 'goto', value: view('setup/tts-missing') },
     ...passModel,
     press('文字で打ち'),
     press('次へ'),
+    wait(300),
+    press('VOICEVOX'),
     wait(300),
     press('検証する'),
     wait(2000),
