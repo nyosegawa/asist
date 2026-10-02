@@ -808,6 +808,11 @@ export function cancel(id: string): void {
   entry.process?.stop()
 }
 
+/** Whether a new job may start, which none may once the app has begun to quit. */
+export function acceptsJobs(): boolean {
+  return !shuttingDown
+}
+
 /**
  * Stops accepting new jobs and waits for every agent the app owns to close and for its worktree to settle.
  * When an agent cannot be stopped the quit is cancelled, and new jobs are accepted again.
