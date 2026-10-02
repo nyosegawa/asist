@@ -10,6 +10,7 @@ import { MailView, readRows } from '../src/renderer/src/ui/mail/MailView'
 import { mailDraftCard } from '../src/renderer/src/panels/builtin/mail-draft'
 import { useMailStore, useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
+import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES, demoMailStatus, demoReplyOf } from '../src/renderer/src/demo/fixtures/mail'
 
 const t = createTranslator('ja-JP')
@@ -51,6 +52,7 @@ beforeEach(() => {
   })
   useMailStore.setState({ status: demoMailStatus(DEMO_MAIL_MESSAGES), revision: 0, drafts: DEMO_MAIL_DRAFTS, draftsLoaded: true, sending: [] })
   useToastStore.setState({ toasts: [] })
+  useConfirmStore.setState({ queue: [] })
   useViewStore.getState().closeApp()
   useViewStore.getState().openApp({ app: 'mail' })
   container = document.createElement('div')
@@ -74,6 +76,33 @@ const setValue = (input: HTMLInputElement | HTMLTextAreaElement, value: string):
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 const texts = (selector: string): string[] => [...container.querySelectorAll(selector)].map((el) => el.textContent?.trim() ?? '')
+
+/**
+ * Enter in a text field as Chromium handles it and happy-dom does not: unless the keydown is cancelled,
+ * HTML's implicit submission clicks the form's default button, its first submit button, when that button
+ * is enabled, and submits a form without one when a single field blocks implicit submission.
+ */
+function pressEnter(input: HTMLInputElement): void {
+  input.focus()
+  if (!input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }))) return
+  const form = input.form
+  if (!form) return
+  const fields = [...form.elements]
+  const button = fields.find((el): el is HTMLButtonElement | HTMLInputElement => (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) && el.type === 'submit')
+  if (button) {
+    if (!button.disabled) button.click()
+    return
+  }
+  const blocking = fields.filter((el) => el instanceof HTMLInputElement && ['text', 'search', 'url', 'tel', 'email', 'password', 'number'].includes(el.type))
+  if (blocking.length === 1) form.requestSubmit()
+}
+
+/** Answers the confirmation on screen, as a button of the confirm sheet does. */
+function answer(approved: boolean): void {
+  const [shown] = useConfirmStore.getState().queue
+  shown.resolve!(approved)
+  useConfirmStore.getState().close(shown.id)
+}
 
 describe('the message list', () => {
   it('shows the inbox newest first, marks the unread rows, and filters by folder and by account', async () => {
@@ -293,11 +322,11 @@ describe('composing and Escape', () => {
   it('splits the recipients of a composed message and closes the form once it is sent', async () => {
     const view = await render()
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
-    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = view.querySelector<HTMLElement>('.ml-composer')!
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.to')}"]`)!, '田中 <t@example.co.jp>, hana@example.co.jp'))
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.subject')}"]`)!, '候補日'))
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.body')}"]`)!, '火曜でお願いします。'))
-    await act(async () => form.requestSubmit())
+    await act(async () => form.querySelector<HTMLButtonElement>('.cal-primary')!.click())
     expect(api.mailChange).toHaveBeenCalledWith({
       operation: 'send',
       accountId: 'demo-work',
@@ -313,12 +342,10 @@ describe('composing and Escape', () => {
     const started = DEMO_MAIL_DRAFTS.find((draft) => draft.sendStartedAt !== null)!
     const view = await render()
     await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: started.id }))
-    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = view.querySelector<HTMLElement>('.ml-composer')!
     expect(form.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
-    expect(form.querySelector('button[type="submit"]')).toBeNull()
+    expect(form.querySelector('.cal-primary')).toBeNull()
     expect(form.querySelector<HTMLTextAreaElement>(`[aria-label="${t('mail.fields.body')}"]`)?.disabled).toBe(true)
-    await act(async () => form.requestSubmit())
-    expect(api.mailDraftSend).not.toHaveBeenCalled()
     await act(async () => [...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('mail.composer.discard'))!.click())
     expect(api.mailDraftRemove).toHaveBeenCalledWith(started.id)
   })
@@ -335,22 +362,22 @@ describe('composing and Escape', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('.card-host .card-action')!.click())
     // Main records the start of the send in the draft while it runs.
     await act(async () => useMailStore.setState({ drafts: DEMO_MAIL_DRAFTS.map((item) => (item.id === draft.id ? { ...item, sendStartedAt: Date.now() } : item)) }))
-    const form = container.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = container.querySelector<HTMLElement>('.ml-composer')!
     expect(form.querySelector('[role="status"]')).toBeNull()
-    const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
+    const submit = form.querySelector<HTMLButtonElement>('.cal-primary')!
     expect([submit.textContent, submit.disabled]).toEqual([t('mail.sending'), true])
     expect([...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === t('mail.composer.discard'))?.disabled).toBe(true)
     // The mail goes out and main cannot remove the draft, which keeps the start of its send.
     await act(async () => finish({ saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '田中' }) }))
     expect(form.querySelector('[role="status"]')?.textContent).toBe(t('mail.drafts.sendStarted'))
-    expect(form.querySelector('button[type="submit"]')).toBeNull()
+    expect(form.querySelector('.cal-primary')).toBeNull()
     expect(api.mailDraftSend).toHaveBeenCalledOnce()
   })
 
   it('creates the draft in main and closes the composer when the save-as-draft button is pressed', async () => {
     const view = await render()
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
-    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = view.querySelector<HTMLElement>('.ml-composer')!
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.to')}"]`)!, 't@example.co.jp'))
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.body')}"]`)!, '書きかけ'))
     await act(async () => [...form.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent?.includes(t('mail.composer.saveDraft')))!.click())
@@ -369,9 +396,9 @@ describe('composing and Escape', () => {
     // A reply's row names where it goes, which Reply-To moved away from the sender of the original.
     expect(texts('.ml-row-from')[1]).toBe('To: 採用チーム')
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click())
-    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = view.querySelector<HTMLElement>('.ml-composer')!
     expect(form.querySelector<HTMLInputElement>(`[aria-label="${t('mail.fields.subject')}"]`)?.value).toBe('季節のご挨拶')
-    await act(async () => form.requestSubmit())
+    await act(async () => form.querySelector<HTMLButtonElement>('.cal-primary')!.click())
     expect(api.mailDraftSend).toHaveBeenCalledWith(DEMO_MAIL_DRAFTS[0].id)
     expect(api.mailChange).not.toHaveBeenCalled()
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'ok', title: t('mail.done.send') })
@@ -387,11 +414,77 @@ describe('composing and Escape', () => {
   it('keeps a recipient whose name holds a comma as one recipient when a message is composed', async () => {
     const view = await render()
     await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
-    const form = view.querySelector<HTMLFormElement>('.ml-composer')!
+    const form = view.querySelector<HTMLElement>('.ml-composer')!
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.to')}"]`)!, 'Tanaka, Taro <taro@example.com>, "Sato, Hana" <hana@example.co.jp>; s@example.com、'))
     await act(async () => setValue(form.querySelector(`[aria-label="${t('mail.fields.body')}"]`)!, 'よろしくお願いします。'))
-    await act(async () => form.requestSubmit())
+    await act(async () => form.querySelector<HTMLButtonElement>('.cal-primary')!.click())
     expect(api.mailChange).toHaveBeenCalledWith(expect.objectContaining({ to: ['Tanaka, Taro <taro@example.com>', '"Sato, Hana" <hana@example.co.jp>', 's@example.com'] }))
+  })
+
+  it('does not send a draft when Enter confirms an address typed into Cc', async () => {
+    const view = await render()
+    await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: DEMO_MAIL_DRAFTS[0].id }))
+    const cc = view.querySelector<HTMLInputElement>('.ml-composer [aria-label="Cc"]')!
+    await act(async () => setValue(cc, 'suzuki@example.co.jp'))
+    await act(async () => pressEnter(cc))
+    expect(api.mailDraftSend).not.toHaveBeenCalled()
+    expect(view.querySelector('.ml-composer')).not.toBeNull()
+  })
+
+  it('does not send a new message when Enter is pressed in its subject after the body was written', async () => {
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
+    const field = (key: 'mail.fields.to' | 'mail.fields.subject' | 'mail.fields.body') => view.querySelector<HTMLInputElement>(`.ml-composer [aria-label="${t(key)}"]`)!
+    await act(async () => setValue(field('mail.fields.to'), 't@example.co.jp'))
+    await act(async () => setValue(field('mail.fields.body'), '火曜でお願いします。'))
+    await act(async () => setValue(field('mail.fields.subject'), '候補日'))
+    await act(async () => pressEnter(field('mail.fields.subject')))
+    expect(api.mailChange).not.toHaveBeenCalled()
+    expect(view.querySelector('.ml-composer')).not.toBeNull()
+  })
+
+  it('asks before a typed new message is closed or left for another box, message or mini app, and keeps it while the user declines', async () => {
+    const body = '来週の打合せですが、火曜の午後でいかがでしょうか。'
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('.ml-compose')!.click())
+    const textarea = (): HTMLTextAreaElement | null => view.querySelector<HTMLTextAreaElement>(`.ml-composer [aria-label="${t('mail.fields.body')}"]`)
+    await act(async () => setValue(textarea()!, body))
+    const leaves: Array<() => void> = [
+      () => textarea()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })),
+      () => view.querySelector<HTMLButtonElement>(`.ml-composer [aria-label="${t('common.close')}"]`)!.click(),
+      () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+      () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.sent')))!.click(),
+      () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click(),
+      () => void useViewStore.getState().openApp({ app: 'mail', draftId: DEMO_MAIL_DRAFTS[0].id }),
+      () => void useViewStore.getState().openApp({ app: 'notes' })
+    ]
+    for (const leave of leaves) {
+      await act(async () => leave())
+      expect(useConfirmStore.getState().queue).toHaveLength(1)
+      await act(async () => answer(false))
+      expect(textarea()?.value).toBe(body)
+      expect(useViewStore.getState().open).toMatchObject({ app: 'mail', box: 'inbox', pane: { kind: 'compose' } })
+    }
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.sent')))!.click())
+    await act(async () => answer(true))
+    expect(view.querySelector('.ml-composer')).toBeNull()
+    expect(useViewStore.getState().open).toMatchObject({ app: 'mail', box: 'sent', pane: null })
+  })
+
+  it('saves a change typed into a draft just before its composer closes, and says so when the save fails', async () => {
+    const draft = DEMO_MAIL_DRAFTS[0]
+    const view = await render()
+    const typeAndClose = async (body: string): Promise<void> => {
+      await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: draft.id }))
+      await act(async () => setValue(view.querySelector(`.ml-composer [aria-label="${t('mail.fields.body')}"]`)!, body))
+      await act(async () => view.querySelector<HTMLButtonElement>(`.ml-composer [aria-label="${t('common.close')}"]`)!.click())
+      expect(view.querySelector('.ml-composer')).toBeNull()
+    }
+    await typeAndClose(`${draft.body}\n追伸`)
+    expect(api.mailDraftUpdate).toHaveBeenCalledWith(draft.id, expect.objectContaining({ body: `${draft.body}\n追伸` }))
+    api.mailDraftUpdate.mockRejectedValueOnce(new Error(errorText('mail.errors.form.badAddress', { text: 'suzuki@' })))
+    await typeAndClose(`${draft.body}\n追伸2`)
+    expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', title: t('mail.composer.draftSaveFailed'), body: t('mail.errors.form.badAddress', { text: 'suzuki@' }) })
   })
 
   it('closes the reader on the first Escape and the screen on the second', async () => {
