@@ -62,9 +62,46 @@ const damaged = (): Error => new Error(errorKey('files.errors.zipDamaged'))
 
 /** SheetJS's number formatter, which its types leave as any. */
 const SSF: {
-  format(format: number, value: number, options: { table: Record<number, string>; date1904: boolean }): string
+  format(format: number | string, value: number | string, options: { table: Record<number, string>; date1904: boolean }): string
   get_table(): Record<number, string>
 } = XLSX.SSF
+
+/**
+ * A format code with the dots of its date and time sections escaped, as in dd\.mm\.yyyy. Excel shows a dot between
+ * the parts of a date as it is, while SSF throws "bad second format" on one that does not follow seconds, which
+ * dates written by pandas, openpyxl and XlsxWriter, German ones above all, often have. A dot before a 0 is the
+ * fraction of a second, which SSF reads.
+ */
+export function escapeDateDots(code: string): string {
+  const sections: string[] = []
+  let escaped = ''
+  let plain = ''
+  let isDate = false
+  const finish = (): void => {
+    sections.push(isDate ? escaped : plain)
+    escaped = plain = ''
+    isDate = false
+  }
+  for (let i = 0; i < code.length; i++) {
+    const char = code[i]
+    // A quoted text, an escaped or padded character and a bracketed condition, colour or locale are taken whole.
+    let stop = i + 1
+    if (char === '"') stop = code.includes('"', i + 1) ? code.indexOf('"', i + 1) + 1 : code.length
+    else if (char === '\\' || char === '_' || char === '*') stop = i + 2
+    else if (char === '[') stop = code.includes(']', i) ? code.indexOf(']', i) + 1 : code.length
+    else if (char === ';') {
+      finish()
+      continue
+    }
+    const piece = code.slice(i, stop)
+    if (stop === i + 1 && /[ymdhs]/i.test(char)) isDate = true
+    escaped += char === '.' && code[i + 1] !== '0' ? '\\.' : piece
+    plain += piece
+    i = stop - 1
+  }
+  finish()
+  return sections.join(';')
+}
 
 /** The relationship types end in the same name in the transitional and the strict schema. */
 const isType = (type: string, name: string): boolean => type.endsWith(`/${name}`)
@@ -104,20 +141,27 @@ function dateSerial(iso: string, date1904: boolean): number {
 
 const openXlsx = async (url: string) => {
   const zip = await openZip(url)
-  const packageRelationships = parseRelationships(await readText(zip, '_rels/.rels'))
+  // Part names compare without case in a package, as SheetJS compares them, and a relationship can name
+  // worksheets/Sheet1.xml where the zip holds worksheets/sheet1.xml.
+  const names = new Map([...zip.entries.keys()].map((name) => [name.toLowerCase(), name]))
+  const partNamed = (name: string): string => names.get(name.toLowerCase()) ?? name
+  const packageRelationships = parseRelationships(await readText(zip, partNamed('_rels/.rels')))
   const officeDocument = packageRelationships.find(({ type }) => isType(type, 'officeDocument'))
   if (!officeDocument) throw damaged()
-  const workbookPart = resolvePart('', officeDocument.target)
+  const workbookPart = partNamed(resolvePart('', officeDocument.target))
   const { folder, relationships } = relationshipsOf(workbookPart)
-  const [workbook, workbookRelationships] = await Promise.all([readText(zip, workbookPart).then(parseWorkbook), readText(zip, relationships).then(parseRelationships)])
+  const [workbook, workbookRelationships] = await Promise.all([
+    readText(zip, workbookPart).then(parseWorkbook),
+    readText(zip, partNamed(relationships)).then(parseRelationships)
+  ])
   const partOf = (type: string): string | null => {
     const found = workbookRelationships.find((relationship) => isType(relationship.type, type))
-    return found ? resolvePart(folder, found.target) : null
+    return found ? partNamed(resolvePart(folder, found.target)) : null
   }
   const sheetParts = workbook.sheets.map(({ id }) => {
     const found = workbookRelationships.find((relationship) => relationship.id === id)
     if (!found) throw damaged()
-    return resolvePart(folder, found.target)
+    return partNamed(resolvePart(folder, found.target))
   })
   const stringsPart = partOf('sharedStrings')
   const stylesPart = partOf('styles')
@@ -138,23 +182,38 @@ const openXlsx = async (url: string) => {
     })
     return reading
   }
-  let current: { sheet: number; loading: Promise<LoadedSheet | null> } | null = null
+  /** The sheet the viewer shows, read and indexed, or null for one too large to read. */
+  let shown: { sheet: number; loaded: LoadedSheet | null } | null = null
+  /** The sheet being read to take its place. */
+  let loading: { sheet: number; promise: Promise<LoadedSheet | null> } | null = null
 
-  /** The sheet, read and indexed once while it is the one shown, or null when it is too large to read. */
+  /**
+   * The sheet, read and indexed once while it is the one shown. The sheet shown before is let go only once the next
+   * one has loaded, so that a sheet that fails to load, as every one does after the file is saved again, leaves the
+   * shown one as it was; nothing that failed is kept, and the next request reads it again.
+   */
   function load(sheet: number): Promise<LoadedSheet | null> {
-    if (current?.sheet === sheet) return current.loading
+    if (shown?.sheet === sheet) return Promise.resolve(shown.loaded)
+    if (loading?.sheet === sheet) return loading.promise
     const part = sheetParts[sheet]
     if (part === undefined) throw new Error(`the workbook has no sheet ${sheet}`)
-    const loading =
+    const promise =
       tooLarge(zip, part) || (stringsPart !== null && tooLarge(zip, stringsPart))
         ? Promise.resolve(null)
         : Promise.all([zip.read(part), sharedStrings()]).then(([xml]) => ({ xml, index: indexRows(xml) }))
-    current = { sheet, loading }
-    // A sheet that failed to load is not kept, so that the next request reads it again.
-    loading.catch(() => {
-      if (current?.loading === loading) current = null
-    })
-    return loading
+    const reading = { sheet, promise }
+    loading = reading
+    promise.then(
+      (loaded) => {
+        if (loading !== reading) return
+        shown = { sheet, loaded }
+        loading = null
+      },
+      () => {
+        if (loading === reading) loading = null
+      }
+    )
+    return promise
   }
 
   function sharedString(table: SharedStrings | null, value: string): string {
@@ -163,30 +222,58 @@ const openXlsx = async (url: string) => {
     return itemText(decoder.decode(table.xml.subarray(table.index.starts[position], table.index.ends[position])))
   }
 
-  function formatNumber(value: number, style: number | undefined): string {
-    const formatId = style === undefined ? 0 : (styles.cellFormats[style] ?? 0)
-    return SSF.format(formatId, value, { table: formatTable, date1904: workbook.date1904 })
+  const formatOptions = { table: formatTable, date1904: workbook.date1904 }
+
+  /**
+   * A value as its cell's format shows it, or null when SSF cannot read the format even with the dots of its dates
+   * escaped. SSF throws a string or an Error on a format it cannot read; each cell is formatted on its own, so that
+   * such a format leaves only its own cells as SheetJS's reader left them, in the General format.
+   */
+  function formatted(formatId: number, value: number | string): string | null {
+    try {
+      return SSF.format(formatId, value, formatOptions)
+    } catch {
+      const code = formatTable[formatId]
+      const escaped = code === undefined ? code : escapeDateDots(code)
+      if (escaped === undefined || escaped === code) return null
+      try {
+        return SSF.format(escaped, value, formatOptions)
+      } catch {
+        return null
+      }
+    }
   }
+
+  const formatOf = (cell: RawCell): number => (cell.style === undefined ? 0 : (styles.cellFormats[cell.style] ?? 0))
+
+  const numberCell = (value: number, cell: RawCell): SheetCell => ({
+    text: formatted(formatOf(cell), value) ?? SSF.format(0, value, formatOptions),
+    numeric: true
+  })
+
+  /** A text, through the text section of its cell's format, which can write a title after a name or wrap it in brackets. */
+  const textCell = (text: string, cell: RawCell): SheetCell => ({ text: formatOf(cell) === 0 ? text : (formatted(formatOf(cell), text) ?? text), numeric: false })
 
   /** A cell's value as SheetJS reads it, and as its format shows it. */
   function cellOf(cell: RawCell, table: SharedStrings | null): SheetCell {
+    if (cell.type === 'inlineStr') return cell.inline === undefined ? { text: '', numeric: false } : textCell(itemText(cell.inline), cell)
+    const { value } = cell
+    if (value === undefined) return { text: '', numeric: false }
     switch (cell.type) {
       case 's':
-        return { text: cell.value === undefined ? '' : sharedString(table, cell.value), numeric: false }
-      case 'inlineStr':
-        return { text: cell.inline === undefined ? '' : itemText(cell.inline), numeric: false }
+        return textCell(sharedString(table, value), cell)
       case 'str':
+        return textCell(unescapeXml(value), cell)
       case 'e':
-        return { text: cell.value === undefined ? '' : unescapeXml(cell.value), numeric: false }
+        return { text: unescapeXml(value), numeric: false }
       case 'b':
-        return { text: cell.value === undefined ? '' : ['1', 'true'].includes(cell.value) ? 'TRUE' : 'FALSE', numeric: false }
+        return { text: ['1', 'true'].includes(value) ? 'TRUE' : 'FALSE', numeric: false }
       case 'd':
-        return cell.value === undefined ? { text: '', numeric: false } : { text: formatNumber(dateSerial(cell.value, workbook.date1904), cell.style), numeric: true }
+        return numberCell(dateSerial(unescapeXml(value), workbook.date1904), cell)
       default: {
-        if (cell.value === undefined) return { text: '', numeric: false }
-        const value = Number(cell.value)
-        if (Number.isNaN(value)) throw damaged()
-        return { text: formatNumber(value, cell.style), numeric: true }
+        const number = Number(unescapeXml(value))
+        if (Number.isNaN(number)) throw damaged()
+        return numberCell(number, cell)
       }
     }
   }
@@ -242,7 +329,8 @@ const openXlsx = async (url: string) => {
       }
     },
     close(): void {
-      current = null
+      shown = null
+      loading = null
       strings = null
     }
   }

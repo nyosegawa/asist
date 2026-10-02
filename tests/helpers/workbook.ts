@@ -25,9 +25,24 @@ export const worksheet = (data: string): string =>
  * A workbook of the sheets in their order. `strings` are the items of the shared strings, each the content of an
  * <si>; `styles` the content of the styles part. The sheets are written first and stored, so that each one's rows
  * lie in the file as they were written, and the other parts after them, deflated unless `store` asks for every
- * part to be stored.
+ * part to be stored. `workbook` is the content of <workbook> before its <sheets>, and `target` names a sheet's part in
+ * the workbook's relationships, as worksheets/sheet1.xml by default.
  */
-export async function workbookOf({ sheets, strings, styles, store = false }: { sheets: SheetSpec[]; strings?: string[]; styles?: string; store?: boolean }): Promise<Uint8Array> {
+export async function workbookOf({
+  sheets,
+  strings,
+  styles,
+  store = false,
+  workbook = '',
+  target = (i) => `worksheets/sheet${i + 1}.xml`
+}: {
+  sheets: SheetSpec[]
+  strings?: string[]
+  styles?: string
+  store?: boolean
+  workbook?: string
+  target?: (index: number) => string
+}): Promise<Uint8Array> {
   const zip = new JSZip()
   const options = { createFolders: false, ...(store ? { compression: 'STORE' as const } : {}) }
   sheets.forEach(({ data }, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, data.startsWith('<?xml') ? data : worksheet(data), { ...options, compression: 'STORE' }))
@@ -35,10 +50,10 @@ export async function workbookOf({ sheets, strings, styles, store = false }: { s
   zip.file('_rels/.rels', `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/officeDocument" Target="xl/workbook.xml"/></Relationships>`, options)
   zip.file(
     'xl/workbook.xml',
-    `${XML}<workbook xmlns="${NS}" xmlns:r="${REL}"><workbookPr/><sheets>${sheets.map(({ name }, i) => `<sheet name="${name}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`,
+    `${XML}<workbook xmlns="${NS}" xmlns:r="${REL}">${workbook}<sheets>${sheets.map(({ name }, i) => `<sheet name="${name}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`,
     options
   )
-  const relationships = sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`)
+  const relationships = sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="${REL}/worksheet" Target="${target(i)}"/>`)
   if (styles !== undefined) relationships.push(`<Relationship Id="rIdStyles" Type="${REL}/styles" Target="styles.xml"/>`)
   if (strings !== undefined) relationships.push(`<Relationship Id="rIdStrings" Type="${REL}/sharedStrings" Target="/xl/sharedStrings.xml"/>`)
   zip.file('xl/_rels/workbook.xml.rels', `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships.join('')}</Relationships>`, options)

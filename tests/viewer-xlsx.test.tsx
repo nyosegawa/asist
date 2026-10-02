@@ -6,7 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorKey } from '@shared/i18n/error-key'
-import { readErrorText } from '@shared/i18n/error-text'
+import { errorText, readErrorText } from '@shared/i18n/error-text'
 import type { FileItem } from '@shared/files'
 import { DEMO_OFFICE_ITEMS } from '@/demo/fixtures/files-office'
 import { FileViewer } from '@/panels/viewers'
@@ -18,7 +18,7 @@ import { declareSize, serveByRanges, workbookOf } from './helpers/workbook'
 /**
  * The Excel viewer, with the preview page served in this process on a channel of its own instead of in an iframe,
  * so that the viewer reaches the real Excel document. The workbook is served to fetch by ranges. Each request the
- * viewer makes of the document is recorded.
+ * viewer makes of the document is recorded, and a test can hold the answers back or make a request fail.
  */
 
 const preview = vi.hoisted(() => ({ open: null as null | ((kind: string, file: PreviewFile) => PreviewHandle<OpenPreviewDocument>) }))
@@ -36,6 +36,10 @@ const itemOf = (name: string): FileItem => ({ path: `/Users/me/${name}`, name, k
 let container: HTMLDivElement
 let root: Root
 let requests: Array<{ method: string; args: unknown }>
+/** What every answer waits for before it reaches the viewer, as it does while the frame is busy parsing. */
+let held: Promise<void>
+/** The error a request fails with instead of being answered, as when the frame stops or a part cannot be read. */
+let failure: (method: string, args: unknown) => Error | null
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -43,6 +47,8 @@ beforeEach(() => {
   // The page's side looks for bitmaps among what it returns.
   vi.stubGlobal('ImageBitmap', class {})
   requests = []
+  held = Promise.resolve()
+  failure = () => null
   const client = createPreviewClient(() => {
     const { port1, port2 } = new MessageChannel()
     servePreview(port2, kinds)
@@ -51,9 +57,13 @@ beforeEach(() => {
   preview.open = (kind, file) => {
     const handle = client.open<OpenPreviewDocument>(kind, file)
     return {
-      call: (method, args) => {
+      call: async (method, args) => {
         requests.push({ method, args })
-        return handle.call(method, args)
+        const error = failure(method, args)
+        if (error) throw error
+        const value = await handle.call(method, args)
+        await held
+        return value
       },
       release: () => handle.release()
     }
@@ -68,9 +78,26 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-/** Lets the requests the viewer made be answered and drawn. */
+/** Opens the focus view of a sheet of `count` rows below its header, and gives its grid a height of ten rows. */
+async function focusOnRows(count: number): Promise<HTMLElement> {
+  const rows = Array.from({ length: count }, (_, i) => `<row r="${i + 2}"><c r="A${i + 2}" t="inlineStr"><is><t>行${i}</t></is></c></row>`).join('')
+  serveByRanges(await workbookOf({ sheets: [{ name: '明細', data: `<row r="1"><c r="A1" t="inlineStr"><is><t>番号</t></is></c></row>${rows}` }] }))
+  await render(<FileViewer item={itemOf('明細.xlsx')} mode="focus" size="focus" />)
+  const grid = container.querySelector<HTMLElement>('.fv-xlsx-grid')!
+  Object.defineProperty(grid, 'clientHeight', { value: 280 })
+  return grid
+}
+
+/**
+ * Lets the requests the viewer made be answered and drawn: waits until nothing says it is loading, which the first
+ * request of a run takes longest for, since it loads the Excel kind of the preview page.
+ */
 async function settle(): Promise<void> {
-  for (let i = 0; i < 5; i++) await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+  const loading = t('files.viewer.loading')
+  for (let waited = 0; waited < 5_000; waited += 10) {
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
+    if (waited >= 40 && !container.textContent?.includes(loading) && !container.querySelector('tr[data-loading]')) return
+  }
 }
 
 async function render(element: React.ReactNode): Promise<HTMLElement> {
@@ -125,9 +152,10 @@ describe('the Excel viewer', () => {
     grid.scrollTop = 28 + 500 * 28
     await act(async () => grid.dispatchEvent(new Event('scroll')))
     await settle()
+    // The block in view first, then the one above it.
     expect(rowsAsked().slice(1)).toEqual([
-      { sheet: 0, from: 400, count: 100 },
-      { sheet: 0, from: 500, count: 100 }
+      { sheet: 0, from: 500, count: 100 },
+      { sheet: 0, from: 400, count: 100 }
     ])
     const drawn = [...grid.querySelectorAll<HTMLElement>('tbody:not([aria-hidden]) tr')]
     expect(drawn.map((row) => Number(row.getAttribute('aria-rowindex')) - 2)).toEqual(Array.from({ length: 31 }, (_, i) => 490 + i))
@@ -140,6 +168,54 @@ describe('the Excel viewer', () => {
     await settle()
     expect(rowsAsked().slice(3)).toEqual([{ sheet: 0, from: 0, count: 100 }])
     expect(texts(grid.querySelectorAll('tbody:not([aria-hidden]) tr')).slice(0, 2)).toEqual(['行0', '行1'])
+  })
+
+  it('asks only for the blocks near where the grid stops when it is dragged far, not for every block it passes', async () => {
+    const grid = await focusOnRows(1000)
+    let release = (): void => undefined
+    held = new Promise((resolve) => (release = resolve))
+    for (const row of [150, 350, 550, 750]) {
+      grid.scrollTop = 28 + row * 28
+      await act(async () => grid.dispatchEvent(new Event('scroll')))
+    }
+    release()
+    await settle()
+    expect(rowsAsked().slice(1)).toEqual([
+      { sheet: 0, from: 100, count: 100 },
+      { sheet: 0, from: 300, count: 100 },
+      { sheet: 0, from: 700, count: 100 }
+    ])
+    expect(texts(grid.querySelectorAll('tbody:not([aria-hidden]) tr')).slice(0, 2)).toEqual(['行740', '行741'])
+  })
+
+  it('asks again once for rows the preview page stopped before answering, as when another file took its frame down', async () => {
+    let stopped = false
+    failure = (method) => (method === 'rows' && !stopped ? ((stopped = true), new Error(errorText('files.errors.previewStopped'))) : null)
+    await focusOnRows(1000)
+    expect(rowsAsked()).toEqual([
+      { sheet: 0, from: 0, count: 100 },
+      { sheet: 0, from: 0, count: 100 }
+    ])
+    expect(container.querySelector('.fv-note[data-tone="error"]')).toBeNull()
+    expect(texts(container.querySelectorAll('.fv-xlsx-grid tbody:not([aria-hidden]) tr')).slice(0, 2)).toEqual(['行0', '行1'])
+  })
+
+  it('says a block of rows could not be read under the grid, shows the rows around it, and asks again once the grid comes back to it', async () => {
+    const unreadable = errorText('files.errors.zipDamaged')
+    failure = (method, args) => (method === 'rows' && (args as { from: number }).from === 300 ? new Error(unreadable) : null)
+    const grid = await focusOnRows(1000)
+    grid.scrollTop = 28 + 395 * 28
+    await act(async () => grid.dispatchEvent(new Event('scroll')))
+    await settle()
+    expect(container.querySelector('.fv-note[data-tone="error"]')?.textContent).toBe(t('files.viewer.xlsxFailed', { message: readErrorText(unreadable, 'ja-JP')! }))
+    expect(texts(grid.querySelectorAll('tbody:not([aria-hidden]) tr'))).toContain('行400')
+
+    for (const row of [0, 395]) {
+      grid.scrollTop = 28 + row * 28
+      await act(async () => grid.dispatchEvent(new Event('scroll')))
+      await settle()
+    }
+    expect(rowsAsked().filter((args) => (args as { from: number }).from === 300)).toHaveLength(2)
   })
 
   it('says a sheet too large to read is too large, and shows the other sheets', async () => {

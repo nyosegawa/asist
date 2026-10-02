@@ -13,6 +13,8 @@ type Bytes = Uint8Array<ArrayBuffer>
 const LT = 0x3c
 const GT = 0x3e
 const SLASH = 0x2f
+const BANG = 0x21
+const DASH = 0x2d
 const COLON = 0x3a
 const EQUALS = 0x3d
 const DOUBLE_QUOTE = 0x22
@@ -31,10 +33,34 @@ const INLINE_STRING = ascii('is')
 const SHARED_STRINGS = ascii('sst')
 const STRING_ITEM = ascii('si')
 const R = ascii('r')
+const COMMENT_END = ascii('-->')
+const CDATA_START = ascii('<![CDATA[')
+const CDATA_END = ascii(']]>')
 
 const damaged = (): Error => new Error(errorKey('files.errors.zipDamaged'))
 
 const isSpace = (byte: number): boolean => byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d
+
+/** Where the first `wanted` at or after `from` ends: the position of its last byte. */
+function endOf(xml: Bytes, from: number, wanted: Uint8Array): number {
+  for (let at = xml.indexOf(wanted[0], from); at !== -1; at = xml.indexOf(wanted[0], at + 1)) {
+    let k = 1
+    while (k < wanted.length && xml[at + k] === wanted[k]) k++
+    if (k === wanted.length) return at + k - 1
+  }
+  throw damaged()
+}
+
+/**
+ * Where the scan goes on from a < at `at`: past the end of a comment or a CDATA section, so that a <row> or an <si>
+ * written inside one is not taken for an element, and from `at` itself for anything else.
+ */
+function pastMarkup(xml: Bytes, at: number): number {
+  if (xml[at + 1] !== BANG) return at
+  if (xml[at + 2] === DASH && xml[at + 3] === DASH) return endOf(xml, at + 4, COMMENT_END)
+  for (let k = 2; k < CDATA_START.length; k++) if (xml[at + k] !== CDATA_START[k]) return at
+  return endOf(xml, at + CDATA_START.length, CDATA_END)
+}
 
 /** Where the name of a tag that starts at `from` ends. */
 function nameEnd(xml: Bytes, from: number): number {
@@ -145,7 +171,8 @@ class Numbers {
 /**
  * Indexes the rows of a worksheet's XML in one pass over its bytes, without decoding them. A row without an r
  * attribute follows the one before it, and so does a cell without one. A cell holds a value when it has a <v>
- * with content or an inline string, as SheetJS counts one.
+ * with content or an inline string. SheetJS also counts a formula's text result written as an empty <v></v>, which
+ * shows nothing, so a sheet can start or end a row or a column sooner here than it did there.
  */
 export function indexRows(xml: Bytes): RowIndex {
   const numbers = new Numbers()
@@ -157,6 +184,11 @@ export function indexRows(xml: Bytes): RowIndex {
   let ascending = true
   let used: UsedRange | null = null
   for (let at = xml.indexOf(LT); at !== -1; at = xml.indexOf(LT, at + 1)) {
+    const past = pastMarkup(xml, at)
+    if (past !== at) {
+      at = past
+      continue
+    }
     if (xml[at + 1] === SLASH) {
       if (inData && named(xml, at + 2, nameEnd(xml, at + 2), SHEET_DATA)) {
         end = at
@@ -240,6 +272,11 @@ export function indexStrings(xml: Bytes): StringIndex {
   let inTable = false
   let end = -1
   for (let at = xml.indexOf(LT); at !== -1; at = xml.indexOf(LT, at + 1)) {
+    const past = pastMarkup(xml, at)
+    if (past !== at) {
+      at = past
+      continue
+    }
     if (xml[at + 1] === SLASH) {
       if (inTable && named(xml, at + 2, nameEnd(xml, at + 2), SHARED_STRINGS)) {
         end = at
@@ -299,6 +336,19 @@ function element(xml: string, local: string): string | null {
   return found ? (found[1] ?? '') : null
 }
 
+const COMMENT_OR_CDATA = /<!--[\s\S]*?-->|<!\[CDATA\[([\s\S]*?)\]\]>/g
+
+/**
+ * XML without its comments, and with each CDATA section written as escaped character data, so that the patterns
+ * below neither read an element inside a comment nor stop at a < inside CDATA.
+ */
+function plain(xml: string): string {
+  if (!xml.includes('<!')) return xml
+  return xml.replace(COMMENT_OR_CDATA, (_, cdata: string | undefined) =>
+    cdata === undefined ? '' : cdata.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  )
+}
+
 const PHONETIC_RUN = /<(?:[\w.-]+:)?rPh(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*(?:\/>|>[\s\S]*?<\/(?:[\w.-]+:)?rPh\s*>)/g
 const TEXT = /<(?:[\w.-]+:)?t(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?t\s*>)/g
 
@@ -308,7 +358,7 @@ const TEXT = /<(?:[\w.-]+:)?t(?:\s(?:[^>"']|"[^"]*"|'[^']*')*)?(?:\/>|>([\s\S]*?
  */
 export function itemText(xml: string): string {
   let text = ''
-  for (const [, part] of xml.replace(PHONETIC_RUN, '').matchAll(TEXT)) text += part ?? ''
+  for (const [, part] of plain(xml).replace(PHONETIC_RUN, '').matchAll(TEXT)) text += part ?? ''
   return unescapeXml(text)
 }
 
@@ -319,7 +369,7 @@ export interface RawCell {
   type: string
   /** The index of its format in the styles' cellXfs, when it names one. */
   style: number | undefined
-  /** The content of its <v>, still escaped; undefined when it has none. */
+  /** The content of its <v>, still escaped, a CDATA section included; undefined when it has none. */
   value: string | undefined
   /** The content of its <is>, for an inline string. */
   inline: string | undefined
@@ -331,7 +381,7 @@ const CELL_ELEMENT = /<(?:[\w.-]+:)?c(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*?)(?:
 export function parseCells(row: string): RawCell[] {
   const cells: RawCell[] = []
   let column = -1
-  for (const [, inside, content = ''] of row.matchAll(CELL_ELEMENT)) {
+  for (const [, inside, content = ''] of plain(row).matchAll(CELL_ELEMENT)) {
     const found = attributes(inside)
     const r = found.get('r')
     if (r === undefined) column += 1
