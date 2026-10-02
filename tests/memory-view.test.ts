@@ -2,7 +2,7 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { documentOf, parsePage } from '@shared/memory-page'
+import { documentOf, newPageMarkdown, parsePage } from '@shared/memory-page'
 import { errorText } from '@shared/i18n/error-text'
 import type { AppSettings } from '@shared/ipc'
 import { Markdown } from '../src/renderer/src/ui/memory/Markdown'
@@ -42,6 +42,13 @@ const api = {
     if (files[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
     files[file] = markdown
     return documentOf(file, markdown)
+  }),
+  // Main finds a name taken as the file system of macOS and Windows does, whatever its case.
+  memoryPageDraft: vi.fn(async (name: string) => {
+    const page = name.trim()
+    const file = `pages/${page}.md`
+    if (Object.keys(files).some((known) => known.toLowerCase() === file.toLowerCase())) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+    return { file, markdown: newPageMarkdown(page, useSettingsStore.getState().settings?.conversationLocale ?? 'ja-JP', '2026-10-03') }
   }),
   memoryDocumentCreate: vi.fn(async ({ name, markdown }: { name: string; markdown: string }) => {
     const file = `pages/${name}.md`
@@ -238,7 +245,7 @@ describe('the memory screen', () => {
     }
   )
 
-  it('leaves a new page that was never saved out of the memory, and opens none under the name of a page that exists', async () => {
+  it('leaves a new page that was never saved out of the memory, and opens none under a name main finds taken, though the list the screen holds does not show it', async () => {
     const view = await render()
     const create = async (name: string): Promise<void> => {
       await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
@@ -260,6 +267,16 @@ describe('the memory screen', () => {
       title: t('memory.createFailed'),
       body: t('memory.errors.pageExists', { name: '松葉軒' })
     })
+
+    // A curation took in a page after the screen listed the pages.
+    files['pages/Tanaka.md'] = '---\naliases: []\nupdated: 2026-10-03\n---\n# Tanaka\n\n## Summary\nTheir boss.\n'
+    for (const name of ['Tanaka', 'tanaka']) {
+      await create(name)
+      expect([name, view.querySelector('textarea')]).toEqual([name, null])
+      expect(useToastStore.getState().toasts.at(-1)?.body).toBe(t('memory.errors.pageExists', { name }))
+    }
+    expect(api.memoryPageDraft.mock.calls.map(([name]) => name)).toEqual(['田中さん', '松葉軒', 'Tanaka', 'tanaka'])
+    expect(api.memoryDocumentCreate).not.toHaveBeenCalled()
   })
 
   it('deletes a page only after the confirmation', async () => {

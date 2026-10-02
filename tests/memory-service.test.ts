@@ -117,6 +117,23 @@ describe('memory service', () => {
     for (const utterance of unrelated) expect([utterance, await service.search(utterance, { mode: 'utterance' })]).toEqual([utterance, []])
   })
 
+  it('searches a page made on the memory screen before it opened new pages empty only for what the user wrote in it, once the memory is prepared', async () => {
+    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-templates', 'ja-JP', 'page.md'), 'utf8')
+    const page = template
+      .replace(/^updated: .*$/m, 'updated: 2026-09-20')
+      .replace(/^# .*$/m, '# 田中さん')
+      .replace('これが何(誰、どこ)で、本人とどう関わるか。一〜三文。', '本人の上司。毎週木曜に打ち合わせをする。')
+    fs.mkdirSync(memoryFile('pages'), { recursive: true })
+    fs.writeFileSync(memoryFile('pages', 'ムギ.md'), MUGI)
+    fs.writeFileSync(memoryFile('pages', '田中さん.md'), page)
+    service.ensureLoaded()
+    expect(service.list().filter((unit) => unit.page === '田中さん').map((unit) => unit.heading)).toEqual(['要約'])
+    for (const utterance of ['あの案件の目的と決まったことを教えて', '日付が意味を持つ', '上司とどう付き合っているように見える?', '私から見てどういう存在かな']) {
+      expect([utterance, await service.search(utterance, { mode: 'utterance' })]).toEqual([utterance, []])
+    }
+    expect((await service.search('田中さんとの打ち合わせって木曜だっけ', { mode: 'utterance' }))[0]?.record.page).toBe('田中さん')
+  })
+
   // The rebuild is made to fail with a named pipe (mkfifo), which Windows does not have in a folder.
   it.runIf(process.platform !== 'win32')('counts a committed save as done when the index cannot be rebuilt, and leaves the failure to the next read', () => {
     service.ensureLoaded()

@@ -3,7 +3,7 @@ import { app } from 'electron'
 import { errMessage } from '@shared/api-errors'
 import { promptText, type PromptText } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
-import type { EmbeddingStatus, MemoryDocument, MemoryOverview, MemoryUnit } from '@shared/ipc'
+import type { EmbeddingStatus, MemoryDocument, MemoryOverview, MemoryPageDraft, MemoryUnit } from '@shared/ipc'
 import { FrozenMemoryBlock } from '@shared/memory-block'
 import { embeddingModelKey } from '@shared/memory-embedding'
 import * as embedding from './embedding'
@@ -150,6 +150,12 @@ export function documentWrite(file: string, markdown: string, base: string): Mem
   reindexAfterChange()
   block.invalidate()
   return document
+}
+
+/** The new page a name opens in the memory screen's editor, written nowhere yet. */
+export function pageDraft(name: unknown): MemoryPageDraft {
+  requireOpen()
+  return store.pageDraft(name)
 }
 
 /** Writes a page the user made on the memory screen, at its first save. */
