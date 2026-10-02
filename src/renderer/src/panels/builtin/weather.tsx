@@ -292,6 +292,6 @@ export const weatherCard: CardDefinition = {
   Body: WeatherBody,
   kicker: 'WEATHER',
   className: 'wx-card',
-  meta: (context) => <Issued {...context} />,
-  backdrop: (context) => <Scene {...context} />
+  meta: Issued,
+  backdrop: Scene
 }
