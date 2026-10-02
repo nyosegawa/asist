@@ -17,8 +17,9 @@ const mocks = vi.hoisted(() => ({
   params: [] as Array<Record<string, unknown>>
 }))
 
-vi.mock('openai', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('openai')>()),
+vi.mock('openai', async () => ({
+  // The class the openai package raises a failure inside a stream with, as its own parser does below.
+  APIError: (await import('openai/core/error')).APIError,
   default: class FakeOpenAI {
     responses = {
       create: async (params: Record<string, unknown>, options: { signal: AbortSignal }) => {
@@ -131,6 +132,24 @@ describe('toResponsesInput', () => {
     ]
     expect(toResponsesInput([assistant], 'gpt-5.5-mini', 'ja-JP')).toEqual(built)
     expect(toResponsesInput([{ ...assistant, native: { provider: 'google', model: 'gpt-5.5', payload: {} } }], 'gpt-5.5', 'ja-JP')).toEqual(built)
+  })
+
+  it('sends no reasoning item without the item that followed it, from a reply a broken stream or the output limit cut off', async () => {
+    const { toResponsesInput } = await import('../src/main/services/llm/openai')
+    const search = { type: 'web_search_call', id: 'ws_1', status: 'completed', action: { type: 'search', query: '大阪 天気' } }
+    const user = (text: string): ConversationMessage => ({ role: 'user', parts: [{ type: 'text', text }] })
+    // As the log keeps them: a broken stream leaves the text it cut off without an id, and the output
+    // limit can stop a response while it reasons again after a search.
+    const stored: ConversationMessage[] = [
+      user('大阪の天気'),
+      { role: 'assistant', parts: [{ type: 'text', text: '大阪は' }], native: { provider: 'openai', model: 'gpt-5.5', payload: [REASONING, { role: 'assistant', content: '大阪は' }] } },
+      user('続けて'),
+      { role: 'assistant', parts: [{ type: 'text', text: '調べますね。' }], native: { provider: 'openai', model: 'gpt-5.5', payload: [REASONING, SPOKEN, search, { ...REASONING, id: 'rs_2' }] } },
+      user('続けて')
+    ]
+    const input = toResponsesInput(stored, 'gpt-5.5', 'ja-JP')
+    expect(unpairedReasoning(input)).toEqual([])
+    for (const item of [{ role: 'assistant', content: '大阪は' }, REASONING, SPOKEN, search]) expect(input).toContainEqual(item)
   })
 })
 
@@ -303,43 +322,17 @@ describe('the OpenAI stream', () => {
     expect(summarizeTurnUsage([result.usage!]).contextTokens).toBe(60_000)
   })
 
-  it('sends a reasoning item back only with the item that followed it, when the stream breaks or the output limit cuts the response', async () => {
-    const { toResponsesInput } = await import('../src/main/services/llm/openai')
-    const { buildResumeMessages } = await import('@shared/turn-recovery')
-    const asked: ConversationMessage = { role: 'user', parts: [{ type: 'text', text: '大阪の天気' }] }
-    const resent = (message: ConversationMessage): unknown[] => toResponsesInput([asked, ...buildResumeMessages(message, [], '続けて')], MODEL.id, 'ja-JP')
-
-    // The stream breaks while the message after the reasoning is still being written.
-    mocks.events = [{ type: 'response.output_item.done', item: REASONING }, { type: 'response.output_text.delta', delta: '大阪は' }]
-    mocks.failAfter = new Error('terminated')
-    const broken = (await open()).stream
-    await expect(broken.final()).rejects.toThrow('terminated')
-    const afterBreak = resent(broken.snapshot()!)
-    expect(unpairedReasoning(afterBreak)).toEqual([])
-    expect(afterBreak).toContainEqual({ role: 'assistant', content: '大阪は' })
-
-    // The output limit ends the response while it reasons again after a search.
-    mocks.failAfter = null
-    const search = { type: 'web_search_call', id: 'ws_1', status: 'completed', action: { type: 'search', query: '大阪 天気' } }
-    mocks.events = [
-      { type: 'response.output_item.done', item: REASONING },
-      { type: 'response.output_text.delta', delta: '調べますね。' },
-      { type: 'response.output_item.done', item: SPOKEN },
-      { type: 'response.output_item.done', item: search },
-      { type: 'response.output_item.done', item: { ...REASONING, id: 'rs_2' } },
-      { type: 'response.incomplete', response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } } }
-    ]
-    const cut = await (await open({ webSearch: true })).stream.final()
-    expect(cut.stop).toBe('max_tokens')
-    expect(unpairedReasoning(resent(cut.message))).toEqual([])
-  })
-
   it('treats an error event inside the stream as transient exactly when a failed response with the same code is', async () => {
     const message = 'The server had an error while processing your request.'
     const transient = async (code: string): Promise<boolean[]> => {
       const failures: unknown[] = []
-      // The error event's fields, as the SDK's types give them and nested under `error`, as the live API is reported to send them.
-      for (const data of [{ type: 'error', code, message, param: null, sequence_number: 3 }, { type: 'error', sequence_number: 3, error: { type: code, code, message, param: null } }]) {
+      // The error event's fields as the SDK's types give them, then nested under `error` as the live API
+      // is reported to send them, where the code can be null beside the type.
+      for (const data of [
+        { type: 'error', code, message, param: null, sequence_number: 3 },
+        { type: 'error', sequence_number: 3, error: { type: code, code, message, param: null } },
+        { type: 'error', sequence_number: 3, error: { type: code, code: null, message, param: null } }
+      ]) {
         mocks.sse = `event: error\ndata: ${JSON.stringify(data)}\n\n`
         failures.push(await (await open()).stream.final().then(() => null, (reason: unknown) => reason))
       }
@@ -349,8 +342,18 @@ describe('the OpenAI stream', () => {
       expect(failures.every((failure) => failure instanceof Error)).toBe(true)
       return failures.map(isTransientApiError)
     }
-    expect(await transient('server_error')).toEqual([true, true, true])
-    expect(await transient('invalid_prompt')).toEqual([false, false, false])
+    expect(await transient('server_error')).toEqual([true, true, true, true])
+    expect(await transient('invalid_prompt')).toEqual([false, false, false, false])
+  })
+
+  it('keeps in native only the calls it handed over, so a call whose arguments are broken never goes back without a result', async () => {
+    const broken = { ...CALL, id: 'fc_2', call_id: 'call_2', arguments: '{"location":' }
+    mocks.events = [{ type: 'response.output_item.done', item: CALL }, { type: 'response.output_item.done', item: broken }, completed()]
+    const { stream, seen } = await open()
+    await expect(stream.final()).rejects.toThrow('show_weather')
+    const payload = stream.snapshot()!.native!.payload as Array<{ type: string; call_id?: string }>
+    // The API refuses a function_call sent without its output, and the turn has a result only for a call it was handed.
+    expect(payload.filter((item) => item.type === 'function_call').map((item) => item.call_id)).toEqual(seen.calls.map((call) => call.id))
   })
 
   it('fails instead of running a tool call whose arguments are broken', async () => {

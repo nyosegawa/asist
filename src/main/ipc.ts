@@ -71,6 +71,7 @@ import { allowedPath } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
+import { sliceCodePoints } from '@shared/text-slice'
 import { reportOpenMiniApp } from './services/mini-app-view'
 import { windowChrome } from './window-chrome'
 import { isLaunchPage } from './page-lifetime'
@@ -347,7 +348,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.AizuchiClassify, (_e, input: { prev: unknown; text: unknown }) => {
     const text = typeof input?.text === 'string' ? input.text.trim() : ''
     if (!text || text.length > 500) throw new Error('invalid aizuchi classify input')
-    const prev = typeof input.prev === 'string' ? input.prev.slice(-300) : ''
+    const prev = typeof input.prev === 'string' ? sliceCodePoints(input.prev, -300) : ''
     return aizuchiClassifier.classify({ prev, text })
   })
   handle(IpcChannel.AizuchiClassifierStatus, () => aizuchiClassifier.status())
