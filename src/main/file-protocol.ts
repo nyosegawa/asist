@@ -204,7 +204,7 @@ export function filePathFromUrl(url: string, rules?: UrlRules): string | null {
  * Origin, asks no preflight and lets any page read the answer (measured 2026-10-02). The answers follow what
  * CORS asks, so that the preview page keeps reading wherever its requests are checked.
  */
-const PREVIEW_CORS = { 'Access-Control-Allow-Origin': PREVIEW_ORIGIN, 'Access-Control-Expose-Headers': 'Content-Range' }
+const PREVIEW_CORS = { 'Access-Control-Allow-Origin': PREVIEW_ORIGIN, 'Access-Control-Expose-Headers': 'Content-Range, ETag' }
 
 /**
  * Serves the scheme in the session `target` belongs to: the app's own, for the files card's images, documents,
@@ -234,7 +234,10 @@ export function handleFileScheme(target: Protocol, allowedRoots: () => string[])
       ...contentHeaders(filePath),
       ...PREVIEW_CORS,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      // The version of the file, which the preview page compares across its reads of it: a file saved again at the
+      // same length differs from the old one only in its time of change.
+      ETag: `"${stat.size}-${stat.mtimeMs}"`
     }
     if (range) {
       headers['Content-Range'] = `bytes ${range.start}-${range.end}/${stat.size}`
