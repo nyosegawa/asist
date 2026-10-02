@@ -11,6 +11,8 @@ import { pauseAfter } from './sentence-pause'
 type SpeechEvents = {
   /** A segment has actually started playing. durationMs is the audio's length, estimated from the character count for Web Speech. */
   segmentstart: { segment: SpeechSegment; durationMs: number }
+  /** A segment has stopped sounding at its end, and the next one may first wait out a pause and its decoding. */
+  segmentend: { segment: SpeechSegment }
   /** The queue emptied and speech ended. turnId is the last turn that was accepted. */
   idle: { turnId: number }
   /** The live model's audio started playing, or broke off and stopped. */
@@ -463,6 +465,12 @@ registerProcessor('speech-tap', TapProcessor)
     this.playFallback(segment, generation)
   }
 
+  /** The segment has played to its end, and the queue moves on. */
+  private finishSegment(segment: SpeechSegment, generation: number): void {
+    this.events.emit('segmentend', { segment })
+    void this.playNext(generation)
+  }
+
   private get outputRunning(): boolean {
     return this.ctx.state === 'running' && !this.audioEl.paused
   }
@@ -512,7 +520,7 @@ registerProcessor('speech-tap', TapProcessor)
       onFinished: () => {
         if (generation !== this.playbackGeneration) return
         this.activeSegmentStream = null
-        void this.playNext(generation)
+        this.finishSegment(segment, generation)
       }
     })
   }
@@ -535,7 +543,7 @@ registerProcessor('speech-tap', TapProcessor)
       if (generation !== this.playbackGeneration) return
       this.clearSourceWatchdog()
       if (this.sourceNode === source) this.sourceNode = null
-      void this.playNext(generation)
+      this.finishSegment(segment, generation)
     }
     source.onended = finish
     source.connect(this.segmentDestination(segment))
@@ -587,7 +595,7 @@ registerProcessor('speech-tap', TapProcessor)
         this.fallbackTimer = null
         this.fallbackFinish = null
         if (this.fallbackUtterance === utterance) this.fallbackUtterance = null
-        void this.playNext(generation)
+        this.finishSegment(segment, generation)
       }
       this.fallbackFinish = finish
       this.fallbackUtterance = utterance
@@ -615,7 +623,7 @@ registerProcessor('speech-tap', TapProcessor)
         if (generation !== this.playbackGeneration) return
         this.fallbackTimer = null
         this.fallbackFinish = null
-        void this.playNext(generation)
+        this.finishSegment(segment, generation)
       }
       this.fallbackFinish = finish
       this.fallbackTimer = setTimeout(finish, Math.max(1, text.length * 120))

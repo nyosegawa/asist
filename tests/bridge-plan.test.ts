@@ -92,15 +92,15 @@ describe('BridgePlanner', () => {
     expect(request).toHaveBeenCalledTimes(1)
   })
 
-  it('returns null to an end of utterance that is still waiting when a reset happens', async () => {
-    const { planner, resolvers } = setup()
+  it('still answers an end of utterance that waits when a new capture begins, without making that plan the latest', async () => {
+    const { planner, resolvers, onPlan } = setup()
     planner.observe({ text: '昨日の会議で', lastAssistantText: '' })
     const settled = planner.finish({ text: '昨日の会議で', lastAssistantText: '' })
     planner.reset()
-    await expect(settled).resolves.toBeNull()
-    resolvers[0](plan('古い'))
-    await flush()
+    resolvers[0](plan('会議の件ですね。'))
+    await expect(settled).resolves.toEqual(plan('会議の件ですね。'))
     expect(planner.current()).toBeNull()
+    expect(onPlan).not.toHaveBeenCalled()
   })
 
   it('plans the next capture on its first partial transcript while a request of the previous capture is still in flight', async () => {

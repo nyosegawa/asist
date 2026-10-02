@@ -140,6 +140,13 @@ const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>
 /** What the speaker played and when, which tells what can have leaked back into the microphone during a capture. */
 const playback = new PlaybackLog()
 
+/**
+ * The utterance the HUD measures, by the time its capture started, from its speech end on; null once
+ * typed text took the HUD over. The HUD holds the measurements of one input at a time, and a turn
+ * takes its own from there.
+ */
+let measuredUtterance: number | null = null
+
 /** The phase once the user is no longer heard: a reply being read, a turn under way or on its way, or nothing. */
 function phaseAfterCapture(): Phase {
   if (speechPlayer.readingTurn >= 0) return 'speak'
@@ -308,6 +315,9 @@ async function initializeConversation(): Promise<void> {
     const policy = openingPolicy()
     const turn = useTurnStore.getState()
     turn.resetTimings()
+    measuredUtterance = end.startedAt
+    // A request still waiting for its turn would take this speech's measurements for its own.
+    if (pendingRequestId !== null) turnMetrics.discardRequest(pendingRequestId)
     turn.mergeTimings({
       vadMs: end.vadMs,
       vadMode: end.vadMode,
@@ -330,19 +340,19 @@ async function initializeConversation(): Promise<void> {
     // the capture runs on through the hangover's silence, vadMs past speechEndAt. `isSelfEcho` does
     // not judge short utterances, so that a genuine "はい" answer survives, and the echo of a short
     // clip is stripped off the ends instead. The utterance is dropped when nothing but echo is left.
-    const heard = playback.heardDuring(startedAt, speechEndAt + vadMs)
-    const cleaned = stripClipEcho(text, heard.filter((sound) => sound.clip).map((sound) => sound.text))
+    const capture = { startedAt, speechEndAt, endedAt: speechEndAt + vadMs }
+    const cleaned = stripClipEcho(text, playback.clipsAtEdges(capture))
     if (!cleaned) {
       useTurnStore.getState().setRouterNote({ kind: 'droppedClipEcho' })
       opening.cancel(startedAt)
       return
     }
-    if (isSelfEcho(cleaned, heard.map((sound) => sound.text))) {
+    if (isSelfEcho(cleaned, playback.heardDuring(capture))) {
       useTurnStore.getState().setRouterNote({ kind: 'droppedSelfEcho' })
       opening.cancel(startedAt)
       return
     }
-    void startVoiceTurn(cleaned, { vadMs, vadMode, asrMs, partialText, speechEndAt }, opening.claim(startedAt))
+    void startVoiceTurn(cleaned, { vadMs, vadMode, asrMs, partialText, startedAt, speechEndAt }, opening.claim(startedAt))
   })
 
   // A speech that never becomes an utterance plays no bridge.
@@ -397,6 +407,10 @@ async function initializeConversation(): Promise<void> {
       if (e2eMs !== undefined) showTurnTimings(segment.turnId, { e2eMs })
     }
   })
+
+  // A sentence stops reaching the microphone when its audio ends, not when the next one starts after
+  // the pause between them.
+  speechPlayer.events.on('segmentend', () => playback.stopped(performance.now()))
 
   speechPlayer.events.on('idle', ({ turnId }) => {
     playback.stopped(performance.now())
@@ -532,9 +546,13 @@ function resumeHeldTurn(): void {
   if (active >= 0 && pendingRequestId === null) speechPlayer.beginTurn(active, true)
 }
 
-function beginUserTurnRequest(
-  metrics: RequestTimings
-): { requestId: string; previousTurnId: number } {
+/**
+ * Takes new input from the user and returns the id of its request, which the caller sends at once.
+ * Main's turnStart stops the turn before it and keeps what the user said in every turn it stops, so
+ * nothing waits for that turn to stop first: a barge-in or newer input during such a wait would drop
+ * the words before the feed or main had them. `metrics` is null for input whose turn goes unmeasured.
+ */
+function beginUserTurnRequest(metrics: RequestTimings | null): string {
   const turn = useTurnStore.getState()
   const previousTurnId = turn.activeTurnId
   const requestId = crypto.randomUUID()
@@ -549,16 +567,12 @@ function beginUserTurnRequest(
   // The previous turn's speech stops, but the aizuchi that started at this utterance's speech end
   // keeps playing.
   speechPlayer.discardBody()
-  turnMetrics.beginRequest(requestId, metrics)
+  if (metrics) turnMetrics.beginRequest(requestId, metrics)
   if (previousTurnId >= 0) {
     usePanelStore.getState().dismissLoadingOwnedBy(previousTurnId)
     turnMetrics.discard(previousTurnId)
   }
-  return { requestId, previousTurnId }
-}
-
-function isCurrentUserTurnRequest(requestId: string): boolean {
-  return pendingRequestId === requestId || activeRequestId === requestId
+  return requestId
 }
 
 function activateTurn(
@@ -569,8 +583,7 @@ function activateTurn(
   const turn = useTurnStore.getState()
   const alreadyActive = turn.activeTurnId === turnId && activeRequestId === requestId
   turn.setActiveTurn(turnId)
-  if (!alreadyActive && requestId !== null) {
-    turnMetrics.activate(turnId, requestId, turn.timings)
+  if (!alreadyActive && requestId !== null && turnMetrics.activate(turnId, requestId, turn.timings)) {
     turn.setTimingsTurn(turnId)
   }
   activeRequestId = requestId
@@ -616,21 +629,17 @@ async function startVoiceTurn(
     vadMode: HangoverMode
     asrMs: number
     partialText: string
+    startedAt: number
     speechEndAt: number
   },
   spokenOpening: { aizuchi: string | null; bridge: string | null; bridgePending: boolean } | null
 ): Promise<void> {
   const turn = useTurnStore.getState()
   const feed = useFeedStore.getState()
-  const { requestId, previousTurnId } = beginUserTurnRequest({
-    typed: false,
-    speechEndAt: measured.speechEndAt
-  })
-  if (previousTurnId >= 0) await window.api.turnAbort(previousTurnId).catch(() => {})
-  // When newer input starts while the abort IPC is still pending, the older request must not be
-  // sent to main and interrupt the newest turn.
-  if (!isCurrentUserTurnRequest(requestId)) return
-  turn.mergeTimings({ vadMs: measured.vadMs, vadMode: measured.vadMode, asrMs: measured.asrMs })
+  // A speech that ended after this one took the HUD and the opening over, so this turn goes unmeasured.
+  const measuredHere = measuredUtterance === measured.startedAt
+  const requestId = beginUserTurnRequest(measuredHere ? { typed: false, speechEndAt: measured.speechEndAt } : null)
+  if (measuredHere) turn.mergeTimings({ vadMs: measured.vadMs, vadMode: measured.vadMode, asrMs: measured.asrMs })
   turn.setPartial('')
   turn.setPhase('think')
   feed.append({ role: 'user', text })
@@ -684,10 +693,9 @@ export async function sendTypedMessage(text: string): Promise<void> {
   }
   // The bridge of the voice utterance before this message would lead into the reply to the message.
   opening.withdraw()
-  const { requestId, previousTurnId } = beginUserTurnRequest({ typed: true })
-  if (previousTurnId >= 0) await window.api.turnAbort(previousTurnId).catch(() => {})
-  if (!isCurrentUserTurnRequest(requestId)) return
+  const requestId = beginUserTurnRequest({ typed: true })
   turn.resetTimings()
+  measuredUtterance = null
   turn.setPhase('think')
   useFeedStore.getState().append({ role: 'user', text: trimmed })
   try {

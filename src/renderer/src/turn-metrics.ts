@@ -45,9 +45,10 @@ export class TurnMetrics {
     this.requests.delete(id)
   }
 
-  activate(turnId: number, requestId: string, timings: TurnTimings): void {
+  /** Starts measuring the turn of a request with the timings its input gathered, and tells whether the request was being measured. */
+  activate(turnId: number, requestId: string, timings: TurnTimings): boolean {
     const request = this.requests.get(requestId)
-    if (!request) return
+    if (!request) return false
     this.turns.set(turnId, {
       id: requestId,
       snapshot: {
@@ -61,6 +62,7 @@ export class TurnMetrics {
       dirty: true
     })
     this.requests.delete(requestId)
+    return true
   }
 
   update(turnId: number, timings: TurnTimings): boolean {

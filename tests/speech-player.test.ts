@@ -583,6 +583,28 @@ describe('the pause between the pieces of an answer', () => {
     player.interrupt()
   })
 
+  it('reports a piece as ended when its audio ends, not when the next one starts after the pause', async () => {
+    vi.useFakeTimers()
+    const { player, context } = await createHarness()
+    const events: string[] = []
+    player.events.on('segmentstart', ({ segment }) => events.push(`start ${segment.text}`))
+    player.events.on('segmentend', ({ segment }) => events.push(`end ${segment.text}`))
+    player.beginTurn(1)
+    player.enqueue(segment(1, 0, '一文目。', 'eA=='))
+    player.enqueue(segment(1, 1, '二文目。', 'eA=='))
+    context.decodeResolvers[0]({ duration: 1 } as AudioBuffer)
+    await vi.advanceTimersByTimeAsync(0)
+    context.sources[0].onended?.()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(events).toEqual(['start 一文目。', 'end 一文目。'])
+
+    await vi.advanceTimersByTimeAsync(pauseAfter('一文目。'))
+    context.decodeResolvers[1]({ duration: 1 } as AudioBuffer)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(events).toEqual(['start 一文目。', 'end 一文目。', 'start 二文目。'])
+    player.interrupt()
+  })
+
   it('stops waiting when the answer is interrupted during the pause', async () => {
     vi.useFakeTimers()
     const { player, utterances, synthesis } = await createHarness()
