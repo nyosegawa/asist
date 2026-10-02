@@ -9,7 +9,7 @@ import {
 } from '@shared/listening-aizuchi'
 import type { ListeningAizuchi } from '@shared/ipc'
 import { shouldNod, type NodKind } from '@shared/nod'
-import { classifyOverlap } from '@shared/user-backchannel'
+import { classifyOverlap, outlastsBackchannel } from '@shared/user-backchannel'
 import { ECHO_TAIL_MS } from '@shared/self-echo'
 import { errorText } from '@shared/i18n/error-text'
 import { MicInput } from './MicInput'
@@ -40,12 +40,15 @@ export interface SpeechEnd {
   listening: ListeningAizuchi[]
 }
 
+type Overlap = 'none' | 'pending' | 'noise' | 'backchannel'
+
 /** A VAP estimate older than this is not used, which covers a stopped or backed-up worker. It allows the 80 ms frame, about 20 ms of inference and the IPC. */
 const VAP_STALE_MS = 500
 
 type VoiceEvents = {
   state: VoiceState
   level: number
+  /** The in-browser Whisper loading while the microphone turns on, from 0 to 100. */
   progress: number
   /** The rolling partial transcript while the user is still speaking. */
   partial: string
@@ -97,17 +100,20 @@ export class VoiceController {
 
   private microphone = new MicInput()
   /** Which speech recognition transcribes. The setup demo replaces its preparation of the in-browser Whisper. */
-  readonly recognition = new AsrBackend({
-    onProgress: (progress) => this.events.emit('progress', progress),
-    onServerLost: () => this.stopPartialLoop()
-  })
+  readonly recognition = new AsrBackend({ onServerLost: () => this.stopPartialLoop() })
   private vad: VadSegmenter
   /** Tells noise from voice. Where it is unavailable, the energy VAD runs alone. */
   private silero = new SileroVad()
   private state: VoiceState = 'off'
   /** The speeches, by startedAt, whose final transcript is still awaited. */
   private awaitingTranscript = new Set<number>()
-  private captureGeneration = 0
+  /**
+   * Counts the microphone turning on and off. What was started while it was on, the transcriptions of its
+   * speech included, belongs to that count; rebuilding the capture leaves it as it is.
+   */
+  private micGeneration = 0
+  /** The microphone turning on, until it listens or has failed. */
+  private enabling: Promise<void> | null = null
   private recoveryPromise: Promise<void> | null = null
   /** Final transcriptions run in the order they were recorded, so a later one finishing first cannot rewind the conversation. */
   private transcriptionTail: Promise<void> = Promise.resolve()
@@ -143,14 +149,24 @@ export class VoiceController {
   }
   set vapEnabled(enabled: boolean) {
     if (!enabled) this.maaiUnavailableSaid = false
-    this.vapSetting = enabled
+    this.changeMaai(() => {
+      this.vapSetting = enabled
+    })
   }
+  private locale: ConversationLocale = 'ja-JP'
   /**
    * The language the conversation is held in, set from the settings and read at each use. The aizuchi
    * and the turn-taking model exist for Japanese only, so in another language they stay out of the
    * pipeline however the settings that switch them are saved.
    */
-  conversationLocale: ConversationLocale = 'ja-JP'
+  get conversationLocale(): ConversationLocale {
+    return this.locale
+  }
+  set conversationLocale(locale: ConversationLocale) {
+    this.changeMaai(() => {
+      this.locale = locale
+    })
+  }
   private vapState: VapState | null = null
   private vapStateAt = 0
   private vapUnsubscribe: (() => void) | null = null
@@ -158,13 +174,13 @@ export class VoiceController {
     void window.api.vapPush(user, assistant).catch(() => {})
   })
   /**
-   * What is being done with a voice that came in during playback. While pending, the decision is
-   * open and the volume is down; as backchannel, it was read as an aizuchi and the reading carries
-   * on, until a voice that keeps going turns it into an interruption.
+   * What is being done with a voice that came in during playback. While pending, the decision is open
+   * and the volume is down. As noise, the volume is back up and the decision waits for human speech,
+   * which opens it again. As backchannel, it was read as an aizuchi: the reading carries on and the
+   * capture is discarded at its end, unless the voice keeps going, which turns it into an interruption,
+   * or into ordinary speech once the reading has ended.
    */
-  private overlap: 'none' | 'pending' | 'backchannel' = 'none'
-  /** The current capture was let pass as an aizuchi, so at the end it is discarded rather than transcribed. */
-  private captureIsBackchannel = false
+  private overlap: Overlap = 'none'
   private lastBackchannelAt = 0
   private listening = new ListeningRecorder()
   private lastNodAt = 0
@@ -174,7 +190,6 @@ export class VoiceController {
   constructor() {
     this.vad = new VadSegmenter({
       onSpeechStart: () => {
-        this.captureIsBackchannel = false
         if (speechPlayer.isPlaying) this.beginOverlap()
         this.captureStartedAt = performance.now()
         this.lastPartial = ''
@@ -233,16 +248,25 @@ export class VoiceController {
 
   /**
    * Opens the decision on a voice that overlaps playback. Nothing stops at once: the voice has to
-   * hold first, or an echo mistaken for speech would stop it. While the decision is open the volume
-   * goes down, which both keeps the assistant off the user's words and makes the response feel
-   * immediate. With barge-in off the user's voice never stops the assistant.
+   * hold first, or an echo mistaken for speech would stop it. With barge-in off the user's voice never
+   * stops the assistant.
    */
   private beginOverlap(): void {
     if (!this.bargeIn || this.overlap !== 'none') return
-    this.overlap = 'pending'
+    this.setOverlap('pending')
+  }
+
+  /**
+   * Moves the decision on a voice over playback. The volume is down exactly while the decision is
+   * pending, which both keeps the assistant off the user's words and makes the response feel immediate.
+   */
+  private setOverlap(next: Overlap): void {
+    if (next === this.overlap) return
+    this.overlap = next
+    if (next !== 'pending') speechPlayer.unduck()
     // An aizuchi or bridge lasts about a second and sounds broken off if ducked. A real
     // interruption stops it once confirmed anyway.
-    if (!speechPlayer.isPlayingClip) speechPlayer.duck()
+    else if (!speechPlayer.isPlayingClip) speechPlayer.duck()
   }
 
   /**
@@ -253,45 +277,40 @@ export class VoiceController {
    */
   private maybeConfirmBargein(): void {
     if (this.overlap === 'none') return
-    if (!speechPlayer.isPlaying || !this.vad.isSpeaking) {
-      // Playback ended, or the capture was reset as noise. This continues as ordinary speech and
-      // the volume comes back up.
-      this.overlap = 'none'
-      speechPlayer.unduck()
+    const voice = {
+      voicedMs: this.vad.voicedDuration,
+      speechMs: this.vad.speechDuration,
+      minSpeechMs: this.bargeInMinSpeechMs
+    }
+    if (!speechPlayer.isPlaying) {
+      // Playback ended before the decision closed, so the voice goes on as ordinary speech. One let pass
+      // as an aizuchi stays one until it outlasts an aizuchi, as it would over playback, because the
+      // hangover of a lone 「はい」 over the last words of the reading runs on past their end.
+      if (this.overlap !== 'backchannel' || outlastsBackchannel(voice)) this.setOverlap('none')
       return
     }
     const verdict = classifyOverlap({
-      voicedMs: this.vad.voicedDuration,
-      speechMs: this.vad.speechDuration,
+      ...voice,
       bcDet: this.vapFresh() ? this.vapState!.bcDetUser : null,
-      confirmMs: this.bargeInConfirmMs,
-      minSpeechMs: this.bargeInMinSpeechMs
+      confirmMs: this.bargeInConfirmMs
     })
     if (verdict === 'bargein') {
-      this.overlap = 'none'
-      this.captureIsBackchannel = false
       // The event goes out while the interrupted reply is still playing, so that it is counted
       // against the turn being read before the stop closes that turn's measurements.
       this.events.emit('bargein')
       speechPlayer.interrupt()
+      this.setOverlap('none')
       return
     }
     if (this.overlap === 'backchannel') return
     if (verdict === 'backchannel') {
-      // An aizuchi: the reading continues, the volume comes back up, and this capture is not
-      // transcribed.
-      this.overlap = 'backchannel'
-      this.captureIsBackchannel = true
-      speechPlayer.unduck()
+      this.setOverlap('backchannel')
       this.events.emit('userBackchannel')
       return
     }
-    // Noise: the volume comes back up early, so playback spends as little time as possible
-    // quietening on its own.
-    if (verdict === 'noise') {
-      this.overlap = 'none'
-      speechPlayer.unduck()
-    }
+    // Noise brings the volume back up early, so playback spends as little time as possible quietening
+    // on its own, and human speech that follows inside the same capture opens the decision again.
+    this.setOverlap(verdict === 'noise' ? 'noise' : 'pending')
   }
 
   /** Fires an aizuchi at a break in a long utterance. conversation plays it. */
@@ -352,6 +371,35 @@ export class VoiceController {
     return this.vapEnabled && conversationFeatures(this.conversationLocale).maai
   }
 
+  /** Applies a change to the setting or the language. MaAI that starts taking part while the microphone is on starts at once. */
+  private changeMaai(change: () => void): void {
+    const used = this.usesMaai()
+    change()
+    if (!used && this.state !== 'off') this.startMaai()
+  }
+
+  /**
+   * Starts MaAI's worker, if MaAI takes part, and listens to its estimates. The worker is resident in main:
+   * turning the microphone off leaves it running, and a start finds it running unless it was stopped.
+   */
+  private startMaai(): void {
+    if (!this.usesMaai()) return
+    this.vapUnsubscribe ??= window.api.onVapState((state) => {
+      this.vapState = state
+      this.vapStateAt = performance.now()
+      this.maybeNod()
+    })
+    void window.api.vapStart().then(
+      (started) => {
+        if (!started) this.sayMaaiUnavailable()
+      },
+      (err: unknown) => {
+        console.error('MaAI start failed:', errorMessageOf(err))
+        this.sayMaaiUnavailable()
+      }
+    )
+  }
+
   /**
    * The conversation goes on without MaAI, on the fixed hangover, and the user hears of it once. A start
    * that ends after MaAI was turned off, or the language changed, has nothing to report.
@@ -389,10 +437,18 @@ export class VoiceController {
     this.recognition.cancelLocalPreparation()
   }
 
-  async enable(): Promise<void> {
-    if (this.state !== 'off') return
-    const generation = ++this.captureGeneration
-    const current = (): boolean => generation === this.captureGeneration
+  enable(): Promise<void> {
+    if (this.state !== 'off') return Promise.resolve()
+    const enabling = this.turnOn().finally(() => {
+      if (this.enabling === enabling) this.enabling = null
+    })
+    this.enabling = enabling
+    return enabling
+  }
+
+  private async turnOn(): Promise<void> {
+    const generation = ++this.micGeneration
+    const current = (): boolean => generation === this.micGeneration
     this.setState('loading')
     // The model that tells noise from voice, about 2 MB and bundled with the app, loads while the
     // microphone is being prepared. A failure leaves ready false and the energy VAD running alone,
@@ -402,65 +458,28 @@ export class VoiceController {
       const permitted = await window.api.requestMicPermission()
       if (!current()) return
       if (!permitted) throw new Error(errorText(osMessageKey('voice.mic.notPermitted', platformCapabilities().os)))
-      if (!(await this.recognition.choose(current))) return
-      // The VAP worker is resident: it is started here and turning the microphone off leaves it running.
-      if (this.usesMaai()) {
-        this.vapUnsubscribe ??= window.api.onVapState((state) => {
-          this.vapState = state
-          this.vapStateAt = performance.now()
-          this.maybeNod()
-        })
-        void window.api.vapStart().then(
-          (started) => {
-            if (!started) this.sayMaaiUnavailable()
-          },
-          (err: unknown) => {
-            console.error('MaAI start failed:', errorMessageOf(err))
-            this.sayMaaiUnavailable()
-          }
-        )
+      const loading = ({ progress }: AsrProgress): void => {
+        if (current()) this.events.emit('progress', progress)
       }
-      const feed = (frame: Float32Array): void => {
-        this.silero.push(frame)
-        this.vad.push(frame)
-        if (this.usesMaai()) this.vapAudio.pushUser(frame)
-      }
-      // A helper that dies or a microphone that goes away rebuilds capture: native is tried again,
-      // getUserMedia takes over if that fails, and with no microphone left enable fails and reports it.
-      await this.microphone.start(
-        { native: this.nativeMicPreferred, noiseSuppression: this.noiseSuppression },
-        feed,
-        () => void this.recover()
-      )
-      // Each start releases its own resources. Calling the shared stop from an older start would
-      // also stop a recording that an off-then-on cycle has already begun.
-      if (!current()) return
-      this.settleState()
-      void this.recognition.probeUpgrade()
+      if (!(await this.recognition.choose(current, loading))) return
+      this.startMaai()
+      await this.openCapture(generation)
     } catch (err) {
-      if (!current()) return
-      this.events.emit('error', displayError(err))
-      this.disable()
+      this.failToListen(generation, err)
     }
   }
 
+  /** Turns the microphone off. The speech still being transcribed is cancelled and reported as dropped. */
   disable(): void {
-    this.captureGeneration++
+    this.micGeneration++
     this.recognition.stop()
     // Detaching the chain keeps a new generation's final transcription out of the queue of an
     // aborted one.
     this.transcriptionTail = Promise.resolve()
     const dropped = [...this.awaitingTranscript]
     this.awaitingTranscript.clear()
-    this.stopPartialLoop()
-    this.overlap = 'none'
-    this.captureIsBackchannel = false
-    speechPlayer.unduck()
+    this.dropCapture()
     this.microphone.stop()
-    this.vapAudio.reset()
-    this.vapState = null
-    this.vad.reset()
-    this.silero.dispose()
     for (const startedAt of dropped) this.events.emit('speechdropped', { startedAt })
     this.setState('off')
   }
@@ -471,25 +490,69 @@ export class VoiceController {
   }
 
   /**
-   * Builds capture again after the machine sleeps and wakes or the input device changes. If the
-   * microphone was off, it asks for no permission and only checks whether the backend can move up.
+   * Builds capture again after the machine sleeps and wakes or the input source goes away. Only the
+   * microphone and what reads it start over: the speech already captured is still transcribed. If the
+   * microphone was off, it only checks whether the backend can move up.
    */
   recover(): Promise<void> {
     if (this.recoveryPromise) return this.recoveryPromise
-    const wasEnabled = this.state !== 'off'
-    const recovery = (async () => {
-      if (!wasEnabled) {
-        await this.recognition.probeUpgrade()
-        return
-      }
-
-      this.disable()
-      await this.enable()
-    })()
+    const recovery = this.state === 'off' ? this.recognition.probeUpgrade() : this.rebuildCapture()
     this.recoveryPromise = recovery.finally(() => {
       this.recoveryPromise = null
     })
     return this.recoveryPromise
+  }
+
+  private async rebuildCapture(): Promise<void> {
+    // A microphone still turning on opens its capture once the backend is chosen, so it is rebuilt after that.
+    await this.enabling
+    if (this.state === 'off') return
+    const generation = this.micGeneration
+    this.dropCapture()
+    this.setState('loading')
+    void this.silero.init()
+    await this.openCapture(generation).catch((err: unknown) => this.failToListen(generation, err))
+  }
+
+  /** Opens the microphone into Silero, the VAD and MaAI, and listens once it delivers. */
+  private async openCapture(generation: number): Promise<void> {
+    const feed = (frame: Float32Array): void => {
+      this.silero.push(frame)
+      this.vad.push(frame)
+      if (this.usesMaai()) this.vapAudio.pushUser(frame)
+    }
+    // A source that stops delivering rebuilds the capture: on getUserMedia once main has given up on the
+    // native helper, and with no microphone left the rebuild fails and reports it.
+    await this.microphone.start(
+      { native: this.nativeMicPreferred, noiseSuppression: this.noiseSuppression },
+      feed,
+      () => void this.recover()
+    )
+    // Each start releases its own resources. Calling the shared stop from an older start would
+    // also stop a recording that an off-then-on cycle has already begun.
+    if (generation !== this.micGeneration) return
+    this.setState(this.activity())
+    void this.recognition.probeUpgrade()
+  }
+
+  /** The microphone could not start listening, so it turns off with the error, unless it was turned off or on again meanwhile. */
+  private failToListen(generation: number, err: unknown): void {
+    if (generation !== this.micGeneration) return
+    this.events.emit('error', displayError(err))
+    this.disable()
+  }
+
+  /**
+   * Drops the capture in progress, which reports no end, with what reads the microphone. The speech
+   * already captured is left to its transcription.
+   */
+  private dropCapture(): void {
+    this.stopPartialLoop()
+    this.setOverlap('none')
+    this.vapAudio.reset()
+    this.vapState = null
+    this.vad.reset()
+    this.silero.dispose()
   }
 
   private startPartialLoop(): void {
@@ -514,7 +577,7 @@ export class VoiceController {
     // does not compete with the final one.
     const samples = this.vad.snapshot(5000)
     if (!samples) return
-    const captureGeneration = this.captureGeneration
+    const micGeneration = this.micGeneration
     const captureStartedAt = this.captureStartedAt
     const requestGeneration = ++this.partialRequestGeneration
     this.partialInflight = true
@@ -522,7 +585,7 @@ export class VoiceController {
       const text = (await window.api.transcribePartial(this.normalize(samples))).trim()
       if (
         requestGeneration === this.partialRequestGeneration &&
-        captureGeneration === this.captureGeneration &&
+        micGeneration === this.micGeneration &&
         captureStartedAt === this.captureStartedAt &&
         text &&
         this.vad.isSpeaking &&
@@ -551,20 +614,16 @@ export class VoiceController {
   /** Every capture ends here, with the utterance the VAD kept, or with nothing when it was noise or the VAD was muted. */
   private endCapture(utterance: VadUtterance | null): void {
     this.stopPartialLoop()
-    if (this.overlap !== 'none') {
-      this.overlap = 'none'
-      speechPlayer.unduck()
-    }
-    const backchannel = this.captureIsBackchannel
-    this.captureIsBackchannel = false
     // A "うん" or "はい" during the reading was let pass as an aizuchi, so it becomes neither a turn
     // nor a transcript.
+    const backchannel = this.overlap === 'backchannel'
+    this.setOverlap('none')
     if (utterance && !backchannel) this.enqueueUtterance(utterance.samples, utterance.vadMs, utterance.mode)
     this.settleState()
   }
 
   private enqueueUtterance(samples: Float32Array, vadMs: number, vadMode: HangoverMode): void {
-    const generation = this.captureGeneration
+    const generation = this.micGeneration
     const startedAt = this.captureStartedAt
     const partialText = this.lastPartial
     const speechEndAt = performance.now() - vadMs
@@ -597,13 +656,13 @@ export class VoiceController {
     speechEndAt: number
   ): Promise<void> {
     // disable has already reported the speeches of the generation it ended as dropped.
-    if (generation !== this.captureGeneration) return
+    if (generation !== this.micGeneration) return
     const t0 = performance.now()
     let heard = false
     try {
       const audio = this.normalize(samples)
-      const text = await this.recognition.transcribe(audio, () => generation === this.captureGeneration)
-      if (generation !== this.captureGeneration) return
+      const text = await this.recognition.transcribe(audio, () => generation === this.micGeneration)
+      if (generation !== this.micGeneration) return
       const asrMs = Math.round(performance.now() - t0)
       if (isMeaningfulTranscript(text, this.conversationLocale)) {
         heard = true
@@ -618,11 +677,11 @@ export class VoiceController {
         })
       }
     } catch (err) {
-      if (generation === this.captureGeneration) {
+      if (generation === this.micGeneration) {
         this.events.emit('error', displayError(err))
       }
     } finally {
-      if (generation === this.captureGeneration) {
+      if (generation === this.micGeneration) {
         this.awaitingTranscript.delete(startedAt)
         if (!heard) this.events.emit('speechdropped', { startedAt })
         this.settleState()
@@ -633,13 +692,16 @@ export class VoiceController {
 
   /**
    * Listening, capturing and transcribing follow from what is under way: a capture in progress, then
-   * a transcript still awaited. Only enable and disable move the state to loading and off.
+   * a transcript still awaited.
    */
+  private activity(): VoiceState {
+    return this.vad.isSpeaking ? 'capturing' : this.awaitingTranscript.size > 0 ? 'transcribing' : 'listening'
+  }
+
+  /** Only opening the capture moves the state out of loading, and only turning the microphone on out of off. */
   private settleState(): void {
-    if (this.state === 'off') return
-    this.setState(
-      this.vad.isSpeaking ? 'capturing' : this.awaitingTranscript.size > 0 ? 'transcribing' : 'listening'
-    )
+    if (this.state === 'off' || this.state === 'loading') return
+    this.setState(this.activity())
   }
 
   private setState(next: VoiceState): void {

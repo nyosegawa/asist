@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SpeechSegment } from '@shared/ipc'
+import type { SpeechSegment, VapState } from '@shared/ipc'
 import type { SpeechEnd, VoiceState } from '@/voice/VoiceController'
 
 /**
@@ -39,9 +39,15 @@ interface Internals {
   state: VoiceState
   lastPartial: string
   lastBackchannelAt: number
-  captureIsBackchannel: boolean
+  overlap: 'none' | 'pending' | 'noise' | 'backchannel'
   captureStartedAt: number
-  vad: { push(frame: Float32Array): void; isSpeaking: boolean }
+  vapState: VapState | null
+  vapStateAt: number
+  vad: {
+    push(frame: Float32Array): void
+    isSpeaking: boolean
+    speechProbProvider: (() => number | null) | null
+  }
   recognition: { transcribe: (audio: Float32Array) => Promise<string> }
 }
 
@@ -66,7 +72,10 @@ beforeEach(() => {
       transcribe: vi.fn(async () => ''),
       transcribeCancel: vi.fn(async () => true),
       transcribePartial: vi.fn(async () => ''),
-      getStatus: vi.fn(async () => ({ asr: true }))
+      getStatus: vi.fn(async () => ({ asr: true })),
+      vapStart: vi.fn(async () => true),
+      vapPush: vi.fn(async () => undefined),
+      onVapState: vi.fn(() => vi.fn())
     }
   })
 })
@@ -118,7 +127,7 @@ describe('VoiceController state when a capture ends without an utterance', () =>
     const ends: SpeechEnd[] = []
     controller.events.on('speechend', (end) => ends.push(end))
     feed(controller, 5, loud)
-    internals(controller).captureIsBackchannel = true
+    internals(controller).overlap = 'backchannel'
     feed(controller, 20, loud)
     feed(controller, 30, quiet)
 
@@ -209,6 +218,116 @@ describe('VoiceController when the reply starts while the user is already speaki
 
     expect(duck).not.toHaveBeenCalled()
     expect(interrupt).not.toHaveBeenCalled()
+  })
+})
+
+describe('VoiceController with a voice over the reply that MaAI reads as an aizuchi', () => {
+  /** bc_det reads the voice as an aizuchi; the EoT sits between its thresholds, so the fixed hangover applies. */
+  const aizuchi: VapState = {
+    t: 0, pNowUser: 0.5, pNowAssistant: 0.5, pFutureUser: 0.5, pFutureAssistant: 0.5,
+    eotUser: 0.5, bcDetUser: 0.9, bcReact: 0, bcEmo: 0, nodShort: 0, nodLong: 0, inferMs: 1
+  }
+
+  function withMaai(): { controller: Controller; ends: SpeechEnd[]; utterances: string[]; letPass: () => number } {
+    const controller = listening()
+    controller.bargeIn = true
+    controller.listeningAizuchi = false
+    controller.conversationLocale = 'ja-JP'
+    controller.vapEnabled = true
+    internals(controller).recognition.transcribe = vi.fn(async () => 'はい、じゃあ明日の予定を入れて')
+    vi.spyOn(speechPlayer, 'duck').mockImplementation(() => {})
+    vi.spyOn(speechPlayer, 'unduck').mockImplementation(() => {})
+    vi.spyOn(speechPlayer, 'interrupt').mockImplementation(() => {})
+    let passed = 0
+    controller.events.on('userBackchannel', () => passed++)
+    const ends: SpeechEnd[] = []
+    controller.events.on('speechend', (end) => ends.push(end))
+    const utterances: string[] = []
+    controller.events.on('utterance', ({ text }) => utterances.push(text))
+    return { controller, ends, utterances, letPass: () => passed }
+  }
+
+  const estimate = (controller: Controller) => (): void => {
+    internals(controller).vapState = aizuchi
+    internals(controller).vapStateAt = performance.now()
+  }
+
+  function endReply(): void {
+    playing = false
+    speechPlayer.events.emit('idle', { turnId: 1 })
+  }
+
+  it('transcribes the voice when it carries on past the end of the reply', async () => {
+    const { controller, ends, utterances, letPass } = withMaai()
+    startPlaying({ ...reply, text: 'どうしますか?' })
+    feed(controller, 10, loud, estimate(controller))
+    expect(letPass()).toBe(1)
+
+    // The reply ends 200 ms into the voice, and the request goes on for two more seconds.
+    endReply()
+    feed(controller, 100, loud, estimate(controller))
+    feed(controller, 30, quiet, estimate(controller))
+    await vi.waitFor(() => expect(utterances).toEqual(['はい、じゃあ明日の予定を入れて']))
+
+    expect(ends).toHaveLength(1)
+    expect(speechPlayer.interrupt).not.toHaveBeenCalled()
+  })
+
+  it('discards a lone aizuchi whose hangover runs past the end of the reply', async () => {
+    const { controller, ends, letPass } = withMaai()
+    startPlaying({ ...reply, text: 'どうしますか?' })
+    // A 「はい」 long enough for the VAD to keep, over the last half second of the reply.
+    feed(controller, 25, loud, estimate(controller))
+    expect(letPass()).toBe(1)
+
+    endReply()
+    feed(controller, 30, quiet, estimate(controller))
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(controller.current).toBe('listening')
+    expect(ends).toEqual([])
+    expect(internals(controller).recognition.transcribe).not.toHaveBeenCalled()
+  })
+})
+
+describe('VoiceController with a noise that opens a capture over the reply', () => {
+  it('reads the reply on at full volume through a noise that never turns into speech', () => {
+    const controller = listening()
+    controller.bargeIn = true
+    let volume = 'full'
+    vi.spyOn(speechPlayer, 'duck').mockImplementation(() => (volume = 'down'))
+    vi.spyOn(speechPlayer, 'unduck').mockImplementation(() => (volume = 'full'))
+    const interrupt = vi.spyOn(speechPlayer, 'interrupt').mockImplementation(() => {})
+    internals(controller).vad.speechProbProvider = () => 0
+
+    startPlaying(reply)
+    feed(controller, 60, loud)
+
+    expect(interrupt).not.toHaveBeenCalled()
+    expect(volume).toBe('full')
+  })
+
+  it('stops the reply for a voice that follows the noise inside the same capture', () => {
+    const controller = listening()
+    controller.bargeIn = true
+    controller.listeningAizuchi = false
+    vi.spyOn(speechPlayer, 'duck').mockImplementation(() => {})
+    vi.spyOn(speechPlayer, 'unduck').mockImplementation(() => {})
+    const interrupt = vi.spyOn(speechPlayer, 'interrupt').mockImplementation(() => {})
+    let bargeins = 0
+    controller.events.on('bargein', () => bargeins++)
+    let prob = 0
+    internals(controller).vad.speechProbProvider = () => prob
+
+    startPlaying(reply)
+    // 300 ms of typing, which Silero does not take for a voice, and then 「ちょっと止めて」 before the
+    // capture closes.
+    feed(controller, 15, loud)
+    prob = 0.95
+    feed(controller, 75, loud)
+
+    expect(bargeins).toBe(1)
+    expect(interrupt).toHaveBeenCalledOnce()
   })
 })
 
