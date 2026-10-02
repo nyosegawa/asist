@@ -1842,6 +1842,19 @@ export const jobs = defineMessages({
       'pt-BR': 'O agente trocou o worktree ({dir}) do branch do ASIST para {branch} e trabalhou ali, então o ASIST não o mescla. Mescle você mesmo o trabalho em {branch}, ou descarte o job. Descartar apaga o worktree e qualquer alteração que só exista ali.',
       'es-419': 'El agente cambió el worktree ({dir}) de la rama de ASIST a {branch} y trabajó ahí, así que ASIST no lo fusiona. Fusiona tú lo que hay en {branch} o descarta el trabajo. Al descartarlo se borran el worktree y los cambios que solo existen ahí.',
       'es-ES': 'El agente ha cambiado el worktree ({dir}) de la rama de ASIST a {branch} y ha trabajado ahí, así que ASIST no lo fusiona. Fusiona tú lo que hay en {branch} o descarta el trabajo. Al descartarlo se borran el worktree y los cambios que solo existen ahí.'
+    },
+    alreadyMerged: {
+      'ja-JP': 'このジョブの変更は {into} にすでに入っています。取り込むと、取り込み済みとして記録し、worktree を消します。',
+      'en-US': "This job's changes are already in {into}. Merging records the job as merged and removes the worktree.",
+      'fr-FR': 'Les modifications de ce job sont déjà dans {into}. La fusion le marque comme fusionné et supprime le worktree.',
+      'de-DE': 'Die Änderungen dieses Jobs sind bereits in {into}. Übernehmen vermerkt den Job als übernommen und entfernt den worktree.',
+      'hi-IN': 'इस जॉब के बदलाव पहले से {into} में हैं। मर्ज करने पर जॉब को मर्ज हुआ दर्ज किया जाएगा और worktree हटा दिया जाएगा।',
+      'id-ID': 'Perubahan pekerjaan ini sudah ada di {into}. Menggabungkannya akan mencatat pekerjaan ini sebagai sudah digabungkan dan menghapus worktree.',
+      'it-IT': "Le modifiche di questo incarico sono già in {into}. Integrandolo, l'incarico viene segnato come integrato e il worktree viene rimosso.",
+      'ko-KR': '이 작업의 변경은 이미 {into}에 들어 있습니다. 병합하면 병합한 것으로 기록하고 worktree를 삭제합니다.',
+      'pt-BR': 'As alterações deste job já estão em {into}. Mesclar registra o job como mesclado e remove o worktree.',
+      'es-419': 'Los cambios de este trabajo ya están en {into}. Al fusionarlo, queda registrado como fusionado y se quita el worktree.',
+      'es-ES': 'Los cambios de este trabajo ya están en {into}. Al fusionarlo, se registra como fusionado y se elimina el worktree.'
     }
   },
   confirm: {

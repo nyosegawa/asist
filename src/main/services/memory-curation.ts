@@ -282,28 +282,36 @@ function discardUnmerged(job: AgentJob): void {
 }
 
 /**
- * A curation job the Agent ended without success, or whose merge could not be made. Only the app cancels a
- * curation, as it quits, which alone says nothing about the curation: its changes are discarded without a
- * failure, so that the next start curates the same days rather than waiting for the next midnight.
+ * Whether the end of the app stopped the curation, rather than the curation ending by itself. A quit cancels
+ * it, as only the app cancels a curation; a crash or a forced end leaves it to the next start, which finds it
+ * interrupted. Neither says anything about the curation.
+ */
+const stoppedByAppEnd = (job: AgentJob): boolean => job.status === 'cancelled' || job.interrupted === true
+
+/**
+ * A curation job that ended without success, or whose merge could not be made. One that the end of the app
+ * stopped has its changes discarded without a failure, so that the next start curates the same days rather
+ * than waiting for the next midnight. An interrupted job is judged once its recovery has ended it.
  */
 function observeFailure(job: AgentJob): void {
   if (!job.memoryCuration || job.memoryCuration.applied || processing.has(job.id) || job.mergeState === 'discarded') return
-  if (job.status === 'cancelled') {
-    if (quitAfterQuit(job)) fail(job, t('memory.curation.quitTwice'))
+  if (!isJobTerminal(job.status)) return
+  if (stoppedByAppEnd(job)) {
+    if (stoppedAfterStop(job)) fail(job, t('memory.curation.quitTwice'))
     else discardUnmerged(job)
   } else if (job.status === 'error') fail(job, job.summary ?? job.status)
   else if (job.mergeState === 'conflict' || job.mergeState === 'error') fail(job, job.summary ?? job.mergeState)
 }
 
 /**
- * Whether the curation before this one was stopped by a quit as well, which the job history tells. A
- * curation that cannot end by itself, such as a CLI waiting for an answer, runs until the app quits; tried
- * again at every start, it would spend the Agent's usage each time and give no reason. The second quit in a
- * row is therefore a failure, and the next curation waits for the next day.
+ * Whether the end of the app stopped the curation before this one as well, which the job history tells. A
+ * curation that cannot end by itself, such as a CLI waiting for an answer, runs until the app ends; tried
+ * again at every start, it would spend the Agent's usage each time and give no reason. The second curation
+ * in a row stopped so is therefore a failure, and the next curation waits for the next day.
  */
-function quitAfterQuit(job: AgentJob): boolean {
+function stoppedAfterStop(job: AgentJob): boolean {
   const before = agentRunner.list().find((other) => other.memoryCuration && other.startedAt < job.startedAt)
-  return before?.status === 'cancelled'
+  return before !== undefined && stoppedByAppEnd(before)
 }
 
 /**

@@ -436,6 +436,38 @@ it('reports a failure to remove the worktree after a merge, and keeps both the m
   expect(fs.existsSync(job.cwd)).toBe(true)
 })
 
+it('takes a job whose merge reached the branch before ASIST ended as merged at the next start, without another commit', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  const written = path.join(job.cwd, 'new.txt')
+  fs.writeFileSync(written, 'merged\n')
+  mocks.launch.mock.calls[0][2].onEvent({ kind: 'file-change', paths: [written] })
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  // ASIST ends after git has merged the job and before the save that records the merge.
+  const rename = fs.renameSync
+  vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+    if (path.basename(String(to)) === 'jobs.json' && fs.readFileSync(from, 'utf8').includes('"mergeState":"merged"')) throw new Error('ASIST ended')
+    rename(from, to)
+  })
+  expect(() => agent.merge(job.id, review)).toThrow('ASIST ended')
+  vi.mocked(fs.renameSync).mockRestore()
+  const merged = git(repo, 'rev-parse', 'HEAD')
+  vi.resetModules()
+  const restored = await import('../src/main/services/agent')
+  expect(restored.get(job.id)?.mergeState).toBe('pending')
+  const again = restored.diff(job.id)
+  expect(again).toMatchObject({ blocked: null, alreadyMerged: true })
+  mocks.requestConfirm.mockResolvedValueOnce(true)
+  await mergeThroughTool(job.id, again.commit)
+  const [asked] = mocks.requestConfirm.mock.calls[0] as [{ detail: string }]
+  expect(asked.detail).toContain(ja('jobs.merging.alreadyMerged', { into: 'main' }))
+  expect(restored.get(job.id)).toMatchObject({ mergeState: 'merged', artifacts: [path.join(repo, 'new.txt')] })
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(merged)
+  expect(fs.existsSync(job.worktree!.dir)).toBe(false)
+  expect(git(repo, 'branch', '--list', job.worktree!.branch)).toBe('')
+})
+
 it('blocks worktree operations on the parent while a continuation runs, and refuses a second continuation', async () => {
   const agent = await import('../src/main/services/agent')
   const parent = agent.startIsolated('修正する', { cwd: repo })
@@ -911,6 +943,17 @@ describe('a repository with a submodule', () => {
     fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
     mocks.launch.mock.calls[0][2].onExit(0)
     expectRefused(agent, job.id, ['vendor/sub'], head)
+  })
+
+  it('refuses to merge a job that touched the submodule once the user merged its branch, and keeps its worktree', async () => {
+    const agent = await import('../src/main/services/agent')
+    const job = agent.startIsolated('ビルドが通るか確かめる', { cwd: repo })
+    git(job.cwd, '-c', 'protocol.file.allow=always', 'submodule', 'update', '-q', '--init')
+    fs.writeFileSync(path.join(job.cwd, 'tracked.txt'), 'fixed\n')
+    mocks.launch.mock.calls[0][2].onExit(0)
+    git(repo, 'merge', '-q', '--no-edit', agent.get(job.id)!.worktree!.branch)
+    expect(agent.diff(job.id).alreadyMerged).toBe(true)
+    expectRefused(agent, job.id, ['vendor/sub'], git(repo, 'rev-parse', 'HEAD'))
   })
 
   it('keeps the worktree of a job that committed inside the submodule and deinitialized it, whose repository outlasts the deinit', async () => {
