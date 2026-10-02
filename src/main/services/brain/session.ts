@@ -2,9 +2,7 @@ import mitt, { type Emitter } from 'mitt'
 import type { TurnEvent } from '@shared/ipc'
 import { errMessage } from '@shared/api-errors'
 import type { RequestFingerprint } from '@shared/cache-diagnosis'
-import { pendingDays } from '@shared/memory-curation'
 import { LatestTurnScheduler } from '@shared/turn-scheduler'
-import { readState as readCurationState } from '../memory-curation-state'
 import { dataPath } from '../store'
 import { conversationLocale } from '../conversation-locale'
 import { getSettings } from '../settings'
@@ -72,21 +70,9 @@ const RECENT_TURNS = 30
 /** How many days of the conversation log are replayed at startup: today and yesterday. */
 const REPLAY_DAYS = 2
 
-/**
- * The first day of the log the memory curation has not read. It reads a day after it is over, and after a
- * failure it waits for the next day, so a short retention would delete days it still needs. Before its
- * first run it has fixed no day, and it starts from the day before that run.
- */
-function firstUncuratedDay(): Date | null {
-  const state = readCurationState()
-  if (!state.curatedThrough && !state.pendingFrom) return null
-  return pendingDays(state, Date.now(), 1)[0] ?? null
-}
-
 export const conversationLog = new ConversationLog({
   dir: dataPath('conversations'),
   retentionDays: () => getSettings().conversationLogRetentionDays,
-  keepFrom: firstUncuratedDay,
   onError: (stage, err) => console.error(`conversation log ${stage} failed:`, errMessage(err))
 })
 

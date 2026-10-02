@@ -18,7 +18,7 @@ const readLines = (file: string): Array<Record<string, unknown>> =>
     .filter(Boolean)
     .map((line) => JSON.parse(line) as Record<string, unknown>)
 
-function makeLog(opts?: { retentionDays?: number; keepFrom?: Date; now?: () => Date }): {
+function makeLog(opts?: { retentionDays?: number; now?: () => Date }): {
   log: ConversationLog
   dir: string
   errors: string[]
@@ -28,7 +28,6 @@ function makeLog(opts?: { retentionDays?: number; keepFrom?: Date; now?: () => D
   const log = new ConversationLog({
     dir,
     retentionDays: () => opts?.retentionDays ?? 30,
-    keepFrom: () => opts?.keepFrom ?? null,
     now: opts?.now,
     onError: (stage, err) => errors.push(`${stage}: ${err instanceof Error ? err.message : String(err)}`)
   })
@@ -109,15 +108,6 @@ describe('ConversationLog', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['2026-09-08.jsonl', '2026-09-09.jsonl', 'notes.txt'])
     expect(readLines(path.join(dir, '2026-09-09.jsonl'))).toHaveLength(1)
     expect(errors).toEqual([])
-  })
-
-  it('keeps the files from the first day the memory curation has not read, however short the retention', () => {
-    const { log, dir } = makeLog({ retentionDays: 1, keepFrom: new Date(2026, 8, 5), now: () => new Date(2026, 8, 8, 12, 0) })
-    for (const name of ['2026-09-03.jsonl', '2026-09-04.jsonl', '2026-09-05.jsonl', '2026-09-06.jsonl']) {
-      fs.writeFileSync(path.join(dir, name), '{"kind":"user"}\n')
-    }
-    log.append({ kind: 'user', turnId: 1, text: 'a' })
-    expect(fs.readdirSync(dir).sort()).toEqual(['2026-09-05.jsonl', '2026-09-06.jsonl', '2026-09-08.jsonl'])
   })
 
   it('writes the first record after a line that a crash cut off on a line of its own, so neither the record nor the lines before are lost', () => {

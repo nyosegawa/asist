@@ -6,12 +6,10 @@ import mitt from 'mitt'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConfirmEvent } from '@shared/confirm'
 import type { AgentJob, TurnEvent, TurnPlaybackAckStatus } from '@shared/ipc'
-import type { ConversationMessage, ConversationPart, ConversationResult, SearchEvent, StopReason } from '@shared/conversation'
+import type { ConversationMessage, ConversationPart, ConversationResult, NativeOutput, SearchEvent, StopReason } from '@shared/conversation'
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
-import { localDateKey } from '@shared/local-date'
-import { storedContent } from '@shared/stored-format'
 import { lastRoundNote } from '@shared/tool-round'
 import { interruptedBeforeReply, interruptedWhileSpeaking, resumeAfterDisconnectNote } from '@shared/turn-recovery'
 import { InterjectPlaybackAcks } from '@/interject-playback'
@@ -42,8 +40,11 @@ interface RoundEmitter {
   untilAborted: () => Promise<never>
 }
 
-/** A round that returns `usage: null` finished without the provider's usage, as a Cerebras stream cut after its finish reason does. */
-type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason; usage?: null }>
+/**
+ * A round that returns `usage: null` finished without the provider's usage, as a Cerebras stream cut after its finish
+ * reason does. `native` is the provider's own output the response carries beside its parts.
+ */
+type RoundScript = (round: RoundEmitter) => Promise<{ stop?: StopReason; usage?: null; native?: NativeOutput }>
 
 const USAGE = { input: 100, cacheRead: 900, cacheCreation: 0, output: 20 }
 
@@ -97,7 +98,11 @@ class FakeStream {
         })
     }
     const partial = await this.script(emitter)
-    return { message: { role: 'assistant', parts: [...this.parts] }, stop: partial.stop ?? 'end', usage: partial.usage === null ? null : USAGE }
+    return {
+      message: { role: 'assistant', parts: [...this.parts], ...(partial.native ? { native: partial.native } : {}) },
+      stop: partial.stop ?? 'end',
+      usage: partial.usage === null ? null : USAGE
+    }
   }
 }
 
@@ -1071,6 +1076,25 @@ describe('brain turn', () => {
     expect(withoutContent(await historyMessages())).toEqual([])
   })
 
+  it('never sends back the lone reasoning item of a response the output limit cut off before any text, after its tool call was dropped', async () => {
+    // OpenAI keeps the reasoning item in the provider's output even when the call after it was cut off and
+    // dropped, and a reasoning item with nothing after it is refused when it is sent back.
+    const reasoningOnly: NativeOutput = { provider: 'openai', model: 'gpt-5.5', payload: [{ type: 'reasoning', id: 'rs_cut', encrypted_content: 'enc' }] }
+    mocks.rounds.push(async () => ({ stop: 'max_tokens', native: reasoningOnly }))
+    mocks.rounds.push(async (round) => { round.text('メモに書きました。'); return {} })
+    mocks.rounds.push(async (round) => { round.text('はい。'); return {} })
+    const { brain } = await loadBrain()
+    await runToDone(brain, '長いメモを書いて')
+    await runToDone(brain, 'ありがとう')
+    expect(mocks.requests).toHaveLength(3)
+    for (const request of mocks.requests) {
+      expect(withoutContent(request.messages)).toEqual([])
+      expect(JSON.stringify(request.messages)).not.toContain('rs_cut')
+    }
+    expect(JSON.stringify(await historyMessages())).not.toContain('rs_cut')
+    expect(readLog().some((r) => JSON.stringify(r).includes('rs_cut'))).toBe(false)
+  })
+
   it('asks the model once to go on after a reply that came back with nothing in it, and keeps no assistant message without content', async () => {
     mocks.rounds.push(async () => ({}))
     mocks.rounds.push(async (round) => { round.text('明日は晴れです。'); return {} })
@@ -1178,22 +1202,6 @@ describe('brain turn', () => {
     }
     expect(spokenIn(events)).toEqual(['Let me check the latest news on that.', 'The Tokyo Marathon was moved to March.'])
     expect(events.at(-1)).toMatchObject({ type: 'done', fullText: 'Let me check the latest news on that. The Tokyo Marathon was moved to March.' })
-  })
-
-  it('keeps the days of the conversation log the memory curation has not read past the retention, and deletes the days it has read', async () => {
-    const { logFileName } = await import('../src/main/services/brain/conversation-log')
-    const { CURATION_STATE_FORMAT } = await import('../src/main/services/memory-curation-state')
-    const today = new Date()
-    const day = (back: number): Date => new Date(today.getFullYear(), today.getMonth(), today.getDate() - back)
-    // The retention is 30 days. The curation read the days up to 40 days ago and has failed every day since.
-    const state = { curatedThrough: localDateKey(day(40)), pendingFrom: null, lastFailure: { at: Date.now(), message: 'codex is not logged in' } }
-    fs.writeFileSync(path.join(mocks.userData, 'memory-curation.json'), JSON.stringify(storedContent(CURATION_STATE_FORMAT, state)))
-    const dir = path.join(mocks.userData, 'conversations')
-    fs.mkdirSync(dir, { recursive: true })
-    for (const back of [41, 40, 39, 35]) fs.writeFileSync(path.join(dir, logFileName(day(back))), '')
-    const { record } = await import('../src/main/services/brain/session')
-    record({ kind: 'user', turnId: 1, text: 'おはよう' })
-    expect(fs.readdirSync(dir).sort()).toEqual([day(39), day(35), today].map(logFileName))
   })
 
   it('closes a turn that has no key for its model with a failed reply in the log, so the utterance counts as answered', async () => {

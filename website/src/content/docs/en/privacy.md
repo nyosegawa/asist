@@ -6,7 +6,7 @@ tableOfContents:
   maxHeadingLevel: 2
 ---
 
-Last updated: October 2, 2026
+Last updated: October 1, 2026
 
 This privacy policy explains how ASIST, a desktop app for Mac and Windows, and this site (asist-agent.com) handle your information.
 
@@ -32,7 +32,7 @@ Your settings, conversation logs, memory, notes, tasks, fetched mail and API key
 | Windows | `%APPDATA%\asist\` | `%APPDATA%\asist\logs\` |
 
 - The API keys and mail passwords you save in the settings are encrypted with the operating system and never written in plain text. The encryption key is kept in the Keychain on macOS, and tied to your Windows user with DPAPI on Windows.
-- The conversation log records what you said, ASIST's replies, and tool calls and their results, in one file a day. Files older than "Days the conversation log is kept" under "Conversation" in the settings (90 days by default) are deleted when the date changes. The file of a day that memory curation has not read yet stays until it has.
+- The conversation log records what you said, ASIST's replies, and tool calls and their results, in one file a day. Files older than "Days the conversation log is kept" under "Conversation" in the settings (90 days by default) are deleted when the date changes.
 - Memory and notes are Markdown files, and stay until you delete them.
 - The app log never contains the text of your conversations. Keys, tokens and passwords are masked before they are written, and files older than 14 days are deleted.
 
@@ -95,7 +95,7 @@ ASIST does not share, transfer or disclose data received from Google to any othe
 - **Sign-in**: signing in to Google uses OAuth 2.0 for installed apps (RFC 8252) with PKCE (RFC 7636) and a state check. The result of the sign-in comes back to a listener on 127.0.0.1 of your computer that exists only during the sign-in, and passes through no outside server.
 - **Token storage**: the refresh token is encrypted with the operating system (the Keychain on macOS, DPAPI on Windows) and never written in plain text. The access token is kept only in memory and never written to disk. Token values are masked before anything is written to the app log.
 - **Minimum scopes**: ASIST requests only the two scopes above. It does not touch Gmail, contacts or any data other than your calendars.
-- **No copy of your events**: events are read from Google each time they are used, and used in memory. ASIST does not save a copy of your events to a file. When a conversation deals with your events, what was said stays in the conversation log like any other conversation. The conversation log is kept in your user account's folder, which other users of the same computer cannot read under the operating system's default permissions, and is deleted after the number of days set in the settings (90 days by default), once memory curation has read it.
+- **No copy of your events**: events are read from Google each time they are used, and used in memory. ASIST does not save a copy of your events to a file. When a conversation deals with your events, what was said stays in the conversation log like any other conversation. The conversation log is kept in your user account's folder, which other users of the same computer cannot read under the operating system's default permissions, and is deleted after the number of days set in the settings (90 days by default).
 - **Approval before writing**: no event is created, changed or deleted until you approve it in the confirmation dialog.
 - **No human access**: no person reads this data, ASIST's developer included.
 - **Open source**: you can check how ASIST does all of this in its source code on [GitHub](https://github.com/nyosegawa/asist).

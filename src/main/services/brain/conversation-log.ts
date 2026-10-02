@@ -195,11 +195,6 @@ export interface ConversationLogOptions {
   dir: string
   /** How many days of files are kept. Older daily files are removed when the date changes. */
   retentionDays: () => number
-  /**
-   * The first day whose file stays whatever the retention, because the memory curation has not read it
-   * yet; null when nothing before today waits for it.
-   */
-  keepFrom: () => Date | null
   now?: () => Date
   onError?: (stage: 'append' | 'prune' | 'read', err: unknown) => void
 }
@@ -272,18 +267,14 @@ export class ConversationLog {
     return out
   }
 
-  /** Removes the files of days past the retention period that the memory curation has read, once when the date changes. */
+  /** Removes the files of days past the retention period, once when the date changes. */
   private prune(today: Date): void {
     try {
       const retention = this.options.retentionDays()
       if (!Number.isInteger(retention) || retention < 1) {
         throw new Error(`invalid conversation log retention: ${retention}`)
       }
-      const keepFrom = this.options.keepFrom()
-      // The names hold the date in fixed width, so they sort in the order of the days.
-      const kept = keepFrom ? logFileName(keepFrom) : null
       for (const name of expiredDatedFiles(fs.readdirSync(this.options.dir), today, retention, 'jsonl')) {
-        if (kept !== null && name >= kept) continue
         fs.rmSync(path.join(this.options.dir, name), { force: true })
       }
     } catch (err) {

@@ -78,14 +78,16 @@ const ALREADY_SPOKEN: Readonly<Record<'aizuchi' | 'bridge' | 'bridgePending' | '
 
 /**
  * How a turn goes on after a response that stopped short of a reply: the note asking the model for it,
- * sent once a turn, and the sentence that ends the turn when the same happens again. A response can end
- * with nothing in it, which the API documents for text placed right after tool results.
+ * sent once a turn, and the sentence that ends the turn when the same happens again. The adapters drop
+ * a tool call the output limit cut off, so the model is told it did not run; otherwise it may go on as
+ * if it had, saying a note was saved that never was. A response can also end with nothing in it, which
+ * the API documents for text placed right after tool results.
  */
 const GO_ON: Readonly<Record<'max_tokens' | 'end', { note: PromptText; otherwise: TurnStopError['key'] }>> = {
   max_tokens: {
     note: {
-      ja: `直前の回答が上限に達した。重複せず、残りの結論だけを短く続けてください。`,
-      en: `The reply you were giving hit the output limit. Continue with the conclusion that is left, briefly, and do not repeat yourself.`
+      ja: `直前の回答が上限に達した。上限で途中に切れたツールの呼び出しがあれば、それは実行されていない。まだ必要なら呼び直すこと。重複せず、残りの結論だけを短く続けてください。`,
+      en: `The reply you were giving hit the output limit. A tool call the limit cut off did not run; call it again if it is still needed. Continue with the conclusion that is left, briefly, and do not repeat yourself.`
     },
     otherwise: 'spoken.replyTooLong'
   },
