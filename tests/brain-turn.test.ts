@@ -10,6 +10,7 @@ import type { ConversationMessage, ConversationPart, ConversationRequest, Conver
 import { marker } from '@shared/conversation-markers'
 import { createTranslator } from '@shared/i18n'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
+import { defaultPersona } from '@shared/persona'
 import { lastRoundNote } from '@shared/tool-round'
 import { interruptedBeforeReply, interruptedWhileSpeaking, resumeAfterDisconnectNote } from '@shared/turn-recovery'
 import { InterjectPlaybackAcks } from '@/interject-playback'
@@ -116,6 +117,8 @@ const mocks = vi.hoisted(() => ({
   conversationLocale: 'ja-JP' as 'ja-JP' | 'en-US',
   key: 'test-key' as string | undefined,
   ttsEngine: 'voicevox',
+  aizuchi: true,
+  bridgePhrase: true,
   /** Holds every synthesis until the turn is aborted, as a slow speech engine does. */
   holdSynthesis: false,
   /** The agent jobs as the agent service keeps them. */
@@ -129,7 +132,9 @@ const mocks = vi.hoisted(() => ({
    */
   openaiResponses: [] as unknown[][],
   /** The input of each OpenAI request, as the API receives it. */
-  openaiInputs: [] as unknown[][]
+  openaiInputs: [] as unknown[][],
+  /** The settings service itself, over a settings file in userData, in place of the fixed settings below. */
+  settingsService: null as { getSettings: () => unknown } | null
 }))
 
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
@@ -169,12 +174,14 @@ vi.mock('../src/main/services/llm', async () => {
   }
 })
 vi.mock('../src/main/services/settings', () => ({
-  getSettings: () => ({
+  getSettings: () => mocks.settingsService?.getSettings() ?? ({
     uiLocale: 'ja-JP',
     conversationLocale: mocks.conversationLocale,
     region: 'JP',
     persona: '',
     ttsEngine: mocks.ttsEngine,
+    aizuchi: mocks.aizuchi,
+    bridgePhrase: mocks.bridgePhrase,
     conversationModel: mocks.conversationModel,
     bridgeModel: { provider: 'anthropic', id: 'claude-haiku-4-5-20251001' },
     conversationLogRetentionDays: 30,
@@ -182,9 +189,11 @@ vi.mock('../src/main/services/settings', () => ({
     agentEngine: 'claude'
   })
 }))
-// The approval gate shows its sheet in the window that is there.
+// The approval gate shows its sheet in the window that is there. The settings service, where a test uses it,
+// starts a fresh install in English.
 vi.mock('electron', () => ({
-  BrowserWindow: { getFocusedWindow: () => ({ isDestroyed: () => false, isVisible: () => true }), getAllWindows: () => [] }
+  BrowserWindow: { getFocusedWindow: () => ({ isDestroyed: () => false, isVisible: () => true }), getAllWindows: () => [] },
+  app: { getPath: () => mocks.userData, getPreferredSystemLanguages: () => ['en-US'] }
 }))
 vi.mock('../src/main/services/tts', () => ({
   nextRequest: (waiting: readonly string[]) => ({ text: waiting[0], count: 1 }),
@@ -326,6 +335,8 @@ describe('brain turn', () => {
     mocks.conversationLocale = 'ja-JP'
     mocks.key = 'test-key'
     mocks.ttsEngine = 'voicevox'
+    mocks.aizuchi = true
+    mocks.bridgePhrase = true
     mocks.holdSynthesis = false
     mocks.jobs = new Map()
     mocks.contextBlock = () => null
@@ -333,6 +344,7 @@ describe('brain turn', () => {
     mocks.conversationModel = { provider: 'anthropic', id: 'claude-sonnet-5' }
     mocks.openaiResponses = []
     mocks.openaiInputs = []
+    mocks.settingsService = null
   })
 
   it('speaks the reply of a normal turn, keeps it in the history and the conversation log, and reports usage in metrics', async () => {
@@ -541,6 +553,47 @@ describe('brain turn', () => {
     expect(results).toMatchObject([{ callId: 't1', name: 'show_timer' }])
     expect(JSON.parse((results[0] as Extract<ConversationPart, { type: 'tool_result' }>).content)).toMatchObject({ started: true })
     expect(timers.create).toHaveBeenCalledOnce()
+  })
+
+  it('keeps add_note whose save had begun when the user cut in as a call whose result is unknown, in the history the next turn sends', async () => {
+    const fsp = (await import('node:fs/promises')).default
+    const { createToolRegistry, executeTool, operationStarted } = await import('@shared/tool-registry')
+    // What the registry says of any call whose operation started before the wait for it was cut off.
+    const call = new AbortController()
+    const startedThenCut = await executeTool(createToolRegistry([{
+      name: 'add_note', description: { ja: '', en: '' }, inputSchema: { type: 'object' }, parallel: false, timeoutMs: 1000, maxResultChars: 1000,
+      run: (_input, _ctx, signal) => { operationStarted(signal); call.abort(); return 'saved' }
+    }]), 'add_note', {}, undefined, call.signal, 'ja')
+    const rename = fsp.rename.bind(fsp)
+    let renaming!: () => void
+    const entered = new Promise<void>((resolve) => { renaming = resolve })
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const spy = vi.spyOn(fsp, 'rename').mockImplementationOnce(async (from, to) => {
+      renaming()
+      await held
+      await rename(from, to)
+    })
+    const { brain } = await loadBrain()
+    mocks.rounds.push(async (round) => {
+      round.text('メモしますね。')
+      round.toolUse('t1', 'add_note', { markdown: '# 会議の議題' })
+      return round.untilAborted()
+    })
+    mocks.rounds.push(async (round) => { round.text('はい。'); return {} })
+    try {
+      const first = brain.beginTurn({ text: '会議の議題をメモして' }, {}, 'user', false)!
+      await entered
+      brain.abortTurn(first.turnId)
+      release()
+      await first.completion
+      await runToDone(brain, '保存できた?')
+      const results = mocks.requests[1].messages.flatMap((message) => message.parts).filter((part) => part.type === 'tool_result')
+      expect(results).toEqual([{ type: 'tool_result', callId: 't1', name: 'add_note', content: startedThenCut.content, isError: true }])
+      expect(fs.readdirSync(path.join(mocks.userData, 'notes')).filter((name) => name.endsWith('.md'))).toHaveLength(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('keeps a tool call that arrives after the user cut in, answered as interrupted without running it', async () => {
@@ -1642,18 +1695,18 @@ describe('brain turn', () => {
     }
   })
 
-  it.each([
-    ['ja-JP', 'en-US', true],
-    ['en-US', 'ja-JP', false]
-  ] as const)('covers a slow tool with the work clip only when the language the turn started in (%s) has backchannels, whatever it is switched to (%s)', async (start, switched, plays) => {
+  /**
+   * Runs a turn whose tool takes past the filler's limit, calling `during` while the response that calls
+   * the tool streams, and tells whether the work clip was played.
+   */
+  async function slowToolPlaysWorkClip(during: () => void = () => {}): Promise<boolean> {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
     try {
-      mocks.conversationLocale = start
       mocks.workClip = async () => ({ text: 'えーっと', category: 'work', weight: 1, audio: 'AAAA' })
       let finishFetch!: () => void
       mocks.fetchPanel.mockImplementation(() => new Promise((resolve) => { finishFetch = () => resolve(weatherPanel) }))
       mocks.rounds.push(async (round) => {
-        mocks.conversationLocale = switched
+        during()
         round.toolUse('t1', 'show_weather', { location: '東京都' })
         return { stop: 'tool_calls' }
       })
@@ -1665,10 +1718,32 @@ describe('brain turn', () => {
       finishFetch()
       await handle.completion
       await new Promise((resolve) => setImmediate(resolve))
-      expect(events.some((e) => e.type === 'segment' && e.segment.text === 'えーっと')).toBe(plays)
+      return events.some((e) => e.type === 'segment' && e.segment.text === 'えーっと')
     } finally {
       vi.useRealTimers()
     }
+  }
+
+  it.each([
+    ['ja-JP', 'en-US', true],
+    ['en-US', 'ja-JP', false]
+  ] as const)('covers a slow tool with the work clip only when the language the turn started in (%s) has backchannels, whatever it is switched to (%s)', async (start, switched, plays) => {
+    mocks.conversationLocale = start
+    expect(await slowToolPlaysWorkClip(() => { mocks.conversationLocale = switched })).toBe(plays)
+  })
+
+  it.each([
+    { bridgePhrase: false, aizuchi: true, plays: false },
+    { bridgePhrase: true, aizuchi: false, plays: true }
+  ])('covers a slow tool with the work clip by the bridge phrase switch alone (bridge phrase $bridgePhrase, aizuchi $aizuchi)', async ({ bridgePhrase, aizuchi, plays }) => {
+    mocks.bridgePhrase = bridgePhrase
+    mocks.aizuchi = aizuchi
+    expect(await slowToolPlaysWorkClip()).toBe(plays)
+  })
+
+  it('leaves a slow tool silent in a turn that started with speech off, even once speech is turned on and the clips have audio', async () => {
+    mocks.ttsEngine = 'none'
+    expect(await slowToolPlaysWorkClip(() => { mocks.ttsEngine = 'voicevox' })).toBe(false)
   })
 
   it('keeps a turn the user started open while its confirmation waits through the next words, and takes those up once the approved job has started', async () => {
@@ -1844,5 +1919,31 @@ describe('brain turn', () => {
     expect(mocks.requests).toHaveLength(3)
     resolveConfirm((confirmations.at(-1) as Extract<ConfirmEvent, { type: 'open' }>).request.id, false)
     await expect(answer).resolves.toBe(false)
+  })
+
+  describe('the persona in the system prompt, after the conversation language changed on the Language page', () => {
+    /** Changes the language as the Language page does, on a fresh install whose system speaks English, and runs a turn. */
+    async function promptAfterChangingTo(locale: 'ja-JP', before: (settings: typeof import('../src/main/services/settings')) => void = () => {}): Promise<string> {
+      const settings = await vi.importActual<typeof import('../src/main/services/settings')>('../src/main/services/settings')
+      mocks.settingsService = settings
+      before(settings)
+      settings.saveSettings({ conversationLocale: locale })
+      mocks.rounds.push(async (round) => { round.text('はい。'); return {} })
+      const { brain } = await loadBrain()
+      await runToDone(brain, 'こんにちは')
+      return mocks.requests[0].system.map((layer) => layer.text).join('\n')
+    }
+
+    it('is the default persona in the new language', async () => {
+      const prompt = await promptAfterChangingTo('ja-JP')
+      expect(prompt).toContain(defaultPersona('ja-JP'))
+      expect(prompt).not.toContain(defaultPersona('en-US'))
+    })
+
+    it('is the persona the user wrote, as they wrote it', async () => {
+      const prompt = await promptAfterChangingTo('ja-JP', (settings) => settings.saveSettings({ persona: 'Your name is Mina. Keep answers short.' }))
+      expect(prompt).toContain('Your name is Mina. Keep answers short.')
+      expect(prompt).not.toContain(defaultPersona('ja-JP'))
+    })
   })
 })

@@ -14,6 +14,7 @@ import { buildMemoryInjection, memoryIdsInToolResult, type MemoryInjection } fro
 import { diagnoseCacheMiss, fingerprintRequest, type CacheMissReason } from '@shared/cache-diagnosis'
 import { conversationFeatures, fillPrompt, promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
 import { marker } from '@shared/conversation-markers'
+import { personaText } from '@shared/persona'
 import { providerKey, streamConversation } from '../llm'
 import { LLM_PROVIDER_INFO, type ConversationModel } from '@shared/llm-catalog'
 import { translatorIn } from '../i18n'
@@ -289,7 +290,7 @@ async function runTurn(
     // within the turn would ever hit.
     system = buildSystemLayers({
       locale,
-      persona: getSettings().persona,
+      persona: personaText(getSettings()),
       toolGuide: toolGuide(locale, toolOptions),
       memoryBlock,
       historySummary: history.summary
@@ -368,13 +369,14 @@ async function runTurn(
     for (const sentence of assembler.pause()) synth.push(sentence)
   }
 
-  // A filler that keeps the pause alive while a search or a tool takes long. It plays a pre-synthesized
-  // aizuchi clip as is, at most once per turn. The clips are Japanese backchannels, so they play only in a
-  // turn whose language has them.
-  let fillerPlayed = !conversationFeatures(locale).aizuchi
+  // A filler that keeps the pause of a spoken reply alive while a search or a tool takes a while. It
+  // plays a pre-synthesized aizuchi clip as is, at most once per turn. It fills the wait before the answer
+  // goes on, as the bridge phrase does, so the bridge phrase's switch decides it rather than the aizuchi's.
+  // The clips are Japanese backchannels, so they play only in a turn whose language has them.
+  let fillerLeft = route.kind === 'tts' && getSettings().bridgePhrase && conversationFeatures(locale).aizuchi
   const playWorkFiller = (sourceSignal: AbortSignal): void => {
-    if (fillerPlayed || sourceSignal.aborted) return
-    fillerPlayed = true
+    if (!fillerLeft || sourceSignal.aborted) return
+    fillerLeft = false
     // The filler only covers a pause, so a clip bank that fails leaves the pause silent and is logged.
     randomAizuchiClip('work')
       .then((clip) => {
