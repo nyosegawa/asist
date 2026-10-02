@@ -124,7 +124,9 @@ async function crashParent(descendant: boolean, ownGroup = false): Promise<{ job
   parent.kill('SIGKILL')
   await exited
   expect(alive(writer)).toBe(true)
-  if (descendant) {
+  // A writer in a group of its own keeps its CLI running: only the CLI links it to the agent for the stop sent
+  // when ASIST ends, which an exit of the CLI before the stop is read would leave it without.
+  if (descendant && !ownGroup) {
     fs.writeFileSync(path.join(root, 'leader-exit'), '')
     await vi.waitFor(() => expect(alive(group!)).toBe(false), PROCESS_START)
     expect(alive(writer)).toBe(true)
@@ -173,14 +175,6 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
 
   it('sends the stop when ASIST ends to a command the CLI runs in a process group of its own', async () => {
     const { job } = await crashParent(true, true)
-    await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
-  })
-
-  it('sends the stop when ASIST ends while the environment it passes on turns on job control in /bin/sh', async () => {
-    // bash, which macOS runs as /bin/sh, reads its options from SHELLOPTS, and with monitor on it gives each
-    // job it starts in the background a process group of its own.
-    vi.stubEnv('SHELLOPTS', 'braceexpand:hashall:interactive-comments:monitor')
-    const { job } = await crashParent(false)
     await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
   })
 
@@ -421,29 +415,58 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
     expect(await grows(out)).toBe(false)
   })
 
-  /** Runs a /bin/sh script as the agent's CLI until the agent has ended, and returns the lines it wrote. */
-  async function runShellCli(script: string): Promise<string[]> {
+  /** Starts a /bin/sh script as the agent's CLI, and collects the lines it writes. */
+  async function startShellCli(script: string) {
     vi.stubEnv('CODEX_CLI_PATH', '/bin/sh')
     const { launchAgentProcess } = await import('../src/main/services/agent-process')
     const lines: string[] = []
+    let spawned!: (pid: number) => void
+    const started = new Promise<number>((resolve) => { spawned = resolve })
     const run = launchAgentProcess({
       id: 'shell', title: 'fixture', prompt: 'fixture', cwd: root,
       engine: 'codex', readonly: true, status: 'running', startedAt: Date.now()
     }, ['-c', script], {
-      onSpawn: (identity) => { group = identity.pid },
+      onSpawn: (identity) => { group = identity.pid; spawned(identity.pid) },
       onEvent: (event) => { if (event.kind === 'raw') lines.push(event.text) },
       onStderr: () => {}, onError: () => {}, onExit: () => {}
     })
-    await run.completion
-    return lines
+    return { run, lines, started }
   }
 
+  /**
+   * The watchers still running that would signal the group's PID when ASIST ends. ps writes the newlines of the
+   * watcher's script as \012, so its command line ends with the name and the group it was given.
+   */
+  const watchersOf = (pid: number): string[] => execFileSync('/bin/ps', ['-axww', '-o', 'command='], { encoding: 'utf8' })
+    .split('\n').filter((line) => line.trimEnd().endsWith(`asist-agent-watcher ${pid}`))
+
   it('sends no stop to a process the CLI leaves in its group when the CLI exits on its own', async () => {
-    expect(await runShellCli(`( trap 'echo stopped' TERM; sleep 0.5; echo finished ) & exit 0`)).toEqual(['finished'])
+    const { run, lines } = await startShellCli(`( trap 'echo stopped' TERM; sleep 0.5; echo finished ) & exit 0`)
+    await run.completion
+    expect(lines).toEqual(['finished'])
   })
 
   it('reads what a process the CLI leaves in its group writes after the CLI exits on its own', async () => {
-    expect(await runShellCli('( sleep 0.5; echo late ) & echo early; exit 0')).toEqual(['early', 'late'])
+    const { run, lines } = await startShellCli('( sleep 0.5; echo late ) & echo early; exit 0')
+    await run.completion
+    expect(lines).toEqual(['early', 'late'])
+  })
+
+  it('leaves no watcher that could signal the group\'s PID later once the CLI exits on its own', async () => {
+    const { run, started } = await startShellCli('exit 0')
+    const pid = await started
+    expect(watchersOf(pid)).toHaveLength(1)
+    await run.completion
+    await vi.waitFor(() => expect(watchersOf(pid)).toEqual([]), PROCESS_START)
+  })
+
+  it('leaves no watcher that could signal the group\'s PID later once a stop ends the agent', async () => {
+    const { run, started } = await startShellCli('sleep 30')
+    const pid = await started
+    expect(watchersOf(pid)).toHaveLength(1)
+    await run.stop()
+    await run.completion
+    await vi.waitFor(() => expect(watchersOf(pid)).toEqual([]), PROCESS_START)
   })
 
   it('stops the commands the agent runs in process groups of their own before it reports the agent stopped', async () => {

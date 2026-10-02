@@ -298,8 +298,13 @@ const WATCHER = [
  * launcher on Windows stops its job. Measured with claude 2.1.276 on 2026-10-02: once the process that started
  * it was killed, it finished the running command, asked the model again and ran another one. The watcher is a
  * shell in a session of its own that reads a pipe only ASIST writes to, and ASIST writes a line there once the
- * CLI has exited. Kept out of the agent's group, it never keeps the group alive after the CLI, which would make
- * every end that settles on its own run a stop and cut short what the CLI left in its group.
+ * CLI has exited, so that no watcher is left to signal the group's PID once another process may have it. Kept
+ * out of the agent's group, it never keeps the group alive after the CLI, which would make every end that
+ * settles on its own run a stop and cut short what the CLI left in its group.
+ *
+ * A watcher that cannot be started, as at the limit of processes, fails the job before its CLI is let start:
+ * an agent ASIST could not stop if it crashed is what the watcher exists to prevent, and the job's error says
+ * why it did not start, where the user can start it again.
  */
 function watchForAsistEnd(group: number, env: NodeJS.ProcessEnv, child: ChildProcess): void {
   const watcher = spawn('/bin/sh', ['-c', WATCHER, 'asist-agent-watcher', String(group)], {
@@ -308,9 +313,15 @@ function watchForAsistEnd(group: number, env: NodeJS.ProcessEnv, child: ChildPro
     stdio: ['pipe', 'ignore', 'ignore'],
     windowsHide: true
   })
-  // The agent runs on without the watcher, but would then outlive a crash of ASIST.
+  // A failed spawn is reported here with its reason after the job has already failed, and a watcher killed
+  // later by someone else leaves the agent running as it would be without one.
   const lost = (error: Error): void => console.error(`the watcher of agent ${group} is gone:`, error)
   watcher.on('error', lost)
+  if (watcher.pid === undefined) {
+    // The launcher reads the end of its input instead of "start" and exits without running the CLI.
+    child.stdin!.end()
+    throw new Error(errorText('jobs.process.watcherUnavailable'))
+  }
   watcher.stdin!.on('error', lost)
   child.once('exit', () => watcher.stdin!.end('\n'))
 }
