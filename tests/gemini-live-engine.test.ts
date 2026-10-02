@@ -486,6 +486,19 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('counts the quiet from the end of a short reply that arrives late in the idle time', async () => {
+    const { engine, sessions } = await setup()
+    const session = await open(engine, sessions)
+    // The idle close is 30 seconds in this setup.
+    await vi.advanceTimersByTimeAsync(28_300)
+    session.message({ serverContent: { modelTurn: { parts: [{ inlineData: { data: voice(0.4), mimeType: 'audio/pcm;rate=24000' } }] } } })
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(session.closed).toBe(false)
+    await vi.advanceTimersByTimeAsync(28_000)
+    expect(session.closed).toBe(true)
+    await engine.stop()
+  })
+
   it('counts the quiet from an interruption, since the renderer drops the rest of the reply then', async () => {
     const { engine, sessions } = await setup()
     const session = await open(engine, sessions)
@@ -595,6 +608,17 @@ describe('GeminiLiveEngine', () => {
     const session = await open(engine, sessions)
     session.params.callbacks.onerror(new Error('quota exceeded'))
     expect(errors().slice(1)).toEqual(['quota exceeded'])
+    await engine.stop()
+  })
+
+  it('reports no usage for a session that never opened, since it carried no audio', async () => {
+    const { engine, sessions, events } = await setup()
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    sessions[0].params.callbacks.onerror(new Error('quota exceeded'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(engine.state).toBe('error')
+    expect(events.filter((event) => event.type === 'usage')).toEqual([])
     await engine.stop()
   })
 
