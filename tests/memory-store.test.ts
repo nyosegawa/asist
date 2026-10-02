@@ -17,6 +17,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { MEMORY_GITIGNORE } from '@shared/memory-curation'
 import { PROMPT_DOCUMENTS, PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens, type DocumentIssue } from '@shared/memory-format'
 import { documentIssueText, newPageMarkdown } from '@shared/memory-page'
+import { localDateKey } from '@shared/local-date'
 import CASES from './fixtures/memory-format-cases.json'
 import { sectionsOverTheLimit } from './helpers/memory'
 import { longTempFolder } from './helpers/temp'
@@ -163,6 +164,36 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(before + 1)
   })
 
+  it('removes the page template example text that pages made on the memory screen kept, in one commit as it prepares the memory, and touches nothing the user wrote', () => {
+    const dir = store.memoryDir()
+    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-curation', 'assets', 'templates', 'page.md'), 'utf8')
+    const madeOnTheScreen = (name: string): string => template.replace(/^updated: .*$/m, 'updated: 2026-09-20').replace(/^# .*$/m, `# ${name}`)
+    const summaryOnly = madeOnTheScreen('田中さん').replace('これが何(誰、どこ)で、本人とどう関わるか。一〜三文。', '本人の上司。')
+    const exampleEdited = madeOnTheScreen('佐藤さん')
+      .replace('これが何(誰、どこ)で、本人とどう関わるか。一〜三文。', '本人の同僚。')
+      .replace('私から見てこれがどういう存在か、', '話していて楽しい人らしい。私から見てこれがどういう存在か、')
+    fs.writeFileSync(path.join(dir, 'pages', '田中さん.md'), summaryOnly)
+    fs.writeFileSync(path.join(dir, 'pages', '佐藤さん.md'), exampleEdited)
+    fs.writeFileSync(path.join(dir, 'pages', '鈴木さん.md'), madeOnTheScreen('鈴木さん'))
+    fs.writeFileSync(path.join(dir, 'pages', '松葉軒.md'), MATSUBAKEN)
+    git(dir, ['add', '-A'])
+    git(dir, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'memory'])
+    const before = commits(dir)
+    store.ensureRepo()
+    expect(commits(dir)).toBe(before + 1)
+    expect(subjects(dir)[0]).toBe('asist: ページに残った雛形の例文を消す')
+    expect(store.readDocument('pages/田中さん.md')).toBe('---\naliases: []\nupdated: 2026-09-20\n---\n# 田中さん\n\n## 要約\n本人の上司。\n')
+    expect(store.readDocument('pages/佐藤さん.md')).toBe(
+      exampleEdited.replace(/\n## 見出しは中身に合わせて付ける\n[^\n]*\n/, '')
+    )
+    expect(store.readDocument('pages/鈴木さん.md')).toBeNull()
+    expect(store.readDocument('pages/松葉軒.md')).toBe(MATSUBAKEN)
+    expect(store.readAll().errors).toEqual([])
+    expect(store.isClean()).toBe(true)
+    store.ensureRepo()
+    expect(commits(dir)).toBe(before + 1)
+  })
+
   it('leaves instruction.md, me.md and user.md as they were when the commit of the move fails, so that the next start moves them again', () => {
     const dir = store.memoryDir()
     fs.writeFileSync(path.join(dir, 'instruction.md'), INSTRUCTION)
@@ -211,6 +242,24 @@ describe('the memory store', () => {
     expect(commits(dir)).toBe(beforeDelete + 1)
     expect(() => store.deleteDocument('me.md')).toThrow(errorText('memory.errors.deleteKind'))
     expect(store.isClean()).toBe(true)
+  })
+
+  it('gives a new page its draft in the language of the conversation, writes nothing, and refuses a name the file system finds taken', () => {
+    const dir = store.memoryDir()
+    const before = commits(dir)
+    expect(store.pageDraft(' 田中さん ')).toEqual({ file: 'pages/田中さん.md', markdown: newPageMarkdown('田中さん', 'ja-JP', localDateKey(new Date())) })
+    mocks.conversationLocale = 'en-US'
+    expect(store.pageDraft('Tanaka').markdown).toContain('\n# Tanaka\n\n## Summary\n')
+    expect(commits(dir)).toBe(before)
+    expect(fs.readdirSync(path.join(dir, 'pages'))).toEqual([])
+    store.createPage({ name: 'Tanaka', markdown: newPageMarkdown('Tanaka', 'en-US', '2026-10-03').replace('## Summary\n', '## Summary\nTheir boss.\n') })
+    expect(() => store.pageDraft('Tanaka')).toThrow(errorText('memory.errors.pageExists', { name: 'Tanaka' }))
+    // macOS and Windows find Tanaka.md under another case of its name, and a page made under that name would be the same file.
+    const caseless = fs.existsSync(path.join(dir, 'pages', 'tanaka.md'))
+    if (caseless) expect(() => store.pageDraft('tanaka')).toThrow(errorText('memory.errors.pageExists', { name: 'tanaka' }))
+    else expect(store.pageDraft('tanaka').file).toBe('pages/tanaka.md')
+    expect(() => store.pageDraft('a/b')).toThrow(errorText('memory.errors.nameCharacters'))
+    expect(() => store.pageDraft('CON')).toThrow(errorText('memory.errors.nameReserved'))
   })
 
   it('refuses to save over a document that changed after the screen read it, and keeps what the other writer added', () => {

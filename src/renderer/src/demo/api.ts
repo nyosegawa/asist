@@ -51,7 +51,8 @@ import { DEMO_TASKS } from './fixtures/tasks'
 import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, DEMO_UID_VALIDITY, demoMailStatus, demoReplyOf } from './fixtures/mail'
 import { commitDrafts, createDemoDraft, demoDraft, demoDrafts, emitMail, mailListeners } from './mail-state'
 import { DEMO_MEMORY, demoDocuments } from './fixtures/memory'
-import { pageFile, parseMemoryPageInput, validateDocument, documentOf } from '@shared/memory-page'
+import { newPageMarkdown, pageFile, parseMemoryPageInput, parsePageName, validateDocument, documentOf } from '@shared/memory-page'
+import { localDateKey } from '@shared/local-date'
 import { errorText } from '@shared/i18n/error-text'
 import { formatLocale, translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
@@ -504,6 +505,12 @@ export const mockApi: RendererApi = {
     if (errors.length > 0) throw new Error(errors.join(' / '))
     demoMemory[file] = markdown
     return documentOf(file, markdown)
+  },
+  memoryPageDraft: async (name) => {
+    const page = parsePageName(name)
+    const file = pageFile(page)
+    if (demoMemory[file]) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+    return { file, markdown: newPageMarkdown(page, settings.conversationLocale, localDateKey(new Date())) }
   },
   memoryDocumentCreate: async (input) => {
     const { name, markdown } = parseMemoryPageInput(input)

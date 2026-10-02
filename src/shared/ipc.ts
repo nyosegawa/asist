@@ -712,6 +712,12 @@ export interface MemoryDocument {
   summary: string
 }
 
+/** What the memory screen opens a new page with before anything is written: its file and its starting markdown. */
+export interface MemoryPageDraft {
+  file: string
+  markdown: string
+}
+
 /** A page the user made on the memory screen, at its first save. Its name becomes the filename. */
 export interface MemoryPageInput {
   name: string
@@ -895,6 +901,7 @@ export const IpcChannel = {
   MemoryDocuments: 'memory-documents',
   MemoryDocumentRead: 'memory-document-read',
   MemoryDocumentWrite: 'memory-document-write',
+  MemoryPageDraft: 'memory-page-draft',
   MemoryDocumentCreate: 'memory-document-create',
   MemoryDocumentDelete: 'memory-document-delete',
   MemoryOverview: 'memory-overview',
@@ -1090,6 +1097,12 @@ export interface RendererApi {
    * markdown breaks the writing rules.
    */
   memoryDocumentWrite(file: string, markdown: string, base: string): Promise<MemoryDocument>
+  /**
+   * The new page a name opens in the editor, written nowhere yet. It throws, with the reason, for a name that cannot
+   * name a page or that names one the memory holds, as the file system compares names, so that the user never writes
+   * a page that cannot be saved under the name they gave.
+   */
+  memoryPageDraft(name: string): Promise<MemoryPageDraft>
   /**
    * Writes a page the user made on the memory screen, at its first save, and commits it. It throws when a page of
    * that name exists by then, and with the reason when the markdown breaks the writing rules.

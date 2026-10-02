@@ -81,6 +81,7 @@ const api: RendererApi = {
   memoryDocuments: () => ipcRenderer.invoke(IpcChannel.MemoryDocuments),
   memoryDocumentRead: (file) => ipcRenderer.invoke(IpcChannel.MemoryDocumentRead, file),
   memoryDocumentWrite: (file, markdown, base) => ipcRenderer.invoke(IpcChannel.MemoryDocumentWrite, file, markdown, base),
+  memoryPageDraft: (name) => ipcRenderer.invoke(IpcChannel.MemoryPageDraft, name),
   memoryDocumentCreate: (input) => ipcRenderer.invoke(IpcChannel.MemoryDocumentCreate, input),
   memoryDocumentDelete: (file) => ipcRenderer.invoke(IpcChannel.MemoryDocumentDelete, file),
   memoryOverview: () => ipcRenderer.invoke(IpcChannel.MemoryOverview),

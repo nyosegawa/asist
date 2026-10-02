@@ -2,10 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { MemoryDocument } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
-import { errorText } from '@shared/i18n/error-text'
-import { localDateKey } from '@shared/local-date'
-import { JOURNAL_SELF_HEADINGS, classifyFile, documentOf, newPageMarkdown, pageFile, parsePageName } from '@shared/memory-page'
-import { conversationLocale } from '@/conversation-locale'
+import { JOURNAL_SELF_HEADINGS, classifyFile, documentOf } from '@shared/memory-page'
 import { SaveShortcutKey, isSaveShortcut } from '@/ui/save-shortcut'
 import { keyForApp } from '@/ui/key-for-app'
 import { useToastStore } from '@/state/stores'
@@ -202,17 +199,17 @@ export function MemoryView({ open }: { open: boolean }): React.JSX.Element {
       .catch((err: unknown) => setError(displayError(err)))
       .finally(() => setBusy(false))
   }
+  // Main checks the name against the memory as it is now, on the file system, before the user writes a word.
   const create = (name: string): void => {
-    try {
-      const page = parsePageName(name)
-      const file = pageFile(page)
-      if (documents.some((candidate) => candidate.file === file)) throw new Error(errorText('memory.errors.pageExists', { name: page }))
-      const draft = newPageMarkdown(page, conversationLocale(), localDateKey(new Date()))
-      setSelected(file)
-      setMode({ kind: 'edit', doc: documentOf(file, draft), draft, opened: draft, base: null })
-    } catch (err) {
-      toast({ kind: 'error', title: t('memory.createFailed'), body: displayError(err) })
-    }
+    setBusy(true)
+    void window.api
+      .memoryPageDraft(name)
+      .then(({ file, markdown: draft }) => {
+        setSelected(file)
+        setMode({ kind: 'edit', doc: documentOf(file, draft), draft, opened: draft, base: null })
+      })
+      .catch((err: unknown) => toast({ kind: 'error', title: t('memory.createFailed'), body: displayError(err) }))
+      .finally(() => setBusy(false))
   }
   const remove = async (): Promise<void> => {
     if (!doc) return
