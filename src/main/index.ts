@@ -11,7 +11,7 @@ import dns from 'node:dns'
 net.setDefaultAutoSelectFamily?.(false)
 dns.setDefaultResultOrder('ipv4first')
 import { registerIpc } from './ipc'
-import { notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
+import { leaveOs, notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
 import * as asr from './services/asr'
 import * as tts from './services/tts'
 import * as aizuchi from './services/aizuchi'
@@ -32,7 +32,7 @@ import { initMail } from './services/mail'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
 import { windowChrome } from './window-chrome'
-import { watchAppPage } from './page-lifetime'
+import { closeAppPage, watchAppPage } from './page-lifetime'
 
 let mainWindow: BrowserWindow | null = null
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -55,7 +55,6 @@ function appPageUrl(): string {
 
 function createWindow(): void {
   const chrome = windowChrome(platformCapabilities().os)
-  chrome.prepare()
   const appPage = appPageUrl()
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -128,18 +127,26 @@ function startupLocale(): UiLocale {
 /**
  * Shows why the start failed, then quits. A release that cannot start is fixed only by a newer one, which an
  * app that fails at every start would otherwise never receive, so the quit installs and starts a newer version
- * when the check finds one. The check runs once the error is closed and the window is hidden, so the
- * notification is all that tells the user a download is under way.
+ * when the check finds one. Nothing of the start stays up meanwhile, so a notification is all that tells the
+ * user a download is under way.
  */
 async function quitAfterFailedStart(error: unknown): Promise<void> {
+  // A start that failed after its window opened closes it before the error shows: the page would load under the
+  // error, show itself once the error is closed, and listen and speak while a newer version downloads.
+  if (mainWindow) {
+    leaveOs()
+    closeAppPage(mainWindow)
+  }
   const locale = startupLocale()
   const text = translatorIn(locale)
   dialog.showErrorBox(text('app.startup.launchFailed'), errorMessageIn(locale, error))
-  mainWindow?.hide()
   try {
     const version = await versionAfterFailedStart()
     if (version !== null) {
-      notify(text('app.startup.launchFailed'), text('app.startup.updating', { version }))
+      const notice = (): boolean => notify(text('app.startup.launchFailed'), text('app.startup.updating', { version }))
+      notice()
+      // A second launch quits on the single-instance lock, so this one says again what it is doing.
+      app.on('second-instance', notice)
       quitAfterAgentsStop(await installAfterFailedStart())
       return
     }
@@ -147,7 +154,9 @@ async function quitAfterFailedStart(error: unknown): Promise<void> {
     console.error('app update after a failed start:', updateError)
     dialog.showErrorBox(text('app.startup.updateFailed'), errorMessageIn(locale, updateError))
   }
-  app.quit()
+  // A service that started before the failure may have started an agent, the memory curation, so this quit too
+  // goes through the gate that stops it.
+  quitAfterAgentsStop()
 }
 
 if (!hasSingleInstanceLock) {
@@ -169,8 +178,9 @@ if (!hasSingleInstanceLock) {
       if (icon.isEmpty()) throw new Error('cannot load build/icon.png')
       app.dock?.setIcon(icon)
     }
-    // An OS or CPU the app is not built for stops the launch before any service starts.
-    platformCapabilities()
+    // An OS or CPU the app is not built for stops the launch before any service starts. The app's menu and its
+    // identity come next, before anything else that can fail.
+    windowChrome(platformCapabilities().os).prepare()
     // Reading the settings first keeps a broken file from starting any service; the original file is kept
     // and the place to fix is shown.
     getSettings()
@@ -188,14 +198,6 @@ if (!hasSingleInstanceLock) {
       return
     }
 
-    createWindow()
-
-    // The sidecars are warmed up here, and a failure does not stop the app from starting.
-    watchdog.checkAfter(asr.ensureServer().catch((error) => console.error('speech recognition failed to start:', error)))
-    watchdog.checkAfter(tts.ensureEngine().then(() => aizuchi.getBank()).catch((error) => console.error('TTS preparation failed:', error)))
-    // The aizuchi classifier stays resident when it is prepared and aizuchi are wanted; without it no
-    // aizuchi plays at the head of a turn.
-    if (aizuchiClassifier.wanted(getSettings())) void aizuchiClassifier.ensureStarted()
     initJobReporting()
     initMaintenance([compactionJob])
     // Mail connects to the accounts in the settings and starts fetching; a failure shows up on the
@@ -205,17 +207,27 @@ if (!hasSingleInstanceLock) {
     // starts only when semantic search is on.
     memory.ensureLoaded()
     initMemoryCuration()
+
+    // The window and the voice open only once the services have started, so that a service that fails to start
+    // leaves no page that would listen and speak while the failed start downloads a newer version.
+    createWindow()
+    // The sidecars are warmed up here, and a failure does not stop the app from starting.
+    watchdog.checkAfter(asr.ensureServer().catch((error) => console.error('speech recognition failed to start:', error)))
+    watchdog.checkAfter(tts.ensureEngine().then(() => aizuchi.getBank()).catch((error) => console.error('TTS preparation failed:', error)))
+    // The aizuchi classifier stays resident when it is prepared and aizuchi are wanted; without it no
+    // aizuchi plays at the head of a turn.
+    if (aizuchiClassifier.wanted(getSettings())) void aizuchiClassifier.ensureStarted()
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
     initAppUpdates()
 
-    // The window only hides when it is closed and is destroyed only by a quit, so it is never created a second
-    // time, which would register the IPC handlers again.
+    // The window only hides when it is closed and is destroyed only by a quit or by a start that failed, which
+    // never reaches here, so it is never created a second time, which would register the IPC handlers again.
     app.on('activate', () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
     })
   }).catch((error: unknown) => quitAfterFailedStart(error))
 }
 
-app.on('window-all-closed', () => {
-  app.quit()
-})
+// The window closes only when the app quits, which ends the app by itself, or when a start that failed closes it
+// before it checks for an update, which must not end the app, so the last window closing never quits.
+app.on('window-all-closed', () => undefined)

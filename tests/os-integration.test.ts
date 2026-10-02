@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   shutdown: vi.fn<() => Promise<void>>(),
   liveStop: vi.fn<() => Promise<void>>(),
   register: vi.fn((_accelerator: string, _callback: () => void) => true),
+  unregisterAll: vi.fn(),
+  trays: [] as Array<{ destroyed: boolean }>,
   buildMenu: vi.fn((_template: Array<{ label?: string; click?: () => void }>) => ({})),
   settings: { globalHotkey: false },
   windows: false
@@ -32,9 +34,16 @@ vi.mock('electron', () => {
     }
   }
   class Tray {
+    destroyed = false
+    constructor() {
+      mocks.trays.push(this)
+    }
     setToolTip(): void {}
     setContextMenu(): void {}
     on(): void {}
+    destroy(): void {
+      this.destroyed = true
+    }
   }
   return {
     app: {
@@ -42,7 +51,7 @@ vi.mock('electron', () => {
       quit: mocks.quit
     },
     dialog: { showErrorBox: mocks.showErrorBox },
-    globalShortcut: { unregister: vi.fn(), register: mocks.register, unregisterAll: vi.fn() },
+    globalShortcut: { unregister: vi.fn(), register: mocks.register, unregisterAll: mocks.unregisterAll },
     Menu: { buildFromTemplate: mocks.buildMenu },
     nativeImage: { createFromDataURL: () => ({ setTemplateImage: vi.fn() }), createEmpty: () => ({ addRepresentation: vi.fn() }) },
     Notification,
@@ -75,6 +84,7 @@ function hiddenWindow() {
     hide: vi.fn(),
     show: vi.fn(),
     focus: vi.fn(),
+    isDestroyed: () => false,
     isVisible: () => false,
     isFocused: () => false,
     isMinimized: () => false,
@@ -103,6 +113,8 @@ beforeEach(async () => {
   mocks.shutdown.mockReset()
   mocks.liveStop.mockReset().mockResolvedValue(undefined)
   mocks.register.mockReset().mockReturnValue(true)
+  mocks.unregisterAll.mockClear()
+  mocks.trays.length = 0
   mocks.buildMenu.mockClear()
   mocks.settings.globalHotkey = false
   mocks.windows = false
@@ -247,5 +259,18 @@ describe('the tray menu', () => {
     template.find((item) => item.label === 'app.tray.toggleMic')!.click!()
     mocks.register.mock.calls[0][1]()
     expect(window.webContents.send.mock.calls.map(([channel]) => channel)).toEqual([IpcChannel.ToggleMic, IpcChannel.HotkeyMic])
+  })
+})
+
+describe('leaving the OS before the window is closed outside a quit', () => {
+  it('takes the tray away and frees the hotkey, so that neither can bring the window back', () => {
+    mocks.settings.globalHotkey = true
+    os.setupOsIntegration(hiddenWindow() as never)
+    os.leaveOs()
+    expect(mocks.trays.map((tray) => tray.destroyed)).toEqual([true])
+    expect(mocks.unregisterAll).toHaveBeenCalled()
+    expect(os.hotkeyStatus()).toBe('off')
+    os.refreshHotkey()
+    expect(mocks.register).toHaveBeenCalledOnce()
   })
 })

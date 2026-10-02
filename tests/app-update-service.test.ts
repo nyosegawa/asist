@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ windows: false, feed: true, updater: null as unknown as FakeUpdater, squirrel: null as unknown as EventEmitter }))
 
 class FakeUpdater extends EventEmitter {
+  autoInstallOnAppQuit = false
   checkForUpdates = vi.fn(async () => undefined)
   quitAndInstall = vi.fn()
 }
@@ -123,6 +124,30 @@ describe('the update after a start that failed', () => {
     await vi.advanceTimersByTimeAsync(60 * 60_000)
     await expect(install).rejects.toThrow()
     expect(mocks.updater.quitAndInstall).not.toHaveBeenCalled()
+  })
+
+  it('gives up a differential download that reached 100 % and stalls once it starts over in full', async () => {
+    const service = await load('windows')
+    const version = service.versionAfterFailedStart()
+    mocks.updater.emit('update-available', { version: '0.1.2' })
+    await version
+    const givenUp = expect(service.installAfterFailedStart()).rejects.toThrow()
+    mocks.updater.emit('download-progress', { percent: 100 })
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    await givenUp
+  })
+
+  it('leaves nothing to install at the quit once it has given up a download, even if the download then finishes', async () => {
+    const service = await load('windows')
+    const version = service.versionAfterFailedStart()
+    mocks.updater.emit('update-available', { version: '0.1.2' })
+    await version
+    const givenUp = expect(service.installAfterFailedStart()).rejects.toThrow()
+    expect(mocks.updater.autoInstallOnAppQuit).toBe(true)
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    await givenUp
+    mocks.updater.emit('update-downloaded', { version: '0.1.2' })
+    expect(mocks.updater.autoInstallOnAppQuit).toBe(false)
   })
 
   it('waits for Squirrel.Mac to stage a downloaded version however long it takes, then installs it and starts it', async () => {

@@ -33,6 +33,15 @@ function stopPageWork(): void {
   void live.stop().catch((error) => console.error('live stop failed:', error))
 }
 
+/**
+ * Closes the window for good outside a quit, as a start that failed does before it checks for an update, and
+ * stops what its page started. A destroyed window never shows again and its page stops at once.
+ */
+export function closeAppPage(window: BrowserWindow): void {
+  stopPageWork()
+  window.destroy()
+}
+
 /** Follows the page in the window: what the old page started stops when it is replaced, and a crashed page is loaded again. */
 export function watchAppPage(window: BrowserWindow, appPage: string): void {
   window.webContents.on('did-navigate', () => {

@@ -84,20 +84,21 @@ export function readyUpdateInstall(): () => void {
 export async function versionAfterFailedStart(): Promise<string | null> {
   initAppUpdates()
   const state = await settledState((state) => state.phase !== 'checking')
-  return state.phase === 'downloading' || state.phase === 'ready' ? state.version : null
+  return 'version' in state ? state.version : null
 }
 
 /** The install of the version found after a failed start, once it is downloaded. Throws why the download failed or stalled. */
 export async function installAfterFailedStart(): Promise<() => void> {
-  const state = await settledState((state) => state.phase !== 'checking' && state.phase !== 'downloading')
+  const state = await settledState((state) => state.phase !== 'checking' && state.phase !== 'downloading' && state.phase !== 'staging')
   if (state.phase === 'failed') throw new Error(state.message)
   return readyUpdateInstall()
 }
 
 /**
- * The first state of the update that `settled` accepts, the current one included. A wait for the network that
- * hears nothing for FAILED_START_STALL_MS ends as a failure. Once the whole version is downloaded nothing is
- * cut short: Squirrel.Mac reports nothing while it unpacks and verifies the version, and reads no network.
+ * The first state of the update that `settled` accepts, the current one included. A check or a download that
+ * hears nothing for FAILED_START_STALL_MS ends as a failure, whatever percentage it has reached: a differential
+ * download that reaches 100 % and then fails its checksum starts over in full. Staging is not cut short, since
+ * Squirrel.Mac reports nothing while it unpacks and verifies the version and reads no network.
  */
 function settledState(settled: (state: AppUpdateState) => boolean): Promise<AppUpdateState> {
   return new Promise((resolve) => {
@@ -110,10 +111,12 @@ function settledState(settled: (state: AppUpdateState) => boolean): Promise<AppU
     const follow = (state: AppUpdateState): void => {
       clearTimeout(stall)
       if (settled(state)) return finish(state)
-      const waitsForNetwork = state.phase === 'checking' || (state.phase === 'downloading' && state.percent < 100)
-      if (!waitsForNetwork) return
+      if (state.phase !== 'checking' && state.phase !== 'downloading') return
       stall = setTimeout(() => {
         console.error(`app update after a failed start: nothing received for ${FAILED_START_STALL_MS / 1000} s (${state.phase})`)
+        // electron-updater goes on with a download the app gave up on, and would install it at the quit without
+        // starting ASIST, on Windows by the NSIS installer and on macOS by handing it to Squirrel.Mac.
+        autoUpdater.autoInstallOnAppQuit = false
         finish({ phase: 'failed', message: errorText('app.startup.updateStalled') })
       }, FAILED_START_STALL_MS)
     }

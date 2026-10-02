@@ -157,13 +157,25 @@ export function setupOsIntegration(window: BrowserWindow): void {
     const job = event.job
     if (isBackgroundJob(job) || !isJobTerminal(job.status) || notified.has(job.id)) return
     notified.add(job.id)
-    if (window.isVisible() && window.isFocused()) return
+    if (!window.isDestroyed() && window.isVisible() && window.isFocused()) return
     if (job.status === 'done') notify(t('app.notify.jobDone'), job.title)
     else if (job.status === 'error') notify(t('app.notify.jobFailed'), job.title)
   })
 }
 
 let hotkeyRefresher: (() => void) | null = null
+
+/**
+ * Takes the tray and the hotkey away before the window is closed outside a quit, as after a start that failed:
+ * either would bring back a window that is gone.
+ */
+export function leaveOs(): void {
+  tray?.destroy()
+  tray = null
+  hotkeyRefresher = null
+  globalShortcut.unregisterAll()
+  hotkey = 'off'
+}
 
 /** Words the tray menu again, after the interface language changed. */
 export function refreshTrayMenu(): void {
