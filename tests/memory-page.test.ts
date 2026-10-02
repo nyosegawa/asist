@@ -10,9 +10,17 @@ import {
   unitsOfJournal,
   unitsOfPage
 } from '@shared/memory-page'
-import { INSTRUCTION_MAX_CHARS, SECTION_MAX_CHARS } from '../resources/skills/memory-format.mjs'
+import {
+  PROMPT_DOCUMENT_MAX_TOKENS,
+  SECTION_MAX_CHARS,
+  promptBody,
+  promptSize,
+  textForTokens,
+  tokenEstimate
+} from '@shared/memory-format'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
+import TOKEN_SAMPLES from './fixtures/token-estimate-samples.json'
 
 const ja = createTranslator('ja-JP')
 
@@ -143,7 +151,7 @@ describe('units', () => {
   it('decides the kind from the file path, with fixed names for user.md and me.md, journal/ for entries and pages/ for pages', () => {
     expect(classifyFile('user.md')).toEqual({ kind: 'user', title: 'ユーザー' })
     expect(classifyFile('me.md')).toEqual({ kind: 'me', title: '私について' })
-    expect(classifyFile('instruction.md')).toEqual({ kind: 'instruction', title: 'いつも覚えておくこと' })
+    expect(classifyFile('instruction.md').kind).toBeNull()
     expect(classifyFile('profile.md').kind).toBeNull()
     expect(classifyFile('pages/田中部長.md')).toEqual({ kind: 'page', title: '田中部長' })
     expect(classifyFile('journal/2026-09-07.md')).toEqual({ kind: 'journal', title: '2026-09-07' })
@@ -163,20 +171,17 @@ describe('units', () => {
     const embedded = (file: string, page: string, heading: string): string =>
       embeddingTextOf({ file, kind: file.startsWith('journal/') ? 'journal' : 'section', page, heading, text: 'x', date: '2026-09-20' })
     expect([
-      embedded('user.md', 'The user', 'Preferences'),
-      embedded('user.md', 'ユーザー', '習慣'),
-      embedded('me.md', 'About me', 'Who I am'),
-      embedded('me.md', '私について', '好きなもの、気になっていること'),
       embedded('pages/Mugi.md', 'Mugi', 'Summary'),
+      embedded('pages/Mugi.md', 'Mugi', 'My impression'),
       embedded('pages/ムギ.md', 'ムギ', '私の印象'),
-      embedded('journal/2026-09-20.md', '2026-09-20', 'Myself today')
-    ]).toEqual(['The user: x', 'ユーザー: x', 'About me: x', '私について: x', 'Mugi: x', 'ムギ: x', 'Journal of 2026-09-20: x'])
+      embedded('journal/2026-09-20.md', '2026-09-20', 'Myself today'),
+      embedded('journal/2026-09-20.md', '2026-09-20', 'A subject')
+    ]).toEqual(['Mugi: x', 'Mugi: x', 'ムギ: x', 'Journal of 2026-09-20: x', 'Journal of 2026-09-20: x'])
     expect([
-      embedded('user.md', 'The user', 'Walnut allergy'),
-      embedded('me.md', 'About me', 'Bonsai'),
+      embedded('pages/Mugi.md', 'Mugi', 'Walnut allergy'),
       embedded('pages/松葉軒.md', '松葉軒', '好み'),
       embedded('journal/2026-09-20.md', '2026-09-20', 'Bonsai')
-    ]).toEqual(['The user Walnut allergy: x', 'About me Bonsai: x', '松葉軒 好み: x', 'Journal of 2026-09-20 Bonsai: x'])
+    ]).toEqual(['Mugi Walnut allergy: x', '松葉軒 好み: x', 'Journal of 2026-09-20 Bonsai: x'])
   })
 
   it('names the journal in English in an entry written in another language, and leaves a Japanese entry as it was', () => {
@@ -207,7 +212,6 @@ describe('documents', () => {
     })
     expect(documentOf('journal/2026-09-07.md', '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n')).toMatchObject({ kind: 'journal', title: '2026-09-07', updated: '2026-09-07', headings: ['四季の話'] })
     expect(documentOf('me.md', '---\nupdated: 2026-09-09\n---\n# 私について\n\n## 私は誰か\n落ち着いた声で話す。\n')).toMatchObject({ kind: 'me', title: '私について' })
-    expect(documentOf('instruction.md', '# いつも覚えておくこと\n\n## この人について\n東京に住む。\n')).toMatchObject({ kind: 'instruction', title: 'いつも覚えておくこと' })
     expect(() => documentOf('notes.md', '')).toThrow(errorText('memory.errors.notADocument', { file: 'notes.md' }))
   })
 
@@ -220,6 +224,9 @@ describe('documents', () => {
     expect(validateDocument('journal/2026-09-07.md', '# 2026-09-07\n## 四季の話\n春は桜を勧めた。\n', ja)).toEqual([])
     expect(validateDocument('../me.md', '', ja)).toEqual([ja('memory.check.wrongPlace', { file: '../me.md' })])
     expect(validateDocument('profile.md', '# 要点\n## 要点\n本文\n', ja)).toEqual([ja('memory.check.wrongPlace', { file: 'profile.md' })])
+    expect(validateDocument('instruction.md', '# いつも覚えておくこと\n## この人について\n東京に住む。\n', ja)).toEqual([
+      ja('memory.check.wrongPlace', { file: 'instruction.md' })
+    ])
   })
 
   it('refuses the obsolete frontmatter keys kind and links', () => {
@@ -265,23 +272,9 @@ describe('documents', () => {
     ])
     expect(validateDocument('me.md', '---\naliases: [アシスト]\n---\n# 私について\n## 私は誰か\n落ち着いた声で話す。\n', ja)).toEqual([
       ja('memory.check.aliasesOnlyOnPages', { file: 'me.md' })
-    ])    // An empty list is refused too, as validate.mjs refuses it, so a page the Agent passes is never refused at the merge.
+    ])    // An empty list is refused too, as validate.py refuses it, so a page the Agent passes is never refused at the merge.
     expect(validateDocument('user.md', '---\naliases: []\nupdated: 2026-09-09\n---\n# ユーザー\n## 好み\n辛さは控えめ。\n', ja)).toEqual([
       ja('memory.check.aliasesOnlyOnPages', { file: 'user.md' })
-    ])
-  })
-
-  it('accepts instruction.md with a # line and headings, and refuses one with frontmatter, without a # line or without headings', () => {
-    const valid = '# いつも覚えておくこと\n\n## この人について\n東京に住む。\n\n## 頼まれていること\n朝は短く話す。\n'
-    expect(validateDocument('instruction.md', valid, ja)).toEqual([])
-    expect(validateDocument('instruction.md', `---\nupdated: 2026-09-09\n---\n${valid}`, ja)).toEqual([
-      ja('memory.check.frontmatterNotAllowed', { file: 'instruction.md' })
-    ])
-    expect(validateDocument('instruction.md', '## この人について\n東京に住む。\n', ja)).toEqual([
-      ja('memory.check.titleMissing', { file: 'instruction.md' })
-    ])
-    expect(validateDocument('instruction.md', '# いつも覚えておくこと\n東京に住む。\n', ja)).toEqual([
-      ja('memory.check.noHeadings', { file: 'instruction.md' })
     ])
   })
 
@@ -294,23 +287,55 @@ describe('documents', () => {
     expect(validateDocument(file, above, ja)).toEqual([ja('memory.check.duplicateHeading', { file, line: 7, heading: '要約', first: 5 })])
   })
 
-  it('caps the text above the first heading like any other section, in me.md written as prose as well', () => {
-    const prose = '私は落ち着いて話すアシスタントで、確かめてから答えることを大事にしている。'.repeat(30)
-    expect(validateDocument('me.md', `---\nupdated: 2026-09-20\n---\n# 私について\n\n${prose}\n`, ja)).toEqual([
-      ja('memory.check.sectionTooLong', { file: 'me.md', line: 6, heading: '要約', limit: SECTION_MAX_CHARS })
+  it('caps the text above the first heading of a page like any other section', () => {
+    const prose = '本人の行きつけのラーメン屋で、麺類の気分のときにまず名前が出る。'.repeat(30)
+    expect(validateDocument('pages/松葉軒.md', `---\nupdated: 2026-09-20\n---\n# 松葉軒\n\n${prose}\n\n## 好み\n辛さは控えめ。\n`, ja)).toEqual([
+      ja('memory.check.sectionTooLong', { file: 'pages/松葉軒.md', line: 6, heading: '要約', limit: SECTION_MAX_CHARS })
     ])
   })
 
-  it('caps instruction.md as a whole, counting the heading lines as the system prompt carries them and leaving out whitespace', () => {
-    const sections = (bodyLength: number): string =>
-      Array.from({ length: 4 }, (_, i) => `## 見出し${i}\n${'あ'.repeat(bodyLength)}\n\n`).join('')
-    // Each heading line "## 見出しN" is 6 characters without its space, so four sections of 494 characters
-    // come to exactly the cap.
-    const atCap = sections(INSTRUCTION_MAX_CHARS / 4 - 6)
-    expect(validateDocument('instruction.md', `# いつも覚えておくこと\n\n${atCap}`, ja)).toEqual([])
-    expect(validateDocument('instruction.md', `# いつも覚えておくこと\n\n${atCap}## 追加\nあ\n`, ja)).toEqual([
-      ja('memory.check.instructionTooLong', { file: 'instruction.md', limit: INSTRUCTION_MAX_CHARS })
-    ])
+  it('caps each document of the prompt by the tokens its body costs there, and not by the length of a section', () => {
+    const shapes = {
+      'me.md': (body: string) => `---\nupdated: 2026-09-20\n---\n# 私について\n\n${body}\n`,
+      'user.md': (body: string) => `---\nupdated: 2026-09-20\n---\n# ユーザー\n\n## 好み\n${body}\n`
+    }
+    for (const [file, shape] of Object.entries(shapes)) {
+      // The body grows a sentence at a time, then a character at a time, up to the last length the limit takes.
+      let body = ''
+      const sentence = '麺類が好きで、辛さは控えめを選ぶ。'
+      while (promptSize(shape(body + sentence)).tokens <= PROMPT_DOCUMENT_MAX_TOKENS) body += sentence
+      while (promptSize(shape(body + 'あ')).tokens <= PROMPT_DOCUMENT_MAX_TOKENS) body += 'あ'
+      // A section far past the cap of a page's section is no problem in a document that goes whole into the prompt.
+      expect([file, validateDocument(file, shape(body), ja)]).toEqual([file, []])
+      const over = shape(`${body}あ`)
+      const size = promptSize(over)
+      expect(size.tokens).toBeGreaterThan(PROMPT_DOCUMENT_MAX_TOKENS)
+      const cut = textForTokens(size, size.tokens - PROMPT_DOCUMENT_MAX_TOKENS).characters
+      expect([file, validateDocument(file, over, ja)]).toEqual([
+        file,
+        [ja('memory.check.tooManyTokens', { file, tokens: size.tokens, limit: PROMPT_DOCUMENT_MAX_TOKENS, characters: cut })]
+      ])
+    }
+  })
+
+  it('estimates the tokens of a text in each conversation language near what OpenAI and Gemini count, and not under them', () => {
+    // The counts were measured on 2026-10-02: o200k_base, which OpenAI's models and gpt-oss use, and the
+    // countTokens of Gemini 3.8 Flash, without the token its message wrapper adds.
+    for (const [language, sample] of Object.entries(TOKEN_SAMPLES)) {
+      const estimate = tokenEstimate(sample.text)
+      expect([language, estimate >= 0.9 * sample.o200k && estimate <= 1.35 * sample.o200k]).toEqual([language, true])
+      expect([language, estimate >= 0.9 * sample.gemini]).toEqual([language, true])
+    }
+  })
+
+  it('counts a document of the prompt as the prompt carries it, without its frontmatter and its name line', () => {
+    const body = '## 好み\n麺類が好きで、辛さは控えめを選ぶ。'
+    const page = `---\nupdated: 2026-09-20\n---\n# ユーザー\n\n${body}\n`
+    expect(promptBody(page)).toBe(body)
+    expect(promptSize(page).tokens).toBe(tokenEstimate(body))
+    // Over by some tokens, the text to cut is that share of the document's own characters and words.
+    const size = { tokens: 200, characters: 300, words: 60 }
+    expect(textForTokens(size, 20)).toEqual({ characters: 30, words: 6 })
   })
 
   it('accepts a page under either fixed heading, and names the English one to a page written in English', () => {
