@@ -63,8 +63,8 @@ type Overlap =
 const INPUT_STALL_MS = 1_000
 
 /**
- * A VAP estimate of audio older than this is not used: a stopped worker sends none, and a backed-up one says how far
- * behind the audio its estimates are. It allows the 80 ms frame, about 20 ms of inference and the IPC.
+ * A VAP value made from audio older than this is not used: a stopped worker sends none, and a backed-up one says how
+ * far behind the audio each of its models is. It allows the 80 ms frame, about 20 ms of inference and the IPC.
  */
 const VAP_STALE_MS = 500
 
@@ -192,8 +192,10 @@ export class VoiceController {
     })
   }
   private vapState: VapState | null = null
-  /** When the audio the newest estimate was made from reached the worker, on performance.now(). */
+  /** When the audio the newest estimate's pNow, pFuture, eotUser and bcDetUser were made from reached the worker. */
   private vapStateAt = 0
+  /** The same for its bcReact, bcEmo and nods, which another of the worker's models makes at its own pace. */
+  private backchannelStateAt = 0
   private vapUnsubscribe: (() => void) | null = null
   private vapAudio = new VapAudio((user, assistant) => {
     void window.api.vapPush(user, assistant).catch(() => {})
@@ -228,7 +230,7 @@ export class VoiceController {
       onSpeechEnd: (utterance) => this.endCapture(utterance)
     })
     this.vad.speechProbProvider = () => this.silero.currentProb()
-    this.vad.eotProvider = () => (this.vapFresh() ? this.vapState!.eotUser : null)
+    this.vad.eotProvider = () => this.recentVap(this.vapStateAt)?.eotUser ?? null
     this.vad.holdProvider = () => this.holdProvider?.() ?? false
     speechPlayer.onOutputSamples = (samples) => {
       if (this.usesMaai() && this.state !== 'off') {
@@ -331,7 +333,7 @@ export class VoiceController {
     const verdict = classifyOverlap({
       voicedMs,
       speechMs,
-      bcDet: this.vapFresh() ? this.vapState!.bcDetUser : null,
+      bcDet: this.recentVap(this.vapStateAt)?.bcDetUser ?? null,
       confirmMs: this.bargeInConfirmMs,
       minSpeechMs: this.bargeInMinSpeechMs
     })
@@ -364,6 +366,8 @@ export class VoiceController {
     // A voice returning after an aizuchi means it landed on a pause inside a sentence.
     if (this.vad.isSpeaking && this.vad.silenceDuration === 0) this.listening.voiced()
     const now = performance.now()
+    const turn = this.recentVap(this.vapStateAt)
+    const backchannel = this.recentVap(this.backchannelStateAt)
     const decision = shouldBackchannel({
       userSpeaking: this.vad.isSpeaking,
       assistantSpeaking: speechPlayer.isPlaying,
@@ -371,13 +375,10 @@ export class VoiceController {
       utteranceMs: this.vad.utteranceDuration,
       partialText: this.lastPartial,
       msSinceLast: now - this.lastBackchannelAt,
-      vap: this.vapFresh()
-        ? {
-            eotUser: this.vapState!.eotUser,
-            bcReact: this.vapState!.bcReact,
-            bcEmo: this.vapState!.bcEmo
-          }
-        : null
+      vap:
+        turn && backchannel
+          ? { eotUser: turn.eotUser, bcReact: backchannel.bcReact, bcEmo: backchannel.bcEmo }
+          : null
     })
     if (decision) {
       this.lastBackchannelAt = now
@@ -390,12 +391,11 @@ export class VoiceController {
   private maybeNod(): void {
     if (!this.vad.speechConfirmed) return
     const now = performance.now()
+    const backchannel = this.recentVap(this.backchannelStateAt)
     const kind = shouldNod({
       userSpeaking: this.vad.isSpeaking,
       assistantSpeaking: speechPlayer.isPlaying,
-      nod: this.vapFresh()
-        ? { short: this.vapState!.nodShort, long: this.vapState!.nodLong }
-        : null,
+      nod: backchannel ? { short: backchannel.nodShort, long: backchannel.nodLong } : null,
       msSinceLast: now - this.lastNodAt
     })
     if (kind) {
@@ -428,8 +428,10 @@ export class VoiceController {
   private startMaai(): void {
     if (!this.usesMaai()) return
     this.vapUnsubscribe ??= window.api.onVapState((state) => {
+      const now = performance.now()
       this.vapState = state
-      this.vapStateAt = performance.now() - state.lagMs
+      this.vapStateAt = now - state.turnLagMs
+      this.backchannelStateAt = now - state.backchannelLagMs
       this.maybeNod()
     })
     void window.api.vapStart().then(
@@ -453,11 +455,13 @@ export class VoiceController {
     this.events.emit('maaiUnavailable')
   }
 
-  /** Whether the newest VAP estimate is about recent enough audio to be used. */
-  private vapFresh(): boolean {
-    return (
-      this.usesMaai() && this.vapState !== null && performance.now() - this.vapStateAt < VAP_STALE_MS
-    )
+  /**
+   * The newest VAP estimate, while the audio the values in question were made from, which reached the worker at
+   * heardAt, is recent enough to use them.
+   */
+  private recentVap(heardAt: number): VapState | null {
+    const recent = this.usesMaai() && performance.now() - heardAt < VAP_STALE_MS
+    return recent ? this.vapState : null
   }
 
   setHangover(ms: number): void {

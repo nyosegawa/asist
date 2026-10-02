@@ -125,10 +125,13 @@ export interface VapState {
   /** The inference time of one frame, in milliseconds. */
   inferMs: number
   /**
-   * How much audio had reached the worker beyond what this estimate was made from, in milliseconds. A worker
-   * slower than real time keeps sending an estimate per frame, each about older audio.
+   * How much newer audio had reached the worker than the frame pNow, pFuture, eotUser and bcDetUser were made
+   * from, in milliseconds. A worker slower than real time keeps sending an estimate per frame, each about older
+   * audio.
    */
-  lagMs: number
+  turnLagMs: number
+  /** The same for bcReact, bcEmo and the nods, which another of the worker's models makes at its own pace. */
+  backchannelLagMs: number
 }
 
 export interface VapStatus {

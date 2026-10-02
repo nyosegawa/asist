@@ -125,7 +125,8 @@ describe('MaAI by conversation language', () => {
 /** A pause inside a sentence: the EoT is low, so MaAI extends the wait past the fixed hangover. */
 const midSentence: VapState = {
   t: 0, pNowUser: 0.9, pNowAssistant: 0.1, pFutureUser: 0.9, pFutureAssistant: 0.1,
-  eotUser: 0.1, bcDetUser: 0, bcReact: 0, bcEmo: 0, nodShort: 0, nodLong: 0, inferMs: 1, lagMs: 0
+  eotUser: 0.1, bcDetUser: 0, bcReact: 0, bcEmo: 0, nodShort: 0, nodLong: 0, inferMs: 1,
+  turnLagMs: 0, backchannelLagMs: 0
 }
 
 describe('MaAI that starts taking part while the microphone is on', () => {
@@ -198,7 +199,11 @@ describe('MaAI that starts taking part while the microphone is on', () => {
 })
 
 describe('MaAI estimates from a worker that has fallen behind the audio', () => {
-  it('leaves the end of speech to the fixed hangover while the estimates describe audio seconds old', async () => {
+  /** Turns the microphone on with MaAI and returns a way to speak while the worker sends the given estimate. */
+  async function listeningWithMaai(estimate: VapState): Promise<{
+    controller: InstanceType<typeof VoiceController>
+    speak: (frames: number, level: number) => void
+  }> {
     const listeners: Array<(state: VapState) => void> = []
     vi.mocked(window.api.onVapState).mockImplementation((listener: (state: VapState) => void) => {
       listeners.push(listener)
@@ -211,22 +216,39 @@ describe('MaAI estimates from a worker that has fallen behind the audio', () => 
     controller.conversationLocale = 'ja-JP'
     internals(controller).microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
     await controller.enable()
-    const ends: number[] = []
-    controller.events.on('speechend', ({ vadMs }) => ends.push(vadMs))
     const vad = internals(controller).vad as { push(frame: Float32Array): void }
-    // The worker answers every frame on time, but about audio that reached it three seconds earlier.
     const speak = (frames: number, level: number): void => {
       for (let i = 0; i < frames; i++) {
-        for (const listener of listeners) listener({ ...midSentence, lagMs: 3_000 })
+        for (const listener of listeners) listener(estimate)
         vad.push(new Float32Array(320).fill(level))
       }
     }
+    return { controller, speak }
+  }
+
+  it('leaves the end of speech to the fixed hangover while the estimates describe audio seconds old', async () => {
+    // The worker answers every frame on time, but about audio that reached it three seconds earlier.
+    const { controller, speak } = await listeningWithMaai({ ...midSentence, turnLagMs: 3_000, backchannelLagMs: 3_000 })
+    const ends: number[] = []
+    controller.events.on('speechend', ({ vadMs }) => ends.push(vadMs))
 
     // A second of speech and a 500 ms pause, which the fixed hangover ends.
     speak(50, 0.1)
     speak(25, 0)
 
     expect(ends).toHaveLength(1)
+    controller.disable()
+  })
+
+  it('lets the turn-taking values move the end of speech while only the aizuchi and nod model is behind', async () => {
+    const { controller, speak } = await listeningWithMaai({ ...midSentence, turnLagMs: 0, backchannelLagMs: 3_000 })
+    const ends: number[] = []
+    controller.events.on('speechend', ({ vadMs }) => ends.push(vadMs))
+
+    speak(50, 0.1)
+    speak(25, 0)
+
+    expect(ends).toEqual([])
     controller.disable()
   })
 })
