@@ -74,6 +74,53 @@ describe('resolving a weather location', () => {
     expect(resolveWeatherLocation('色丹村')).toMatchObject({ status: 'location_unavailable' })
   })
 })
+
+describe('resolving a place of Japan named in romaji', () => {
+  // A conversation in another language names the places of Japan as that language writes them, while the
+  // region stays Japan and the weather comes from the Japan Meteorological Agency.
+  const sameAs = (romaji: string, japanese: string) =>
+    expect(resolve(romaji).municipalityCode, romaji).toBe(resolve(japanese).municipalityCode)
+
+  it('resolves a prefecture or municipality to the place its Japanese name resolves to', () => {
+    sameAs('Hokkaido', '北海道')
+    sameAs('Sapporo', '札幌市')
+    sameAs('Tokyo', '東京都')
+    sameAs('Osaka, Japan', '大阪府')
+    sameAs('Tōkyō', '東京都')
+    sameAs('Kobe', '神戸市')
+    sameAs('Sendai City', '仙台市')
+    sameAs('Shinjuku-ku', '新宿区')
+    sameAs('Shinjuku Ward, Tokyo', '新宿区')
+    sameAs('Hakuba Village, Nagano, Japan', '白馬村')
+    expect(resolve('Hokkaido').usedRepresentative).toBe(true)
+    expect(resolveWeatherLocation('Atlantis')).toMatchObject({ status: 'location_not_found' })
+    expect(resolveWeatherLocation('Sapporo, Tokyo')).toMatchObject({ status: 'location_not_found' })
+  })
+  it('takes a name followed by the word for a city or town to that municipality, not to the prefecture of the same name', () => {
+    sameAs('Okinawa', '沖縄県')
+    sameAs('Okinawa City', '沖縄市')
+    sameAs('Fukushima Town, Hokkaido', '北海道福島町')
+  })
+  it('returns the candidates for a name several municipalities share, each named so that it resolves to itself', () => {
+    const issue = resolveWeatherLocation('Fuchu')
+    expect(issue).toMatchObject({ status: 'location_ambiguous' })
+    const candidates = ('candidates' in issue && issue.candidates) || []
+    expect(candidates.map((c) => c.municipalityCode)).toEqual(
+      expect.arrayContaining([resolve('東京都府中市').municipalityCode, resolve('広島県府中市').municipalityCode])
+    )
+    for (const c of candidates) expect(resolve(c.location).municipalityCode).toBe(c.municipalityCode)
+  })
+  it('reaches every municipality the Japan Meteorological Agency forecasts for by its English name and its prefecture', () => {
+    // "Esashi Town, Hokkaido" is two towns, "江差町" and "枝幸町", so a name may reach its place among candidates.
+    const own = regions.municipalities.filter((p) => p.class20?.startsWith(p.code))
+    const unreached = own.filter((p) => {
+      const result = resolveWeatherLocation(`${p.enName}, ${p.prefectureId}`)
+      const reached = 'status' in result ? (result.candidates ?? []).map((c) => c.municipalityCode) : [result.municipalityCode]
+      return !reached.includes(p.code)
+    })
+    expect(unreached.map((p) => p.prefecture + p.name)).toEqual([])
+  })
+})
 describe('weather codes', () => {
   it('has a word and icons of the existing set for every code, and treats an unknown code as missing', () => {
     const icons = ['clear', 'cloudy', 'rain', 'snow', 'storm']
