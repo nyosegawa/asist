@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { createTranslator } from '@shared/i18n'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { REGIONS, regionCurrency } from '@shared/conversation-locale'
 import { readErrorText } from '@shared/i18n/error-text'
+import { WHOLE_READ_LIMIT } from '@shared/files'
 import munichGeocoding from './fixtures/weather/munich-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
 
@@ -21,6 +22,10 @@ vi.mock('../src/main/services/settings', () => ({
 vi.mock('../src/main/services/calendar', () => ({ searchCalendar: mocks.searchCalendar }))
 vi.mock('electron', () => ({ app: { getVersion: () => '9.9.9' } }))
 vi.mock('../src/main/services/agent', () => ({ allowedFileRoots: () => mocks.roots }))
+vi.mock('../src/main/services/platform', async () => {
+  const { MACOS } = await import('./helpers/platform')
+  return { platformCapabilities: () => MACOS }
+})
 
 type Fetch = ReturnType<typeof vi.fn>
 
@@ -307,6 +312,30 @@ describe('the files card (show_files)', () => {
       }
     }
   )
+
+  it('tells the model of each file the card leaves out for its size, and of no file the card shows', async () => {
+    const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
+    // Files lengthened without writing to them, so that a size past a limit costs no time.
+    const file = (name: string, sizeBytes: number): string => {
+      const target = path.join(root, name)
+      writeFileSync(target, '')
+      truncateSync(target, sizeBytes)
+      return target
+    }
+    const sheet = WHOLE_READ_LIMIT.xlsx!
+    const waveform = WHOLE_READ_LIMIT.audio!
+    mocks.roots = [root]
+    try {
+      const result = await fetchPanel('files', {
+        paths: [file('sales.xlsx', sheet + 1), file('budget.xlsx', sheet), file('lecture.mp3', waveform + 1), file('notes.md', 12)]
+      })
+      // The model is handed the data the fetcher prepared for it, or the card's props when there is none.
+      const { items } = (result.data ?? result.props) as { items: Array<{ name: string; notShown?: string }> }
+      expect(items.filter((item) => item.notShown).map((item) => item.name)).toEqual(['sales.xlsx'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('the news card', () => {

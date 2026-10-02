@@ -1,5 +1,5 @@
 import { errorText } from '@shared/i18n/error-text'
-import { languageOf, regionCurrency } from '@shared/conversation-locale'
+import { languageOf, promptText, regionCurrency, type PromptText } from '@shared/conversation-locale'
 import { conversationLocale, region } from './conversation-locale'
 import { weatherPanelProps } from './weather'
 import { chooseGeocoded, geocodingUrl, type GeocodedPlace } from './weather/open-meteo'
@@ -9,9 +9,12 @@ import { addDays } from '@shared/calendar-layout'
 import { NEWS_TOP_TOPIC } from '@shared/panel-catalog'
 import { searchCalendar } from './calendar'
 import { getMailService } from './mail'
+import { tooLargeToShow } from '@shared/files'
+import type { OsFamily } from '@shared/platform'
 import { fileItem } from './file-preview'
 import { fileUrl } from '../file-protocol'
 import { allowedFileRoots } from './agent'
+import { platformCapabilities } from './platform'
 import { userAgent } from './user-agent'
 import { fetchFailure } from './fetch-failure'
 import { t } from './i18n'
@@ -223,6 +226,18 @@ const mailMessage: Fetcher = async (props) => {
   }
 }
 
+/** What the model is told of a file the card left out for its size, naming what the card's button opens. */
+const TOO_LARGE_TO_SHOW: Record<OsFamily, PromptText> = {
+  macos: {
+    ja: '大きすぎるので、カードには中身を出していない。カードに出ているのは、名前と大きさと、Finder で表示するボタンだけである。',
+    en: 'Too large for the card to show: it gives only the name and the size, with a button that shows the file in Finder.'
+  },
+  windows: {
+    ja: '大きすぎるので、カードには中身を出していない。カードに出ているのは、名前と大きさと、エクスプローラーで表示するボタンだけである。',
+    en: 'Too large for the card to show: it gives only the name and the size, with a button that shows the file in File Explorer.'
+  }
+}
+
 const files: Fetcher = async (props) => {
   const paths = Array.isArray(props.paths) ? props.paths.map(String) : []
   if (paths.length === 0) throw new Error(errorText('panels.errors.noPaths'))
@@ -231,7 +246,12 @@ const files: Fetcher = async (props) => {
   if (items.every((item) => item.error)) {
     throw new Error(errorText('panels.errors.filesUnreadable', { files: items.map((item) => `${item.name}: ${item.error}`).join(' / ') }))
   }
-  return { props: { ...props, paths, items }, source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length }) }
+  const notShown = promptText(conversationLocale(), TOO_LARGE_TO_SHOW[platformCapabilities().os])
+  return {
+    props: { ...props, paths, items },
+    data: { ...props, paths, items: items.map((item) => (tooLargeToShow(item) ? { ...item, notShown } : item)) },
+    source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length })
+  }
 }
 
 const FETCHERS: Record<string, Fetcher> = {

@@ -155,6 +155,15 @@ export function tooLargeToRead(item: Pick<FileItem, 'kind' | 'sizeBytes'>): bool
   return limit !== undefined && item.sizeBytes > limit
 }
 
+/**
+ * Whether the files card says the item is too large to show here in place of its content. Both the card and the
+ * result show_files gives the model ask it, so that the model never says it opened a file the card left out. Audio
+ * is shown at any size, since <audio> plays it by ranges; only its waveform is left out (tooLargeToRead).
+ */
+export function tooLargeToShow(item: Pick<FileItem, 'kind' | 'sizeBytes'>): boolean {
+  return item.kind !== 'audio' && tooLargeToRead(item)
+}
+
 export interface FileEntry {
   name: string
   path: string
