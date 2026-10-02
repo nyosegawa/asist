@@ -9,7 +9,7 @@ import { FrozenMemoryBlock } from '@shared/memory-block'
 import { embeddingModelKey } from '@shared/memory-embedding'
 import * as embedding from './embedding'
 import { MemoryIndex, type IndexSearchOptions, type MemorySearchHit } from './memory-index'
-import { parseMemoryPageInput } from '@shared/memory-page'
+import { parseMemoryPageInput, type PromptDocumentKind } from '@shared/memory-page'
 import * as store from './memory-store'
 import { conversationLocale } from './conversation-locale'
 import { skillSourceDir } from './memory-curation-skill'
@@ -21,11 +21,10 @@ import { getSettings } from './settings'
  * by memory-store.ts, and search runs against the index built from it by memory-index.ts in
  * userData/memory-index.db.
  *
- * There are three ways memory is read: instruction.md, the summary of the user and of the assistant
- * itself, which becomes the memory block in the system prompt and is rebuilt only when at least 5 minutes
- * have passed since the previous turn; the injection that runs ahead of a turn, through search; and the
- * recall tool, also through search. user.md, me.md, the pages and the journal are reached only through
- * search.
+ * There are three ways memory is read: me.md and user.md, which become the memory block in
+ * the system prompt and are read again only when at least 5 minutes have passed since the previous turn or
+ * after a change ASIST made to them; the injection that runs ahead of a turn, through search; and the
+ * recall tool, also through search. The pages and the journal are reached only through search.
  *
  * Nothing is memorized during a conversation. The memory is written by the daily curation Agent in
  * memory-curation.ts, which works in a worktree, and by editing, creating and deleting from the memory
@@ -45,10 +44,16 @@ const INDEX_FILE = 'memory-index.db'
  */
 const MISSING_SCAN = 32
 
-/** The line that introduces each memory block in the system prompt, read by the model in its language. */
-export const MEMORY_HEADER: PromptText = {
-  ja: '# いつも覚えておくこと(instruction.md。この人のこと、私自身のこと、頼まれていること。毎日の整理が書き、本人も直す)',
-  en: "# Always keep in mind (instruction.md: this person, myself, and what I have been asked. The daily curation writes it, and the user edits it too.)"
+/** The line each document of the memory block stands under in the system prompt, read by the model in its language. */
+export const PROMPT_DOCUMENT_HEADERS: Record<PromptDocumentKind, PromptText> = {
+  me: {
+    ja: '# 私について(me.md。私自身のこと。人柄、大事にしていること、この人との関係、いま思っていること。毎日の整理が書き、本人も直す)',
+    en: '# About me (me.md: myself. Who I am, what I care about, how the two of us get on, what is on my mind. The daily curation writes it, and the user edits it too.)'
+  },
+  user: {
+    ja: '# ユーザー(user.md。この人のこと。属性、好み、習慣、ASIST への期待。「ASIST への期待」は本人に頼まれたこと。毎日の整理が書き、本人も直す)',
+    en: '# The user (user.md: this person. Their details, preferences, habits, and what they expect of me, which is what they have asked of me. The daily curation writes it, and the user edits it too.)'
+  }
 }
 
 let index: MemoryIndex | null = null
@@ -126,7 +131,7 @@ function requireOpen(): void {
   ensureLoaded()
 }
 
-/** The documents in the order the screen shows them: instruction.md, me.md, user.md, the pages, then the journal with the newest day first. */
+/** The documents in the order the screen shows them: me.md, user.md, the pages, then the journal with the newest day first. */
 export function documents(): MemoryDocument[] {
   requireOpen()
   return store.listDocuments()
@@ -195,6 +200,15 @@ export async function search(
   if (embeddingAvailable()) [queryVector] = await embedding.embed([query], 'query', signal)
   signal?.throwIfAborted()
   return idx.search(query, { ...options, queryVector })
+}
+
+/**
+ * The bodies of me.md and user.md as they are now. The index leaves them out, since every prompt holds them
+ * whole, so a lookup that searches the memory for something other than the prompt reads them here.
+ */
+export function promptDocumentBodies(): string[] {
+  open()
+  return store.readPromptDocuments().map(({ body }) => body)
 }
 
 export function overview(): MemoryOverview {
@@ -316,15 +330,16 @@ export function embeddingStatus(): EmbeddingStatus {
 }
 
 /**
- * The memory block built from instruction.md. It is rebuilt only when at least 5 minutes have passed since
- * the previous turn, and stays frozen while the prompt cache is alive.
+ * The memory block built from me.md and user.md. It is rebuilt only when at least 5 minutes
+ * have passed since the previous turn, and stays frozen while the prompt cache is alive.
  */
 const block = new FrozenMemoryBlock(() => {
-  const instruction = store.readInstruction()
-  return instruction ? `${promptText(conversationLocale(), MEMORY_HEADER)}\n${instruction}` : null
+  const locale = conversationLocale()
+  const documents = store.readPromptDocuments().map(({ kind, body }) => `${promptText(locale, PROMPT_DOCUMENT_HEADERS[kind])}\n${body}`)
+  return documents.length > 0 ? documents.join('\n\n') : null
 })
 
-/** Called at the start of a turn. It returns null when memory is unavailable or instruction.md has no body. */
+/** Called at the start of a turn. It returns null when memory is unavailable or neither me.md nor user.md has a body. */
 export function promptBlock(now = Date.now()): string | null {
   if (unavailableReason()) return null
   return block.forTurn(now)

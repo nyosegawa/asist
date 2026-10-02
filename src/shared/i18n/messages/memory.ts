@@ -196,19 +196,6 @@ export const memory = defineMessages({
       'pt-BR': 'O usuário',
       'es-419': 'El usuario',
       'es-ES': 'El usuario'
-    },
-    instruction: {
-      'ja-JP': 'いつも覚えておくこと',
-      'en-US': 'Always keep in mind',
-      'fr-FR': 'À toujours garder en tête',
-      'de-DE': 'Immer im Blick',
-      'hi-IN': 'हमेशा याद रखने वाली बातें',
-      'id-ID': 'Selalu diingat',
-      'it-IT': 'Da tenere sempre a mente',
-      'ko-KR': '늘 기억해 둘 것',
-      'pt-BR': 'Manter sempre em mente',
-      'es-419': 'Tener siempre presente',
-      'es-ES': 'Tener siempre presente'
     }
   },
   meta: {
@@ -278,43 +265,30 @@ export const memory = defineMessages({
       'es-ES': ', '
     },
     me: {
-      'ja-JP': 'me.md · 私自身のこと。関係する話のときに検索で引かれます',
-      'en-US': 'me.md · About myself. Found by search when a conversation touches it',
-      'fr-FR': 'me.md · Sur moi-même. Retrouvé par la recherche quand la conversation y touche',
-      'de-DE': 'me.md · Über mich selbst. Wird von der Suche gefunden, wenn das Gespräch es berührt',
-      'hi-IN': 'me.md · मेरे बारे में। बातचीत से जुड़ने पर खोज से मिलता है',
-      'id-ID': 'me.md · Tentang diri saya. Ditemukan lewat pencarian saat percakapan menyinggungnya',
-      'it-IT': 'me.md · Su di me. La ricerca lo trova quando la conversazione lo tocca',
-      'ko-KR': 'me.md · 나 자신에 관한 것. 관련된 이야기일 때 검색으로 찾습니다',
-      'pt-BR': 'me.md · Sobre mim. A busca encontra quando a conversa toca no assunto',
-      'es-419': 'me.md · Sobre mí. La búsqueda lo encuentra cuando la conversación lo toca',
-      'es-ES': 'me.md · Sobre mí. La búsqueda lo encuentra cuando la conversación lo toca'
-    },
-    instruction: {
-      'ja-JP': 'instruction.md · 毎回の system prompt に載ります。整理が書き、ここでも直せます',
-      'en-US': 'instruction.md · Goes into every system prompt. The curation writes it, and you can edit it here',
-      'fr-FR': "instruction.md · Va dans chaque prompt système. L'organisation l'écrit, et vous pouvez le modifier ici",
-      'de-DE': 'instruction.md · Kommt in jeden system prompt. Die Gedächtnispflege schreibt sie, und Sie können sie hier bearbeiten',
-      'hi-IN': 'instruction.md · हर system prompt में जाती है। सफ़ाई इसे लिखती है, और आप इसे यहाँ बदल सकते हैं',
-      'id-ID': 'instruction.md · Masuk ke setiap system prompt. Penataan menulisnya, dan Anda bisa mengubahnya di sini',
-      'it-IT': 'instruction.md · Va in ogni system prompt. Il riordino lo scrive, e puoi modificarlo qui',
-      'ko-KR': 'instruction.md · 매번 system prompt에 들어갑니다. 정리가 쓰고, 여기서도 고칠 수 있습니다',
-      'pt-BR': 'instruction.md · Vai em todo system prompt. A organização escreve, e você pode editar aqui',
-      'es-419': 'instruction.md · Se incluye en cada system prompt. La organización lo escribe y puedes editarlo aquí',
-      'es-ES': 'instruction.md · Se incluye en todos los system prompts. La organización lo escribe y puedes editarlo aquí'
+      'ja-JP': 'me.md · 私自身のこと。毎回の system prompt に載ります。整理が書き、ここでも直せます',
+      'en-US': 'me.md · About myself. Goes into every system prompt. The curation writes it, and you can edit it here',
+      'fr-FR': "me.md · Sur moi-même. Va dans chaque prompt système. L'organisation l'écrit, et vous pouvez le modifier ici",
+      'de-DE': 'me.md · Über mich selbst. Kommt in jeden system prompt. Die Gedächtnispflege schreibt sie, und Sie können sie hier bearbeiten',
+      'hi-IN': 'me.md · मेरे बारे में। हर system prompt में जाती है। सफ़ाई इसे लिखती है, और आप इसे यहाँ बदल सकते हैं',
+      'id-ID': 'me.md · Tentang diri saya. Masuk ke setiap system prompt. Penataan menulisnya, dan Anda bisa mengubahnya di sini',
+      'it-IT': 'me.md · Su di me. Va in ogni system prompt. Il riordino lo scrive, e puoi modificarlo qui',
+      'ko-KR': 'me.md · 나 자신에 관한 것. 매번 system prompt에 들어갑니다. 정리가 쓰고, 여기서도 고칠 수 있습니다',
+      'pt-BR': 'me.md · Sobre mim. Vai em todo system prompt. A organização escreve, e você pode editar aqui',
+      'es-419': 'me.md · Sobre mí. Se incluye en cada system prompt. La organización lo escribe y puedes editarlo aquí',
+      'es-ES': 'me.md · Sobre mí. Se incluye en todos los system prompts. La organización lo escribe y puedes editarlo aquí'
     },
     user: {
-      'ja-JP': 'user.md · ユーザー本人の属性、好み、習慣、ASIST への期待',
-      'en-US': "user.md · The user's own details, preferences, habits and what they expect of ASIST",
-      'fr-FR': "user.md · Les informations, les goûts, les habitudes de l'utilisateur et ce qu'il attend d'ASIST",
-      'de-DE': 'user.md · Angaben, Vorlieben und Gewohnheiten des Nutzers und was er von ASIST erwartet',
-      'hi-IN': 'user.md · यूज़र की अपनी जानकारी, पसंद, आदतें और ASIST से उम्मीदें',
-      'id-ID': 'user.md · Data diri, kesukaan, kebiasaan pengguna, dan harapannya pada ASIST',
-      'it-IT': "user.md · Dati, preferenze e abitudini dell'utente e cosa si aspetta da ASIST",
-      'ko-KR': 'user.md · 사용자 본인의 정보, 취향, 습관, ASIST에 대한 기대',
-      'pt-BR': 'user.md · Dados, preferências e hábitos do próprio usuário e o que ele espera do ASIST',
-      'es-419': 'user.md · Los datos, las preferencias, los hábitos del usuario y lo que espera de ASIST',
-      'es-ES': 'user.md · Datos, preferencias, costumbres del propio usuario y lo que espera de ASIST'
+      'ja-JP': 'user.md · ユーザー本人の属性、好み、習慣、ASIST への期待。毎回の system prompt に載ります。整理が書き、ここでも直せます',
+      'en-US': "user.md · The user's own details, preferences, habits and what they expect of ASIST. Goes into every system prompt. The curation writes it, and you can edit it here",
+      'fr-FR': "user.md · Les informations, les goûts, les habitudes de l'utilisateur et ce qu'il attend d'ASIST. Va dans chaque prompt système. L'organisation l'écrit, et vous pouvez le modifier ici",
+      'de-DE': 'user.md · Angaben, Vorlieben und Gewohnheiten des Nutzers und was er von ASIST erwartet. Kommt in jeden system prompt. Die Gedächtnispflege schreibt sie, und Sie können sie hier bearbeiten',
+      'hi-IN': 'user.md · यूज़र की अपनी जानकारी, पसंद, आदतें और ASIST से उम्मीदें। हर system prompt में जाती है। सफ़ाई इसे लिखती है, और आप इसे यहाँ बदल सकते हैं',
+      'id-ID': 'user.md · Data diri, kesukaan, kebiasaan pengguna, dan harapannya pada ASIST. Masuk ke setiap system prompt. Penataan menulisnya, dan Anda bisa mengubahnya di sini',
+      'it-IT': "user.md · Dati, preferenze e abitudini dell'utente e cosa si aspetta da ASIST. Va in ogni system prompt. Il riordino lo scrive, e puoi modificarlo qui",
+      'ko-KR': 'user.md · 사용자 본인의 정보, 취향, 습관, ASIST에 대한 기대. 매번 system prompt에 들어갑니다. 정리가 쓰고, 여기서도 고칠 수 있습니다',
+      'pt-BR': 'user.md · Dados, preferências e hábitos do próprio usuário e o que ele espera do ASIST. Vai em todo system prompt. A organização escreve, e você pode editar aqui',
+      'es-419': 'user.md · Los datos, las preferencias, los hábitos del usuario y lo que espera de ASIST. Se incluye en cada system prompt. La organización lo escribe y puedes editarlo aquí',
+      'es-ES': 'user.md · Datos, preferencias, costumbres del propio usuario y lo que espera de ASIST. Se incluye en todos los system prompts. La organización lo escribe y puedes editarlo aquí'
     }
   },
   doc: {
@@ -766,45 +740,6 @@ export const memory = defineMessages({
       'es-419': '{file}: no hay ningún encabezado «##»',
       'es-ES': '{file}: no hay ningún encabezado “##”'
     },
-    frontmatterNotAllowed: {
-      'ja-JP': '{file}: このファイルには frontmatter を置きません',
-      'en-US': '{file}: this file has no frontmatter',
-      'fr-FR': '{file} : ce fichier ne prend pas de frontmatter',
-      'de-DE': '{file}: diese Datei hat keinen frontmatter',
-      'hi-IN': '{file}: इस फ़ाइल में frontmatter नहीं होता',
-      'id-ID': '{file}: file ini tidak memakai frontmatter',
-      'it-IT': '{file}: questo file non ha frontmatter',
-      'ko-KR': '{file}: 이 파일에는 frontmatter를 두지 않습니다',
-      'pt-BR': '{file}: este arquivo não leva frontmatter',
-      'es-419': '{file}: este archivo no lleva frontmatter',
-      'es-ES': '{file}: este archivo no lleva frontmatter'
-    },
-    instructionTooLong: {
-      'ja-JP': '{file}: 全体が {limit} 字を超えています。毎回の会話に載るので、短くまとめます',
-      'en-US': '{file}: it is longer than {limit} characters. It goes into every conversation, so keep it short',
-      'fr-FR': '{file} : il dépasse {limit} caractères. Il accompagne chaque conversation, il doit rester court',
-      'de-DE': '{file}: sie ist länger als {limit} Zeichen. Sie steht in jedem Gespräch und muss kurz bleiben',
-      'hi-IN': '{file}: यह {limit} अक्षरों से लंबा है। यह हर बातचीत में जाता है, इसलिए इसे छोटा रखें',
-      'id-ID': '{file}: panjangnya lebih dari {limit} karakter. File ini ikut di setiap percakapan, jadi buat ringkas',
-      'it-IT': '{file}: supera {limit} caratteri. Va in ogni conversazione, quindi deve restare breve',
-      'ko-KR': '{file}: 전체가 {limit}자를 넘습니다. 매번 대화에 들어가므로 짧게 줄입니다',
-      'pt-BR': '{file}: passa de {limit} caracteres. Ele vai em toda conversa, então precisa ser curto',
-      'es-419': '{file}: supera los {limit} caracteres. Va en cada conversación, así que debe ser breve',
-      'es-ES': '{file}: supera los {limit} caracteres. Va en cada conversación, así que debe ser breve'
-    },
-    instructionMissing: {
-      'ja-JP': '{file} がありません',
-      'en-US': '{file} is missing',
-      'fr-FR': '{file} est absent',
-      'de-DE': '{file} fehlt',
-      'hi-IN': '{file} नहीं है',
-      'id-ID': '{file} tidak ada',
-      'it-IT': 'manca {file}',
-      'ko-KR': '{file}이 없습니다',
-      'pt-BR': 'falta {file}',
-      'es-419': 'falta {file}',
-      'es-ES': 'falta {file}'
-    },
     aliasesOnlyOnPages: {
       'ja-JP': '{file}: aliases は pages/ のページにだけ書きます',
       'en-US': '{file}: aliases belong on the pages under pages/ only',
@@ -819,17 +754,17 @@ export const memory = defineMessages({
       'es-ES': '{file}: aliases solo va en las páginas de pages/'
     },
     obsoleteFile: {
-      'ja-JP': '{file} は使わないので、中身を instruction.md か user.md に移してから消します',
-      'en-US': '{file} is no longer used; move what it holds into instruction.md or user.md and delete it',
-      'fr-FR': "{file} n'est plus utilisé ; déplacez son contenu dans instruction.md ou user.md, puis supprimez-le",
-      'de-DE': '{file} wird nicht mehr verwendet; übertragen Sie den Inhalt nach instruction.md oder user.md und löschen Sie die Datei',
-      'hi-IN': '{file} अब इस्तेमाल नहीं होती; इसकी बातें instruction.md या user.md में ले जाएँ और इसे मिटाएँ',
-      'id-ID': '{file} tidak dipakai lagi; pindahkan isinya ke instruction.md atau user.md, lalu hapus',
-      'it-IT': '{file} non si usa più; sposta il contenuto in instruction.md o user.md e cancellalo',
-      'ko-KR': '{file}은 더 이상 쓰지 않으므로, 내용을 instruction.md나 user.md로 옮긴 뒤 지웁니다',
-      'pt-BR': '{file} não é mais usado; passe o conteúdo para instruction.md ou user.md e apague o arquivo',
-      'es-419': '{file} ya no se usa; pasa su contenido a instruction.md o user.md y bórralo',
-      'es-ES': '{file} ya no se usa; pasa su contenido a instruction.md o user.md y bórralo'
+      'ja-JP': '{file} は使わないので、中身を me.md か user.md に移してから消します',
+      'en-US': '{file} is no longer used; move what it holds into me.md or user.md and delete it',
+      'fr-FR': "{file} n'est plus utilisé ; déplacez son contenu dans me.md ou user.md, puis supprimez-le",
+      'de-DE': '{file} wird nicht mehr verwendet; übertragen Sie den Inhalt nach me.md oder user.md und löschen Sie die Datei',
+      'hi-IN': '{file} अब इस्तेमाल नहीं होती; इसकी बातें me.md या user.md में ले जाएँ और इसे मिटाएँ',
+      'id-ID': '{file} tidak dipakai lagi; pindahkan isinya ke me.md atau user.md, lalu hapus',
+      'it-IT': '{file} non si usa più; sposta il contenuto in me.md o user.md e cancellalo',
+      'ko-KR': '{file}은 더 이상 쓰지 않으므로, 내용을 me.md나 user.md로 옮긴 뒤 지웁니다',
+      'pt-BR': '{file} não é mais usado; passe o conteúdo para me.md ou user.md e apague o arquivo',
+      'es-419': '{file} ya no se usa; pasa su contenido a me.md o user.md y bórralo',
+      'es-ES': '{file} ya no se usa; pasa su contenido a me.md o user.md y bórralo'
     },
     fileName: {
       'ja-JP': '{file}: ファイル名は YYYY-MM-DD.md にします',
@@ -856,6 +791,19 @@ export const memory = defineMessages({
       'pt-BR': '{file}: linha {line}, o título “{heading}” também está na linha {first}; junte os dois em um só',
       'es-419': '{file}: línea {line}, el encabezado «{heading}» también está en la línea {first}; júntalos en uno solo',
       'es-ES': '{file}: línea {line}, el encabezado “{heading}” también está en la línea {first}; júntalos en uno solo'
+    },
+    tooManyTokens: {
+      'ja-JP': '{file}: 約 {tokens} トークンあり、上限の {limit} を超えています。毎回の会話に載るので、あと約 {characters} 字短くまとめます',
+      'en-US': '{file}: it comes to about {tokens} tokens, over the limit of {limit}. It goes into every conversation, so cut about {characters} characters',
+      'fr-FR': "{file} : environ {tokens} tokens, au-delà de la limite de {limit}. Il accompagne chaque conversation, raccourcissez-le d'environ {characters} caractères",
+      'de-DE': '{file}: etwa {tokens} Tokens, mehr als die Grenze von {limit}. Sie steht in jedem Gespräch, kürzen Sie sie um etwa {characters} Zeichen',
+      'hi-IN': '{file}: लगभग {tokens} टोकन हैं, जो सीमा {limit} से ज़्यादा है। यह हर बातचीत में जाता है, इसलिए इसे लगभग {characters} अक्षर छोटा करें',
+      'id-ID': '{file}: sekitar {tokens} token, melebihi batas {limit}. File ini ikut di setiap percakapan, jadi pendekkan sekitar {characters} karakter',
+      'it-IT': '{file}: circa {tokens} token, oltre il limite di {limit}. Va in ogni conversazione, quindi accorcialo di circa {characters} caratteri',
+      'ko-KR': '{file}: 약 {tokens} 토큰으로 한도 {limit}을 넘습니다. 매번 대화에 들어가므로 약 {characters}자 줄입니다',
+      'pt-BR': '{file}: cerca de {tokens} tokens, acima do limite de {limit}. Ele vai em toda conversa, então encurte cerca de {characters} caracteres',
+      'es-419': '{file}: unos {tokens} tokens, más que el límite de {limit}. Va en cada conversación, así que acórtalo unos {characters} caracteres',
+      'es-ES': '{file}: unos {tokens} tokens, más que el límite de {limit}. Va en cada conversación, así que acórtalo unos {characters} caracteres'
     }
   },
   curation: {
@@ -1211,6 +1159,19 @@ export const memory = defineMessages({
       'pt-BR': 'o índice {file} está danificado e não pôde ser apagado para ser refeito ({message}). Verifique se nenhum outro app está com o arquivo aberto e abra o ASIST de novo',
       'es-419': 'el índice {file} está dañado y no se pudo borrar para volver a crearlo ({message}). Revisa que ninguna otra app tenga abierto el archivo y vuelve a abrir ASIST',
       'es-ES': 'el índice {file} está dañado y no se ha podido borrar para volver a crearlo ({message}). Comprueba que ninguna otra aplicación tenga abierto el archivo y vuelve a abrir ASIST'
+    },
+    checkPythonFailed: {
+      'ja-JP': '記憶の整理の確認に使う Python を用意できませんでした。初めての整理にはネットワークが要ります: {message}',
+      'en-US': 'The Python the memory curation checks its work with could not be prepared. The first curation needs the network: {message}',
+      'fr-FR': "Impossible de préparer le Python avec lequel l'organisation de la mémoire vérifie son travail. La première organisation a besoin du réseau : {message}",
+      'de-DE': 'Das Python, mit dem die Gedächtnispflege ihre Arbeit prüft, konnte nicht vorbereitet werden. Die erste Gedächtnispflege braucht das Netzwerk: {message}',
+      'hi-IN': 'याद की सफ़ाई जिस Python से अपना काम जाँचती है, वह तैयार नहीं हो सका। पहली सफ़ाई के लिए नेटवर्क चाहिए: {message}',
+      'id-ID': 'Python yang dipakai penataan ingatan untuk memeriksa hasilnya tidak bisa disiapkan. Penataan pertama memerlukan jaringan: {message}',
+      'it-IT': 'Non è stato possibile preparare il Python con cui il riordino della memoria controlla il suo lavoro. Il primo riordino ha bisogno della rete: {message}',
+      'ko-KR': '기억 정리가 작업을 확인하는 데 쓰는 Python을 준비하지 못했습니다. 첫 정리에는 네트워크가 필요합니다: {message}',
+      'pt-BR': 'Não foi possível preparar o Python com que a organização da memória confere o trabalho. A primeira organização precisa da rede: {message}',
+      'es-419': 'No se pudo preparar el Python con el que la organización de la memoria revisa su trabajo. La primera organización necesita la red: {message}',
+      'es-ES': 'No se ha podido preparar el Python con el que la organización de la memoria revisa su trabajo. La primera organización necesita la red: {message}'
     }
   }
 })
