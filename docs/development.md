@@ -125,7 +125,7 @@ npm run demo
 | `npm run demo:cards`、`npm run demo:gallery` | カードを 3 つの大きさで撮ります。一覧を 1 枚に撮ります。 |
 | `npm run demo:setup` | 初回セットアップを最初から最後まで歩いて撮ります。 |
 | `npm run demo:docs-shots` | README とドキュメントに載せる画面を、日本語と英語で `website/public/screens/` に撮り直します。 |
-| `npm run demo:fit` | 全言語で、カードと画面の文言が収まるかを調べます。20 秒ほどかかります。 |
+| `npm run demo:fit` | 全言語で、カードと画面の文言が収まるかを調べます。1 分ほどかかります。 |
 | `npm run demo:viewer-budgets` | 大きな PDF、Office のファイル、音声などを一時フォルダに作り、ファイルのカードとその拡大表示で開いて最後までスクロールし、表示までの時間、メイン スレッドが止まった最長の時間、レンダラーのメモリを測ります。`scripts/cdp/scenes/viewer-budgets/` の case に書いた上限を超えると終了コード 2 で終わります。`--measure all` は上限なしで全部のファイルを測ります。MP3 を作るには `lame` が、m4a を作るには macOS の `afconvert` が要ります。 |
 
 実際のサービスを使うセルフテストは、API キーと音声のサービスを用意し、ビルドのあとに実行します。
