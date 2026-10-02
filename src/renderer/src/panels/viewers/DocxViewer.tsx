@@ -35,7 +35,57 @@ type Shown =
 
 const nextFrame = (): Promise<void> => new Promise((resolve) => requestAnimationFrame(() => resolve()))
 
-const isTooLarge = (error: unknown): boolean => new RegExp(ERROR_MARKER).exec(errorMessageOf(error))?.[1] === 'files.viewer.tooLarge'
+/** The dictionary key an error was thrown with, as the preview page and its client throw them. */
+const keyOf = (error: unknown): string | undefined => new RegExp(ERROR_MARKER).exec(errorMessageOf(error))?.[1]
+
+/** The preview page stopped before it answered, as when another file took its process down; a new one answers. */
+const stopped = (error: unknown): boolean => keyOf(error) === 'files.errors.previewStopped'
+
+/** Asks again once when the preview page stopped before it answered, since the request starts a new one. */
+async function askAgainIfStopped<T>(ask: () => Promise<T>): Promise<T> {
+  try {
+    return await ask()
+  } catch (error) {
+    if (!stopped(error)) throw error
+    return ask()
+  }
+}
+
+/** The measures of the column a piece is laid out in. */
+interface ColumnMeasures {
+  width: number
+  fontSize: number
+  lineHeight: number
+}
+
+function columnOf(column: HTMLElement): ColumnMeasures {
+  const style = getComputedStyle(column)
+  return {
+    width: column.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+    fontSize: parseFloat(style.fontSize),
+    lineHeight: parseFloat(style.lineHeight)
+  }
+}
+
+/** Characters a line gives a whole em, as Japanese, Chinese and Korean take; the others take about half. */
+const WIDE = /[\u1100-\u11ff\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/g
+
+/**
+ * The height a piece will take once laid out: the lines its text fills at the column's width, at least one for each
+ * block, row and list item, a margin for each block, and three quarters of the column's width for each picture. A
+ * piece not laid out yet is given it, so that the scroll bar is near the length of the whole document from the start.
+ */
+function estimatedHeight(piece: HTMLElement, column: ColumnMeasures): number {
+  let lines = 0
+  for (const block of piece.children) {
+    const text = block.textContent ?? ''
+    const wide = text.match(WIDE)?.length ?? 0
+    const filled = Math.ceil(((wide + (text.length - wide) * 0.55) * column.fontSize) / column.width)
+    lines += Math.max(1, filled, block.querySelectorAll('tr, li').length)
+  }
+  const pictures = piece.querySelectorAll(`.${PICTURE_CLASS}`).length
+  return Math.round(lines * column.lineHeight + piece.children.length * column.fontSize * 0.6 + pictures * column.width * 0.75)
+}
 
 /** A piece of the document as nodes of the page, under an element of its own. */
 function pieceOf(html: string): HTMLDivElement {
@@ -50,6 +100,8 @@ const picturesIn = (root: ParentNode): HTMLCanvasElement[] => [...root.querySele
 interface Picture {
   near: boolean
   state: 'blank' | 'loading' | 'drawn'
+  /** Whether it was asked for again, while near, after the preview page stopped. */
+  askedAgain: boolean
   stop(): void
 }
 
@@ -98,11 +150,22 @@ function documentPictures(docx: OpenedDocx, watchNear: WatchNear, column: HTMLEl
       drawn.bitmap.close()
       canvas.dataset.state = 'drawn'
       picture.state = 'drawn'
-    } catch {
+    } catch (error) {
       if (watched.get(canvas) !== picture) return
+      picture.state = 'blank'
+      // A picture the preview page stopped on is asked for once more while it stays near, and again when it next
+      // comes near; so is one read while the file was being saved again, when it next comes near. Any other failure
+      // is the picture's own, such as a format the page cannot decode, and is shown as such.
+      if (stopped(error) && picture.near && !picture.askedAgain) {
+        picture.askedAgain = true
+        void draw(canvas, picture)
+        return
+      }
+      if (stopped(error) || keyOf(error) === 'files.errors.changedWhileReading') return
       forget(canvas)
       const failed = document.createElement('span')
       failed.className = PICTURE_CLASS
+      failed.dataset.picture = canvas.dataset.picture
       failed.dataset.state = 'failed'
       failed.textContent = translate('files.viewer.imageFailed')
       canvas.replaceWith(failed)
@@ -110,12 +173,14 @@ function documentPictures(docx: OpenedDocx, watchNear: WatchNear, column: HTMLEl
   }
 
   function watch(canvas: HTMLCanvasElement): void {
-    const picture: Picture = { near: false, state: 'blank', stop: () => undefined }
+    const picture: Picture = { near: false, state: 'blank', askedAgain: false, stop: () => undefined }
     watched.set(canvas, picture)
     picture.stop = watchNear(canvas, (near) => {
       picture.near = near
       if (near && picture.state === 'blank') void draw(canvas, picture)
-      if (!near && picture.state === 'drawn') release(canvas, picture)
+      if (near) return
+      picture.askedAgain = false
+      if (picture.state === 'drawn') release(canvas, picture)
     })
   }
 
@@ -125,17 +190,20 @@ function documentPictures(docx: OpenedDocx, watchNear: WatchNear, column: HTMLEl
     },
     /**
      * Moves the pictures of `from` that `to` holds as well into `to`, in place of its own empty ones, so that a
-     * piece taking the place of another keeps the pictures already drawn, and watches the rest of `to`.
+     * piece taking the place of another keeps the pictures already drawn or found unreadable, and watches the rest
+     * of `to`. Both come from one version of the file, so a path names the same picture in both.
      */
     carryOver(from: ParentNode, to: ParentNode): void {
-      const byPath = new Map<string, HTMLCanvasElement[]>()
-      for (const canvas of picturesIn(from)) byPath.set(canvas.dataset.picture!, [...(byPath.get(canvas.dataset.picture!) ?? []), canvas])
+      const byPath = new Map<string, HTMLElement[]>()
+      for (const picture of from.querySelectorAll<HTMLElement>(`.${PICTURE_CLASS}`)) {
+        byPath.set(picture.dataset.picture!, [...(byPath.get(picture.dataset.picture!) ?? []), picture])
+      }
       for (const canvas of picturesIn(to)) {
         const kept = byPath.get(canvas.dataset.picture!)?.shift()
         if (kept) canvas.replaceWith(kept)
         else watch(canvas)
       }
-      for (const left of byPath.values()) left.forEach(forget)
+      for (const left of byPath.values()) for (const picture of left) if (picture instanceof HTMLCanvasElement) forget(picture)
     },
     dispose(): void {
       for (const canvas of [...watched.keys()]) forget(canvas)
@@ -177,40 +245,40 @@ function DocxDocument({ item, mode, onTooLarge }: { item: FileItem; mode: Viewer
     const docx = openPreviewDocument<typeof openDocx>('docx', { url, sizeBytes, modifiedAt })
     const pictures = documentPictures(docx, watchNear, column)
     let ended = false
-    void (async () => {
-      try {
-        const head = await docx.call('head', undefined)
+    // Draws the document from its head, in place of anything drawn before.
+    const show = async (): Promise<void> => {
+      pictures.dispose()
+      column.replaceChildren()
+      const head = await askAgainIfStopped(() => docx.call('head', undefined))
+      if (ended) return
+      const headPiece = pieceOf(head.html)
+      column.append(headPiece)
+      pictures.watchIn(headPiece)
+      setShown({ status: 'head', more: head.more })
+      if (mode === 'card' || !head.more) return
+      const pieces = await askAgainIfStopped(() => docx.call('whole', undefined))
+      if (ended) return
+      const measures = columnOf(column)
+      for (const [index, html] of pieces.entries()) {
+        await nextFrame()
         if (ended) return
-        const headPiece = pieceOf(head.html)
-        column.append(headPiece)
-        pictures.watchIn(headPiece)
-        setShown({ status: 'head', more: head.more })
-        if (mode === 'card' || !head.more) return
-        const pieces = await docx.call('whole', undefined)
-        if (ended) return
-        // A piece not laid out yet takes the height the head took for as much HTML, which keeps the scroll bar
-        // near the length of the whole document. A head of empty paragraphs, which mammoth leaves out, gives none.
-        const pxPerChar = headPiece.getBoundingClientRect().height / Math.max(1, head.html.length)
-        for (const [index, html] of pieces.entries()) {
-          await nextFrame()
-          if (ended) return
-          const piece = pieceOf(html)
-          piece.style.containIntrinsicBlockSize = `auto ${Math.round(pxPerChar * html.length)}px`
-          if (index === 0) {
-            pictures.carryOver(headPiece, piece)
-            headPiece.replaceWith(piece)
-          } else {
-            column.append(piece)
-            pictures.watchIn(piece)
-          }
+        const piece = pieceOf(html)
+        piece.style.containIntrinsicBlockSize = `auto ${estimatedHeight(piece, measures)}px`
+        if (index === 0) {
+          pictures.carryOver(headPiece, piece)
+          headPiece.replaceWith(piece)
+        } else {
+          column.append(piece)
+          pictures.watchIn(piece)
         }
-        setShown({ status: 'whole' })
-      } catch (error) {
-        if (ended) return
-        if (isTooLarge(error)) tooLarge.current()
-        else setShown({ status: 'error', message: displayError(error) })
       }
-    })()
+      setShown({ status: 'whole' })
+    }
+    show().catch((error: unknown) => {
+      if (ended) return
+      if (keyOf(error) === 'files.viewer.tooLarge') tooLarge.current()
+      else setShown({ status: 'error', message: displayError(error) })
+    })
     return () => {
       ended = true
       pictures.dispose()

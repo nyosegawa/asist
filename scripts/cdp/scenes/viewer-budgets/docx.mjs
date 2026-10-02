@@ -3,22 +3,28 @@
  * and a loading note below it until the rest is mounted, so the default check, which waits for every loading note
  * in the frame, would time the whole document rather than what is in view. This check is the default one with the
  * loading note counted only where it can be seen: a screen at the end of the head is shown once the rest is there.
+ * Every picture in view has to be drawn, so that one shown as unreadable does not count as content, and the end of
+ * the focus view has to hold the report's last page, headed 「300.」, so that a focus view that mounts only the head
+ * fails.
  *
  * Measured on an M5 on 2026-10-02. Before the viewer was made light, with #198's limit lifted and a load average
  * of 6, mammoth read every photo in the page: the card and the focus view took 23.6 s and 23.2 s, held the page for
- * 742 ms and 697 ms, and grew it by 2.5 GB at the peak. After, in four runs under a load average of 26 to 42, the
- * card took 196 to 450 ms and the focus view 150 to 242 ms; the card held the page for at most 23 ms and the focus
- * view for 73 to 245 ms, the longest under the heaviest load, while a trace found no task over 34 ms; the slowest
- * screen took 70 to 81 ms; the renderers grew by 186 to 189 MB with the card, of which the preview page's process is
- * about 170 MB, by 377 to 434 MB at the peak and 141 to 292 MB at the end, and the GPU process by 67 to 87 MB.
+ * 742 ms and 697 ms, and grew it by 2.5 GB at the peak. After, in three runs under a load average of 18 to 25 on
+ * 2026-10-03, the card took 196 to 275 ms and the focus view 123 to 438 ms; the card held the page for at most
+ * 15 ms and the focus view for 56 to 330 ms, while a trace at a load average of 33 found no task with more than
+ * 28 ms of work, the longer ones waiting for the processor; the slowest screen took 59 to 74 ms; the renderers grew
+ * by 188 to 190 MB with the card, of which the preview page's process is about 170 MB, by 411 to 427 MB at the
+ * peak and 118 to 280 MB at the end, and the GPU process by 81 to 85 MB.
  */
 export const cases = [
   {
     name: 'docx-300',
     file: 'docx-300',
-    shown: (root) => {
+    shown: (root, mode) => {
       const frame = root.querySelector('.fv-frame')
       if (!frame || window.__budgetRefusal(root)) return false
+      const atEnd = mode === 'focus' && root.scrollTop + root.clientHeight >= root.scrollHeight - 2
+      if (atEnd && ![...frame.querySelectorAll('h1, h2, h3')].some((heading) => heading.textContent.trim().startsWith('300.'))) return false
       const clips = [root, frame.querySelector('.fv-scroll') ?? frame].map((el) => el.getBoundingClientRect())
       const area = {
         top: Math.max(0, ...clips.map((c) => c.top)),
@@ -45,7 +51,7 @@ export const cases = [
         }
         return false
       }
-      for (const canvas of frame.querySelectorAll('canvas')) if (inView(canvas) && !drawn(canvas)) return false
+      for (const picture of frame.querySelectorAll('.fv-doc-picture')) if (inView(picture) && !(picture instanceof HTMLCanvasElement && drawn(picture))) return false
       const aside = '.fv-note, .fv-stub, button'
       for (let row = 1; row <= 4; row++) {
         for (let column = 1; column <= 4; column++) {

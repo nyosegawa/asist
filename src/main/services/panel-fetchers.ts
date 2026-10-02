@@ -244,6 +244,10 @@ const CARD_TOLD = {
     ja: 'カードにもこの結果にも、最初の部分しかない。',
     en: 'The card and this result hold only the first part.'
   },
+  beginning: {
+    ja: 'カードには最初の部分だけを出している。続きはカードを拡大すると見られる。',
+    en: "The card shows only the beginning; the rest is in the card's focus view."
+  },
   button: {
     ja: '「{button}」のボタンは、ファイルが一つならカードに、複数なら一覧で選んだ先にある。',
     en: 'The button "{button}" is under a single file, or one picked from the list.'
@@ -263,18 +267,20 @@ function filesForModel(items: FileItem[]): Props {
   const say = (text: PromptText): string =>
     fillPrompt(promptText(conversationLocale(), text), { button: t(osMessageKey('files.reveal', platformCapabilities().os)) })
   const notShown = new Map<string, ToldGroup>()
-  const partlyShown: string[] = []
+  const partlyShown = new Map<string, ToldGroup>()
+  const group = (groups: Map<string, ToldGroup>, name: string, told: Omit<ToldGroup, 'files'>): void =>
+    void groups.set(told.why, { files: [...(groups.get(told.why)?.files ?? []), name], ...told })
   for (const item of items) {
     const view = cardView(item)
-    if (view.shows === 'firstPart') partlyShown.push(item.name)
+    if (view.shows === 'firstPart') group(partlyShown, item.name, { why: say(CARD_TOLD.firstPart), button: say(CARD_TOLD.button) })
+    if (view.shows === 'beginning') group(partlyShown, item.name, { why: say(CARD_TOLD.beginning) })
     if (view.shows !== 'nothing') continue
     // A file that could not be read gets no button on the card.
-    const told = view.why === 'unreadable' ? { why: view.error } : { why: say(CARD_TOLD[view.why]), button: say(CARD_TOLD.button) }
-    notShown.set(told.why, { files: [...(notShown.get(told.why)?.files ?? []), item.name], ...told })
+    group(notShown, item.name, view.why === 'unreadable' ? { why: view.error } : { why: say(CARD_TOLD[view.why]), button: say(CARD_TOLD.button) })
   }
   return {
     ...(notShown.size > 0 ? { notShown: [...notShown.values()] } : {}),
-    ...(partlyShown.length > 0 ? { partlyShown: [{ files: partlyShown, why: say(CARD_TOLD.firstPart), button: say(CARD_TOLD.button) }] } : {}),
+    ...(partlyShown.size > 0 ? { partlyShown: [...partlyShown.values()] } : {}),
     items: items.map(({ url, ...item }) => item)
   }
 }

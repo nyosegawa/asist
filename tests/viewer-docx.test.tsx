@@ -14,6 +14,7 @@ import { cleanDocxHtml } from '@/panels/viewers/docx-html'
 import { FileViewer } from '@/panels/viewers'
 import { useToastStore } from '@/state/stores'
 import { LayoutIntersectionObserver } from './helpers/intersection-observer'
+import { entryRanges } from './helpers/zip'
 
 /**
  * The Word viewer. Cleaning the HTML runs on string fixtures. The rendering runs the preview page's Word kind in
@@ -56,9 +57,12 @@ const openExternal = vi.fn(async (_url: string) => {})
 /** The bytes the server sent, and the Range header of each request. */
 let sent = 0
 let ranges: string[] = []
-/** What the stand-ins decoded and drew. */
+/** What the stand-ins decoded and drew, and the errors the next decodings throw instead. */
 let decoded: Array<{ size: number }> = []
 let drawn: unknown[] = []
+let decodeFailures: Error[] = []
+/** Whether the server refuses the next request for a range that is not the end of the file. */
+let refuseNext = false
 /** A URL of its own for each file, so that no test meets a document another test opened. */
 let fileNumber = 0
 
@@ -67,6 +71,10 @@ function serve(file: Uint8Array): void {
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     const header = new Headers(init?.headers).get('range') ?? ''
     ranges.push(header)
+    if (refuseNext && !header.startsWith('bytes=-')) {
+      refuseNext = false
+      return new Response('busy', { status: 503 })
+    }
     const range = /^bytes=(\d*)-(\d*)$/.exec(header)
     const suffix = range?.[1] === ''
     const start = !range ? 0 : suffix ? Math.max(0, file.length - Number(range[2])) : Number(range[1])
@@ -98,6 +106,8 @@ beforeEach(() => {
   vi.stubGlobal('createImageBitmap', async (source: Blob | FakeBitmap, options?: ImageBitmapOptions) => {
     if (source instanceof Blob) {
       decoded.push({ size: source.size })
+      const failure = decodeFailures.shift()
+      if (failure) throw failure
       return new FakeBitmap(2000, 1500)
     }
     return new FakeBitmap(options!.resizeWidth!, options!.resizeHeight!)
@@ -108,6 +118,8 @@ beforeEach(() => {
   ranges = []
   decoded = []
   drawn = []
+  decodeFailures = []
+  refuseNext = false
   openExternal.mockClear()
   useToastStore.setState({ toasts: [] })
   container = document.createElement('div')
@@ -156,13 +168,14 @@ const drawing = (rel: string, name: string): string =>
   `<pic:blipFill><a:blip r:embed="${rel}"/></pic:blipFill><pic:spPr/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
 
 /** A docx of the body's blocks, with the photos it names stored as Word stores them, in its media folder. */
-async function docxOf(blocks: string[], { photos = [] as string[], rels = '' } = {}): Promise<Uint8Array> {
+async function docxOf(blocks: string[], { photos = [] as string[], rels = '', parts = {} as Record<string, string> } = {}): Promise<Uint8Array> {
   const zip = new JSZip()
   zip.file('[Content_Types].xml', CONTENT_TYPES)
   zip.file('_rels/.rels', PACKAGE_RELS)
   zip.file('word/document.xml', `<w:document ${W} ${R}><w:body>${blocks.join('')}<w:sectPr/></w:body></w:document>`)
   const pictureRels = photos.map((photo, i) => `<Relationship Id="rIdP${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${photo}"/>`)
   zip.file('word/_rels/document.xml.rels', `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${pictureRels.join('')}${rels}</Relationships>`)
+  for (const [name, content] of Object.entries(parts)) zip.file(name, content, { compression: 'STORE' })
   for (const photo of photos) zip.file(`word/media/${photo}`, randomBytes(PICTURE), { compression: 'STORE' })
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })
 }
@@ -303,6 +316,143 @@ describe('Word viewer rendering', () => {
     // The head gave its place to the whole document, with the picture it had drawn in it, not read again.
     expect(focus.querySelector('canvas')).toBe(picture)
     expect(decoded).toHaveLength(1)
+  })
+
+  it('shows a picture it cannot decode as unreadable, asks again for one the preview page stopped on, and asks again for one read while the file was being saved, once it comes near again', async () => {
+    const file = await docxOf([drawing('rIdP0', '図1'), drawing('rIdP1', '図2'), drawing('rIdP2', '図3')], { photos: ['image1.jpeg', 'image2.jpeg', 'image3.jpeg'] })
+    serve(file)
+    const frame = await render(docxItem(nextUrl(), file.length), 'card')
+    place(frame.querySelector('.fv-scroll')!, 0, 420)
+    Object.defineProperty(frame.querySelector('.fv-doc')!, 'clientWidth', { value: 400 })
+    const [damaged, stopped, saved] = frame.querySelectorAll('canvas')
+    for (const canvas of [stopped, saved]) place(canvas, 5000, 150)
+
+    decodeFailures.push(new Error('The source image could not be decoded.'))
+    await moveTo(damaged, 100)
+    await settle(() => frame.querySelector('span.fv-doc-picture') !== null, 'the unreadable picture')
+    expect(frame.querySelector('span.fv-doc-picture')!.textContent).toBe(t('files.viewer.imageFailed'))
+
+    // The page stopped once, before it answered; the picture is asked for again and drawn.
+    decodeFailures.push(new Error('[asist:files.errors.previewStopped]'))
+    await moveTo(stopped, 100)
+    await settle(() => stopped.getAttribute('data-state') === 'drawn', 'the picture asked for again')
+    expect(decoded).toHaveLength(3)
+
+    // While the file is one byte longer, the picture cannot be read; it stays a picture to read, not an unreadable one.
+    const longer = new Uint8Array(file.length + 1)
+    longer.set(file)
+    serve(longer)
+    await moveTo(saved, 100)
+    await act(async () => new Promise((r) => setTimeout(r, 100)))
+    expect(saved.isConnected).toBe(true)
+    expect(saved.getAttribute('data-state')).toBeNull()
+    expect(frame.querySelectorAll('span.fv-doc-picture')).toHaveLength(1)
+    serve(file)
+    await moveTo(saved, 3000)
+    await moveTo(saved, 100)
+    await settle(() => saved.getAttribute('data-state') === 'drawn', 'the picture read again')
+  })
+
+  it('reads the document again for the focus view after the card failed to read it, rather than keeping the failure', async () => {
+    const file = await docxOf([paragraph('調査の結果'), drawing('rIdP0', '図1')], { photos: ['image1.jpeg'] })
+    serve(file)
+    refuseNext = true
+    const item = docxItem(nextUrl(), file.length)
+    const card = await render(item, 'card')
+    expect(card.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain(t('files.errors.loadFailed', { status: 503 }))
+    // The card still holds the document while the focus view opens it.
+    const box = document.createElement('div')
+    document.body.append(box)
+    const focusRoot = createRoot(box)
+    try {
+      await act(async () => focusRoot.render(<FileViewer item={item} mode="focus" size="focus" />))
+      await settle(() => box.querySelector('.fv-doc p') !== null, 'the focus view to show the document')
+      expect(box.querySelector('.fv-doc p')!.textContent).toBe('調査の結果')
+    } finally {
+      await act(async () => focusRoot.unmount())
+      box.remove()
+    }
+  })
+
+  it('follows a link pressed in the focus view before the rest of the document is mounted, once it is', async () => {
+    const blocks = Array.from({ length: 100 }, (_, i) => paragraph(`段落 ${i + 1}`))
+    blocks.unshift('<w:p><w:hyperlink w:anchor="_Last"><w:r><w:t>最後へ</w:t></w:r></w:hyperlink></w:p>')
+    blocks.push('<w:p><w:bookmarkStart w:id="0" w:name="_Last"/><w:r><w:t>最後の節</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>')
+    const file = await docxOf(blocks)
+    serve(file)
+    // The frames that mount the rest of the document wait until the test lets them run.
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+    const frame = await render(docxItem(nextUrl(), file.length), 'focus', (box) => box.querySelector('.fv-doc a') !== null)
+    scrollable(container, -500)
+    await act(async () => anchorIn(frame, '最後へ').click())
+    expect(frame.textContent).toContain(t('files.viewer.loading'))
+    expect(useToastStore.getState().toasts).toEqual([])
+    expect(container.scrollTop).toBe(0)
+    await settle(() => {
+      frames.splice(0).forEach((callback) => callback(0))
+      return !frame.textContent!.includes(t('files.viewer.loading'))
+    }, 'the rest of the document to be mounted')
+    expect(frame.querySelector('[id="docx-_Last"]')).not.toBeNull()
+    expect(container.scrollTop).toBe(500)
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('counts as blocks the paragraphs inside a content control and the rows of a table, and not the marks or empty paragraphs between them', async () => {
+    const row = (i: number): string => `<w:tr><w:tc><w:p><w:r><w:t>行 ${i}</w:t></w:r></w:p></w:tc></w:tr>`
+    const table = `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid>${Array.from({ length: 30 }, (_, i) => row(i + 1)).join('')}</w:tbl>`
+    const controlled = `<w:sdt><w:sdtPr/><w:sdtContent>${Array.from({ length: 30 }, (_, i) => paragraph(`項目 ${i + 1}`)).join('')}</w:sdtContent></w:sdt>`
+    const file = await docxOf([controlled, '<w:p/>', '<w:bookmarkStart w:id="1" w:name="x"/>', table])
+    serve(file)
+    const card = await render(docxItem(nextUrl(), file.length), 'card')
+    expect([...card.querySelectorAll('.fv-doc p')].filter((p) => !p.closest('td'))).toHaveLength(30)
+    expect(card.querySelectorAll('.fv-doc tr')).toHaveLength(10)
+    expect(card.textContent).toContain(t('files.viewer.docxMore'))
+
+    // Forty paragraphs followed by marks and empty paragraphs alone have no rest to point to.
+    const marks = '<w:bookmarkStart w:id="2" w:name="y"/><w:bookmarkEnd w:id="2"/><w:p><w:pPr/></w:p><w:p/>'
+    const whole = await docxOf([...Array.from({ length: 40 }, (_, i) => paragraph(`段落 ${i + 1}`)), marks, marks])
+    serve(whole)
+    const shown = await render(docxItem(nextUrl(), whole.length), 'card')
+    expect(shown.querySelectorAll('.fv-doc p')).toHaveLength(40)
+    expect(shown.textContent).not.toContain(t('files.viewer.docxMore'))
+  })
+
+  it('mounts a table too large for one piece as tables of rows, each with its header', { timeout: 30_000 }, async () => {
+    const cell = (text: string): string => `<w:tc><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:tc>`
+    const header = `<w:tr><w:trPr><w:tblHeader/></w:trPr>${cell('支店')}${cell('売上')}</w:tr>`
+    // About 280 characters of HTML a row, so that 400 rows fill more than two pieces.
+    const rows = Array.from({ length: 400 }, (_, i) => `<w:tr>${cell(`支店 ${i + 1} ${'説明'.repeat(100)}`)}${cell(`${(i + 1) * 1000} 円`)}</w:tr>`)
+    const file = await docxOf([`<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/><w:gridCol w:w="2000"/></w:tblGrid>${header}${rows.join('')}</w:tbl>`])
+    serve(file)
+    const frame = await render(docxItem(nextUrl(), file.length), 'focus', (box) => box.querySelector('table') !== null && !box.textContent!.includes(t('files.viewer.loading')))
+    const pieces = [...frame.querySelectorAll('.fv-doc-piece')]
+    expect(pieces.length).toBeGreaterThan(1)
+    for (const piece of pieces) {
+      expect(piece.querySelectorAll(':scope > table')).toHaveLength(1)
+      expect(piece.querySelector('tr')?.textContent).toBe('支店売上')
+    }
+    const bodyRows = [...frame.querySelectorAll('tr')].filter((tr) => tr.textContent !== '支店売上')
+    expect(bodyRows).toHaveLength(400)
+    expect(bodyRows.at(-1)?.textContent).toBe(`支店 400 ${'説明'.repeat(100)}400000 円`)
+  })
+
+  it('reads only the parts mammoth reads, and none of the other XML of the file', async () => {
+    const glossary = `<w:glossaryDocument ${W}>${'<w:p/>'.repeat(40_000)}</w:glossaryDocument>`
+    const file = await docxOf([paragraph('調査の結果')], { photos: ['image1.jpeg'], parts: { 'word/glossary/document.xml': glossary, 'customXml/item1.xml': `<data>${'x'.repeat(100_000)}</data>` } })
+    serve(file)
+    const item = docxItem(nextUrl(), file.length)
+    await render(item, 'card')
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await render(item, 'focus')
+    const unread = [...entryRanges(file)].filter(([name]) => name === 'word/glossary/document.xml' || name === 'customXml/item1.xml').map(([, range]) => range)
+    expect(unread).toHaveLength(2)
+    const asked = ranges.flatMap((header) => {
+      const range = /^bytes=(\d+)-(\d+)$/.exec(header)
+      return range ? [{ start: Number(range[1]), end: Number(range[2]) + 1 }] : []
+    })
+    expect(asked.filter((range) => unread.some((entry) => range.start < entry.end && entry.start < range.end))).toEqual([])
   })
 
   /** A docx with a table of contents entry, a link to a removed bookmark and a mail link. */
