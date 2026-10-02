@@ -9,7 +9,7 @@ import { FakeImap } from './helpers/fake-imap'
 
 /** The mail integration as Electron starts it, with the IMAP connection replaced by a fake. */
 
-const mocks = vi.hoisted(() => ({ userData: '', server: null as unknown as ReturnType<FakeImap['reconnectable']> }))
+const mocks = vi.hoisted(() => ({ userData: '', server: null as unknown as ReturnType<FakeImap['reconnectable']>, openCaches: new Set<{ close(): void }>() }))
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
   return {
@@ -41,6 +41,24 @@ const settings: MailSettings = {
 }
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'ja-JP', mail: settings }), saveSettings: () => undefined }))
 vi.mock('../src/main/services/mail-secrets', () => ({ createMailSecretStore: () => ({ get: () => 'app-password', set: () => undefined, remove: () => undefined }) }))
+// The app keeps its cache file open until its process ends, and Windows refuses to delete a file that is still
+// open, so each test closes what its launch left open, as the end of the process does.
+vi.mock('../src/main/services/mail-cache', async (importOriginal) => {
+  const { MailCache } = await importOriginal<typeof import('../src/main/services/mail-cache')>()
+  return {
+    MailCache: class extends MailCache {
+      constructor(file: string) {
+        super(file)
+        mocks.openCaches.add(this)
+      }
+
+      close(): void {
+        super.close()
+        mocks.openCaches.delete(this)
+      }
+    }
+  }
+})
 vi.mock('../src/main/services/mail-imap', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/main/services/mail-imap')>()),
   createImapClient: () => mocks.server.next().asClient()
@@ -74,6 +92,7 @@ beforeEach(() => {
 })
 afterEach(async () => {
   await stopMail()
+  for (const cache of mocks.openCaches) cache.close()
   vi.useRealTimers()
   rmSync(mocks.userData, { recursive: true, force: true })
 })

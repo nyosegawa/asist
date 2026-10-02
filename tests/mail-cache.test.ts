@@ -162,7 +162,9 @@ describe('MailCache', () => {
         expect(cache.list({ view: 'inbox' }).total).toBe(0)
         cache.upsert([message('inbox', { uid: 1 })])
         cache.close()
-        expect(new MailCache(file).list({ view: 'inbox' }).messages.map((m) => m.uid)).toEqual([1])
+        const reopened = new MailCache(file)
+        expect(reopened.list({ view: 'inbox' }).messages.map((m) => m.uid)).toEqual([1])
+        reopened.close()
       }
       // A folder in place of the file says nothing about the cache being broken.
       const folder = path.join(dir, 'folder.sqlite')
@@ -182,6 +184,7 @@ describe('MailCache', () => {
       const intact = new MailCache(path.join(dir, 'intact.sqlite'))
       intact.upsert([message('inbox', { uid: 1 })])
       expect(await intact.check()).toBeNull()
+      intact.close()
       const file = damagedCache(dir, 'data-pages.sqlite', (pages) => Math.floor(pages * 0.2) * 4096, (pages) => Math.floor(pages * 0.3) * 4096)
       const cache = new MailCache(file)
       const damage = await cache.check()
@@ -194,6 +197,7 @@ describe('MailCache', () => {
       const reopened = new MailCache(file)
       expect(reopened.list({ view: 'inbox' }).messages.map((m) => m.uid)).toEqual([1])
       expect(await reopened.check()).toBeNull()
+      reopened.close()
     } finally {
       warn.mockRestore()
       fs.rmSync(dir, { recursive: true, force: true })
