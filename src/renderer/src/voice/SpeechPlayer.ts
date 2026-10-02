@@ -317,9 +317,11 @@ registerProcessor('speech-tap', TapProcessor)
     return segment
   }
 
-  /** Drops a clip that still waits in the queue. One that has started plays to its end. */
-  dropWaiting(segment: SpeechSegment): void {
+  /** Drops a clip that still waits in the queue, and tells whether it was waiting. One that has started plays to its end. */
+  dropWaiting(segment: SpeechSegment): boolean {
+    const waiting = this.queue.includes(segment)
     this.queue = this.queue.filter((s) => s !== segment)
+    return waiting
   }
 
   /** Drops the preview playing and any preview waiting, leaving aizuchi and body segments alone. */

@@ -41,8 +41,8 @@ export class PartialLookahead<I extends { text: string }, R> {
   constructor(private readonly ports: LookaheadPorts<I, R>) {}
 
   /**
-   * Called when capture starts. The previous capture's request in flight still settles that capture's
-   * wait, and the input it holds is dropped.
+   * Called when capture starts. The previous capture's requests go on only while an end of speech waits
+   * for its result, which is then for its newest text; otherwise the input it holds is dropped.
    */
   reset(): void {
     this.capture = newCapture()
@@ -95,7 +95,7 @@ export class PartialLookahead<I extends { text: string }, R> {
       capture.inflight = false
       const next = capture.pending
       capture.pending = null
-      if (next && capture === this.capture) void this.run(capture, next)
+      if (next && (capture === this.capture || capture.waiters.length > 0)) void this.run(capture, next)
       else this.settle(capture)
     }
   }

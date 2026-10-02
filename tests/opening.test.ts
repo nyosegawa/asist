@@ -34,19 +34,25 @@ function setup(picked: AizuchiClip | null = clip) {
       })
   )
   const bodyQueued = { after: false }
-  const onBridgeOutcome = vi.fn()
+  const measure = vi.fn()
   const opening = new TurnOpening({
     pickAizuchi,
     play,
     synthesizeBridge,
     bodyQueuedAfter: () => bodyQueued.after,
-    onBridgeOutcome,
+    measure,
     withdrawBridge: (queued) => {
+      const wasWaiting = waiting.includes(queued)
       waiting.splice(0, waiting.length, ...waiting.filter((waitingClip) => waitingClip !== queued))
+      return wasWaiting
     }
   })
-  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, onBridgeOutcome, waiting }
+  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, measure, waiting }
 }
+
+/** The clips handed to the player, in order. */
+const queued = (play: ReturnType<typeof setup>['play']): SpeechSegment[] => play.mock.results.map((result) => result.value as SpeechSegment)
+const bridgesOf = (segments: SpeechSegment[]): string[] => segments.filter((segment) => segment.clip === 'bridge').map((segment) => segment.text)
 
 const flush = async (): Promise<void> => {
   await Promise.resolve()
@@ -125,7 +131,7 @@ describe('TurnOpening', () => {
   })
 
   it('leaves the bridge unplayed and records it as late when the body of the reply was queued first', async () => {
-    const { opening, play, resolvers, bodyQueued, onBridgeOutcome } = setup()
+    const { opening, play, resolvers, bodyQueued, measure } = setup()
     opening.begin(input)
     await flush()
     opening.claim(10)
@@ -133,17 +139,17 @@ describe('TurnOpening', () => {
     resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
     await flush()
     expect(play).toHaveBeenCalledTimes(1)
-    expect(onBridgeOutcome).toHaveBeenCalledWith({ bridge: 'late' })
+    expect(measure).toHaveBeenCalledWith(10, { bridge: 'late' })
   })
 
   it('records the bridge as failed when its synthesis throws', async () => {
-    const { opening, rejecters, onBridgeOutcome } = setup()
+    const { opening, rejecters, measure } = setup()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     opening.begin(input)
     await flush()
     rejecters[0](new Error('tts down'))
     await flush()
-    expect(onBridgeOutcome).toHaveBeenCalledWith({ bridge: 'failed' })
+    expect(measure).toHaveBeenCalledWith(10, { bridge: 'failed' })
     vi.restoreAllMocks()
   })
 
@@ -155,14 +161,20 @@ describe('TurnOpening', () => {
     expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: false })
   })
 
-  it('turns the real start of a clip into the delay since the speech ended and the length of the clip, per role', async () => {
-    const { opening } = setup()
+  it('turns the real start of a clip into the delay since its speech ended and the length of the clip, per role', async () => {
+    const { opening, play, measure, resolvers } = setup()
     opening.begin(input)
-    expect(opening.clipStarted('aizuchi', 640.4, 1250)).toEqual({ aizuchiMs: 250, aizuchiClipMs: 640 })
-    expect(opening.clipStarted('listening', 500, 1300)).toBeNull()
+    opening.clipStarted(queued(play)[0], 640.4, 1250)
+    expect(measure).toHaveBeenLastCalledWith(10, { aizuchiMs: 250, aizuchiClipMs: 640 })
+    // A listening aizuchi belongs to no opening.
+    opening.clipStarted({ turnId: 1, index: -1, text: 'うん', audio: 'eA==', phonemes: null, clip: 'listening' }, 500, 1300)
+    expect(measure).toHaveBeenCalledOnce()
     await flush()
     opening.claim(10)
-    expect(opening.clipStarted('bridge', 900, 2100)).toEqual({ bridgeMs: 1100, bridgeClipMs: 900, bridge: 'played' })
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    opening.clipStarted(queued(play)[1], 900, 2100)
+    expect(measure).toHaveBeenLastCalledWith(10, { bridgeMs: 1100, bridgeClipMs: 900, bridge: 'played' })
   })
 
   it('plays no aizuchi right after a listening aizuchi, while still asking for the bridge', async () => {
@@ -175,7 +187,7 @@ describe('TurnOpening', () => {
     expect(opening.claim(10)).toEqual({ aizuchi: null, bridge: '会議の件ですね。', bridgePending: false })
   })
 
-  it('hands nothing to the transcript of another utterance, is replaced when the next utterance starts, and never plays the old bridge', async () => {
+  it('hands nothing to the transcript of another utterance, holds a bridge while a newer speech waits for its transcript, and ends it once that speech becomes a turn', async () => {
     const { opening, play, resolvers } = setup()
     opening.begin(input)
     await flush()
@@ -184,18 +196,64 @@ describe('TurnOpening', () => {
     await flush()
     resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
     await flush()
-    expect(play.mock.calls.filter(([, role]) => role === 'bridge')).toHaveLength(0)
-    expect(opening.claim(10)).toBeNull()
+    expect(bridgesOf(queued(play))).toEqual([])
+    // The older transcript comes first, and its turn may still go on should the newer speech come to nothing.
+    expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: '会議の件ですね。', bridgePending: false })
     expect(opening.claim(20)).toEqual({ aizuchi: 'なるほど。', bridge: '会議の件ですね。', bridgePending: false })
+    resolvers[1]({ text: '明日の件ですね。', audio: 'Yg==' })
+    await flush()
+    expect(bridgesOf(queued(play))).toEqual(['明日の件ですね。'])
+  })
+
+  it('plays a bridge it held for a newer speech once that speech yields no turn', async () => {
+    const { opening, play, resolvers } = setup()
+    opening.begin(input)
+    await flush()
+    opening.claim(10)
+    opening.begin({ ...input, startedAt: 20, speechEndAt: 2000 })
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    expect(bridgesOf(queued(play))).toEqual([])
+    opening.cancel(20)
+    expect(bridgesOf(queued(play))).toEqual(['会議の件ですね。'])
+  })
+
+  it('holds a bridge while a newer capture is open, taking back one that has not started, and plays it once that capture ends without speech', async () => {
+    const { opening, resolvers, waiting } = setup()
+    const bridge = { text: '会議の件ですね。', audio: 'YQ==' }
+    opening.begin(input)
+    await flush()
+    opening.claim(10)
+    resolvers[0](bridge)
+    await flush()
+    expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi', 'bridge'])
+    opening.captureStarted()
+    expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi'])
+    opening.captureEnded()
+    expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi', 'bridge'])
+
+    // A bridge synthesized while the capture is open waits for it too.
+    opening.begin({ ...input, startedAt: 20, speechEndAt: 2000 })
+    await flush()
+    opening.claim(20)
+    opening.captureStarted()
+    resolvers[1]({ text: '明日の件ですね。', audio: 'Yg==' })
+    await flush()
+    expect(bridgesOf(waiting)).toEqual([])
+    opening.captureEnded()
+    expect(bridgesOf(waiting)).toEqual(['明日の件ですね。'])
   })
 
   it('drops the recorded opening when the transcript is discarded as an echo, and ignores a cancel for another utterance', () => {
-    const { opening } = setup()
+    const { opening, play, measure } = setup()
     opening.begin(input)
+    const aizuchi = queued(play)[0]
     opening.cancel(99)
-    expect(opening.clipStarted('aizuchi', 600, 1200)).not.toBeNull()
+    opening.clipStarted(aizuchi, 600, 1200)
+    expect(measure).toHaveBeenCalledOnce()
     opening.cancel(10)
-    expect(opening.clipStarted('aizuchi', 600, 1200)).toBeNull()
+    opening.clipStarted(aizuchi, 600, 1200)
+    expect(measure).toHaveBeenCalledOnce()
     expect(opening.claim(10)).toBeNull()
   })
 
