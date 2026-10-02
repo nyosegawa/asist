@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
     isGitRepo: vi.fn(() => false),
     startIsolated: vi.fn(() => ({ id: 'w1', title: 'fix', cwd: '/ws/wt', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc' } })),
     merge: vi.fn(() => ({ id: 'w1', mergeState: 'merged', worktree: { repo: '/repo' } })),
-    diff: vi.fn((): JobDiff => ({ commit: 'reviewed', base: 'merge-base', into: 'hotfix', stat: 'README.md | 2 +-', patch: '', submodules: [], blocked: null })),
+    diff: vi.fn((): JobDiff => ({ commit: 'reviewed', base: 'merge-base', into: 'hotfix', stat: 'README.md | 2 +-', patch: '', submodules: [], leftOut: [], blocked: null })),
     discard: vi.fn(() => ({ id: 'w1', mergeState: 'discarded' })),
     discardPreview: vi.fn(() => ({ repo: '/repo', dir: '/ws/wt', branch: 'asist/x', stat: 'README.md | 2 +-', submodules: [] as string[] }))
   },
@@ -678,7 +678,7 @@ describe('brain tools registry', () => {
 
   it('tells the model in its language why a job waiting to be merged cannot be merged by ASIST', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', status: 'done', mergeState: 'pending', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: null, stat: 'README.md | 2 +-', patch: '', submodules: [], blocked: errorText('jobs.merging.detached') })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: null, stat: 'README.md | 2 +-', patch: '', submodules: [], leftOut: [], blocked: errorText('jobs.merging.detached') })
     const { executeClientTool } = await load()
     const result = await executeClientTool('get_agent_job', { jobId: 'w1' }, makeCtx().ctx)
     expect(JSON.parse(result.content).review).toMatchObject({ into: null, blocked: ja('jobs.merging.detached') })
@@ -709,7 +709,7 @@ describe('brain tools registry', () => {
   it('refuses to merge a job that touched submodules before asking the user about it', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', dir: '/ws/wt', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
     const blocked = errorText('jobs.merging.submodules', { paths: 'vendor/sub', branch: 'asist/x', dir: '/ws/wt' })
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: 'vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'], blocked })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: 'vendor/sub | 2 +-', patch: '', submodules: ['vendor/sub'], leftOut: [], blocked })
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)
@@ -720,7 +720,7 @@ describe('brain tools registry', () => {
 
   it('refuses to merge a job with nothing to merge before asking the user about it', async () => {
     mocks.agent.userJob.mockReturnValueOnce({ id: 'w1', title: 'fix', worktree: { repo: '/repo', branch: 'asist/x', base: 'abc', commit: 'reviewed' } } as never)
-    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: '', patch: '', submodules: [], blocked: errorText('jobs.merging.noChanges', { id: 'w1' }) })
+    mocks.agent.diff.mockReturnValueOnce({ commit: 'reviewed', base: 'merge-base', into: 'main', stat: '', patch: '', submodules: [], leftOut: [], blocked: errorText('jobs.merging.noChanges', { id: 'w1' }) })
     const { executeClientTool } = await load()
     const result = await executeClientTool('merge_agent_job', { jobId: 'w1', commit: 'reviewed' }, makeCtx().ctx)
     expect(result.isError).toBe(true)

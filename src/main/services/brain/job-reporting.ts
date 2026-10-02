@@ -28,7 +28,10 @@ const HISTORY_LOAD_RETRY_MS = 30_000
 
 /** What the model is told about a job that ended. It reads it and reports it in its own words. */
 const REPORT: Readonly<
-  Record<'done' | 'error' | 'artifacts' | 'mergePending' | 'submodules' | 'mergeUnchanged' | 'merged' | 'discarded' | 'noSummary' | 'noReason', PromptText>
+  Record<
+    'done' | 'error' | 'artifacts' | 'mergePending' | 'submodules' | 'movedTo' | 'mergeUnchanged' | 'merged' | 'discarded' | 'noSummary' | 'noReason',
+    PromptText
+  >
 > = {
   done: {
     ja: `{notice} ジョブ「{title}」(jobId: {jobId})が完了した。結果の要約: {summary}{artifactNote}{mergeNote}`,
@@ -46,6 +49,10 @@ const REPORT: Readonly<
   submodules: {
     ja: ` このジョブはサブモジュールか.gitmodules({paths})に触れたので、ASISTでは取り込めない。変更はworktreeのブランチ{branch}にある。サブモジュールの中で作ったコミットはworktree({dir})の中の複製にしかないことがあり、その場合はユーザーのチェックアウトでgit submodule updateをしても取ってこられない。ユーザー自身が必要ならそこからpushしてブランチを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとその複製も消える。`,
     en: ` This job touched submodules or .gitmodules ({paths}), so ASIST cannot merge it. The changes are on the branch {branch} of its worktree. Commits made inside a submodule may exist only in the copy in the worktree ({dir}), and if so git submodule update in the user's checkout cannot fetch them. Tell the user they can push them from there if needed and merge the branch themselves, or throw the job away with discard_agent_job, which deletes that copy too.`
+  },
+  movedTo: {
+    ja: ` エージェントがworktree({dir})をASISTのブランチから{branch}に切り替えて作業したので、ASISTでは取り込めない。作業は{branch}にある。ユーザー自身がそれを取り込むか、捨てる(discard_agent_job)かを伝えること。捨てるとworktreeと、そこにしかない変更も消える。`,
+    en: ` The agent switched the worktree ({dir}) from ASIST's branch to {branch} and worked there, so ASIST cannot merge it. The work is on {branch}. Tell the user they can take it in themselves, or throw the job away with discard_agent_job, which deletes the worktree and any change that exists only there.`
   },
   mergeUnchanged: { ja: ` 変更は無かったのでworktreeは片付けた。`, en: ` Nothing changed, so the worktree has been cleared away.` },
   merged: { ja: ` 変更はすでに取り込んだ。`, en: ` The changes have already been taken in.` },
@@ -143,18 +150,21 @@ export function reportNotice(job: AgentJob): { notice: NoticeKind; text: string 
   const artifacts = (job.artifacts ?? []).slice(-5)
   const artifactNote = artifacts.length > 0 ? fillPrompt(promptText(locale, REPORT.artifacts), { artifacts: artifacts.join(', ') }) : ''
   const submodules = job.worktree?.submodules
+  const movedTo = job.worktree?.movedTo
   const mergeNote =
-    job.mergeState === 'pending' && submodules
-      ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
-      : job.mergeState === 'pending'
-        ? promptText(locale, REPORT.mergePending)
-        : job.mergeState === 'merged'
-          ? promptText(locale, REPORT.merged)
-          : job.mergeState === 'discarded'
-            ? promptText(locale, REPORT.discarded)
-            : job.worktree && job.mergeState === 'unchanged'
-              ? promptText(locale, REPORT.mergeUnchanged)
-              : ''
+    job.mergeState === 'pending' && movedTo
+      ? fillPrompt(promptText(locale, REPORT.movedTo), { branch: movedTo, dir: job.worktree!.dir })
+      : job.mergeState === 'pending' && submodules
+        ? fillPrompt(promptText(locale, REPORT.submodules), { paths: submodules.join(', '), branch: job.worktree!.branch, dir: job.worktree!.dir })
+        : job.mergeState === 'pending'
+          ? promptText(locale, REPORT.mergePending)
+          : job.mergeState === 'merged'
+            ? promptText(locale, REPORT.merged)
+            : job.mergeState === 'discarded'
+              ? promptText(locale, REPORT.discarded)
+              : job.worktree && job.mergeState === 'unchanged'
+                ? promptText(locale, REPORT.mergeUnchanged)
+                : ''
   const values = { notice: marker(locale, 'systemNotice'), title: job.title, jobId: job.id, artifactNote, mergeNote }
   return job.status === 'done'
     ? {

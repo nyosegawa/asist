@@ -68,7 +68,8 @@ export function mergeConfirmation(job: MergeTarget, review: JobDiff): ConfirmInp
       t('jobs.confirm.job', { title: job.title }),
       t('jobs.confirm.mergeInto', { into: job.into, repo: job.repo }),
       '',
-      review.stat
+      review.stat,
+      ...(review.leftOut.length > 0 ? ['', t('jobs.merging.leftOut', { paths: review.leftOut.join(', ') })] : [])
     ].join('\n'),
     confirmLabel: t('jobs.confirm.merge'),
     destructive: false
