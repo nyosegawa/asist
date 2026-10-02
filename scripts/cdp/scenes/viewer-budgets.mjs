@@ -19,7 +19,7 @@ import { prepareFiles, VIEWER_FILES } from '../viewer-files/index.mjs'
  *   export const cases = [{
  *     name: 'pdf-1000',            // unique among all cases
  *     file: 'pdf-1000',            // a key of VIEWER_FILES
- *     budget: { cardFirstMs, cardHeldMs, completeMs, focusFirstMs, focusHeldMs, peakMb, finalMb }, // any of them
+ *     budget: { cardFirstMs, cardHeldMs, completeMs, cardPeakMb, focusFirstMs, focusHeldMs, peakMb, finalMb }, // any of them
  *     shown: (root, mode) => …,    // optional: when the content in view is drawn
  *     complete: (root) => …        // optional: when the card has finished, such as a whole waveform
  *   }]
@@ -47,6 +47,7 @@ const BUDGETS = {
   cardFirstMs: { read: (r) => r.card.firstMs, time: true },
   cardHeldMs: { read: (r) => r.card.heldMs, time: true },
   completeMs: { read: (r) => r.card.completeMs, time: true },
+  cardPeakMb: { read: (r) => r.memory.cardPeakMb, time: false },
   focusFirstMs: { read: (r) => r.focus.firstMs, time: true },
   focusHeldMs: { read: (r) => r.focus.heldMs, time: true },
   peakMb: { read: (r) => r.memory.peakMb, time: false },
@@ -144,6 +145,7 @@ const columns = [
   ['card first', (e) => ms(e.result?.card.firstMs)],
   ['complete', (e) => ms(e.result?.card.completeMs)],
   ['card held', (e) => ms(e.result?.card.heldMs)],
+  ['card peak', (e) => (e.result ? mb(e.result.memory.cardPeakMb) : '')],
   ['focus first', (e) => ms(e.result?.focus.firstMs)],
   ['focus held', (e) => ms(e.result?.focus.heldMs)],
   ['screens', (e) => (e.result ? String(e.result.focus.screens) : '')],

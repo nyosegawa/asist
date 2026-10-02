@@ -13,9 +13,11 @@ import { APP_PATH, connect, connectBrowser, launchChrome, sleep, waitForApp, WIN
  * - held: the longest time the page's main thread did not get to run, measured by a timer that asks to run
  *   every TICK_MS. It covers showing the card and the SETTLE_MS after, and separately the focus view from its
  *   opening to the end of the scroll.
- * - memory: what the renderer processes of the page hold (RSS), sampled every SAMPLE_MS: the peak, and the final
- *   once the focus view is closed and garbage is collected, both over what the app held before the card appeared.
- *   They include any iframe a viewer runs in a process of its own. The GPU process's peak is reported beside it.
+ * - memory: what the renderer processes of the page hold (RSS), sampled every SAMPLE_MS: the peak while only the
+ *   card is shown, the peak of the whole run, and the final once the focus view is closed and garbage is
+ *   collected, each over what the app held before the card appeared. They include any iframe a viewer runs in a
+ *   process of its own. The GPU process's peak is reported beside them. RSS keeps pages the allocator has freed
+ *   but not yet given back, so the final can exceed what the page still uses.
  */
 
 /** The screens the focus view is scrolled through before it is scrolled to the end, as the survey of 2026-10-02 did. */
@@ -256,6 +258,7 @@ export async function measureFile({ origin, path, url, sizeBytes, shown = conten
     await sleep(SETTLE_MS)
     card.heldMs = await guard(client.evaluate(readHeld))
     card.widthPx = await client.evaluate(`Math.round(document.querySelector(${JSON.stringify(CARD)}).getBoundingClientRect().width)`)
+    const cardPeak = samples.peak.renderer
 
     const expand = `document.querySelector(${JSON.stringify(CARD)} + ' button[aria-label="' + CSS.escape(window.demoText('panels.expand')) + '"]').click()`
     await client.evaluate(resetHeld)
@@ -290,6 +293,7 @@ export async function measureFile({ origin, path, url, sizeBytes, shown = conten
       focus,
       memory: {
         baselineMb: mb(baseline.renderer),
+        cardPeakMb: mb(cardPeak - baseline.renderer),
         peakMb: mb(samples.peak.renderer - baseline.renderer),
         finalMb: mb(final.renderer - baseline.renderer),
         gpuPeakMb: mb(samples.peak.gpu - baseline.gpu)
