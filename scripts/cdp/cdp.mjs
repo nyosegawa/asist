@@ -169,12 +169,12 @@ export async function connect(port) {
 
 /**
  * Connects to the browser itself rather than to a page, for what only the browser answers, such as the
- * processes it runs (SystemInfo.getProcessInfo).
+ * processes it runs (SystemInfo.getProcessInfo) and the targets it holds. A command for a target the browser
+ * session attached to with `flatten: true` carries that target's session id as the third argument of send.
  */
 export async function connectBrowser(port) {
   const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
-  const { send, close } = await openSocket(webSocketDebuggerUrl)
-  return { send, close }
+  return openSocket(webSocketDebuggerUrl)
 }
 
 /** Opens a CDP WebSocket and returns how to send a command on it and how to hear its events. */
@@ -198,11 +198,11 @@ async function openSocket(url) {
     }
   })
   return {
-    send: (method, params = {}) =>
+    send: (method, params = {}, sessionId = undefined) =>
       new Promise((resolve, reject) => {
         const id = ++seq
         pending.set(id, { resolve, reject })
-        ws.send(JSON.stringify({ id, method, params }))
+        ws.send(JSON.stringify({ id, method, params, sessionId }))
       }),
     /** Calls the listener with every event, until the function it returns is called. */
     onEvent: (listener) => {

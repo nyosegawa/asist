@@ -48,7 +48,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-app
@@ -64,6 +64,14 @@ jobs:
       - run: npm test
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
+      # Whether the files card's viewers still show large files within the budgets their cases set
+      # (scripts/cdp/scenes/viewer-budgets/), in Chrome on the demo. A shared runner is slower than a developer's
+      # Mac, so the times are held to three times their budgets and the memory to the budgets as written; the
+      # runner has 7 GB, and the scene never runs two Chromes at once. It runs here after the tests rather than in
+      # a job of its own, which would be a fifth macOS runner on every push and keep other pull requests waiting
+      # for one, and on every change rather than on a list of paths, which would miss a change outside the list
+      # that breaks a viewer: the card's shell, the focus view, the dictionary or the demo.
+      - run: npm run demo:viewer-budgets -- --time-factor 3
 
   # Whether the text of every card and screen still fits in each of the eleven languages and every theme,
   # in Chrome. The layout depends on the fonts of macOS, so it runs there, with the themes shared out.
@@ -87,20 +95,6 @@ jobs:
           name: fit-shots-${{ strategy.job-index }}
           path: fit-shots/
           if-no-files-found: ignore
-
-  # Whether the files card's viewers still show large files within the budgets their cases set
-  # (scripts/cdp/scenes/viewer-budgets/), in Chrome on the demo. A shared runner is slower than a developer's
-  # Mac, so the times are held to three times their budgets; the memory is held to the budgets as written. The
-  # runner has 7 GB of memory, and the scene never runs two Chromes at once.
-  viewer-budgets:
-    needs: changes
-    if: needs.changes.outputs.app == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-app
-      - run: npm run demo:viewer-budgets -- --time-factor 3
 
   # Builds the native helpers, the bundle and an unsigned app, which also checks electron-builder.yml.
   build:
@@ -222,7 +216,7 @@ jobs:
   # change to the website skips. A skipped job is not a failure.
   result:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, test, fit, viewer-budgets, build, website, test-windows, build-windows]
+    needs: [changes, test, fit, build, website, test-windows, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

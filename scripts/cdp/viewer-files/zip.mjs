@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createCipheriv } from 'node:crypto'
 import { closeSync, openSync, writeSync } from 'node:fs'
 import { crc32, deflateRawSync } from 'node:zlib'
 import { random, sentence } from './text.mjs'
@@ -80,7 +80,10 @@ export function writeArchive(file, { megabytes }) {
   const next = random(megabytes)
   const zip = zipWriter(file)
   zip.add('export/README.txt', Array.from({ length: 200 }, () => sentence(next)).join('\n'))
+  // The parts are the keystream of AES-CTR under a fixed key: bytes that do not compress, the same on every run,
+  // at the speed of the cipher.
+  const keystream = createCipheriv('aes-256-ctr', Buffer.alloc(32, megabytes), Buffer.alloc(16))
   const part = 8 * 1024 * 1024
-  for (let i = 1; i * 8 <= megabytes; i++) zip.add(`export/data/part-${String(i).padStart(4, '0')}.bin`, randomBytes(part), { store: true })
+  for (let i = 1; i * 8 <= megabytes; i++) zip.add(`export/data/part-${String(i).padStart(4, '0')}.bin`, keystream.update(Buffer.alloc(part)), { store: true })
   zip.close()
 }

@@ -11,7 +11,9 @@ import { prepareFiles, VIEWER_FILES } from '../viewer-files/index.mjs'
  * The scene that holds the viewers of the files card to their budgets (npm run demo:viewer-budgets). It writes
  * large files of each kind into a folder (viewer-files/), serves them from the demo, and measures each case's file
  * in the card and its focus view, one Chrome at a time (viewer-measure.mjs). A case is over its budget when a
- * measured value is larger than the budget's, and the run then exits with code 2.
+ * measured value is not within the budget's, and fails when its viewer shows an error, a placard or a note that
+ * leaves the content out, when a screen of the focus view is never shown, or when a frame crashes; the run then
+ * exits with code 2. The memory is read with ps, so the scene stops with an error on Windows.
  *
  * The cases live one file per viewer in viewer-budgets/, each exporting `cases`, so that a change to one viewer
  * adds or edits only its own file:
@@ -19,14 +21,15 @@ import { prepareFiles, VIEWER_FILES } from '../viewer-files/index.mjs'
  *   export const cases = [{
  *     name: 'pdf-1000',            // unique among all cases
  *     file: 'pdf-1000',            // a key of VIEWER_FILES
- *     budget: { cardFirstMs, cardHeldMs, completeMs, cardPeakMb, focusFirstMs, focusHeldMs, peakMb, finalMb }, // any of them
+ *     budget: { cardFirstMs, cardHeldMs, completeMs, cardPeakMb, focusFirstMs, focusHeldMs, slowestScreenMs,
+ *               peakMb, finalMb, gpuPeakMb }, // any of them
  *     shown: (root, mode) => …,    // optional: when the content in view is drawn
  *     complete: (root) => …        // optional: when the card has finished, such as a whole waveform
  *   }]
  *
  * `shown` and `complete` are sent to the page as their source and run there at every frame with the card's or
  * the focus view's element, so they use nothing from outside their own body. Without `shown`, viewer-measure.mjs's
- * contentShown decides.
+ * contentShown decides, which never takes a placard or a note for content.
  *
  * Usage: npm run demo:viewer-budgets -- [--case name]... [--measure file|all]... [--files folder] [--time-factor n] [--out folder]
  *   --case          runs only the cases named
@@ -50,8 +53,10 @@ const BUDGETS = {
   cardPeakMb: { read: (r) => r.memory.cardPeakMb, time: false },
   focusFirstMs: { read: (r) => r.focus.firstMs, time: true },
   focusHeldMs: { read: (r) => r.focus.heldMs, time: true },
+  slowestScreenMs: { read: (r) => r.focus.slowestScreenMs, time: true },
   peakMb: { read: (r) => r.memory.peakMb, time: false },
-  finalMb: { read: (r) => r.memory.finalMb, time: false }
+  finalMb: { read: (r) => r.memory.finalMb, time: false },
+  gpuPeakMb: { read: (r) => r.memory.gpuPeakMb, time: false }
 }
 
 /** Every case of every file in viewer-budgets/, checked for what a typo would otherwise turn into a silent pass. */
@@ -92,12 +97,11 @@ if (runs.length === 0) {
 
 const log = (line) => console.error(line)
 const kept = single('files')
-const folder = kept ? path.resolve(kept) : mkdtempSync(path.join(os.tmpdir(), 'asist-viewer-files-'))
-mkdirSync(folder, { recursive: true })
+const root = kept ? path.resolve(kept) : mkdtempSync(path.join(os.tmpdir(), 'asist-viewer-files-'))
 const results = []
 let demo = null
 try {
-  const files = await prepareFiles([...new Set(runs.map((run) => run.file))], folder, log)
+  const { folder, files } = await prepareFiles([...new Set(runs.map((run) => run.file))], root, log)
   demo = await startDemo({ files: folder })
   // The first page compiles the viewers' modules in Vite, which would otherwise count against the first case.
   {
@@ -119,13 +123,15 @@ try {
         path: path.join(folder, file),
         url: `${SERVED_FILES_PATH}${encodeURIComponent(file)}`,
         sizeBytes: bytes,
+        scrolls: VIEWER_FILES[run.file].scrolls !== false,
         ...(run.shown ? { shown: run.shown } : {}),
         ...(run.complete ? { complete: run.complete } : {})
       })
+      // A value that is not a number is over any budget, rather than slipping past a comparison.
       entry.over = run.budget
         ? Object.entries(run.budget)
             .map(([key, limit]) => ({ key, limit: BUDGETS[key].time ? limit * timeFactor : limit, value: BUDGETS[key].read(entry.result) }))
-            .filter(({ limit, value }) => value > limit)
+            .filter(({ limit, value }) => !(value <= limit))
         : []
     } catch (error) {
       entry.error = error.message
@@ -134,7 +140,7 @@ try {
   }
 } finally {
   await demo?.close()
-  if (!kept) rmSync(folder, { recursive: true, force: true })
+  if (!kept) rmSync(root, { recursive: true, force: true })
 }
 
 const ms = (value) => (value === undefined ? '' : `${value.toLocaleString('en-US')} ms`)
@@ -149,6 +155,7 @@ const columns = [
   ['focus first', (e) => ms(e.result?.focus.firstMs)],
   ['focus held', (e) => ms(e.result?.focus.heldMs)],
   ['screens', (e) => (e.result ? String(e.result.focus.screens) : '')],
+  ['slowest screen', (e) => ms(e.result?.focus.slowestScreenMs)],
   ['peak', (e) => (e.result ? mb(e.result.memory.peakMb) : '')],
   ['final', (e) => (e.result ? mb(e.result.memory.finalMb) : '')],
   ['GPU peak', (e) => (e.result ? mb(e.result.memory.gpuPeakMb) : '')]
@@ -161,7 +168,7 @@ const alone = results.length === 1
 const heading = `${results.length} ${measured.length ? `${alone ? 'file' : 'files'} measured without a budget` : `${alone ? 'case' : 'cases'}, times held to ${timeFactor}× their budgets`}`
 const failures = failed.flatMap((entry) => [
   `${entry.name}: ${entry.error ? `failed: ${entry.error}` : 'over its budget'}`,
-  ...(entry.over ?? []).map(({ key, limit, value }) => `  ${key} ${value.toLocaleString('en-US')} > ${limit.toLocaleString('en-US')}`)
+  ...(entry.over ?? []).map(({ key, limit, value }) => `  ${key} ${value?.toLocaleString('en-US')} is not within ${limit.toLocaleString('en-US')}`)
 ])
 console.log([`viewer budgets  ${heading}`, line(columns.map(([title]) => title)), ...rows.map(line), ...(failures.length ? ['', ...failures] : [])].join('\n'))
 

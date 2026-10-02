@@ -11,7 +11,9 @@ import { zipWriter } from './zip.mjs'
  */
 
 const SAMPLES = new URL('../../../src/renderer/demo-public/demo-files/office/', import.meta.url)
-const sample = async (file, part) => (await JSZip.loadAsync(await readFile(new URL(file, SAMPLES)))).file(part).async('string')
+/** The demo's own Office samples whose parts the generated files reuse. */
+export const OFFICE_TEMPLATES = { deck: new URL('slides.pptx', SAMPLES), report: new URL('report.docx', SAMPLES) }
+const sample = async (template, part) => (await JSZip.loadAsync(await readFile(template))).file(part).async('string')
 
 const XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -55,7 +57,7 @@ export async function writePptx(client, file, { slides }) {
     ])
   )
   for (const part of ['ppt/slideMasters/slideMaster1.xml', 'ppt/slideMasters/_rels/slideMaster1.xml.rels', 'ppt/slideLayouts/slideLayout1.xml', 'ppt/slideLayouts/_rels/slideLayout1.xml.rels', 'ppt/theme/theme1.xml']) {
-    zip.add(part, await sample('slides.pptx', part))
+    zip.add(part, await sample(OFFICE_TEMPLATES.deck, part))
   }
   const run = (text, size, bold = false) => `<a:r><a:rPr lang="ja-JP" sz="${size}"${bold ? ' b="1"' : ''}/><a:t>${escapeXml(text)}</a:t></a:r>`
   const shape = (id, name, [x, y, cx, cy], body, ph = '') =>
@@ -105,8 +107,8 @@ export async function writeDocx(client, file, { pages }) {
     ])
   )
   zip.add('_rels/.rels', rels([['rId1', 'officeDocument', 'word/document.xml']]))
-  zip.add('word/styles.xml', await sample('report.docx', 'word/styles.xml'))
-  zip.add('word/numbering.xml', await sample('report.docx', 'word/numbering.xml'))
+  zip.add('word/styles.xml', await sample(OFFICE_TEMPLATES.report, 'word/styles.xml'))
+  zip.add('word/numbering.xml', await sample(OFFICE_TEMPLATES.report, 'word/numbering.xml'))
   const text = (value) => `<w:r><w:t xml:space="preserve">${escapeXml(value)}</w:t></w:r>`
   const styled = (style, value) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr>${text(value)}</w:p>`
   const body = []
@@ -157,8 +159,8 @@ const COLUMNS = 'ABCDEFGHIJK'
 /**
  * A workbook of sales records, one row per sale, as an accounting system exports them: a date, a slip number, the
  * region, shop, product and person as strings shared across the workbook, the quantity and price as numbers, the
- * amount as a formula with its cached value, and a note on one row in ten. A sheet of 50,000 rows is about 14 MB
- * of XML. `sheets` lists each sheet's name and number of rows.
+ * amount as a formula with its cached value, and a note on one row in ten. A sheet of 50,000 rows is 18,980,063
+ * bytes of XML. `sheets` lists each sheet's name and number of rows.
  */
 export function writeXlsx(file, { sheets }) {
   const next = random(sheets.reduce((sum, sheet) => sum + sheet.rows, 0))

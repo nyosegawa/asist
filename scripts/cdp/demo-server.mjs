@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
 
@@ -20,6 +21,11 @@ import { createServer } from 'vite'
  */
 
 const CONFIG = fileURLToPath(new URL('../vite.demo.config.mts', import.meta.url))
+/**
+ * The parser the app's asist-file scheme answers a Range header with. It is TypeScript, which Vite loads here;
+ * Node itself would load it too, but with a warning on every run, since package.json does not say its type.
+ */
+const BYTE_RANGE = fileURLToPath(new URL('../../src/shared/byte-range.ts', import.meta.url))
 
 /** Where the files of the folder given to startDemo are served, by their names, on the demo's own origin. */
 export const SERVED_FILES_PATH = '/served-files/'
@@ -42,7 +48,7 @@ export async function startDemo({ files } = {}) {
     appType: 'spa',
     server: { middlewareMode: true, hmr: { server: httpServer } }
   })
-  const served = files ? serveFolder(files) : null
+  const served = files ? serveFolder(files, (await vite.ssrLoadModule(BYTE_RANGE)).parseRange) : null
   httpServer.on('request', (req, res) => {
     if (served && req.url.startsWith(SERVED_FILES_PATH)) void served(req, res)
     else vite.middlewares(req, res)
@@ -71,16 +77,20 @@ const TYPES = {
 }
 
 /**
- * The largest body sent in the same write as its headers, so that no range waits for the acknowledgement of an
- * earlier write (Nagle's algorithm against a delayed ACK) and the time a viewer spends reading by ranges is its
- * own. A larger body is streamed: its size, not the writes, decides how long it takes, and it is not held in
- * memory whole. From a page in headless Chrome on an M5 on 2026-10-02, a 64 KB range took 0.4 ms here and
- * 0.8 ms from Vite's /@fs, and a 4 MB range 1.7 ms and 2.5 ms (medians of 40).
+ * The largest body read in one read and sent with its headers, instead of streamed. It keeps a range to one
+ * read of the disk; Node's server already turns off Nagle's algorithm on its sockets, so the writes themselves
+ * cost no waiting. From a page in headless Chrome on an M5 on 2026-10-02, a 64 KB range took 0.4 ms here and
+ * 0.8 ms from Vite's /@fs, and a 4 MB range 1.7 ms and 2.5 ms (medians of 40). A larger body is streamed and
+ * never held in memory whole.
  */
-const ONE_WRITE_LIMIT = 64 * 1024 * 1024
+const ONE_READ_LIMIT = 64 * 1024 * 1024
 
-/** Answers a GET or HEAD for a file directly in the folder, whole or by one range, in a single write when it fits. */
-export function serveFolder(folder) {
+/**
+ * Answers a GET or HEAD for a file directly in the folder as the app's asist-file scheme does
+ * (src/main/file-protocol.ts): one range by its parser, `parseRange` of src/shared/byte-range.ts, or the whole
+ * file when no byte of it is asked for.
+ */
+export function serveFolder(folder, parseRange) {
   return async (req, res) => {
     try {
       const name = decodeURIComponent(new URL(req.url, 'http://localhost').pathname.slice(SERVED_FILES_PATH.length))
@@ -95,32 +105,22 @@ export function serveFolder(folder) {
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-store'
       }
-      let start = 0
-      let end = size - 1
-      let status = 200
-      const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
-      if (range) {
-        if (range[1] === '') start = Math.max(0, size - Number(range[2]))
-        else {
-          start = Number(range[1])
-          if (range[2] !== '') end = Math.min(Number(range[2]), size - 1)
-        }
-        if (start > end) {
-          res.writeHead(416, { 'Content-Range': `bytes */${size}` }).end()
-          return
-        }
-        status = 206
-        headers['Content-Range'] = `bytes ${start}-${end}/${size}`
-      }
+      const range = parseRange(req.headers.range ?? null, size)
+      const { start, end } = range ?? { start: 0, end: size - 1 }
+      if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`
+      const status = range ? 206 : 200
       const length = end - start + 1
       headers['Content-Length'] = length
       if (req.method === 'HEAD') {
         res.writeHead(status, headers).end()
         return
       }
-      if (length > ONE_WRITE_LIMIT) {
+      if (length > ONE_READ_LIMIT) {
         res.writeHead(status, headers)
-        createReadStream(file, { start, end }).pipe(res)
+        // pipeline closes the file when the browser drops the request, as an <audio> does once it has enough.
+        // That rejects it, and so would a failed read; with the headers sent, either can only cut the response
+        // short, which pipeline has already done and the browser sees.
+        await pipeline(createReadStream(file, { start, end }), res).catch(() => {})
         return
       }
       const body = Buffer.allocUnsafe(length)
@@ -130,7 +130,6 @@ export function serveFolder(folder) {
       } finally {
         await handle.close()
       }
-      // Given the whole body at once, Node sends it in the same write as the headers.
       res.writeHead(status, headers).end(body)
     } catch (error) {
       res.writeHead(error.code === 'ENOENT' ? 404 : 500).end(String(error.message))

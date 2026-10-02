@@ -1,6 +1,6 @@
 /**
  * The words of the generated documents: business prose in Japanese with English terms, as the documents ASIST's
- * users keep are written, from a seeded generator so that every run writes the same files.
+ * users keep are written, from a seeded generator so that every run writes the same words.
  */
 
 /** A generator of numbers in [0, 1) that gives the same sequence for the same seed. */

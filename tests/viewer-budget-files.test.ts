@@ -5,6 +5,7 @@ import path from 'node:path'
 import JSZip from 'jszip'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { SERVED_FILES_PATH, serveFolder } from '../scripts/cdp/demo-server.mjs'
+import { parseRange } from '../src/shared/byte-range'
 import { zipWriter } from '../scripts/cdp/viewer-files/zip.mjs'
 
 /** A folder of served files inside a root that also holds a file the folder must not give away. */
@@ -18,7 +19,7 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(root, 'served'))
   fs.writeFileSync(path.join(root, 'served', 'sample.bin'), content)
   fs.writeFileSync(path.join(root, 'secret.txt'), 'not served')
-  server = http.createServer(serveFolder(path.join(root, 'served')))
+  server = http.createServer(serveFolder(path.join(root, 'served'), parseRange))
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`
 })
@@ -65,10 +66,13 @@ describe('the files demo:viewer-budgets serves', () => {
     expect(Buffer.from(await response.arrayBuffer())).toEqual(content)
   })
 
-  it('refuses a range that starts past the end', async () => {
-    const response = await get('sample.bin', 'bytes=1000-')
-    expect(response.status).toBe(416)
-    expect(response.headers.get('content-range')).toBe('bytes */1000')
+  it('answers a range that holds no byte of the file with the whole file, as the app does', async () => {
+    for (const range of ['bytes=1000-', 'bytes=-', 'bytes=50-10']) {
+      const response = await get('sample.bin', range)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-range')).toBeNull()
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(content)
+    }
   })
 
   it('never serves a file outside its folder', async () => {
