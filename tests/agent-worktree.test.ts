@@ -174,6 +174,21 @@ it('rewrites artifact paths inside the worktree to the repository on merge and l
   expect(fs.existsSync(path.join(repo, 'pages', 'note.md'))).toBe(true)
 })
 
+it('moves to the repository on merge a file the CLI names by its real path while the job\'s folders were named through a symbolic link', async () => {
+  const agent = await import('../src/main/services/agent')
+  const alias = path.join(mocks.root, 'alias')
+  fs.symlinkSync(mocks.root, alias, 'dir')
+  const job = agent.startIsolated('修正する', { cwd: path.join(alias, 'repo'), worktreeRoot: path.join(alias, 'jobs') })
+  fs.mkdirSync(path.join(job.cwd, 'pages'))
+  fs.writeFileSync(path.join(job.cwd, 'pages', 'note.md'), 'hello\n')
+  const handlers = mocks.launch.mock.calls[0][2]
+  handlers.onEvent({ kind: 'file-change', paths: [path.join(fs.realpathSync(job.cwd), 'pages', 'note.md')] })
+  handlers.onExit(0)
+  mergeReviewed(agent, job.id)
+  expect(agent.get(job.id)?.artifacts).toEqual([path.join(repo, 'pages', 'note.md')])
+  expect(fs.readFileSync(agent.get(job.id)!.artifacts![0], 'utf8')).toBe('hello\n')
+})
+
 it('lets the files card open what a merged job produced, in the repository where the merge put it', async () => {
   const agent = await import('../src/main/services/agent')
   const { allowedPath } = await import('../src/main/services/file-preview')
