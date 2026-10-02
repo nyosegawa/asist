@@ -118,6 +118,26 @@ describe('the page the main window shows', () => {
   })
 })
 
+describe('the launch', () => {
+  it('is the first page the app shows, and not the page a reload commits', async () => {
+    const { window, trusted } = await startApp()
+    const { isLaunchPage } = await import('../src/main/page-lifetime')
+    window.webContents.emit('did-navigate', {}, trusted, -1, '')
+    expect(isLaunchPage()).toBe(true)
+    window.webContents.emit('did-navigate', {}, trusted, -1, '')
+    expect(isLaunchPage()).toBe(false)
+  })
+
+  it('is not the page loaded again after a crash', async () => {
+    const { window, trusted } = await startApp()
+    const { isLaunchPage } = await import('../src/main/page-lifetime')
+    window.webContents.emit('did-navigate', {}, trusted, -1, '')
+    window.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 11 })
+    window.webContents.emit('did-navigate', {}, trusted, -1, '')
+    expect(isLaunchPage()).toBe(false)
+  })
+})
+
 describe('what main runs for the page when the page is replaced', () => {
   it('stops the microphone helper and the live engine when a reload commits a new page', async () => {
     const { window, trusted } = await startApp()
