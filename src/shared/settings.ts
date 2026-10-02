@@ -21,10 +21,7 @@ const fields = {
    */
   safetyNoticeVersion: z.union([z.literal(0), z.literal(1)]),
   conversationModel: conversationModelSchema,
-  /**
-   * The provider and model for the aizuchi lookahead, which picks the kind of aizuchi and prepares a
-   * short bridging phrase while the user is still speaking.
-   */
+  /** The provider and model that prepare the bridge phrase while the user is still speaking. */
   bridgeModel: conversationModelSchema,
   voiceEngine: z.enum(VOICE_ENGINES),
   geminiLive: liveModelSettingSchema,
@@ -52,8 +49,11 @@ const fields = {
   qwenTtsVoice: z.enum(QWEN_TTS_VOICE_IDS),
   qwenTtsSize: z.enum(QWEN_TTS_SIZES),
   bargeIn: z.boolean(),
+  /** Whether a backchannel plays the moment the user stops speaking. Only a Japanese conversation has them. */
   aizuchi: z.boolean(),
   aizuchiRate: z.number().min(0).max(1),
+  /** Whether a short line, prepared while the user is still speaking, plays before the reply, in every conversation language. */
+  bridgePhrase: z.boolean(),
   listeningAizuchi: z.boolean(),
   /** The VAD's silence duration, chosen in the settings screen. */
   hangoverMs: z.number().int().min(200).max(900),
@@ -159,7 +159,7 @@ const V4_ASR_MODELS: Record<string, AsrModel> = {
 
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
-  version: 9,
+  version: 10,
   upgrades: {
     // Version 2 adds the theme. Everything written before it was drawn in future.
     1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' }),
@@ -203,6 +203,13 @@ export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
       delete upgraded.gptLive
       if (upgraded.voiceEngine === 'gpt-live') upgraded.voiceEngine = 'cascade'
       return upgraded
+    },
+    // Version 10 gives the bridge phrase a switch of its own. Until then the aizuchi switch silenced it in
+    // every conversation language, so it starts as that switch was. A value version 9 did not allow is
+    // kept, for the parse to refuse.
+    9: (content) => {
+      const stored = content as Record<string, unknown>
+      return { ...stored, bridgePhrase: stored.aizuchi }
     }
   },
   parse: parseAppSettings,

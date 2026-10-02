@@ -40,17 +40,22 @@ const turnMetrics = new TurnMetrics((payload) => window.api.metricsLog(payload))
 interface OpeningPolicy {
   /** The aizuchi may play, and the classifier that picks it runs on the partial transcripts. */
   aizuchi: boolean
+  /** The bridge phrase may play, and the look-ahead that words it runs on the partial transcripts. */
   bridge: boolean
 }
 /**
- * What may sound at the opening of a turn. With the TTS engine set to none neither part is played.
- * The aizuchi are Japanese and need the classifier, which runs only once its model is prepared, while
- * the bridge sentence is spoken in every language.
+ * What may sound at the opening of a turn, each part by its own switch. With the TTS engine set to none
+ * neither part is played. The aizuchi are Japanese and need the classifier, which runs only once its
+ * model is prepared, while the bridge phrase is spoken in every language. A part switched off is neither
+ * prepared nor asked of a model.
  */
 function openingPolicy(): OpeningPolicy {
   const settings = useSettingsStore.getState().settings
-  if (!settings || !settings.aizuchi || settings.ttsEngine === 'none') return { aizuchi: false, bridge: false }
-  return { aizuchi: conversationFeatures(settings.conversationLocale).aizuchi && classifier.running, bridge: true }
+  if (!settings || settings.ttsEngine === 'none') return { aizuchi: false, bridge: false }
+  return {
+    aizuchi: settings.aizuchi && conversationFeatures(settings.conversationLocale).aizuchi && classifier.running,
+    bridge: settings.bridgePhrase
+  }
 }
 /** The configured voice engine. A live engine takes the microphone and the typed text instead of the voice pipeline and brain. */
 const voiceEngine = (): VoiceEngine => useSettingsStore.getState().settings?.voiceEngine ?? 'cascade'

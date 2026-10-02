@@ -60,6 +60,7 @@ const settings = {
   bargeIn: true,
   aizuchi: false,
   aizuchiRate: 0.85,
+  bridgePhrase: true,
   listeningAizuchi: true,
   hangoverMs: 600,
   partialIntervalMs: 600,
@@ -421,6 +422,18 @@ describe('settings dialog', () => {
     await act(async () => tiles[other].click())
     expect(api.saveSettings).toHaveBeenCalledWith({ theme: THEMES[other] })
     expect(view.querySelector('.st-theme[aria-checked="true"] .st-theme-name')?.textContent).toBe(t(`settingsAppearance.themes.${THEMES[other]}.name`))
+  })
+
+  it.each(['ja-JP', 'en-US'] as const)('has a switch of its own for the bridge phrase in a %s conversation, which leaves the aizuchi as they are', async (conversationLocale) => {
+    useSettingsStore.setState({ settings: { ...settings, conversationLocale, aizuchi: true, bridgePhrase: true } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    const bridge = [...view.querySelectorAll('.st-row')].find((row) => row.querySelector('.st-row-label')?.textContent === t('settingsVoice.response.bridgePhrase'))
+    const toggle = bridge?.querySelector<HTMLButtonElement>('[role="switch"]')
+    expect(toggle?.getAttribute('aria-checked')).toBe('true')
+
+    await act(async () => toggle!.click())
+    expect(api.saveSettings).toHaveBeenCalledExactlyOnceWith({ bridgePhrase: false })
   })
 
   it('saves a switch change to main and opens the key field only when a key is being entered', async () => {
