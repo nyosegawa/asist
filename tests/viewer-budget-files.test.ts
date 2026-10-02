@@ -40,10 +40,21 @@ describe('the files demo:viewer-budgets serves', () => {
 
   it('answers a range from an offset to the end and a range of the last bytes', async () => {
     const open = await get('sample.bin', 'bytes=995-')
+    expect(open.status).toBe(206)
     expect(open.headers.get('content-range')).toBe('bytes 995-999/1000')
     expect(Buffer.from(await open.arrayBuffer())).toEqual(content.subarray(995))
     const suffix = await get('sample.bin', 'bytes=-5')
+    expect(suffix.status).toBe(206)
+    expect(suffix.headers.get('content-range')).toBe('bytes 995-999/1000')
     expect(Buffer.from(await suffix.arrayBuffer())).toEqual(content.subarray(995))
+  })
+
+  it('answers a range of more last bytes than the file holds with the whole file and its length', async () => {
+    // A zip reader asks for the end of central directory this way, before it knows the file's length.
+    const response = await get('sample.bin', 'bytes=-65577')
+    expect(response.status).toBe(206)
+    expect(response.headers.get('content-range')).toBe('bytes 0-999/1000')
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(content)
   })
 
   it('answers a request without a range with the whole file, which the browser may not keep', async () => {
