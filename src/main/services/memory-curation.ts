@@ -1,4 +1,6 @@
 import { isJobExecuting } from '@shared/job-status'
+import fs from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app } from 'electron'
 import { errMessage } from '@shared/api-errors'
@@ -176,25 +178,31 @@ function assertInsideMemory(job: AgentJob): ReviewedMerge {
 }
 
 /**
- * The memory as merging the job's commit would leave it, read in a worktree of its own that is cut from the
- * memory's HEAD and has the commit merged the way agentRunner.merge then merges it into the memory. The
- * memory screen can commit while the Agent runs, and two changes that each keep the rules can break them
- * together, as when both add the same heading to user.md or their sections together pass the length of
+ * The memory as merging the job's commit would leave it: the tree the merge commits, as agentRunner.merge
+ * then makes it from the memory's HEAD, written out to a temporary folder outside the memory. The memory
+ * screen can commit while the Agent runs, and two changes that each keep the rules can break them together,
+ * as when both add the same heading to user.md or their sections together pass the length of
  * instruction.md. Merged, such a job could be neither discarded nor completed, and no later curation would
  * start. Null when the two conflict, which agentRunner.merge then records as for any job.
+ *
+ * Nothing but objects goes into the memory repository, so a check that a crash cuts short leaves nothing
+ * that stops the next one. The folder is removed afterwards, and a removal that fails, as on Windows while
+ * a scanner holds a file just written, is only logged: the check has already been made.
  */
 function readMerged(job: AgentJob, commit: string): store.ReadResult | null {
-  const worktree = job.worktree!
-  const dir = `${worktree.dir}-merged`
-  const branch = `${worktree.branch}-merged`
-  git.worktreeAdd(worktree.repo, dir, branch)
+  const repo = job.worktree!.repo
+  const merged = git.mergedTree(repo, git.headCommit(repo), commit)
+  if ('conflict' in merged) return null
+  const dir = fs.mkdtempSync(path.join(tmpdir(), 'asist-memory-merge-'))
   try {
-    const outcome = git.mergeNoFf(dir, commit, `asist: ${job.title} (${job.id})`)
-    if (outcome.ok) return store.readAll(dir)
-    if (outcome.conflict) return null
-    throw new Error(errorText('jobs.merging.failed', { detail: outcome.message }))
+    git.checkoutTree(repo, merged.tree, dir)
+    return store.readAll(dir)
   } finally {
-    git.worktreeRemove(worktree.repo, dir, branch)
+    try {
+      fs.rmSync(dir, { recursive: true, force: true })
+    } catch (error) {
+      console.error('memory curation: the checked copy of the merge could not be removed:', dir, errorMessage(error))
+    }
   }
 }
 
