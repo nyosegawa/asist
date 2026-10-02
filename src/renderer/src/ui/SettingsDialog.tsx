@@ -106,10 +106,6 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
     mainRef.current?.scrollTo({ top: 0 })
   }, [page])
 
-  // The message of a preparation is shown until the settings close, and one that ended while they were
-  // closed is shown the next time they open.
-  useEffect(() => () => usePreparationStore.getState().dismiss(), [])
-
   const refreshSetup = (): Promise<void> =>
     readStatus(async () => {
       const next = await window.api.getSetupStatus()
@@ -193,7 +189,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   }
 
   const { localSpeech } = platformCapabilities()
-  const pending = pendingItems({ settings, status, vap: statusOf(vap), embedding: statusOf(embedding), aizuchiClassifier: statusOf(aizuchiClassifier), localSpeech })
+  const pending = pendingItems({ settings, status, vap, embedding, aizuchiClassifier, localSpeech })
   const ctx: SettingsContext = { settings, status, setup, vap, embedding, aizuchiClassifier, prep, pending, set, save, refreshStatus, go: setPage, prepare }
 
   // The one-line note beside each entry in the list on the left, which tells the gist without opening

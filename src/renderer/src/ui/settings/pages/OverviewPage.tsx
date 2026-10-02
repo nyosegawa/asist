@@ -30,7 +30,7 @@ interface Step {
  * but not working yet, and the features that can still be added.
  */
 export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
-  const { settings, status, setup, vap, embedding, pending: todo, prepare, set, go } = ctx
+  const { settings, status, setup, vap, embedding, aizuchiClassifier, pending: todo, prepare, set, go } = ctx
   const t = useT()
   const { localSpeech, os } = platformCapabilities()
   const features = conversationFeatures(settings.conversationLocale)
@@ -42,6 +42,7 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
   const asrModel = statusOf(setup)?.asr ?? null
   const vapRead = statusOf(vap)
   const embeddingRead = statusOf(embedding)
+  const classifierRead = statusOf(aizuchiClassifier)
   const vapReady = vapRead?.runtimeInstalled === true && vapRead.modelsInstalled
   const embeddingReady = embeddingRead?.runtimeInstalled === true && embeddingRead.modelInstalled
   const ready = { tone: 'ok', label: t('common.ready') } as const
@@ -130,22 +131,22 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
       case 'aizuchi':
         return {
           label: t('settingsVoice.response.aizuchi'),
-          hint: t('settingsModels.backchannel.notPrepared'),
-          action: <PrepareButton ctx={ctx} target="aizuchiClassifier" onClick={prepare.aizuchiClassifier} />,
+          hint: readFailure(aizuchiClassifier) ?? t('settingsModels.backchannel.notPrepared'),
+          action: classifierRead === null ? <UnreadChip status={aizuchiClassifier} /> : <PrepareButton ctx={ctx} target="aizuchiClassifier" onClick={prepare.aizuchiClassifier} />,
           progress: <PrepProgress ctx={ctx} target="aizuchiClassifier" />
         }
       case 'turnTaking':
         return {
           label: t('settingsVoice.mic.turnTaking'),
-          hint: t('settingsModels.turnTaking.hint'),
-          action: <PrepareButton ctx={ctx} target="vap" onClick={prepare.vap} />,
+          hint: readFailure(vap) ?? t('settingsModels.turnTaking.hint'),
+          action: vapRead === null ? <UnreadChip status={vap} /> : <PrepareButton ctx={ctx} target="vap" onClick={prepare.vap} />,
           progress: <PrepProgress ctx={ctx} target="vap" />
         }
       case 'semanticSearch':
         return {
           label: t('settingsMemory.search.title'),
-          hint: t('settingsMemory.search.notPrepared'),
-          action: <PrepareButton ctx={ctx} target="embedding" onClick={prepare.embedding} />,
+          hint: readFailure(embedding) ?? t('settingsMemory.search.notPrepared'),
+          action: embeddingRead === null ? <UnreadChip status={embedding} /> : <PrepareButton ctx={ctx} target="embedding" onClick={prepare.embedding} />,
           progress: <PrepProgress ctx={ctx} target="embedding" />
         }
       case 'agent':

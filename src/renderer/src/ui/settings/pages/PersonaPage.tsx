@@ -20,7 +20,16 @@ export function PersonaPage({ ctx }: { ctx: SettingsContext }): React.JSX.Elemen
         title={t('settingsPersona.text.title')}
         description={t('settingsPersona.text.description')}
         action={
-          <Btn tone="quiet" disabled={persona.value === fresh} onClick={() => set({ persona: fresh })}>
+          <Btn
+            tone="quiet"
+            disabled={persona.value === fresh}
+            onClick={() => {
+              // A text whose save failed stays in the field over the saved value, and the default may be that
+              // very value, so saving it would not move the text aside.
+              persona.discard()
+              void set({ persona: fresh })
+            }}
+          >
             {t('settingsPersona.text.reset')}
           </Btn>
         }

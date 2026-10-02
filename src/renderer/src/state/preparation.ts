@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PreparationTarget, SetupProgress } from '@shared/ipc'
 import { displayError } from '@/display-error'
+import { useViewStore } from '@/state/view'
 
 /**
  * The preparations started from the settings. A download runs for minutes and goes on after the settings
@@ -27,8 +28,6 @@ interface PreparationState extends Preparation {
   ) => Promise<void>
   /** Prepares Whisper in the browser, unless that is under way. `operation` reports the percent and resolves to the message to show. */
   runLocalAsr: (operation: (onProgress: (percent: number) => void) => Promise<string>) => Promise<void>
-  /** Drops the message of a preparation, once the settings that showed it close. */
-  dismiss: () => void
 }
 
 const STARTED: SetupProgress = { status: 'downloading', pct: 0, downloadedMb: 0, totalMb: 0 }
@@ -70,6 +69,12 @@ export const usePreparationStore = create<PreparationState>((set, get) => ({
     } finally {
       set({ localAsr: null })
     }
-  },
-  dismiss: () => set({ message: '' })
+  }
 }))
+
+// The message goes once the settings close, and one that arrives while they are closed waits for the next
+// time they open. The view store tells when they close; an effect's cleanup in the settings screen cannot,
+// since StrictMode runs it right after mounting.
+useViewStore.subscribe((view, previous) => {
+  if (previous.open?.app === 'settings' && view.open?.app !== 'settings') usePreparationStore.setState({ message: '' })
+})

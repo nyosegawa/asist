@@ -567,6 +567,22 @@ describe('settings fields that are saved once the user leaves them', () => {
     expect(persona.getAttribute('aria-invalid')).toBe('true')
   })
 
+  it('drops a persona whose save failed when it is reset to the default, and saves it no more once the settings close', async () => {
+    api.saveSettings.mockRejectedValueOnce(new Error('disk full'))
+    const view = await render()
+    await act(async () => nav(view, 'persona').click())
+    const persona = view.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${t('settingsPersona.text.label')}"]`)!
+    persona.focus()
+    await act(async () => type(persona, '名前は ミナ。'))
+    await act(async () => leave(persona))
+    const reset = [...view.querySelectorAll<HTMLButtonElement>('.st-btn')].find((button) => button.textContent === t('settingsPersona.text.reset'))!
+    await act(async () => reset.click())
+    expect(persona.value).toBe(settings.persona)
+    expect(persona.getAttribute('aria-invalid')).toBe('false')
+    await act(async () => root.render(React.createElement('div')))
+    expect(api.saveSettings.mock.calls).toEqual([[{ persona: '名前は ミナ。' }], [{ persona: settings.persona }]])
+  })
+
   it('does not leave the working folder on the Enter that confirms an IME conversion', async () => {
     const view = await render()
     await act(async () => nav(view, 'agent').click())
@@ -779,18 +795,32 @@ describe('settings dialog while a model is prepared or memories are converted', 
   })
 
   it('shows how a preparation ended while the settings were closed once they are opened again, until they close', async () => {
+    const close = (): Promise<void> =>
+      act(async () => {
+        await useViewStore.getState().closeApp()
+        root.render(React.createElement('div'))
+      })
+    // The app renders under StrictMode in development, which mounts each effect twice.
+    const open = async (): Promise<HTMLElement> => {
+      await act(async () => {
+        await useViewStore.getState().openApp({ app: 'settings' })
+        root.render(React.createElement(React.StrictMode, null, React.createElement(SettingsDialog, { open: true })))
+      })
+      await act(async () => {})
+      return container.querySelector<HTMLElement>('[aria-label="SETTINGS"]')!
+    }
     let finish!: (result: { ok: boolean; message: string }) => void
     api.vapPrepare.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
-    const view = await render()
+    const view = await open()
     await act(async () => prepButton(view, 'vap').click())
-    await act(async () => root.render(React.createElement('div')))
+    await close()
     await act(async () => finish({ ok: false, message: 'disk full' }))
 
-    const reopened = await render()
+    const reopened = await open()
     expect(reopened.querySelector('.st-notice')?.textContent).toBe('disk full')
     expect(prepButton(reopened, 'vap').disabled).toBe(false)
-    await act(async () => root.render(React.createElement('div')))
-    expect((await render()).querySelector('.st-notice')).toBeNull()
+    await close()
+    expect((await open()).querySelector('.st-notice')).toBeNull()
   })
 
   it('reads what is installed again when a preparation started before the settings were opened again ends', async () => {
@@ -1291,6 +1321,24 @@ describe('settings dialog when main fails to report what is installed', () => {
     expect(chip(search)).toBe(t('settingsModels.checkFailed'))
     expect(hint(search)).toBe('the embedding environment is damaged')
     expect(search.querySelector('[data-prep="embedding"]')).toBeNull()
+  })
+
+  it('lists on the overview the features turned on whose state could not be checked, each with its reason, and counts them in the page list', async () => {
+    useSettingsStore.setState({ settings: { ...settings, vapEnabled: true, aizuchi: true, memoryEmbeddingEnabled: true } })
+    api.vapStatus.mockRejectedValueOnce(new Error('the MaAI environment is damaged'))
+    api.aizuchiClassifierStatus.mockRejectedValueOnce(new Error('the classifier environment is damaged'))
+    api.embeddingStatus.mockRejectedValueOnce(new Error('the embedding environment is damaged'))
+    const view = await render()
+    const kinds = [...view.querySelectorAll('[data-pending]')].map((one) => one.getAttribute('data-pending'))
+    expect(kinds).toEqual(expect.arrayContaining(['turnTaking', 'aizuchi', 'semanticSearch']))
+    const todo = (kind: string): Element => view.querySelector(`[data-pending="${kind}"]`)!
+    expect([todo('turnTaking'), todo('aizuchi'), todo('semanticSearch')].map((one) => [hint(one), chip(one)])).toEqual([
+      ['the MaAI environment is damaged', t('settingsModels.checkFailed')],
+      ['the classifier environment is damaged', t('settingsModels.checkFailed')],
+      ['the embedding environment is damaged', t('settingsModels.checkFailed')]
+    ])
+    expect(sub(view, 'voice')?.getAttribute('data-tone')).toBe('warn')
+    expect(sub(view, 'memory')?.getAttribute('data-tone')).toBe('warn')
   })
 
   it('gives the reason the aizuchi classifier could not be checked under the aizuchi that are turned on', async () => {
