@@ -1,5 +1,5 @@
 import type { CalendarStatus } from '@shared/calendar'
-import type { RendererApi, SetupProgress } from '@shared/ipc'
+import type { PreparationProgress, RendererApi } from '@shared/ipc'
 import type { SettingsPage } from '@shared/mini-apps'
 import type { LocalTtsEngine } from '@shared/tts-models'
 import { dayKey } from '@shared/calendar-layout'
@@ -69,7 +69,7 @@ const semanticSearchPreparing: DemoView = {
   prepare: (api) => {
     const notInstalled = api.embeddingStatus
     api.embeddingStatus = async () => ({ ...(await notInstalled()), runtimeInstalled: false, modelInstalled: false })
-    let listener: ((progress: SetupProgress) => void) | null = null
+    let listener: ((progress: PreparationProgress) => void) | null = null
     api.onSetupProgress = (callback) => {
       listener = callback
       return () => {
@@ -77,7 +77,7 @@ const semanticSearchPreparing: DemoView = {
       }
     }
     api.embeddingPrepare = () => {
-      setTimeout(() => listener?.({ status: 'downloading', pct: 40, downloadedMb: 54, totalMb: 135 }), 100)
+      setTimeout(() => listener?.({ target: 'embedding', status: 'downloading', pct: 40, downloadedMb: 54, totalMb: 135 }), 100)
       return new Promise(() => {})
     }
   },

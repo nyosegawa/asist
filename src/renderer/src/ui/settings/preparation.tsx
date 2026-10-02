@@ -2,8 +2,9 @@ import type { ReactNode } from 'react'
 import { CircleAlert } from 'lucide-react'
 import { HoloSwitch } from '@/components/ui/switch'
 import { useT } from '@/i18n'
+import type { PreparationTarget } from '@shared/ipc'
 import { progressLabel } from '../progress-label'
-import type { PreparationTarget, SettingsContext } from './context'
+import type { SettingsContext } from './context'
 import { Btn, Progress } from './primitives'
 
 /**
@@ -38,10 +39,11 @@ export function PrepareButton({
   tone?: 'primary' | 'quiet'
 }): React.JSX.Element {
   const t = useT()
-  const preparing = ctx.prep.busy && ctx.prep.target === target
+  const { running } = ctx.prep
+  const preparing = running?.target === target
   return (
     <>
-      <Btn tone={tone} data-prep={target} disabled={ctx.prep.busy} onClick={onClick}>
+      <Btn tone={tone} data-prep={target} disabled={running !== null} onClick={onClick}>
         {preparing ? t('common.preparing') : (label ?? t('settingsModels.prepare'))}
       </Btn>
       {preparing && onCancel && (
@@ -55,9 +57,9 @@ export function PrepareButton({
 
 /** The progress of the preparation of `target`, or nothing while another one or none runs. */
 export function PrepProgress({ ctx, target }: { ctx: SettingsContext; target: PreparationTarget }): React.JSX.Element | null {
-  const { prep } = ctx
-  if (!(prep.busy && prep.target === target && prep.progress)) return null
-  return <Progress percent={prep.progress.pct ?? 0} label={progressLabel(prep.progress)} />
+  const { running } = ctx.prep
+  if (running?.target !== target || !running.progress) return null
+  return <Progress percent={running.progress.pct ?? 0} label={progressLabel(running.progress)} />
 }
 
 /**
