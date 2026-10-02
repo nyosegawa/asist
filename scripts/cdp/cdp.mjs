@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { mkdtemp } from 'node:fs/promises'
 import os from 'node:os'
@@ -52,8 +52,8 @@ export function windowSize(value) {
   return [Number(match[1]), Number(match[2])]
 }
 
-/** Starts headless Chrome with a CDP port and returns that port. Port 0 picks a free one. */
-export async function launchChrome({ port = 0, url = 'about:blank' } = {}) {
+/** Starts headless Chrome with a CDP port and returns that port. Port 0 picks a free one. `args` are added flags. */
+export async function launchChrome({ port = 0, url = 'about:blank', args = [] } = {}) {
   const profile = await mkdtemp(path.join(os.tmpdir(), 'asist-chrome-'))
   const child = spawn(chromePath(), [
     '--headless=new',
@@ -62,15 +62,22 @@ export async function launchChrome({ port = 0, url = 'about:blank' } = {}) {
     '--no-first-run',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${profile}`,
+    ...args,
     url
   ])
   // Chrome is never left behind, however this process ends.
-  process.on('exit', () => {
+  const killOnExit = () => {
     try {
       child.kill('SIGKILL')
     } catch {
       // The process has already ended.
     }
+  }
+  process.on('exit', killOnExit)
+  // A run that starts a Chrome per case would otherwise collect a listener and a profile for each.
+  child.once('exit', () => {
+    process.off('exit', killOnExit)
+    rmSync(profile, { recursive: true, force: true })
   })
   const wsUrl = await new Promise((resolve, reject) => {
     let buffer = ''
@@ -81,7 +88,17 @@ export async function launchChrome({ port = 0, url = 'about:blank' } = {}) {
     })
     child.on('exit', (code) => reject(new Error(`Chrome が終了しました: ${code}`)))
   })
-  return { child, port: Number(new URL(wsUrl).port) }
+  return {
+    child,
+    port: Number(new URL(wsUrl).port),
+    /** Ends this Chrome and resolves once its process has exited, for a run that must never hold two at once. */
+    close: () =>
+      new Promise((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) return resolve()
+        child.once('exit', () => resolve())
+        child.kill()
+      })
+  }
 }
 
 /** Connects to the first page target on the port. */
@@ -96,21 +113,14 @@ export async function connect(port) {
   }
   const page = targets.find((t) => t.type === 'page')
   if (!page) throw new Error('page target がありません')
-  const ws = new WebSocket(page.webSocketDebuggerUrl)
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve)
-    ws.addEventListener('error', () => reject(new Error('CDP に接続できません')))
-  })
-  let seq = 0
-  const pending = new Map()
+  const { send, onEvent, close } = await openSocket(page.webSocketDebuggerUrl)
   /**
    * The last navigation, or the page as it was when connected: its URL, when it began, and since then the
    * uncaught errors of the page and the errors the browser logged, such as a module it could not load.
    * waitForApp reports them when the page never renders.
    */
   let navigation = { url: page.url, at: Date.now(), exceptions: [], logged: [] }
-  ws.addEventListener('message', (event) => {
-    const msg = JSON.parse(event.data)
+  onEvent((msg) => {
     if (msg.method === 'Runtime.exceptionThrown') {
       const details = msg.params.exceptionDetails
       navigation.exceptions.push({ at: Date.now(), text: details.exception?.description ?? details.text })
@@ -119,22 +129,12 @@ export async function connect(port) {
       const { text, url } = msg.params.entry
       navigation.logged.push(url ? `${text} ${url}` : text)
     }
-    if (msg.id && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id)
-      pending.delete(msg.id)
-      msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
-    }
   })
-  const send = (method, params = {}) =>
-    new Promise((resolve, reject) => {
-      const id = ++seq
-      pending.set(id, { resolve, reject })
-      ws.send(JSON.stringify({ id, method, params }))
-    })
   await send('Runtime.enable')
   await send('Log.enable')
   return {
     send,
+    onEvent,
     async evaluate(expression) {
       const { result, exceptionDetails } = await send('Runtime.evaluate', {
         expression,
@@ -163,6 +163,52 @@ export async function connect(port) {
       if (clip) params.clip = { ...clip, scale: 1 }
       const { data } = await send('Page.captureScreenshot', params)
       return Buffer.from(data, 'base64')
+    },
+    close
+  }
+}
+
+/**
+ * Connects to the browser itself rather than to a page, for what only the browser answers, such as the
+ * processes it runs (SystemInfo.getProcessInfo).
+ */
+export async function connectBrowser(port) {
+  const { webSocketDebuggerUrl } = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()
+  const { send, close } = await openSocket(webSocketDebuggerUrl)
+  return { send, close }
+}
+
+/** Opens a CDP WebSocket and returns how to send a command on it and how to hear its events. */
+async function openSocket(url) {
+  const ws = new WebSocket(url)
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve)
+    ws.addEventListener('error', () => reject(new Error('CDP に接続できません')))
+  })
+  let seq = 0
+  const pending = new Map()
+  const listeners = new Set()
+  ws.addEventListener('message', (event) => {
+    const msg = JSON.parse(event.data)
+    if (msg.id && pending.has(msg.id)) {
+      const { resolve, reject } = pending.get(msg.id)
+      pending.delete(msg.id)
+      msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result)
+    } else if (msg.method) {
+      for (const listener of listeners) listener(msg)
+    }
+  })
+  return {
+    send: (method, params = {}) =>
+      new Promise((resolve, reject) => {
+        const id = ++seq
+        pending.set(id, { resolve, reject })
+        ws.send(JSON.stringify({ id, method, params }))
+      }),
+    /** Calls the listener with every event, until the function it returns is called. */
+    onEvent: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
     close: () => ws.close()
   }
