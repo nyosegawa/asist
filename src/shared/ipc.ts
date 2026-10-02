@@ -490,9 +490,13 @@ export type AgentEngine = 'codex' | 'claude'
  * Whether an engine's CLI was found. 'script-only' is a Windows install that left only a .cmd or .bat
  * script, as npm does, which ASIST does not start: cmd.exe would parse the quotes and parentheses in
  * the arguments again. 'sandbox-not-set-up' is a Windows codex whose own sandbox has not been set up,
- * without which ASIST does not run it: codex there would not confine a job at all.
+ * without which ASIST does not run it: codex there would not confine a job at all. 'shell-unreadable' is a
+ * Mac whose login shell did not give its PATH, on which the CLI is looked for and run.
  */
-export type AgentCliState = 'found' | 'missing' | 'script-only' | 'sandbox-not-set-up'
+export type AgentCliState = 'found' | 'missing' | 'script-only' | 'sandbox-not-set-up' | 'shell-unreadable'
+
+/** The agent CLI as the status reports it: 'checking' until the search, which on a Mac waits for the user's shell, has ended. */
+export type AgentCliStatus = AgentCliState | 'checking'
 
 export interface AgentProcessIdentity {
   pid: number
@@ -528,8 +532,21 @@ export interface AgentJob {
    * `dir` is the worktree's path, and `cwd` is the folder the user named, at the same place inside it. `base` is
    * the commit the job started from. `submodules` are the submodules, with .gitmodules, that the job touched,
    * as found when it settled; ASIST does not merge such a job, and its worktree waits for the user.
+   * `movedTo` is what the agent left the worktree on instead of `branch` when it settled: a branch of its own,
+   * or the commit of a detached HEAD. ASIST commits nothing onto it and does not merge such a job either.
+   * `keptFor` names, by their paths in the repository, the files that alone keep a job with nothing to merge
+   * waiting: files it reported writing where git ignores them, which go with the worktree when it is discarded.
    */
-  worktree?: { repo: string; dir: string; branch: string; base: string; commit?: string; submodules?: string[] }
+  worktree?: {
+    repo: string
+    dir: string
+    branch: string
+    base: string
+    commit?: string
+    submodules?: string[]
+    movedTo?: string
+    keptFor?: string[]
+  }
   /** Where the worktree stands between review and merge. `unchanged` is only for a job that committed cleanly and left nothing a merge would take in. */
   mergeState?: JobMergeState
   /** The day memory curation covered and whether the follow-up has been applied. A continuation job inherits the day, and the voice does not report it. */
@@ -559,6 +576,11 @@ export type JobDiff = MergeVerdict & {
    * ASIST from merging it (see `AgentJob.worktree.submodules`).
    */
   submodules: string[]
+  /**
+   * The files the job reported writing in its worktree that the commit does not hold, because git ignores
+   * them, by their paths in the repository. A merge leaves them behind, and they are deleted with the worktree.
+   */
+  leftOut: string[]
 }
 
 /** What the user saw and approved in a review, which a merge carries so that main merges only that. */
@@ -576,6 +598,8 @@ export interface DiscardPreview {
    * Empty when the worktree's folder is gone.
    */
   submodules: string[]
+  /** The files the job reported writing that no branch holds, which the discard deletes with the worktree (see `JobDiff.leftOut`). */
+  leftOut: string[]
 }
 
 /**
@@ -686,7 +710,7 @@ export interface AppStatus {
    */
   asrInstalled: boolean
   /** Whether the CLI of the selected agent engine was found. */
-  agent: AgentCliState
+  agent: AgentCliStatus
   agentEngine: AgentEngine
   /** The voice engine from the settings. With `live` the ASR and TTS states are not used. */
   voiceEngine: VoiceEngine
@@ -834,6 +858,7 @@ export const IpcChannel = {
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
   GetSetupStatus: 'get-setup-status',
+  RecheckAgentCli: 'recheck-agent-cli',
   CompleteSetup: 'complete-setup',
   AsrPrepare: 'asr-prepare',
   AsrPrepareCancel: 'asr-prepare-cancel',
@@ -1042,6 +1067,8 @@ export interface RendererApi {
   onHotkeyMic(callback: () => void): () => void
 
   getSetupStatus(): Promise<SetupStatus>
+  /** Looks for the agent CLI again, on the PATH the user's shell gives now; a new status follows once the search ends. */
+  recheckAgentCli(): Promise<void>
   /** Validates the chosen API, ASR and TTS again, and marks onboarding complete only when they all pass. */
   completeSetup(request: CompleteSetupRequest): Promise<AppSettings>
   prepareAsrModel(model?: AsrModel): Promise<{ ok: boolean; message: string }>
