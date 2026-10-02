@@ -56,41 +56,37 @@ let transcriber: AutomaticSpeechRecognitionPipeline | null = null
 
 const post = (message: AsrResponse): void => self.postMessage(message)
 
+/**
+ * Chooses where the model runs before anything is fetched. Whisper's fp16 weights run on WebGPU only where the
+ * adapter has shader-f16, which transformers.js checks once the configuration has been fetched; falling back to
+ * WASM after its refusal would fetch the model a second time, with no progress and inside the same time limit.
+ */
+async function chooseDevice(): Promise<{ device: 'webgpu' | 'wasm'; dtype: 'fp16' | 'q8' }> {
+  const adapter = 'gpu' in navigator ? await navigator.gpu.requestAdapter() : null
+  return adapter?.features.has('shader-f16') ? { device: 'webgpu', dtype: 'fp16' } : { device: 'wasm', dtype: 'q8' }
+}
+
 async function init(model: string, revision: string): Promise<void> {
-  const hasWebGpu = 'gpu' in navigator
-  const device = hasWebGpu ? 'webgpu' : 'wasm'
-  try {
-    transcriber = await pipeline('automatic-speech-recognition', model, {
-      device,
-      dtype: hasWebGpu ? 'fp16' : 'q8',
-      revision,
-      progress_callback: (info: {
-        status?: string
-        file?: string
-        loaded?: number
-        total?: number
-      }) => {
-        // The per-file progress goes out untouched and AsrEngine adds it up. Several files
-        // download at once, so passing each file's percentage straight through makes the
-        // displayed number jump around.
-        if (info.status === 'progress' && typeof info.loaded === 'number' && info.total) {
-          post({ type: 'progress', file: info.file ?? '', loaded: info.loaded, total: info.total })
-        }
+  const { device, dtype } = await chooseDevice()
+  transcriber = await pipeline('automatic-speech-recognition', model, {
+    device,
+    dtype,
+    revision,
+    progress_callback: (info: {
+      status?: string
+      file?: string
+      loaded?: number
+      total?: number
+    }) => {
+      // The per-file progress goes out untouched and AsrEngine adds it up. Several files
+      // download at once, so passing each file's percentage straight through makes the
+      // displayed number jump around.
+      if (info.status === 'progress' && typeof info.loaded === 'number' && info.total) {
+        post({ type: 'progress', file: info.file ?? '', loaded: info.loaded, total: info.total })
       }
-    })
-    post({ type: 'ready', device })
-  } catch (err) {
-    if (device === 'webgpu') {
-      transcriber = await pipeline('automatic-speech-recognition', model, {
-        device: 'wasm',
-        dtype: 'q8',
-        revision
-      })
-      post({ type: 'ready', device: 'wasm' })
-      return
     }
-    throw err
-  }
+  })
+  post({ type: 'ready', device })
 }
 
 async function transcribe(id: number, audio: Float32Array, language: string): Promise<void> {
