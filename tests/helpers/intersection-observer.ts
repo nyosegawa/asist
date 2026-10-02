@@ -105,6 +105,11 @@ export class LayoutIntersectionObserver {
     for (const observer of [...observers]) observer.update()
   }
 
+  /** How many elements the observers still watch, which a page or a view that is gone leaves out. */
+  static watched(): number {
+    return [...observers].reduce((sum, observer) => sum + observer.targets.size, 0)
+  }
+
   /** Forgets every observer, between tests. */
   static reset(): void {
     observers.clear()

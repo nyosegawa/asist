@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type RefObject } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type RefObject } from 'react'
 
 /**
  * The box that scrolls a viewer's content: the Frame's own box in a card, and the focus card in the focus view,
@@ -13,15 +13,16 @@ export const ScrollRoot = createContext<RefObject<HTMLElement | null> | null>(nu
  */
 const NEAR_MARGIN = '100%'
 
-type Report = (near: boolean) => void
+/** Told whether the element is near, once when it is first measured and again each time that changes. */
+export type NearReport = (near: boolean) => void
 
 /** One observer per scrolling box, shared by every element watched in it; null stands for the window. */
-const watchers = new Map<HTMLElement | null, { observer: IntersectionObserver; reports: Map<Element, Report> }>()
+const watchers = new Map<HTMLElement | null, { observer: IntersectionObserver; reports: Map<Element, NearReport> }>()
 
-function watch(root: HTMLElement | null, element: Element, report: Report): () => void {
+function watch(root: HTMLElement | null, element: Element, report: NearReport): () => void {
   let watcher = watchers.get(root)
   if (!watcher) {
-    const reports = new Map<Element, Report>()
+    const reports = new Map<Element, NearReport>()
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) reports.get(entry.target)?.(entry.isIntersecting)
@@ -44,18 +45,27 @@ function watch(root: HTMLElement | null, element: Element, report: Report): () =
 }
 
 /**
+ * Watches elements the component did not render itself, such as the pictures inside a document's HTML: the
+ * returned function starts watching one element in the component's scrolling box and returns what stops it. It
+ * is called from an effect, once every ref of the commit is attached, the scrolling box's included.
+ */
+export function useNearWatch(): (element: Element, report: NearReport) => () => void {
+  const root = useContext(ScrollRoot)
+  return useCallback((element, report) => watch(root === null ? null : root.current, element, report), [root])
+}
+
+/**
  * Whether the element lies within one screen of what its scrolling box shows, kept up to date as the box
  * scrolls and the content around the element moves. The ref points at an element that stays mounted as long as
  * the component does.
  */
 export function useNear(ref: RefObject<Element | null>): boolean {
-  const root = useContext(ScrollRoot)
+  const watchNear = useNearWatch()
   const [near, setNear] = useState(false)
   useEffect(() => {
     const element = ref.current
     if (!element) return
-    // An effect runs once every ref of the commit is attached, the scrolling box's included.
-    return watch(root === null ? null : root.current, element, setNear)
-  }, [ref, root])
+    return watchNear(element, setNear)
+  }, [ref, watchNear])
   return near
 }
