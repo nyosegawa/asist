@@ -29,6 +29,8 @@ import { platformCapabilities } from './services/platform'
 import { getSettings } from './services/settings'
 import { createTranslator } from '@shared/i18n'
 import { initMail } from './services/mail'
+import * as nativeMic from './services/native-mic'
+import * as live from './services/live'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
 import { windowChrome } from './window-chrome'
@@ -42,11 +44,33 @@ registerFileScheme()
 /** The permissions the app's own page asks for: the microphone, copying a job's text, and a video in full screen. */
 const PAGE_PERMISSIONS = new Set(['media', 'clipboard-sanitized-write', 'fullscreen'])
 
+/**
+ * The page the window shows, and the only page trusted with the preload bridge. A development launch takes
+ * it from electron-vite's server; a packaged app always shows the page inside its package, whatever its
+ * environment says.
+ */
+function appPageUrl(): string {
+  const devServer = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
+  return devServer ?? pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
+}
+
+/**
+ * Stops what main runs for the page in the window: the microphone helper and the live engine the page
+ * started. The page that replaces it after a reload or a crash starts with the microphone off and knows
+ * nothing of them, so they would go on capturing, speaking job reports and running a billed session behind it.
+ */
+function stopPageWork(): void {
+  nativeMic.stop()
+  void live.stop().catch((error) => console.error('live stop failed:', error))
+}
+
+/** A page that crashes again this soon after it was loaded again for a crash would crash in a loop, so it is left down. */
+const CRASH_RELOAD_INTERVAL_MS = 60_000
+
 function createWindow(): void {
   const chrome = windowChrome(platformCapabilities().os)
   chrome.prepare()
-  const rendererFile = path.join(__dirname, '../renderer/index.html')
-  const appPage = process.env.ELECTRON_RENDERER_URL ?? pathToFileURL(rendererFile).href
+  const appPage = appPageUrl()
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -94,15 +118,27 @@ function createWindow(): void {
     PAGE_PERMISSIONS.has(permission) && details.isMainFrame && isAppPage(details.requestingUrl ?? '', appPage)
   )
 
-  logRenderer(mainWindow)
+  // The page is replaced when a reload commits, from the View menu that macOS keeps or after a crash. A
+  // navigation to any other page is refused by will-navigate before it commits.
+  mainWindow.webContents.on('did-navigate', stopPageWork)
+  let crashReloadedAt = -Infinity
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`renderer process gone: reason=${details.reason} exit=${details.exitCode}`)
+    stopPageWork()
+    if (details.reason === 'clean-exit' || !mainWindow || mainWindow.isDestroyed()) return
+    if (Date.now() - crashReloadedAt < CRASH_RELOAD_INTERVAL_MS) {
+      console.error('the page is left down, because it crashed again soon after it was loaded again')
+      return
+    }
+    crashReloadedAt = Date.now()
+    void mainWindow.loadURL(appPage)
+  })
+
+  logRenderer(mainWindow, appPage)
   registerIpc(mainWindow, appPage)
   setupOsIntegration(mainWindow)
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    void mainWindow.loadFile(rendererFile)
-  }
+  void mainWindow.loadURL(appPage)
 }
 
 /**
