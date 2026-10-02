@@ -59,8 +59,16 @@ describe('MemoryIndex', () => {
     const hits = index.search('キジトラ')
     expect(hits[0]).toMatchObject({ record: { id: 'u2' }, via: 'lexical', exact: false })
     expect(hits[0].bm25).toBeLessThan(0)
+  })
+
+  it('finds a memory by a keyword of one kanji in its text or its alias, without taking the one-character alias for an exact name', () => {
+    expect(index.search('桜').map((h) => h.record.id)).toEqual(['u4'])
+    // The last character of "最寄り駅は中野" begins no bigram.
+    expect(index.search('野').map((h) => h.record.id)).toEqual(['u5'])
     // A one-character alias such as "猫" matches almost anything, so it is never used for an exact match.
-    expect(index.search('猫')).toEqual([])
+    const hits = index.search('猫')
+    expect(hits.map((h) => h.record.id)).toEqual(['u2'])
+    expect(hits[0]).toMatchObject({ via: 'lexical', exact: false })
   })
 
   it('puts the summary of the page the utterance names or aliases exactly on top, and drops the weak lexical-only hits', () => {
