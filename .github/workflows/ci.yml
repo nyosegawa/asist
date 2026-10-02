@@ -22,24 +22,42 @@ concurrency:
 # The app's checks run as separate jobs at the same time. In one job they took seven and a half minutes
 # on macos-latest (2026-09-25): npm test 122 s, demo:fit 205 s and the unsigned build 79 s.
 jobs:
-  # Whether anything outside website/ changed. A workflow left out by a paths filter never reports the
-  # result job the main ruleset requires, so the pull request would wait forever; the app's jobs are
-  # skipped by their if: instead.
+  # Whether anything outside website/ changed (app), and whether a file the demo reads changed (layout).
+  # A workflow left out by a paths filter never reports the result job the main ruleset requires, so the
+  # pull request would wait forever; the app's jobs are skipped by their if: instead.
   changes:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       app: ${{ steps.diff.outputs.app }}
+      layout: ${{ steps.diff.outputs.layout }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
       # The first parent is the base of a pull request's merge commit, and the previous main of a squash merge.
+      # layout lists the files that a build of the demo and a run of demo:fit read, traced on 2026-10-03: the
+      # renderer, src/shared, the memory templates src/shared imports, the demo's config, fit's scripts and the
+      # dependencies. It adds the configuration Vite and Tailwind look for at the root and in src/, where an
+      # ignore file decides which of the renderer's files Tailwind scans for class names, and the job's own
+      # workflow and setup. A file the demo comes to read from elsewhere has to join the list, or a change to it
+      # skips fit.
       - id: diff
         run: |
           if git diff --name-only HEAD^ HEAD | grep -qv '^website/'; then
             echo app=true >> "$GITHUB_OUTPUT"
+          fi
+          if git diff --name-only HEAD^ HEAD | grep -qE \
+            -e '^src/(renderer|shared)/' \
+            -e '^resources/skills/memory-curation[^/]*/assets/templates/' \
+            -e '^resources/skills/memory-format\.json$' \
+            -e '^scripts/(vite\.demo\.config\.mts|demo-page-view\.mts|aizuchi-clips/review-api\.mjs|cdp/[^/]+\.mjs|cdp/scenes/fit\.mjs)$' \
+            -e '^package(-lock)?\.json$' \
+            -e '^(src/)?(tsconfig[^/]*\.json|postcss\.config\.[^/]+|\.postcssrc[^/]*|\.?browserslist(rc)?|\.gitignore|\.ignore)$' \
+            -e '^\.github/workflows/ci\.yml$' \
+            -e '^\.github/actions/setup-app/'; then
+            echo layout=true >> "$GITHUB_OUTPUT"
           fi
 
   # The app is built for macOS on Apple Silicon, which macos-latest is, and for Windows x64, which
@@ -81,9 +99,11 @@ jobs:
 
   # Whether the text of every card and screen still fits in each of the eleven languages and every theme,
   # in Chrome. The layout depends on the fonts of macOS, so it runs there, with the themes shared out.
+  # It holds two macOS runners for 3 to 4 minutes each, so it runs only when a file the demo reads changed
+  # (layout); no other change can move what the demo draws.
   fit:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: needs.changes.outputs.layout == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     strategy:
