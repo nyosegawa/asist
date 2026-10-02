@@ -2,8 +2,13 @@ import { StreamResampler } from './MicCapture'
 
 /** MaAI runs inference on 16 kHz audio every 80 ms. */
 const FRAME_SAMPLES = 1_280
-/** Only the last second of played audio is kept, which bounds how far it can drift from the microphone. */
-const ASSISTANT_MAX_SAMPLES = 16_000
+/**
+ * The played audio kept for the microphone frames still to come. The output tap and the microphone deliver
+ * at the same rate, so what is left over after each frame is only the jitter between their deliveries; a
+ * backlog beyond that, such as a reply played while the microphone was starting, would pair every later
+ * frame with audio that much older, for as long as the reply goes on.
+ */
+const ASSISTANT_MAX_SAMPLES = 2 * FRAME_SAMPLES
 
 /** Aligns the microphone and the audio actually being played into the equal-length frames MaAI expects. */
 export class VapAudio {

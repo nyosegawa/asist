@@ -28,6 +28,19 @@ describe('VapAudio', () => {
     expect([...emit.mock.calls[0][1]]).toEqual([...samples(1280, 2)])
   })
 
+  it('pairs the microphone with what is playing now after a whole reply played before its first frame', () => {
+    const emit = vi.fn()
+    const audio = new VapAudio(emit)
+    // The output tap's render quanta at 48 kHz: a second of reply while the microphone is still
+    // starting, then 400 ms more.
+    for (let i = 0; i < 375; i++) audio.pushAssistant(samples(128, 1), 48_000)
+    for (let i = 0; i < 150; i++) audio.pushAssistant(samples(128, 2), 48_000)
+    audio.pushUser(samples(1280, 0))
+    audio.pushUser(samples(1280, 0))
+
+    for (const [, assistant] of emit.mock.calls) expect([...(assistant as Float32Array)]).toEqual([...samples(1280, 2)])
+  })
+
   it('does not mix in unsent audio or a resampling remainder from before the microphone stopped', () => {
     const emit = vi.fn()
     const audio = new VapAudio(emit)
