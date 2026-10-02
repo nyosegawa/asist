@@ -388,14 +388,18 @@ describe('MaAI that falls behind the audio', () => {
   })
 
   /**
-   * Turns the microphone on with MaAI, and returns a stand-in for vap_worker.py: it is handed an 80 ms frame of
-   * audio every 80 ms of the clock, gets through them at the speed of each stretch, and sends an estimate for each
-   * frame it finishes with how much newer audio had reached it by then.
+   * Turns the microphone on with MaAI, and returns a stand-in for vap_worker.py. While it works, it is handed an 80 ms
+   * frame of audio every 80 ms of the clock, gets through them at the speed of each stretch, and sends an estimate for
+   * each frame it finishes with how much newer audio had reached it by then: the model the load holds back reports
+   * that lag, and the other none. Stopped, it neither takes audio nor sends anything; started again, it begins with
+   * the frames it is given still waiting, as one that sent ready before its warm-up was through did.
    */
-  async function listeningWithWorker(): Promise<{
+  async function listeningWithWorker(heldBack: 'turn' | 'backchannel' = 'turn'): Promise<{
     controller: InstanceType<typeof VoiceController>
     said: ReturnType<typeof vi.fn>
     work: (...stretches: Stretch[]) => void
+    stop: (ms: number) => void
+    restart: (waitingFrames: number) => void
   }> {
     const listeners: Array<(state: VapState) => void> = []
     vi.mocked(window.api.onVapState).mockImplementation((listener: (state: VapState) => void) => {
@@ -422,18 +426,33 @@ describe('MaAI that falls behind the audio', () => {
           done = Math.min(received, done + (speed * 10) / 80)
           for (let frame = before + 1; frame <= Math.floor(done); frame++) {
             const lagMs = Math.round((Math.floor(received) - frame) * 80)
-            for (const listener of listeners) listener({ ...midSentence, turnLagMs: lagMs, backchannelLagMs: lagMs })
+            const estimate = {
+              ...midSentence,
+              turnLagMs: heldBack === 'turn' ? lagMs : 0,
+              backchannelLagMs: heldBack === 'backchannel' ? lagMs : 0
+            }
+            for (const listener of listeners) listener(estimate)
           }
         }
       }
     }
-    return { controller, said, work }
+    const stop = (ms: number): void => {
+      clock += ms
+    }
+    const restart = (waitingFrames: number): void => {
+      received = waitingFrames
+      done = 0
+    }
+    return { controller, said, work, stop, restart }
   }
 
-  /** A worker at its measured 31 ms a frame. */
-  const keepingUp = (ms: number): Stretch => ({ ms, speed: 80 / 31 })
+  /** A worker that takes the given milliseconds for a frame. */
+  const atFrameMs = (frameMs: number, ms: number): Stretch => ({ ms, speed: 80 / frameMs })
+  /** A worker at 42 ms a frame, the median on an Apple M5 at a load average of 11 to 15. */
+  const keepingUp = (ms: number): Stretch => atFrameMs(42, ms)
   /** A worker on a loaded Mac, which got through 248 frames in 30 s of audio, two thirds of real time. */
   const loaded = (ms: number): Stretch => ({ ms, speed: 248 / 375 })
+  const stalled = (ms: number): Stretch => ({ ms, speed: 0 })
 
   it('says once that MaAI fell behind when the load holds it back, and once again after the microphone is turned on again', async () => {
     const { controller, said, work } = await listeningWithWorker()
@@ -452,22 +471,94 @@ describe('MaAI that falls behind the audio', () => {
     controller.disable()
   })
 
-  it('says nothing when the worker stalls for a moment and catches up', async () => {
-    const { controller, said, work } = await listeningWithWorker()
+  it('says nothing when the worker stalls and catches up, however slowly it catches up', async () => {
+    // The Apple M5 under load, and the Core i9-9900K's median, 90th percentile and longest time a frame.
+    for (const frameMs of [42, 59.8, 63.8, 66.7]) {
+      const { controller, said, work } = await listeningWithWorker()
 
-    work(keepingUp(2_000), { ms: 2_000, speed: 0 }, keepingUp(10_000), { ms: 2_000, speed: 0 }, keepingUp(10_000))
+      work(atFrameMs(frameMs, 2_000), stalled(2_000), atFrameMs(frameMs, 30_000), stalled(4_000), atFrameMs(frameMs, 30_000))
 
-    expect(said).not.toHaveBeenCalled()
-    controller.disable()
+      expect(said).not.toHaveBeenCalled()
+      controller.disable()
+    }
   })
 
   it('says nothing when the worker stops sending estimates, which main logs', async () => {
     const { controller, said, work } = await listeningWithWorker()
 
-    work(keepingUp(2_000), { ms: 30_000, speed: 0 })
+    work(keepingUp(2_000), stalled(30_000))
 
     expect(said).not.toHaveBeenCalled()
     controller.disable()
+  })
+
+  it('counts afresh when the estimates come back after a gap, from a worker that starts behind', async () => {
+    const away = {
+      setting: (controller: InstanceType<typeof VoiceController>, on: boolean) => (controller.vapEnabled = on),
+      language: (controller: InstanceType<typeof VoiceController>, on: boolean) =>
+        (controller.conversationLocale = on ? 'ja-JP' : 'en-US'),
+      // The watchdog in main starts a worker that ended again, which the renderer does not see.
+      restart: () => {}
+    }
+    for (const turn of Object.values(away)) {
+      const { controller, said, work, stop, restart } = await listeningWithWorker()
+      // The worker falls behind under load, without being behind long enough to be told.
+      work(keepingUp(2_000), loaded(4_000))
+      turn(controller, false)
+      stop(3_000)
+      turn(controller, true)
+      // The new worker starts 720 ms behind, falls behind for a moment, and catches up.
+      restart(9)
+      work(loaded(1_500), keepingUp(10_000))
+
+      expect(said).not.toHaveBeenCalled()
+      controller.disable()
+    }
+  })
+
+  it('counts afresh with each run of the microphone', async () => {
+    const { controller, said, work } = await listeningWithWorker()
+    work(keepingUp(2_000))
+
+    // The load holds the worker back throughout, while the microphone is turned off and on every 1.5 s.
+    for (let run = 0; run < 6; run++) {
+      work(loaded(1_500))
+      controller.disable()
+      await controller.enable()
+    }
+
+    expect(said).not.toHaveBeenCalled()
+    controller.disable()
+  })
+
+  it('says nothing while the microphone is off or MaAI takes no part, whatever the estimates say', async () => {
+    const away = {
+      microphone: (controller: InstanceType<typeof VoiceController>) => controller.disable(),
+      setting: (controller: InstanceType<typeof VoiceController>) => (controller.vapEnabled = false),
+      language: (controller: InstanceType<typeof VoiceController>) => (controller.conversationLocale = 'en-US')
+    }
+    for (const leave of Object.values(away)) {
+      const { controller, said, work } = await listeningWithWorker()
+      work(keepingUp(2_000))
+
+      leave(controller)
+      work(loaded(15_000))
+
+      expect(said).not.toHaveBeenCalled()
+      controller.disable()
+    }
+  })
+
+  it('judges the turn-taking model alone, which decides the end of speech', async () => {
+    const heard = async (heldBack: 'turn' | 'backchannel'): Promise<number> => {
+      const { controller, said, work } = await listeningWithWorker(heldBack)
+      work(keepingUp(2_000), loaded(15_000))
+      controller.disable()
+      return said.mock.calls.length
+    }
+
+    expect(await heard('turn')).toBe(1)
+    expect(await heard('backchannel')).toBe(0)
   })
 })
 
