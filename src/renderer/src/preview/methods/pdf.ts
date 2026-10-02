@@ -13,7 +13,7 @@ import openJpegDecoderUrl from 'pdfjs-dist/wasm/openjpeg_nowasm_fallback.js?url'
 import { errorKey } from '@shared/i18n/error-key'
 import { isWorkerFailed, PICTURE_LEFT_OUT } from '../pdf-worker-messages'
 import PdfJsWorker from '../pdf-worker.ts?worker'
-import { fetchRange, readRange, type Bytes } from '../ranges'
+import { fetchRange, readRange, versionText, type Bytes, type FileVersion } from '../ranges'
 import type { OpenPreviewDocument } from '../serve'
 
 /**
@@ -25,7 +25,9 @@ import type { OpenPreviewDocument } from '../serve'
  *
  * pdf.js keeps every byte it has read until the document closes, and a read that fails leaves it waiting, so the
  * document opens the file again for the next request after a read failed, or once it has read a lot since it
- * opened. The viewer keeps the pages it was shown.
+ * opened. The viewer keeps the pages it was shown. A document stays with the version of the file it opened: a file
+ * saved again since fails the request with changedWhileReading, and the viewers' side then opens a new document
+ * (panels/viewers/preview-client.ts).
  *
  * pdf.js needs nothing beyond the page's policy: its worker and its decoders are the page's own scripts, the ranges
  * reach it from the page, and an embedded font is loaded from its bytes.
@@ -126,6 +128,7 @@ class FileRanges extends PDFDataRangeTransport {
   /** What pdf.js has been given, all of which it keeps. */
   held = 0
   readonly #url: string
+  readonly #version: FileVersion
   readonly #holdLimit: number
   readonly #reading = new AbortController()
   readonly #fail: (error: unknown) => void
@@ -137,10 +140,11 @@ class FileRanges extends PDFDataRangeTransport {
    */
   #reads: Array<{ start: number; stop: number; bytes: Promise<Bytes> }> = []
 
-  constructor(url: string, size: number, start: Bytes, holdLimit: number, fail: (error: unknown) => void) {
-    super(size, start)
+  constructor(url: string, version: FileVersion, start: Bytes, holdLimit: number, fail: (error: unknown) => void) {
+    super(version.size, start)
     this.held = start.length
     this.#url = url
+    this.#version = version
     this.#holdLimit = holdLimit
     this.#fail = fail
   }
@@ -165,7 +169,7 @@ class FileRanges extends PDFDataRangeTransport {
     const span = Math.max(this.#span, end - begin)
     const start = backward ? Math.max(0, Math.floor((end - span) / RANGE_BYTES) * RANGE_BYTES) : begin
     const stop = forward ? Math.min(this.length, start + span) : end
-    const read = { start, stop, bytes: readRange(this.#url, start, stop, this.length, this.#reading.signal) }
+    const read = { start, stop, bytes: readRange(this.#url, start, stop, this.#version, this.#reading.signal) }
     read.bytes.catch(() => undefined)
     this.#reads = [read, ...this.#reads].slice(0, KEPT_READS)
     return read
@@ -178,6 +182,8 @@ class FileRanges extends PDFDataRangeTransport {
 
 /** One opening of the file by pdf.js. */
 interface Opening {
+  /** The version of the file pdf.js reads. */
+  version: string
   task: PDFDocumentLoadingTask
   doc: PDFDocumentProxy
   ranges: FileRanges
@@ -229,6 +235,16 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return result
 }
 
+/**
+ * A page of the opening. The viewer asks only for the pages of the summary it was given, so a page past the end means
+ * the file was saved with fewer pages, as a frame started after one stopped finds it, which pdf.js would call an
+ * invalid page request.
+ */
+function pageOf(opening: Opening, number: number): Promise<PDFPageProxy> {
+  if (!Number.isInteger(number) || number < 1 || number > opening.doc.numPages) return Promise.reject(new Error(errorKey('files.errors.changedWhileReading')))
+  return opening.settled(opening.doc.getPage(number))
+}
+
 const sizeOf = (page: PDFPageProxy): PageSize => {
   const { width, height } = page.getViewport({ scale: 1 })
   return { width, height }
@@ -247,7 +263,8 @@ async function openFile(url: string, limits: ReadLimits): Promise<Opening> {
     opening.broken = true
     reject(error)
   }
-  opening.ranges = new FileRanges(url, first.size, first.bytes, limits.holdLimitBytes, opening.fail)
+  opening.version = versionText(first)
+  opening.ranges = new FileRanges(url, first, first.bytes, limits.holdLimitBytes, opening.fail)
   opening.settled = (request) => Promise.race([request, failed])
   failWhenWorkerFails.add(opening.fail)
   opening.task = getDocument({
@@ -301,6 +318,7 @@ interface Drawing {
 /** Opens PDFs that hold no more of the file than the limits allow; the tests give smaller ones. */
 export const openPdfWithin = (limits: ReadLimits) => async (url: string) => {
   let current = await openFile(url, limits)
+  const { version } = current
   let reopening: Promise<Opening> | null = null
   let closed = false
   const drawings = new Map<number, Drawing>()
@@ -316,8 +334,10 @@ export const openPdfWithin = (limits: ReadLimits) => async (url: string) => {
       reopening ??= openFile(url, limits).then(
         (next) => {
           reopening = null
-          if (closed) {
+          if (closed || next.version !== version) {
             close(next)
+            // The document belongs to the version it opened; the viewers' side opens the file saved since anew.
+            if (next.version !== version) throw new Error(errorKey('files.errors.changedWhileReading'))
             return next
           }
           const previous = current
@@ -344,7 +364,7 @@ export const openPdfWithin = (limits: ReadLimits) => async (url: string) => {
       size: async (number: number): Promise<PageSize> => {
         const opening = await use()
         try {
-          return sizeOf(await opening.settled(opening.doc.getPage(number)))
+          return sizeOf(await pageOf(opening, number))
         } finally {
           done(opening)
         }
@@ -361,7 +381,7 @@ export const openPdfWithin = (limits: ReadLimits) => async (url: string) => {
           if (drawing.released) return null
           const opening = await use()
           try {
-            const page = await opening.settled(opening.doc.getPage(number))
+            const page = await pageOf(opening, number)
             drawing.page = page
             if (drawing.released) return null
             const viewport = page.getViewport({ scale })
@@ -398,6 +418,7 @@ export const openPdfWithin = (limits: ReadLimits) => async (url: string) => {
         if (drawing.page && ![...drawings.values()].some((other) => other.page === drawing.page)) drawing.page.cleanup()
       }
     },
+    version,
     close() {
       closed = true
       close(current)

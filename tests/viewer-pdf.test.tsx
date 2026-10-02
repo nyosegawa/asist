@@ -69,12 +69,13 @@ function fakePdf({
         const bitmap = { width: Math.round(size.width * scale), height: Math.round(size.height * scale), close: vi.fn() }
         return { bitmap, pictureLeftOut: leftOut.includes(number) }
       }
-      if (method === 'release') {
-        drawings.delete(args)
-        return undefined
-      }
       throw new Error(`no method ${method}`)
     }),
+    tell: vi.fn((method: string, args: never) => {
+      if (released) document.afterRelease += 1
+      if (method === 'release') drawings.delete(args)
+    }),
+    onChanged: () => () => undefined,
     release: vi.fn(() => {
       released = true
     })
@@ -223,7 +224,7 @@ describe('the PDF card', () => {
 
   it('shows a note while the document opens and the reason in red when it does not', async () => {
     let reject!: (error: Error) => void
-    preview.open.mockReturnValue({ call: () => new Promise((_, r) => (reject = r)), release: vi.fn() })
+    preview.open.mockReturnValue({ call: () => new Promise((_, r) => (reject = r)), tell: vi.fn(), onChanged: () => () => undefined, release: vi.fn() })
     await act(async () => root.render(<PdfViewer item={item} mode="card" size="l" />))
     expect(container.querySelector('.fv-note')?.textContent).toBe(t('files.viewer.loading'))
     await act(async () => reject(new Error('Invalid PDF structure.')))

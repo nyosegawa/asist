@@ -7,6 +7,7 @@ import type { Viewer, ViewerProps } from './types'
 import { useNear } from './use-near'
 import './PdfViewer.css'
 import { displayError } from '@/display-error'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { useT } from '@/i18n'
 import type { Translate } from '@shared/i18n'
 
@@ -75,29 +76,46 @@ interface PdfPages {
   close(): void
 }
 
+/** Whether an error says the preview frame stopped, after which the client starts a new one for the next request. */
+const frameStopped = (error: unknown): boolean => errorKeyOf(error) === 'files.errors.previewStopped'
+
 /**
- * Opens the file in the preview page. Closing releases there every drawing still held before it lets go of the
- * document: the card of the same file can keep the document open after the focus view closes, and React runs the
- * viewer's own cleanup before its pages', whose releases then ask nothing of the document.
+ * Opens the file in the preview page.
+ * - A request whose frame stopped, as when another viewer's file took the frame out of memory, is made once more in
+ *   a new frame, and a second stop in a row is shown.
+ * - When the file changes under the document, `onChanged` is called and the viewer starts over from the summary;
+ *   what the requests made before then end with is never shown.
+ * - Closing tells the document of every drawing still held before it lets go of it: the card of the same file can
+ *   keep the document open after the focus view closes, and React runs the viewer's own cleanup before its pages',
+ *   whose releases then ask nothing of the document. A drawing is told of only where the document is open
+ *   (PreviewHandle.tell), since a frame that stopped took its drawings with it.
  */
-function openPdfPages(file: PreviewFile): PdfPages {
+function openPdfPages(file: PreviewFile, onChanged: () => void): PdfPages {
   const doc = openPreviewDocument<typeof openPdf>('pdf', file)
   const held = new Set<number>()
+  let changed = false
+  const stopListening = doc.onChanged(() => {
+    changed = true
+    onChanged()
+  })
+  const ask = <T,>(request: () => Promise<T>): Promise<T> =>
+    request()
+      .catch((error: unknown) => (frameStopped(error) ? request() : Promise.reject(error)))
+      .catch((error: unknown) => (changed ? new Promise<T>(() => undefined) : Promise.reject(error)))
   const release = (id: number): void => {
-    if (!held.delete(id)) return
-    // A frame that died took the drawing with it, which leaves nothing to release.
-    doc.call('release', id).catch(() => undefined)
+    if (held.delete(id)) doc.tell('release', id)
   }
   return {
-    summary: () => doc.call('summary', undefined),
-    size: (number) => doc.call('size', number),
+    summary: () => ask(() => doc.call('summary', undefined)),
+    size: (number) => ask(() => doc.call('size', number)),
     draw(number, scale) {
       const id = nextDrawing++
       held.add(id)
-      return { drawn: doc.call('draw', { id, number, scale }), release: () => release(id) }
+      return { drawn: ask(() => doc.call('draw', { id, number, scale })), release: () => release(id) }
     },
     close() {
       for (const id of [...held]) release(id)
+      stopListening()
       doc.release()
     }
   }
@@ -108,13 +126,15 @@ type State = { status: 'loading' } | { status: 'error'; message: string } | { st
 export const PdfViewer: Viewer = ({ item, mode, size }) => {
   const t = useT()
   const [state, setState] = useState<State>({ status: 'loading' })
+  /** How many times the file changed under the viewer, which opens it again each time. */
+  const [changes, setChanges] = useState(0)
   const [width, setWidth] = useState(0)
   const ref = useRef<HTMLDivElement>(null)
   const { url, sizeBytes, modifiedAt } = item
 
   useEffect(() => {
     if (!url) return
-    const pages = openPdfPages({ url, sizeBytes, modifiedAt })
+    const pages = openPdfPages({ url, sizeBytes, modifiedAt }, () => setChanges((count) => count + 1))
     let cancelled = false
     setState({ status: 'loading' })
     pages.summary().then(
@@ -129,7 +149,7 @@ export const PdfViewer: Viewer = ({ item, mode, size }) => {
       cancelled = true
       pages.close()
     }
-  }, [url, sizeBytes, modifiedAt])
+  }, [url, sizeBytes, modifiedAt, changes])
 
   useLayoutEffect(() => {
     const el = ref.current

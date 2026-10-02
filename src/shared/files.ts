@@ -135,7 +135,6 @@ const MB = 1024 * 1024
  * - docx, 16 MB: a Word file this large is most often one with a few photos, which cost 0.03 s per MB. Prose costs ten
  *   times as much for its size (5.5 MB took 1.8 s, holding the thread, and grew the page by 1.1 GB), but a file of
  *   that much prose is rare.
- * - pptx, 32 MB: a photo on every slide took 0.9 s for 36 MB and 1.8 s for 69 MB, holding the thread at most 0.1 s.
  * - audio, 8 MB: an ordinary song keeps its waveform. 9.2 MB of 128 kbps stereo (10 minutes) grew the page by 0.68 GB
  *   while it decoded off the thread; speech at 32 kbps mono costs twice as much for its size, 9.2 MB (40 minutes)
  *   growing it by 1.3 GB.
@@ -143,7 +142,6 @@ const MB = 1024 * 1024
 export const WHOLE_READ_LIMIT: Partial<Record<FileKind, number>> = {
   xlsx: 8 * MB,
   docx: 16 * MB,
-  pptx: 32 * MB,
   audio: 8 * MB,
   notebook: MAX_TEXT_BYTES
 }

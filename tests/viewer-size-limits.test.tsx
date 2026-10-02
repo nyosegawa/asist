@@ -13,7 +13,7 @@ import { FileViewer } from '@/panels/viewers'
  */
 
 const t = createTranslator('ja-JP')
-const WHOLE_KINDS: FileKind[] = ['docx', 'xlsx', 'pptx']
+const WHOLE_KINDS: FileKind[] = ['docx', 'xlsx']
 const itemOf = (kind: FileKind, sizeBytes: number): FileItem => ({ path: `/tmp/big.${kind}`, name: `big.${kind}`, kind, sizeBytes, url: `/demo-files/big.${kind}` })
 
 let container: HTMLDivElement

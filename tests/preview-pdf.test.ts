@@ -43,8 +43,11 @@ const MB = 1024 * 1024
 const served = { requests: 0, bytes: 0, opened: 0 }
 /** The status each range is answered with from now on, in place of its bytes. */
 let failWith: number | null = null
+let saves = 0
 
+/** Serves the file as saved anew, with an ETag of its length and a time of change of its own, as asist-file makes it. */
 function serve(file: Uint8Array): void {
+  const etag = `"${file.length}-${++saves}"`
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     if (failWith !== null) return new Response(null, { status: failWith })
     const range = /^bytes=(\d+)-(\d+)$/.exec(new Headers(init?.headers).get('range') ?? '')
@@ -58,7 +61,7 @@ function serve(file: Uint8Array): void {
     }
     const body = file.slice(start, end + 1)
     served.bytes += body.length
-    return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
+    return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}`, ETag: etag } })
   })
 }
 
@@ -94,6 +97,7 @@ async function open(file: Uint8Array, opener = openPdf) {
   const { methods } = document
   return {
     ...methods,
+    version: document.version,
     /** Draws a page into a bitmap; a drawing released before it was done gives null. */
     drawn: async (args: { id: number; number: number; scale: number }) => {
       const drawn = await methods.draw(args)
@@ -211,12 +215,21 @@ describe('a PDF in the preview page', () => {
     expect(served.opened).toBe(2)
   })
 
-  it('fails a drawing when the file was written again since it was opened, and reads it as it is now for the next one', async () => {
+  it('fails a drawing, and every one after it, once the file was saved again since the document opened, even at the same length', async () => {
+    for (const saved of [writePdf({ pages: 600, textBytes: 8000, pictureEvery: 5, picture: { width: 224, height: 224 } }), manual]) {
+      const pdf = await open(manual)
+      serve(saved)
+      await expect(pdf.drawn({ id: 1, number: 500, scale: 1 })).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
+      // The document belongs to the version it opened, and the viewers' side opens the file as it is now anew.
+      await expect(pdf.drawn({ id: 2, number: 500, scale: 1 })).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
+    }
+  })
+
+  it('reports the version of the file it opened, and a page past its end as the file changed rather than as pdf.js words it', async () => {
     const pdf = await open(manual)
-    serve(writePdf({ pages: 600, textBytes: 8000, pictureEvery: 5, picture: { width: 224, height: 224 } }))
-    await expect(pdf.drawn({ id: 1, number: 500, scale: 1 })).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
-    expect(await pdf.drawn({ id: 2, number: 500, scale: 1 })).not.toBeNull()
-    expect(pdf.summary().pageCount).toBe(600)
+    expect(pdf.version).toBe(JSON.stringify([manual.length, `"${manual.length}-${saves}"`]))
+    await expect(pdf.size(1001)).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
+    await expect(pdf.drawn({ id: 1, number: 1001, scale: 1 })).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
   })
 
   it('opens the file again once it has read a lot since it opened, and draws on', async () => {

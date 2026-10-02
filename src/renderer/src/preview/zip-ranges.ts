@@ -1,5 +1,5 @@
 import { errorKey } from '@shared/i18n/error-key'
-import { fetchRange, loadFailed, readRange, type Bytes } from './ranges'
+import { fetchRange, loadFailed, readRange, versionText, type Bytes } from './ranges'
 
 /**
  * A zip container (docx, xlsx, pptx) read by HTTP ranges, so that a viewer reads the directory and the entries
@@ -35,6 +35,11 @@ interface CentralRecord extends ZipEntry {
 }
 
 export interface RangedZip {
+  /**
+   * The version of the file the zip is read from: its length and, where the server gives one, the ETag of the answer
+   * that gave it. Every later answer has to come from the same version.
+   */
+  readonly version: string
   readonly entries: ReadonlyMap<string, ZipEntry>
   /** The content of one entry, inflated. */
   read(name: string): Promise<Bytes>
@@ -281,14 +286,14 @@ export async function openZip(url: string): Promise<RangedZip> {
   const tail = await fetchRange(url, `bytes=-${TAIL_LENGTH}`)
   // A suffix range holds no byte of an empty file alone.
   if (!tail) throw damaged()
-  const { size, start: tailStart } = tail
+  const { size, start: tailStart, etag } = tail
   // A server that does not take a suffix range, such as Vite's for a file over 64 KB, sends other bytes.
   if (tailStart !== Math.max(0, size - TAIL_LENGTH) || tail.bytes.length !== size - tailStart) throw loadFailed(206)
   const bytes = async (start: number, end: number): Promise<Bytes> => {
     if (start >= tailStart) return tail.bytes.subarray(start - tailStart, end - tailStart)
-    if (end <= tailStart) return readRange(url, start, end, size)
+    if (end <= tailStart) return readRange(url, start, end, { size, etag })
     const joined = new Uint8Array(end - start)
-    joined.set(await readRange(url, start, tailStart, size))
+    joined.set(await readRange(url, start, tailStart, { size, etag }))
     joined.set(tail.bytes.subarray(0, end - tailStart), tailStart - start)
     return joined
   }
@@ -325,6 +330,7 @@ export async function openZip(url: string): Promise<RangedZip> {
   const byName = new Map(records.map((record) => [record.name, record]))
 
   return {
+    version: versionText({ size, etag }),
     entries: byName,
 
     async read(name) {

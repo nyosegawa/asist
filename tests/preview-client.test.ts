@@ -3,7 +3,8 @@ import { createTranslator } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 import { createPreviewClient, type PreviewFile, type PreviewFrame } from '../src/renderer/src/panels/viewers/preview-client'
 import { servePreview, type OpenPreviewDocument } from '../src/renderer/src/preview/serve'
-import openEcho, { closed, failOnce, kept, opened } from './fixtures/preview-methods/echo'
+import openEcho, { closed, failOnce, kept, opened, told } from './fixtures/preview-methods/echo'
+import openVersioned, { closings, openings, versions, waiting } from './fixtures/preview-methods/versioned'
 
 const ja = createTranslator('ja-JP')
 const kinds = import.meta.glob<{ default: OpenPreviewDocument }>('./fixtures/preview-methods/*.ts')
@@ -60,6 +61,28 @@ describe('the preview frame', () => {
     expect(started).toHaveLength(2)
     // The new frame opened the document again, since the one that died took its documents with it.
     expect(opened.get(url)).toBe(2)
+    document.release()
+  })
+
+  it('tells a document only in the frame where it is open, and starts no frame to tell one a frame that died took with it', async () => {
+    const { started, client } = frames()
+    const file = newFile()
+    const { url } = file
+    const document = client.open<typeof openEcho>('echo', file)
+    // Not yet asked of anything, the document is open in no frame.
+    document.tell('note', { text: 'before' })
+    expect(started).toHaveLength(0)
+    await document.call('echo', { text: 'up' })
+    document.tell('note', { text: 'held' })
+    await vi.waitFor(() => expect(told).toContainEqual({ url, text: 'held' }))
+
+    started[0].page.close()
+    await settled()
+    document.tell('note', { text: 'after the frame died' })
+    await settled()
+    expect(started).toHaveLength(1)
+    expect(opened.get(url)).toBe(1)
+    expect(told.filter((note) => note.url === url).map((note) => note.text)).toEqual(['held'])
     document.release()
   })
 
@@ -146,5 +169,34 @@ describe('the preview frame', () => {
     expect(opened.get(before.url)).toBe(2)
     old.release()
     rewritten.release()
+  })
+
+  it('lets go of a document whose file was saved again, tells every view of it, fails what the old version answers, and opens the file as it is now for the next request', async () => {
+    const { client } = frames()
+    const file = newFile()
+    const { url } = file
+    const card = client.open<typeof openVersioned>('versioned', file)
+    const focus = client.open<typeof openVersioned>('versioned', file)
+    const told: string[] = []
+    card.onChanged(() => told.push('card'))
+    focus.onChanged(() => told.push('focus'))
+    expect(await card.call('read', undefined)).toBe(0)
+    const underWay = card.call('readLater', undefined).catch((thrown: Error) => thrown)
+    await vi.waitFor(() => expect(waiting).toHaveLength(1))
+
+    versions.set(url, 1)
+    const error = await focus.call('read', undefined).catch((thrown: Error) => thrown)
+    expect(readErrorText((error as Error).message, 'ja-JP')).toBe(ja('files.errors.changedWhileReading'))
+    expect(told).toEqual(['card', 'focus'])
+    await vi.waitFor(() => expect(closings.get(url)).toBe(1))
+    // The old version answers a request sent before the change was found, and the answer does not reach the card.
+    waiting.shift()!()
+    expect(readErrorText(((await underWay) as Error).message, 'ja-JP')).toBe(ja('files.errors.changedWhileReading'))
+
+    expect(await card.call('read', undefined)).toBe(1)
+    expect(await focus.call('read', undefined)).toBe(1)
+    expect([openings.get(url), told.length]).toEqual([2, 2])
+    card.release()
+    focus.release()
   })
 })
