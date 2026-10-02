@@ -40,8 +40,13 @@ function useSelect(spec: PanelSpec): (index: number, focus: boolean) => void {
   }
 }
 
-function Reveal({ item }: { item: FileItem }): React.JSX.Element {
+/**
+ * Shows the item in Finder or File Explorer. An item that could not be read is not offered, since main reveals
+ * only a path it can resolve under a root.
+ */
+function Reveal({ item }: { item: FileItem }): React.JSX.Element | null {
   const t = useT()
+  if (item.error) return null
   return (
     <Actions>
       <Action leadsTo="outside" onClick={() => void window.api.revealPath(item.path)}>{t(osMessageKey('files.reveal', platformCapabilities().os))}</Action>

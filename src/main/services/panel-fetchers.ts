@@ -75,10 +75,10 @@ async function geocodeOnce(name: string, signal: AbortSignal): Promise<GeoResult
 async function geocode(place: string, signal: AbortSignal): Promise<GeoResult> {
   const name = place.trim()
   // The suffix is dropped only after the name as given misses, both in the table and in the geocoding, because
-  // the character may belong to the name itself: "京都" would be looked up as "京", and "成都" (Chengdu) as "成".
+  // the character may belong to the name itself: "京都" would be looked up as "京", and "成都" (Chengdu) as "成",
+  // while "沖縄市" is a city of its own and not the Naha the table gives for "沖縄".
   const bare = name.replace(/(都|府|県|市)$/, '')
-  const known = JP_PLACES.get(name) ?? JP_PLACES.get(bare)
-  for (const query of known !== undefined ? [known] : [...new Set([name, bare])]) {
+  for (const query of new Set([JP_PLACES.get(name) ?? name, JP_PLACES.get(bare) ?? bare])) {
     const result = await geocodeOnce(query, signal)
     if (result) return result
   }

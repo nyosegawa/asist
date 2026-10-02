@@ -56,10 +56,30 @@ describe('the requests a card makes for the conversation language and the region
   })
 
   it('looks a Japanese city up under its English name, with or without the suffix of a prefecture or a city', async () => {
-    const urls: string[] = []
-    respond({ results: [{ name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
-    for (const city of ['京都', '京都府', '京都市']) await fetchPanel('clock', { city })
-    expect(urls.map((url) => new URL(url).searchParams.get('name'))).toEqual(['Kyoto', 'Kyoto', 'Kyoto'])
+    const kyoto = { name: '京都市', latitude: 35, longitude: 135.7, timezone: 'Asia/Tokyo', country: '日本' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(new URL(url).searchParams.get('name') === 'Kyoto' ? { results: [kyoto] } : {})))
+    for (const city of ['京都', '京都府', '京都市']) {
+      const { props } = await fetchPanel('clock', { city })
+      expect(props, city).toMatchObject({ city: '京都市', timezone: 'Asia/Tokyo' })
+    }
+  })
+
+  it('takes a suffixed name the geocoding knows for that place, before the table gives the name without the suffix another city', async () => {
+    // "沖縄市" is a city of its own, while the table reads "沖縄" as Naha.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        Response.json({
+          results: [
+            new URL(url).searchParams.get('name') === '沖縄市'
+              ? { name: '沖縄市', latitude: 26.33, longitude: 127.8, timezone: 'Asia/Tokyo', country: '日本' }
+              : { name: '那覇市', latitude: 26.21, longitude: 127.68, timezone: 'Asia/Tokyo', country: '日本' }
+          ]
+        })
+      )
+    )
+    const { props } = await fetchPanel('clock', { city: '沖縄市' })
+    expect(props.city).toBe('沖縄市')
   })
 
   it('looks a city the table lacks up under its whole name first, since its last character may belong to the name', async () => {
@@ -95,7 +115,7 @@ describe('the requests a card makes for the conversation language and the region
   it('keeps the Japanese request of the clock card unchanged', async () => {
     const urls: string[] = []
     respond({ results: [{ name: '東京都', latitude: 35.6, longitude: 139.6, timezone: 'Asia/Tokyo', country: '日本' }] }, urls)
-    await fetchPanel('clock', { city: '東京都' })
+    await fetchPanel('clock', { city: '東京' })
     expect(urls).toEqual(['https://geocoding-api.open-meteo.com/v1/search?name=Tokyo&count=1&language=ja'])
   })
 
@@ -238,10 +258,8 @@ describe('the files card (show_files)', () => {
   it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'shows the readable file beside a path the OS refuses to resolve, and gives that path alone a reason the screen words',
     async () => {
-      const base = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
-      const root = path.join(base, 'root')
-      const locked = path.join(base, 'locked')
-      mkdirSync(root)
+      const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
+      const locked = path.join(root, 'locked')
       mkdirSync(locked)
       writeFileSync(path.join(root, 'report.md'), '# report')
       writeFileSync(path.join(locked, 'secret.md'), 'secret')

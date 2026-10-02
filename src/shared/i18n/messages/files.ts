@@ -1268,19 +1268,6 @@ export const files = defineMessages({
       'es-419': 'Esto no es un archivo',
       'es-ES': 'Esto no es un archivo'
     },
-    folderFailed: {
-      'ja-JP': 'フォルダを読めません: {message}',
-      'en-US': "Couldn't read the folder: {message}",
-      'fr-FR': 'Impossible de lire le dossier : {message}',
-      'de-DE': 'Der Ordner ließ sich nicht lesen: {message}',
-      'hi-IN': 'फ़ोल्डर पढ़ा नहीं जा सका: {message}',
-      'id-ID': 'Tidak bisa membaca foldernya: {message}',
-      'it-IT': 'Impossibile leggere la cartella: {message}',
-      'ko-KR': '폴더를 읽을 수 없습니다: {message}',
-      'pt-BR': 'Não foi possível ler a pasta: {message}',
-      'es-419': 'No se pudo leer la carpeta: {message}',
-      'es-ES': 'No se ha podido leer la carpeta: {message}'
-    },
     readFailed: {
       'ja-JP': '読めません: {message}',
       'en-US': "Couldn't read it: {message}",

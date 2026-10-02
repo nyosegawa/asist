@@ -27,7 +27,8 @@ const NATIVE: PathSystem = { path, realpath: fs.realpathSync.native }
  * the memory folder and the folders allowed in the settings, or null when it does not. Both sides are
  * compared as the OS resolves them, so a link inside a root that points outside it, such as one checked into
  * a cloned repository, is refused, and so is a .. that climbs out of such a link. The caller reads the
- * returned path and never target itself, so that what is read is what was checked.
+ * returned path and never target itself, so that what is read is what was checked. When the OS refuses to
+ * resolve target, the refusal is thrown for a target written under a root, and null is returned for any other.
  */
 export function allowedPath(target: string, allowedRoots: readonly string[], system: PathSystem = NATIVE): string | null {
   const paths = system.path
@@ -43,25 +44,33 @@ export function allowedPath(target: string, allowedRoots: readonly string[], sys
     const volume = (p: string): string => paths.parse(paths.normalize(p)).root.toLowerCase()
     if (!roots.some((root) => volume(root) === volume(target))) return null
   }
-  const resolved = realPath(target, system)
-  if (resolved === null) return null
   // Windows matches names regardless of letter case.
   const key = windows ? (p: string): string => p.toLowerCase() : (p: string): string => p
-  const allowed = roots.some((root) => {
-    let resolvedRoot: string | null
+  // path.join leaves a single separator at the end, so a root such as "/" or "C:\" is a prefix of every path on it too.
+  const under = (p: string, root: string | null): boolean =>
+    root !== null && (key(p) === key(root) || key(p).startsWith(key(paths.join(root, paths.sep))))
+  const resolveRoot = (root: string): string | null => {
     try {
-      resolvedRoot = realPath(root, system)
+      return realPath(root, system)
     } catch {
       // A root the OS refuses to resolve, such as the folder of a past job whose parent became unreadable,
-      // allows nothing, and must not make the files under the other roots unreadable. A target inside it
-      // fails to resolve itself and throws above.
-      return false
+      // allows nothing, and must not make the files under the other roots unreadable.
+      return null
     }
-    if (resolvedRoot === null) return false
-    // path.join leaves a single separator at the end, so a root such as "/" or "C:\" is a prefix of every path on it too.
-    return key(resolved) === key(resolvedRoot) || key(resolved).startsWith(key(paths.join(resolvedRoot, paths.sep)))
-  })
-  return allowed ? resolved : null
+  }
+  let resolved: string | null
+  try {
+    resolved = realPath(target, system)
+  } catch (error) {
+    // The refusal is the answer for a target written under a root, which the user may be shown; any other lies
+    // outside the roots whatever the OS says about it. Compared as text, a target that names its root in another
+    // letter case or Unicode form is answered as outside, which reads nothing either way.
+    const written = paths.resolve(target)
+    if (roots.some((root) => under(written, paths.resolve(root)) || under(written, resolveRoot(root)))) throw error
+    return null
+  }
+  const real = resolved
+  return real !== null && roots.some((root) => under(real, resolveRoot(root))) ? real : null
 }
 
 /**
@@ -94,7 +103,7 @@ function realPath(target: string, { path: paths, realpath }: PathSystem): string
 }
 
 /** How many entries of a folder an item carries. The item also says how many the folder holds. */
-const MAX_DIRECTORY_ENTRIES = 200
+export const MAX_DIRECTORY_ENTRIES = 200
 
 /** The contents of a folder, by name with folders first, leaving out hidden files and node_modules. */
 export function listDirectory(dir: string): FileEntry[] {
@@ -128,59 +137,45 @@ export function listDirectory(dir: string): FileEntry[] {
  * other items.
  */
 export function fileItem(target: string, allowedRoots: readonly string[], toUrl: (filePath: string) => string): FileItem {
-  let allowed: string | null
   try {
-    allowed = allowedPath(target, allowedRoots)
+    const allowed = allowedPath(target, allowedRoots)
+    return allowed === null ? failedItem(target, t('files.errors.outsideRoots')) : readFileItem(allowed, toUrl)
   } catch (error) {
     return failedItem(target, failure(error))
   }
-  return allowed === null ? failedItem(target, t('files.errors.outsideRoots')) : readFileItem(allowed, toUrl)
 }
 
 /**
- * Turns a path that has passed allowedPath into a FileItem. A path that cannot be read comes back with the reason
- * in `error`. `toUrl` builds the asist-file:// URL binary kinds are fetched over.
+ * Reads a path that has passed allowedPath into a FileItem, and throws what the OS answers when it cannot.
+ * `toUrl` builds the asist-file:// URL binary kinds are fetched over.
  */
 export function readFileItem(filePath: string, toUrl: (filePath: string) => string): FileItem {
   const name = path.basename(filePath)
-  let stat: fs.Stats
-  try {
-    stat = fs.statSync(filePath)
-  } catch (error) {
-    return failedItem(filePath, failure(error))
-  }
+  const stat = fs.statSync(filePath)
   if (stat.isDirectory()) {
-    try {
-      const entries = listDirectory(filePath)
-      return {
-        path: filePath,
-        name,
-        kind: 'directory',
-        sizeBytes: 0,
-        modifiedAt: stat.mtimeMs,
-        entries: entries.slice(0, MAX_DIRECTORY_ENTRIES),
-        entryCount: entries.length
-      }
-    } catch (error) {
-      return { path: filePath, name, kind: 'directory', sizeBytes: 0, error: t('files.errors.folderFailed', { message: String(error) }) }
+    const entries = listDirectory(filePath)
+    return {
+      path: filePath,
+      name,
+      kind: 'directory',
+      sizeBytes: 0,
+      modifiedAt: stat.mtimeMs,
+      entries: entries.slice(0, MAX_DIRECTORY_ENTRIES),
+      entryCount: entries.length
     }
   }
   if (!stat.isFile()) return failedItem(filePath, t('files.errors.notAFile'))
   const kind = classifyFile(filePath)
   const base: FileItem = { path: filePath, name, kind, sizeBytes: stat.size, modifiedAt: stat.mtimeMs }
   if (TEXT_KINDS.has(kind)) {
+    const fd = fs.openSync(filePath, 'r')
     try {
-      const fd = fs.openSync(filePath, 'r')
-      try {
-        const buffer = Buffer.alloc(Math.min(stat.size, MAX_TEXT_BYTES))
-        const read = fs.readSync(fd, buffer, 0, buffer.length, 0)
-        base.text = buffer.subarray(0, read).toString('utf8')
-        base.truncated = stat.size > MAX_TEXT_BYTES
-      } finally {
-        fs.closeSync(fd)
-      }
-    } catch (error) {
-      return { ...base, error: t('files.errors.readFailed', { message: String(error) }) }
+      const buffer = Buffer.alloc(Math.min(stat.size, MAX_TEXT_BYTES))
+      const read = fs.readSync(fd, buffer, 0, buffer.length, 0)
+      base.text = buffer.subarray(0, read).toString('utf8')
+      base.truncated = stat.size > MAX_TEXT_BYTES
+    } finally {
+      fs.closeSync(fd)
     }
   }
   if (carriesUrl(kind, filePath)) base.url = toUrl(filePath)
@@ -189,10 +184,12 @@ export function readFileItem(filePath: string, toUrl: (filePath: string) => stri
 
 const failedItem = (filePath: string, error: string): FileItem => ({ path: filePath, name: path.basename(filePath), kind: 'binary', sizeBytes: 0, error })
 
-/** Why the OS could not open a path, in the language of the interface. */
+/** Why the OS could not resolve, open or list a path, in the language of the interface. */
 function failure(error: unknown): string {
   switch ((error as NodeJS.ErrnoException).code) {
+    // A path that runs through a file, such as report.md/notes, names nothing either.
     case 'ENOENT':
+    case 'ENOTDIR':
       return t('files.errors.missing')
     case 'EACCES':
     case 'EPERM':

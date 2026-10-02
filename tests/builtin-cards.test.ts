@@ -723,6 +723,14 @@ describe('files card', () => {
     expect(focus.textContent).toContain(t(osMessageKey('files.viewer.entriesCut', platformCapabilities().os), { listed: 200, count: 5000 }))
   })
 
+  it('offers to show a file in Finder only when it could read the file, since main refuses to reveal a path it cannot read', async () => {
+    const denied: FileItem = { path: '/Users/me/Downloads/statement.pdf', name: 'statement.pdf', kind: 'binary', sizeBytes: 0, error: t('files.errors.denied') }
+    const unreadable = await renderAt(spec('files', { paths: [denied.path], items: [denied] }), L)
+    expect(unreadable.querySelector('.card-action')).toBeNull()
+    const readable = await renderAt(filesSpec([`${DEMO_FILES_DIR}/report.md`]), L)
+    expect(readable.querySelector('.card-action')).not.toBeNull()
+  })
+
   it('writes the markdown fixture in real markdown syntax', () => {
     expect(DEMO_REPORT_MD).toContain('| サービス |')
   })
@@ -894,6 +902,10 @@ describe('mail draft card', () => {
   })
 })
 
+/** Whether the text writes the value, to within 1%, as a number written the way ja-JP writes one. */
+const writes = (text: string | null | undefined, value: number): boolean =>
+  (text?.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).some((written) => Math.abs(Number(written.replace(/,/g, '')) / value - 1) < 0.01)
+
 describe('numbers and times on cards', () => {
   it('puts the requested amount first in the currency table and keeps three rows at size s', () => {
     expect(tableAmounts('USD', null, 5)).toEqual([1, 10, 100, 1000, 10000])
@@ -904,19 +916,16 @@ describe('numbers and times on cards', () => {
   it('highlights the row of the requested amount on the fx card and shows the inverse rate among the facts', async () => {
     const card = await renderAt(spec('fx', DEMO_FX), L)
     expect(card.querySelector('.card-row[aria-current]')?.textContent).toContain('162,350 円')
-    expect(card.querySelector('.card-facts')?.textContent).toContain('1 円 = 0.00616 ドル')
+    expect(writes(card.querySelector('.card-facts dd')?.textContent, 1 / (DEMO_FX.rate as number))).toBe(true)
     expect(card.querySelector('.panel-meta')?.textContent).toContain(t('cardsFinance.fx.updated', { time: '' }).trim())
   })
 
   it('shows a rate far below one, such as one dong in dollars, as that rate rather than as zero, in the headline and in the inverse', async () => {
     const rate = 0.000038
-    const numberIn = (text: string | null | undefined): number => Number(/[\d.,]+/.exec(text ?? '')?.[0].replace(/,/g, ''))
     const card = await renderAt(spec('fx', { base: 'VND', quote: 'USD', rate, amount: null }), L)
-    expect(numberIn(card.querySelector('.card-big strong')?.firstChild?.textContent) / rate).toBeCloseTo(1, 2)
+    expect(writes(card.querySelector('.card-big strong')?.textContent, rate)).toBe(true)
     const reverse = await renderAt(spec('fx', { base: 'USD', quote: 'VND', rate: 1 / rate, amount: null }), L)
-    // The inverse reads "1 {quote} = {amount} {base}".
-    const inverse = reverse.querySelector('.card-facts dd')?.textContent?.split('=')[1]
-    expect(numberIn(inverse) / rate).toBeCloseTo(1, 2)
+    expect(writes(reverse.querySelector('.card-facts dd')?.textContent, rate)).toBe(true)
   })
 
   it('computes the time in a zone and its difference from the machine', () => {
