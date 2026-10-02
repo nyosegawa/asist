@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
+import { PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/memory-format'
 import { gitPath } from '../src/main/services/git'
+import { sectionsOverTheLimit } from './helpers/memory'
 
 const ja = createTranslator('ja-JP')
 
@@ -430,7 +432,6 @@ async function curateBesideScreenEdit(heading: string) {
   mocks.readAll.mockImplementation((dir: string) => actual.readAll(dir))
   const repo = path.join(mocks.root, 'repo')
   const user = '---\nupdated: 2026-09-10\n---\n# ユーザー\n\n## 属性\n東京に住んでいる。\n\n## 好み\n辛いものは控えめが好き。\n'
-  fs.writeFileSync(path.join(repo, 'instruction.md'), '# いつも覚えておくこと\n\n## この人について\n東京に住んでいる。\n')
   fs.writeFileSync(path.join(repo, 'user.md'), user)
   git(repo, 'add', '.')
   git(repo, 'commit', '-qm', 'memory')
@@ -465,6 +466,30 @@ it('discards a job whose merge with an edit made on the memory screen meanwhile 
   vi.setSystemTime(now + DAY)
   vi.advanceTimersByTime(MINUTE)
   expect(mocks.launch).toHaveBeenCalledTimes(2)
+})
+
+it('discards a curation that leaves a document of the prompt over its token limit, says how far over, and keeps the memory as it was', async () => {
+  const actual = await vi.importActual<typeof import('../src/main/services/memory-store')>('../src/main/services/memory-store')
+  mocks.readAll.mockImplementation((dir: string) => actual.readAll(dir))
+  const repo = path.join(mocks.root, 'repo')
+  const me = '---\nupdated: 2026-09-10\n---\n# 私について\n\n落ち着いて話す。\n'
+  fs.writeFileSync(path.join(repo, 'me.md'), me)
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-qm', 'memory')
+  const { curation, agent } = await setup()
+  const job = curation.pendingJob()!
+  const grown = me.replace('落ち着いて話す。', sectionsOverTheLimit('落ち着いて話し、確かめてから答えることを大事にしている。'))
+  fs.writeFileSync(path.join(job.cwd, 'me.md'), grown)
+  lastLaunch().onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('discarded')
+  const size = promptSize(grown)
+  const over = size.tokens - PROMPT_DOCUMENT_MAX_TOKENS
+  expect(over).toBeGreaterThan(0)
+  expect(curation.lastFailure()?.message).toContain(
+    ja('memory.check.tooManyTokens', { file: 'me.md', tokens: size.tokens, limit: PROMPT_DOCUMENT_MAX_TOKENS, characters: textForTokens(size, over).characters })
+  )
+  expect(curation.curatedThrough()).toBeNull()
+  expect(fs.readFileSync(path.join(repo, 'me.md'), 'utf8')).toBe(me)
 })
 
 // Windows ignores the read-only mode of a folder, so a folder that cannot be emptied is made with it elsewhere only.

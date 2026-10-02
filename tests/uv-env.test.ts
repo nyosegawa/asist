@@ -12,7 +12,8 @@ vi.mock('../src/main/services/platform', async () => {
   return { platformCapabilities: () => (mocks.os ? { macos: MACOS, windows: WINDOWS }[mocks.os] : HOST) }
 })
 
-import { runUv, uvEnv, uvPath, venvPython } from '../src/main/services/uv'
+import { spawnSync } from 'node:child_process'
+import { PYTHON_VERSION, installPython, runUv, uvEnv, uvPath, uvRunEnv, venvPython } from '../src/main/services/uv'
 
 afterEach(() => {
   mocks.appPath = process.cwd()
@@ -75,6 +76,48 @@ describe('running uv', () => {
       const controller = new AbortController()
       await expect(runUv(['--version'], controller.signal)).rejects.toMatchObject({ code: 'ENOENT' })
       expect(getEventListeners(controller.signal, 'abort')).toEqual([])
+    } finally {
+      fs.rmSync(mocks.appPath, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('running a script with uv run, as the curation Agent runs its checks', () => {
+  it('leaves out the user\'s uv and Python settings and the provider keys, and keeps uv\'s Python under userData', () => {
+    const env = uvRunEnv({ PATH: '/usr/bin', UV_INDEX_URL: 'https://mirror.invalid/simple', PYTHONPATH: '/elsewhere', ANTHROPIC_API_KEY: 'sk-test' }, '/data')
+    expect(env.UV_INDEX_URL).toBeUndefined()
+    expect(env.PYTHONPATH).toBeUndefined()
+    expect(env.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(env.UV_PYTHON_INSTALL_DIR).toBe(path.join('/data', 'python'))
+  })
+
+  it('runs no script and downloads no Python when the pinned Python is not installed, whatever Python the machine has', () => {
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-uv-run-'))
+    const script = path.join(userData, 'hello.py')
+    fs.writeFileSync(script, 'print("ran")\n')
+    try {
+      // The machine's Python stays on PATH; the bundled uv runs the script as the curation Agent runs its checks.
+      const env = uvRunEnv({ PATH: process.env.PATH, HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, SYSTEMROOT: process.env.SYSTEMROOT }, userData)
+      const run = spawnSync(uvPath(), ['run', '--no-project', script], { env, encoding: 'utf8', windowsHide: true })
+      // uv itself ran and refused rather than running the script on another Python.
+      expect(run.error).toBeUndefined()
+      expect([typeof run.status, run.status === 0]).toEqual(['number', false])
+      expect(run.stdout).not.toContain('ran')
+      expect(fs.readdirSync(userData)).toEqual(['hello.py'])
+    } finally {
+      fs.rmSync(userData, { recursive: true, force: true })
+    }
+  })
+
+  // A stand-in for uv records how it is called; Windows would need it as an .exe.
+  it.runIf(process.platform !== 'win32')('installs the pinned Python without putting it into the user\'s bin folder or the Windows registry', async () => {
+    mocks.appPath = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-uv-stand-in-'))
+    try {
+      const record = path.join(mocks.appPath, 'args.txt')
+      fs.mkdirSync(path.join(mocks.appPath, 'resources', 'uv'), { recursive: true })
+      fs.writeFileSync(path.join(mocks.appPath, 'resources', 'uv', 'uv'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${record}'\n`, { mode: 0o755 })
+      await installPython(new AbortController().signal)
+      expect(fs.readFileSync(record, 'utf8').trim().split('\n')).toEqual(['python', 'install', '--no-bin', '--no-registry', PYTHON_VERSION])
     } finally {
       fs.rmSync(mocks.appPath, { recursive: true, force: true })
     }
