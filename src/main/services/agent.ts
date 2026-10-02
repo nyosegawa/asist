@@ -16,7 +16,6 @@ import { conversationLocale } from './conversation-locale'
 import { errorMessage, t } from './i18n'
 import { memoryDir } from './memory-store'
 import { launchAgentProcess, recoverAgentProcess } from './agent-process'
-import { requireCli } from './agent-process/cli-locator'
 import { platformCapabilities } from './platform'
 import type { AgentProcess } from './agent-process/owner'
 import {
@@ -386,7 +385,6 @@ function createJob(prompt: string, options: StartOptions, isolate = false): Agen
   if (shuttingDown) throw new Error(errorText('jobs.start.shuttingDown'))
   const settings = getSettings()
   const engine = settings.agentEngine
-  requireCli(engine)
   const title = options.title || prompt.slice(0, 40)
   const cwd = options.cwd || createWorkspace(title)
   if (!fs.existsSync(cwd)) throw new Error(errorText('jobs.start.cwdMissing', { path: cwd }))

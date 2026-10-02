@@ -10,6 +10,7 @@ import { errorText } from '@shared/i18n/error-text'
 import type { AgentJob } from '@shared/ipc'
 import { buildStartArgs } from '@shared/agent-cli'
 import { AGENT_PROCESS_TOKEN, captureProcessIdentity, inspectProcessIdentity, recoverAgentProcess } from '../src/main/services/agent-process/posix'
+import { fakeLoginShell } from './helpers/shell'
 
 const ja = createTranslator('ja-JP')
 const writerRunning = errorText('jobs.worktree.writerRunning')
@@ -30,6 +31,8 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-crash-recovery-'))
   mocks.data = path.join(root, 'data')
   fs.mkdirSync(mocks.data)
+  // The CLI is looked for on the PATH of the user's shell, here the PATH the tests run with.
+  vi.stubEnv('SHELL', fakeLoginShell(root))
   parent = undefined
   group = undefined
   agent = undefined
@@ -99,9 +102,12 @@ async function crashParent(descendant: boolean): Promise<{ job: AgentJob; repo: 
   parent.stdout!.on('data', (data) => { output += String(data) })
   parent.stderr!.on('data', (data) => { error += String(data) })
   await vi.waitFor(() => { expect(error).toBe(''); expect(output).toContain('\n') }, PROCESS_START)
-  const job = JSON.parse(output.split('\n')[0]) as AgentJob
-  await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'writer.pid'))).toBe(true), PROCESS_START)
-  await vi.waitFor(() => expect(JSON.parse(fs.readFileSync(path.join(mocks.data, 'jobs.json'), 'utf8')).jobs[0].sessionId).toBe('fixture-session'), PROCESS_START)
+  const started = JSON.parse(output.split('\n')[0]) as AgentJob
+  await vi.waitFor(() => expect(fs.existsSync(path.join(started.cwd, 'writer.pid'))).toBe(true), PROCESS_START)
+  const saved = (): AgentJob => (JSON.parse(fs.readFileSync(path.join(mocks.data, 'jobs.json'), 'utf8')) as { jobs: AgentJob[] }).jobs[0]
+  await vi.waitFor(() => expect(saved().sessionId).toBe('fixture-session'), PROCESS_START)
+  // The CLI starts once it is located, after start returned the job, so its identity is read from the history.
+  const job = saved()
   group = Number(fs.readFileSync(path.join(job.cwd, 'leader.pid'), 'utf8'))
   const writer = Number(fs.readFileSync(path.join(job.cwd, 'writer.pid'), 'utf8'))
   const exited = new Promise((resolve) => parent!.once('close', resolve))

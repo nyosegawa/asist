@@ -3,7 +3,7 @@ import type { AgentEngine, AgentJob, AgentProcessIdentity } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
 import { createClaudeStreamParser, createCodexStreamParser, type AgentStreamEvent, type AgentStreamParser } from '@shared/agent-stream'
 import { t } from '../i18n'
-import { requireCli } from './cli-locator'
+import { requireCli, type FoundCli } from './cli-locator'
 import { platformCapabilities } from '../platform'
 import { childEnv } from '../child-env'
 import type { AgentOwner, AgentProcess } from './owner'
@@ -47,13 +47,46 @@ const owner = (): AgentOwner => OWNERS[platformCapabilities().os]
 export const recoverAgentProcess = (identity: AgentProcessIdentity, onStopped: () => void): AgentProcess =>
   owner().recover(identity, onStopped)
 
+/**
+ * Starts the job's CLI once it is located and returns at once, since on macOS the search waits for the
+ * user's shell. A CLI that cannot be located or started is reported through onError and onExit, like one
+ * that failed, and a stop asked before it started keeps it from starting.
+ */
 export function launchAgentProcess(job: AgentJob, args: string[], handlers: ProcessHandlers): AgentProcess {
-  const cli = requireCli(job.engine)
+  let stopped = false
+  let running: AgentProcess | undefined
+  const notStarted = (error: unknown): void => {
+    handlers.onError(error instanceof Error ? error : new Error(String(error)))
+    handlers.onExit(null)
+  }
+  const completion = requireCli(job.engine).then((cli) => {
+    if (stopped) return handlers.onExit(null)
+    try {
+      running = startCli(job, cli, args, handlers)
+    } catch (error) {
+      return notStarted(error)
+    }
+    return running.completion
+  }, notStarted)
+  // A rejection that happens before anyone awaits must not become an unhandled rejection. The caller
+  // still receives the original promise.
+  void completion.catch(() => {})
+  return {
+    completion,
+    stop: () => {
+      stopped = true
+      running?.stop()
+    }
+  }
+}
+
+function startCli(job: AgentJob, cli: FoundCli, args: string[], handlers: ProcessHandlers): AgentProcess {
   const spec = ENGINES[job.engine]
   const parse = spec.createParser()
   // The CLI must not start writing before the job is persisted, so it runs only once "start" is written
   // to its standard input, after onSpawn. The prompt follows on the same input.
-  const { child, identity, lifetime } = owner().start(cli, args, { cwd: job.cwd, env: childEnv(spec.env), token: randomUUID() }, handlers.onExit)
+  const env = childEnv({ ...cli.env, ...spec.env })
+  const { child, identity, lifetime } = owner().start(cli.path, args, { cwd: job.cwd, env, token: randomUUID() }, handlers.onExit)
 
   // A chunk split in the middle of a UTF-8 sequence is reassembled before the JSONL lines are split out.
   child.stdout!.setEncoding('utf8')

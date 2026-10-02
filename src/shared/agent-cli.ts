@@ -42,7 +42,8 @@ export const AGENT_MODE_NAME: Record<AgentEngine, Record<'readonly' | 'auto', st
 export const AGENT_CLI_UNAVAILABLE_TEXT = {
   missing: 'jobs.start.cliMissing',
   'script-only': 'jobs.start.cliScriptOnly',
-  'sandbox-not-set-up': 'jobs.start.cliSandboxNotSetUp'
+  'sandbox-not-set-up': 'jobs.start.cliSandboxNotSetUp',
+  'shell-unreadable': 'jobs.start.cliShellUnreadable'
 } as const satisfies Record<Exclude<AgentCliState, 'found'>, MessageKey>
 
 export interface AgentCliJob {

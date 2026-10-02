@@ -151,10 +151,11 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
 
   const computeStatus = async (): Promise<AppStatus> => {
     const settings = getSettings()
-    const [ttsUp, asrUp, apiUp] = await Promise.all([
+    const [ttsUp, asrUp, apiUp, agentCli] = await Promise.all([
       tts.available(),
       asr.available(),
-      configuredApiKeyAvailable()
+      configuredApiKeyAvailable(),
+      locateCli(settings.agentEngine)
     ])
     return {
       llm: apiUp,
@@ -166,7 +167,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       ttsLabel: tts.engineLabel(),
       asr: asrUp,
       asrInstalled: asr.installed(),
-      agent: locateCli(settings.agentEngine).state,
+      agent: agentCli.state,
       agentEngine: settings.agentEngine,
       voiceEngine: settings.voiceEngine,
       live: live.connection()
