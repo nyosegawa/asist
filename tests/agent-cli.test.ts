@@ -51,15 +51,17 @@ describe('buildResumeArgs', () => {
 })
 
 describe('a memory curation job, which starts with nobody to confirm it', () => {
-  it('never runs claude in auto mode: restricted, refusing what is not allowed, with the validator as the only command', () => {
+  it('never runs claude in auto mode: restricted, refusing what is not allowed, with the skill\'s two checks as the only commands', () => {
     for (const args of [buildStartArgs({ ...claude, ...curation }), buildResumeArgs({ ...claude, ...curation })]) {
       expect(args).not.toContain('auto')
       expect(args).toContain('--restricted')
       expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk')
       const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'))
       expect(allowed.filter((rule) => rule.startsWith('Bash'))).toEqual([
-        'Bash(node .claude/skills/memory-curation/scripts/validate.mjs *)',
-        'Bash(node /memory/wt/.claude/skills/memory-curation/scripts/validate.mjs *)'
+        'Bash(.claude/skills/memory-curation/uv run --no-project .claude/skills/memory-curation/scripts/count.py *)',
+        'Bash(/memory/wt/.claude/skills/memory-curation/uv run --no-project /memory/wt/.claude/skills/memory-curation/scripts/count.py *)',
+        'Bash(.claude/skills/memory-curation/uv run --no-project .claude/skills/memory-curation/scripts/validate.py *)',
+        'Bash(/memory/wt/.claude/skills/memory-curation/uv run --no-project /memory/wt/.claude/skills/memory-curation/scripts/validate.py *)'
       ])
       expect(allowed).not.toContain('WebFetch')
       expect(args.slice(args.indexOf('--disallowedTools') + 1)).toContain('Edit(./.claude/skills/**)')
