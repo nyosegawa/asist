@@ -493,7 +493,13 @@ export function SetupWizard(): React.JSX.Element | null {
               onRecheckTts={() => void verifyTts()}
               onPrepareTts={() => void prepareTts()}
               onCancelPrepareTts={() => void window.api.cancelTtsPreparation()}
-              onTestTts={() => void window.api.ttsTest().then((segment) => speechPlayer.playClip(segment.audio, segment.text, { role: 'preview' }))}
+              onTestTts={() => {
+                setError('')
+                void window.api
+                  .ttsTest()
+                  .then((segment) => speechPlayer.playClip(segment.audio, segment.text, { role: 'preview' }))
+                  .catch((err: unknown) => setError(displayError(err)))
+              }}
             />
           )}
           {step === 'mic' && (

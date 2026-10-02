@@ -87,6 +87,24 @@ const semanticSearchPreparing: DemoView = {
   }
 }
 
+/**
+ * The settings when main cannot say what is installed, as when the folder of the models cannot be read.
+ * Each row that waits on it says the check failed and gives the reason; the aizuchi are on so that the
+ * classifier's row shows it too.
+ */
+const statusesUnreadable = (page: SettingsPage): DemoView => ({
+  ...settingsPage(page),
+  prepare: (api) => {
+    const fail = (): Promise<never> => Promise.reject(new Error("EACCES: permission denied, scandir '/Users/demo/Library/Application Support/ASIST/models'"))
+    api.getSetupStatus = fail
+    api.vapStatus = fail
+    api.embeddingStatus = fail
+    api.aizuchiClassifierStatus = fail
+    api.hotkeyStatus = fail
+    void api.saveSettings({ aizuchi: true })
+  }
+})
+
 /** The memory page right after semantic search is turned on: each reading of the count finds five more memories converted, up to 45. */
 const memoriesConverting: DemoView = {
   prepare: (api) => {
@@ -164,6 +182,8 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   'settings/about': settingsPage('about'),
   'settings/memory/preparing': semanticSearchPreparing,
   'settings/memory/converting': memoriesConverting,
+  'settings/check-failed': statusesUnreadable('overview'),
+  'settings/voice/check-failed': statusesUnreadable('voice'),
 
   setup: { prepare: (api) => prepareSetupDemo(api, 'fresh') },
   'setup/key-failed': { prepare: (api) => prepareSetupDemo(api, 'key-failed') },

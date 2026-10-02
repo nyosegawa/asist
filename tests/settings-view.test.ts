@@ -1255,6 +1255,51 @@ describe('the global hotkey on the voice page', () => {
     const row = [...view.querySelectorAll('.st-row')].find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsVoice.mic.hotkey'))
     expect(row?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsVoice.mic.hotkeyFailed', { hotkey: '⌥Space' }))
   })
+
+  it('gives the reason main could not tell the state of the keys', async () => {
+    api.hotkeyStatus.mockRejectedValueOnce(new Error('settings.json is damaged'))
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    await act(async () => {})
+    const row = [...view.querySelectorAll('.st-row')].find((el) => el.querySelector('.st-row-label')?.textContent === t('settingsVoice.mic.hotkey'))
+    expect(row?.querySelector('.st-row-hint')?.textContent).toBe('settings.json is damaged')
+  })
+})
+
+describe('settings dialog when main fails to report what is installed', () => {
+  const row = (view: HTMLElement, label: string): Element =>
+    [...view.querySelectorAll('.st-row')].find((one) => one.querySelector('.st-row-label')?.textContent === label)!
+  const hint = (one: Element): string | null | undefined => one.querySelector('.st-row-hint')?.textContent
+  const chip = (one: Element): string | null | undefined => one.querySelector('.st-chip')?.textContent
+
+  it('gives on the voice page the reason the recognition model and turn-taking could not be checked, instead of checking them for ever', async () => {
+    api.getSetupStatus.mockRejectedValueOnce(new Error('the GPU could not be listed'))
+    api.vapStatus.mockRejectedValueOnce(new Error('the MaAI environment is damaged'))
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    expect(hint(row(view, t('settingsVoice.recognition.model')))).toBe('the GPU could not be listed')
+    const turnTaking = row(view, t('settingsVoice.mic.turnTaking'))
+    expect(chip(turnTaking)).toBe(t('settingsModels.checkFailed'))
+    expect(hint(turnTaking)).toBe('the MaAI environment is damaged')
+    expect(turnTaking.querySelector('[data-prep="vap"]')).toBeNull()
+  })
+
+  it('gives on the overview the reason semantic search could not be checked, and offers no preparation of it', async () => {
+    api.embeddingStatus.mockRejectedValueOnce(new Error('the embedding environment is damaged'))
+    const view = await render()
+    const search = row(view, t('settingsMemory.search.title'))
+    expect(chip(search)).toBe(t('settingsModels.checkFailed'))
+    expect(hint(search)).toBe('the embedding environment is damaged')
+    expect(search.querySelector('[data-prep="embedding"]')).toBeNull()
+  })
+
+  it('gives the reason the aizuchi classifier could not be checked under the aizuchi that are turned on', async () => {
+    useSettingsStore.setState({ settings: { ...settings, aizuchi: true } })
+    api.aizuchiClassifierStatus.mockRejectedValueOnce(new Error('the classifier environment is damaged'))
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    expect(hint(row(view, t('settingsVoice.response.aizuchi')))).toBe('the classifier environment is damaged')
+  })
 })
 
 describe('the models the about page credits', () => {

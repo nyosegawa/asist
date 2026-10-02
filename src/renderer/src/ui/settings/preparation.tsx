@@ -4,8 +4,8 @@ import { HoloSwitch } from '@/components/ui/switch'
 import { useT } from '@/i18n'
 import type { PreparationTarget } from '@shared/ipc'
 import { progressLabel } from '../progress-label'
-import type { SettingsContext } from './context'
-import { Btn, Progress } from './primitives'
+import type { SettingsContext, StatusRead } from './context'
+import { Btn, Chip, Progress } from './primitives'
 
 /**
  * A preparation shown under the row that needs it: what is missing, the button that fetches it, and the
@@ -20,6 +20,12 @@ export function PrepLine({ text, children, progress }: { text: string; children:
       {progress}
     </div>
   )
+}
+
+/** In place of the control of a row whose state main has not reported: that it is being checked, or that the check failed. */
+export function UnreadChip({ status }: { status: StatusRead<unknown> }): React.JSX.Element {
+  const t = useT()
+  return status === null ? <Chip>{t('settingsModels.checking')}</Chip> : <Chip tone="warn">{t('settingsModels.checkFailed')}</Chip>
 }
 
 /** The button that starts one preparation, and the button that stops it where it can be stopped. */

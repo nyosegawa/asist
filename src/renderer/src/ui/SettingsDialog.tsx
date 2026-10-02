@@ -28,7 +28,7 @@ import { usePreparationStore } from '@/state/preparation'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { localDate } from '@shared/api-usage'
 import { usageReport } from '@shared/usage-report'
-import { ttsEngineLabel, type SettingsContext, type SettingsPage } from './settings/context'
+import { readStatus, statusOf, ttsEngineLabel, type SettingsContext, type SettingsPage, type StatusRead } from './settings/context'
 import { pendingItems, type Pending } from './settings/pending'
 import { ConversationPage } from './settings/pages/ConversationPage'
 import { PersonaPage } from './settings/pages/PersonaPage'
@@ -91,10 +91,10 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   const toast = useToastStore((s) => s.push)
   const t = useT()
   const prep = usePreparationStore()
-  const [setup, setSetup] = useState<SetupStatus | null>(null)
-  const [vap, setVap] = useState<VapStatus | null>(null)
-  const [embedding, setEmbedding] = useState<EmbeddingStatus | null>(null)
-  const [aizuchiClassifier, setAizuchiClassifier] = useState<AizuchiClassifierStatus | null>(null)
+  const [setup, setSetup] = useState<StatusRead<SetupStatus>>(null)
+  const [vap, setVap] = useState<StatusRead<VapStatus>>(null)
+  const [embedding, setEmbedding] = useState<StatusRead<EmbeddingStatus>>(null)
+  const [aizuchiClassifier, setAizuchiClassifier] = useState<StatusRead<AizuchiClassifierStatus>>(null)
   const [last30, setLast30] = useState<number | null>(null)
   const formatLocale = useFormatLocale()
   const uiLocale = useUiLocale()
@@ -110,24 +110,25 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   // closed is shown the next time they open.
   useEffect(() => () => usePreparationStore.getState().dismiss(), [])
 
-  const refreshSetup = async (): Promise<void> => {
-    const next = await window.api.getSetupStatus()
-    setSetup(next)
-    applyStatus(next.services)
-  }
-  const refreshEmbedding = async (): Promise<void> => setEmbedding(await window.api.embeddingStatus())
+  const refreshSetup = (): Promise<void> =>
+    readStatus(async () => {
+      const next = await window.api.getSetupStatus()
+      applyStatus(next.services)
+      return next
+    }, setSetup)
+  const refreshEmbedding = (): Promise<void> => readStatus(() => window.api.embeddingStatus(), setEmbedding)
   // What is installed and recommended follows the models the settings name, so it is read again whenever
   // one of them changes, from whichever page changed it, and whenever a preparation ends, even one started
   // before the settings were last opened.
   useEffect(() => {
     if (!open) return
-    void refreshSetup().catch(() => setSetup(null))
+    void refreshSetup()
   }, [open, settings?.asrModel, settings?.ttsEngine, settings?.qwenTtsSize, prep.ended])
   useEffect(() => {
     if (!open) return
-    void window.api.vapStatus().then(setVap).catch(() => setVap(null))
-    void window.api.embeddingStatus().then(setEmbedding).catch(() => setEmbedding(null))
-    void window.api.aizuchiClassifierStatus().then(setAizuchiClassifier).catch(() => setAizuchiClassifier(null))
+    void readStatus(() => window.api.vapStatus(), setVap)
+    void refreshEmbedding()
+    void readStatus(() => window.api.aizuchiClassifierStatus(), setAizuchiClassifier)
   }, [open, prep.ended])
   useEffect(() => {
     if (!open) return
@@ -139,10 +140,10 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
 
   // The main process converts the memories in the background after semantic search is turned on or
   // prepared, and says nothing when it finishes, so the count is read again until the conversion ends.
-  const converting = open && embedding?.converting === true
+  const converting = open && statusOf(embedding)?.converting === true
   useEffect(() => {
     if (!converting) return
-    const timer = setTimeout(() => void refreshEmbedding().catch(() => setEmbedding(null)), EMBEDDING_POLL_MS)
+    const timer = setTimeout(() => void refreshEmbedding(), EMBEDDING_POLL_MS)
     return () => clearTimeout(timer)
   }, [converting, embedding])
 
@@ -153,7 +154,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
       () => {
         void refreshStatus()
         // Turning semantic search on starts the conversion of the memories in the main process.
-        if ('memoryEmbeddingEnabled' in patch) void refreshEmbedding().catch(() => setEmbedding(null))
+        if ('memoryEmbeddingEnabled' in patch) void refreshEmbedding()
         return true
       },
       (err: unknown) => {
@@ -192,8 +193,8 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   }
 
   const { localSpeech } = platformCapabilities()
-  const pending = pendingItems({ settings, status, vap, embedding, aizuchiClassifier, localSpeech })
-  const ctx: SettingsContext = { settings, status, setup, vap, embedding, aizuchiClassifier, prep, pending, set, save, refreshStatus, refreshSetup, go: setPage, prepare }
+  const pending = pendingItems({ settings, status, vap: statusOf(vap), embedding: statusOf(embedding), aizuchiClassifier: statusOf(aizuchiClassifier), localSpeech })
+  const ctx: SettingsContext = { settings, status, setup, vap, embedding, aizuchiClassifier, prep, pending, set, save, refreshStatus, go: setPage, prepare }
 
   // The one-line note beside each entry in the list on the left, which tells the gist without opening
   // the page. It warns only about what is in use and cannot work yet; a feature left off is no warning.

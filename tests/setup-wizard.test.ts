@@ -96,6 +96,7 @@ const api = {
   aizuchiClassifierPrepare: vi.fn(async () => ({ ok: true, message: '' })),
   vapStatus: vi.fn(async () => ({ runtimeInstalled: true, modelsInstalled: true, running: false })),
   vapPrepare: vi.fn(async () => ({ ok: true, message: '' })),
+  ttsTest: vi.fn(async () => ({ audio: new ArrayBuffer(0), text: '' })),
   requestMicPermission: vi.fn(async () => true),
   openExternal: vi.fn(async () => {})
 }
@@ -373,6 +374,21 @@ describe('first-run setup', () => {
     const bar = container.querySelector('[role="progressbar"]')
     expect(bar?.getAttribute('aria-valuenow')).toBe('29')
     expect(container.querySelector('.st-progress-label')?.textContent).toContain('576.3 / 1974 MB')
+  })
+
+  it('says why the sample of the chosen speech engine could not be played', async () => {
+    status = { ...status, asr: true, tts: true }
+    api.ttsTest.mockRejectedValueOnce(new Error('the speech engine did not answer'))
+    await render()
+    await toModel(ja)
+    await verifyKey(ja)
+    await press(ja('setup.next'))
+    await press(ja('setup.speaking.voice.title'))
+    await press(ja('setup.next'))
+    await press(ja('setup.next'))
+    expect(container.querySelector('h1')?.textContent).toBe(ja('setup.steps.tts.title'))
+    await press(ja('common.playSample'))
+    expect(container.querySelector('.su-error')?.textContent).toBe('the speech engine did not answer')
   })
 
   it('turns the microphone on at the end of a voice setup through the gate every other switch uses, for the engine the setup saved', async () => {
