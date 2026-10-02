@@ -270,15 +270,16 @@ describe('the memory-curation skill', () => {
         PYTHONUTF8: '1',
         [pathKey]: [standInUv(standIn), process.env[pathKey]].join(path.delimiter)
       }
-      const run = (command: string): { status: number | null; output: string } => {
+      // PowerShell's -Command ends with 1 for any native command that failed, whatever code that command gave.
+      const run = (command: string): { ok: boolean; output: string } => {
         const result = spawnSync(shell, [...args, command], { cwd: worktree, env, encoding: 'utf8', windowsHide: true })
         if (result.error) throw result.error
-        return { status: result.status, output: `${result.stdout}${result.stderr}`.trim() }
+        return { ok: result.status === 0, output: `${result.stdout}${result.stderr}`.trim() }
       }
       // A uv found on PATH would be the stand-in.
-      expect([shell, run('uv --version')]).toEqual([shell, { status: 3, output: 'stand-in uv' }])
+      expect([shell, run('uv --version')]).toEqual([shell, { ok: false, output: 'stand-in uv' }])
       for (const dir of SKILL_DIRS) {
-        expect([shell, dir, run(`${curationScriptCommand(`${dir}/${CURATION_SKILL}`, 'validate.py')} .`)]).toEqual([shell, dir, { status: 0, output: 'OK' }])
+        expect([shell, dir, run(`${curationScriptCommand(`${dir}/${CURATION_SKILL}`, 'validate.py')} .`)]).toEqual([shell, dir, { ok: true, output: 'OK' }])
       }
     }
   })
