@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { protocol } from 'electron'
+import { protocol, type CustomScheme } from 'electron'
 import { allowedPath } from './services/file-preview'
 
 /**
@@ -46,11 +46,10 @@ export function fileUrl(filePath: string, rules?: UrlRules): string {
   return `${FILE_SCHEME}://${server}${names.join('/')}`
 }
 
-/** Has to be called before app.whenReady. */
-export function registerFileScheme(): void {
-  protocol.registerSchemesAsPrivileged([
-    { scheme: FILE_SCHEME, privileges: { secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }
-  ])
+/** The privileges of asist-file://, registered before app.whenReady together with the other schemes. */
+export const fileScheme: CustomScheme = {
+  scheme: FILE_SCHEME,
+  privileges: { secure: true, supportFetchAPI: true, stream: true, corsEnabled: true }
 }
 
 const MIME: Record<string, string> = {
