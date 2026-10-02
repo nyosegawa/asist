@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_CODEC, QWEN_TTS_MODELS, isLocalTtsEngine, localTtsModel, type LocalTtsEngine, type LocalTtsModel } from '@shared/tts-models'
 import type { SetupProgress } from '@shared/ipc'
+import { errorText } from '@shared/i18n/error-text'
 import { platformCapabilities } from './platform'
 import { resourcePath } from './resource-path'
 import { getSettings } from './settings'
@@ -127,7 +128,7 @@ function armSilenceTimer(): void {
   if (silenceTimer) clearTimeout(silenceTimer)
   silenceTimer = requests.size === 0
     ? null
-    : setTimeout(() => stopWorker(new Error(`${workerLabel} worker stopped responding`)), SILENT_WORKER_TIMEOUT_MS)
+    : setTimeout(() => stopWorker(new Error(`the worker sent nothing for ${SILENT_WORKER_TIMEOUT_MS / 1000} s`)), SILENT_WORKER_TIMEOUT_MS)
 }
 
 function handleMessage(message: Record<string, unknown>): void {
@@ -140,7 +141,7 @@ function handleMessage(message: Record<string, unknown>): void {
   } else {
     requests.delete(message.id as string)
     if (message.type === 'end') queue.end()
-    else queue.fail(new Error(typeof message.error === 'string' && message.error ? message.error : `${workerLabel} synthesis failed`))
+    else queue.fail(new Error(errorText('voice.speech.engineFailed', { engine: workerLabel, detail: typeof message.error === 'string' && message.error ? message.error : 'synthesis failed' })))
   }
   armSilenceTimer()
 }
@@ -190,7 +191,15 @@ export function stop(): void {
   stopWorker()
 }
 
-function stopWorker(error: Error = new DOMException('the speech worker stopped', 'AbortError')): void {
+/**
+ * Stops the worker and ends every request on it. The conversation shows the error of a sentence that breaks
+ * off, so the error names the engine in the user's language, and that of a failure carries the worker's
+ * message as its detail.
+ */
+function stopWorker(failure?: Error): void {
+  const error = failure
+    ? new Error(errorText('voice.speech.engineFailed', { engine: workerLabel, detail: failure.message }), { cause: failure })
+    : new DOMException(errorText('voice.speech.engineStopped', { engine: workerLabel }), 'AbortError')
   const stale = worker
   worker = null
   workerKey = null

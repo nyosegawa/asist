@@ -4,6 +4,7 @@ import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TtsEngine } from '@shared/ipc'
+import { readErrorText } from '@shared/i18n/error-text'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_CODEC, QWEN_TTS_MODELS, localTtsModel, qwenTtsLanguage } from '@shared/tts-models'
 
 const mocks = vi.hoisted(() => ({
@@ -223,6 +224,31 @@ describe('Qwen3-TTS service', () => {
     await expect(local.ensureWorker('qwen3tts')).resolves.toBe(true)
     expect(children[0].kill).toHaveBeenCalled()
     expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][0])).toBe(QWEN_TTS_MODELS['1.7b'].talker.file)
+  })
+})
+
+describe('a sentence the worker fails after its first piece', () => {
+  /** Starts a sentence, delivers its first piece, applies the failure and returns the error the rest of the sentence ends with. */
+  async function failedAfterFirstPiece(fail: (child: Child, id: string) => void): Promise<Error> {
+    const stream = local.stream('qwen3tts', REQUEST)
+    const first = stream.next()
+    await settle()
+    const child = children[0]
+    const id = child.input.find((message) => message.text)!.id as string
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    await first
+    fail(child, id)
+    return stream.next().then(() => { throw new Error('the sentence went on') }, (error: Error) => error)
+  }
+
+  // The conversation shows this error on its error line, in the language of the interface.
+  it.each([
+    ['the worker exits', (child: Child) => { child.exitCode = 1; child.emit('exit', 1) }],
+    ['the worker reports an error for the sentence', (child: Child, id: string) => say(child, { type: 'error', id, error: 'decoder failed' })],
+    ['the worker is stopped for another model', () => local.stop()]
+  ])('ends it with an error the screen words in its own language when %s', async (_case, fail) => {
+    const error = await failedAfterFirstPiece(fail)
+    expect(readErrorText(error.message, 'ja-JP')).not.toBeNull()
   })
 })
 
