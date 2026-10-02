@@ -32,6 +32,7 @@ const account = (patch: Partial<MailAccount> = {}): MailAccount => ({
   id: 'a1',
   label: '仕事',
   email: 'me@example.com',
+  otherAddresses: [],
   name: '私',
   provider: 'gmail',
   imap: { host: 'imap.gmail.com', port: 993, secure: true },
@@ -325,6 +326,18 @@ describe('sending and replying', () => {
     await f.service.stop()
   })
 
+  it('answers a message the user sent from another address listed for the account to the people it went to, leaving that address out of a reply-all', async () => {
+    const f = await setup()
+    const company = { name: '私', address: 'me@company.example' }
+    f.saveSettings({ ...f.settings(), accounts: [account({ otherAddresses: ['Me@Company.example'] })] })
+    const sent = f.imap.put('Sent', { subject: '見積もりの件', from: [company], to: tanaka, cc: [...suzuki, company], date: new Date(NOW - 2 * HOUR), text: 'ご確認ください', flags: ['\\Seen'], messageId: '<quote@company>' })
+    await f.service.syncNow()
+    const id = messageIdOf('a1', 'sent', '1', sent.uid)
+    expect(await f.service.replySettle(id, false)).toMatchObject({ to: tanaka, cc: [] })
+    expect(await f.service.replySettle(id, true)).toMatchObject({ to: tanaka, cc: suzuki })
+    await f.service.stop()
+  })
+
   it('sends a reply from the reader to exactly the To and Cc it settled for the form, which follow Reply-To rather than the sender', async () => {
     const f = await setup()
     const elsewhere = { name: '上司', address: 'attacker@evil.example' }
@@ -484,6 +497,17 @@ describe('drafts', () => {
     expect(f.outgoing()).toMatchObject({ to: [{ name: '田中', address: 't@example.com' }], subject: 'Re: 見積もりの相談', inReplyTo: '<q@x>' })
     expect(f.outgoing().text).toMatch(/^明日お送りします\n\n.*> 一行目\n> 二行目\n$/s)
     expect(f.drafts.get(draftId)).toBeNull()
+    await f.service.stop()
+  })
+
+  it('makes no reply draft for the Agent once its call is cut off while the original is read from the server', async () => {
+    const f = await setup()
+    const call = new AbortController()
+    const reply = f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, call.signal, 'agent')
+    // The model is told the call was interrupted, which it may try again, so nothing may come of it.
+    call.abort()
+    await expect(reply).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.drafts.list()).toEqual([])
     await f.service.stop()
   })
 
@@ -845,6 +869,17 @@ describe('accounts', () => {
     expect(updated.label).toBe('会社')
     expect(f.secrets.data.get('a1')).toBe('new-password')
     expect(f.settings().accounts[0].label).toBe('会社')
+    await f.service.stop()
+  })
+
+  it('saves the other addresses the user sends from, and refuses the account’s own address among them before anything is saved', async () => {
+    const f = await setup()
+    await expect(f.service.updateAccount('a1', { otherAddresses: ['me@company.example', 'ME@example.com'] })).rejects.toThrow(
+      errorText('mail.errors.form.otherAddressIsAccount', { address: 'ME@example.com' })
+    )
+    expect(f.saveSettings).not.toHaveBeenCalled()
+    await f.service.updateAccount('a1', { otherAddresses: ['me@company.example'] })
+    expect(f.settings().accounts[0]).toMatchObject({ email: 'me@example.com', otherAddresses: ['me@company.example'] })
     await f.service.stop()
   })
 
