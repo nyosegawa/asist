@@ -182,8 +182,13 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     }
   }
 
+  // A push has no caller to fail to. The screens read the status themselves too and show why it failed,
+  // as with an API key file that cannot be read, so a push that cannot compute it is only logged.
   const sendStatus = (): void => {
-    void computeStatus().then((status) => send(IpcChannel.StatusChanged, status))
+    computeStatus().then(
+      (status) => send(IpcChannel.StatusChanged, status),
+      (error: unknown) => console.error('the status could not be sent:', error)
+    )
   }
   watchdog.start(sendStatus)
   onCliSearched(sendStatus)
@@ -269,9 +274,14 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     vap.pushAudio(new Float32Array(user), new Float32Array(assistant))
   )
   handle(IpcChannel.VapStatus, () => vap.installationStatus())
-  handle(IpcChannel.VapPrepare, () =>
-    vap.prepare(reportProgress('vap'))
-  )
+  handle(IpcChannel.VapPrepare, async () => {
+    const result = await vap.prepare(reportProgress('vap'))
+    // The preparation loads the worker to check that it runs. The first-run setup leaves MaAI off, and a
+    // worker left loaded would hold torch and its models until the app quits with nothing reading them. The
+    // settings turn MaAI on after their preparation, which starts it again once the microphone is on.
+    if (!vap.wanted(getSettings())) vap.stop()
+    return result
+  })
   handle(IpcChannel.VapPrepareCancel, () => vap.cancelPreparation())
 
   handle(IpcChannel.EmbeddingStatus, () => memory.embeddingStatus())
