@@ -133,6 +133,15 @@ describe('CitationFilter', () => {
     // Text held until the end of the message reaches the speech synthesis only then.
     expect(out).toEqual(['結論から言うと', '[注]は不要です。', '次に', '[メモ](メモ帳)を開きます。', '詳しくは', 'です。'])
   })
+
+  it('removes the outer parentheses of a citation whose closing ones arrive in separate deltas', async () => {
+    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const filter = new CitationFilter()
+    const deltas = ['東京は晴れです', ' (', ...'[天気](https://tenki.example/a)', ')', '。']
+    const out = deltas.map((delta) => filter.push(delta)).join('')
+    // The outer parentheses belong to the citation, so neither may be left in the reply.
+    expect(out + filter.flush()).toBe('東京は晴れです。')
+  })
 })
 
 describe('the OpenAI stream', () => {
