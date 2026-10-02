@@ -368,9 +368,9 @@ async function runTurn(
     for (const sentence of assembler.pause()) synth.push(sentence)
   }
 
-  // A filler that keeps the pause of a spoken reply alive while a search or a tool takes long. It plays a
-  // pre-synthesized aizuchi clip as is, at most once per turn. It fills the wait before the answer goes
-  // on, as the bridge phrase does, so the bridge phrase's switch decides it rather than the aizuchi's.
+  // A filler that keeps the pause of a spoken reply alive while a search or a tool takes a while. It
+  // plays a pre-synthesized aizuchi clip as is, at most once per turn. It fills the wait before the answer
+  // goes on, as the bridge phrase does, so the bridge phrase's switch decides it rather than the aizuchi's.
   // The clips are Japanese backchannels, so they play only in a turn whose language has them.
   let fillerLeft = route.kind === 'tts' && getSettings().bridgePhrase && conversationFeatures(locale).aizuchi
   const playWorkFiller = (sourceSignal: AbortSignal): void => {
