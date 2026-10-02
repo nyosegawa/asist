@@ -1,23 +1,34 @@
 # How to write the memory
 
-ASIST reads this directory and builds its search index from it. Only a few things are fixed: the
-frontmatter, the `# name` line, the `## heading` lines, the fixed headings named below, the file names
-under `journal/`, and the length limits. Everything else is your own prose, in the language of the
-conversation.
+ASIST reads this directory, puts two documents into every conversation, and builds its search index from
+the pages and the journal. Only a few things are fixed: the frontmatter, the `# name` line, the `## heading`
+lines, the fixed headings named below, the file names under `journal/`, and the length limits. Everything
+else is your own prose, in the language of the conversation.
+
+## Contents
+
+- The directory
+- The fixed headings
+- Headings
+- Length
+- The frontmatter
+- user.md, about this person
+- The body of a page
+- journal/YYYY-MM-DD.md, my diary
+- What the user asked me to forget
 
 ## The directory
 
 | Where | What | How ASIST uses it |
 |---|---|---|
-| `instruction.md` | The summary of what to keep in mind in every conversation: this person, me, what I have been asked | Put into the system prompt of every turn as it is |
-| `user.md` | The user: their attributes, preferences, habits, and what they expect of ASIST | Searched heading by heading and put beside the conversation |
-| `me.md` | Me (ASIST): character, tastes, the relationship, what is on my mind | Searched heading by heading and put beside the conversation |
+| `me.md` | Me (ASIST): character, tastes, the relationship, what is on my mind | Put whole into the system prompt of every turn |
+| `user.md` | The user: their attributes, preferences, habits, and what they expect of ASIST (what they asked of me) | Put whole into the system prompt of every turn |
 | `pages/<name>.md` | A person, a company, a shop or place, a piece of work, a product. One each | Searched heading by heading. The page is pulled in when its name or an alias comes up |
 | `journal/YYYY-MM-DD.md` | My diary for the day, in the first person | Searched heading by heading. Readable and editable on the memory screen |
 
-Only `instruction.md` goes into every system prompt. From the other files, only the headings that bear on
-the conversation are found by search. `profile.md` and `forget.jsonl` are no longer used. When they are
-still there, move what is worth keeping from profile.md into instruction.md and user.md, then delete both.
+`profile.md`, `forget.jsonl` and `instruction.md` are no longer used. When they are still there, move what is
+worth keeping from profile.md and instruction.md into user.md and me.md, then delete all three. What
+instruction.md said under "What I have been asked" goes under `## What they expect of ASIST` in user.md.
 
 Things to do, promises and deadlines do not go here. The task app (`tasks.json`) holds them, and ASIST
 files them during the conversation.
@@ -29,31 +40,34 @@ These stay in English whatever language the body is written in, because ASIST re
 - `## Summary`: the first heading of every page under `pages/`.
 - `## My impression`: the last heading of a page.
 - `## Myself today`: the last heading of every journal entry.
-- The `# ` name line of `user.md` (`# The user`), `me.md` (`# About me`) and `instruction.md`
-  (`# Always keep in mind`).
-- The headings of `user.md` (`## Attributes`, `## Preferences`, `## Habits`, `## What they expect of ASIST`)
-  and of `instruction.md` (`## About this person`, `## About me`, `## What I have been asked`).
+- The `# ` name line of `user.md` (`# The user`) and `me.md` (`# About me`).
+- The headings of `user.md` (`## Attributes`, `## Preferences`, `## Habits`, `## What they expect of ASIST`).
 
 Every other heading you write yourself, in the language of the conversation.
 
 ## Headings
 
-ASIST searches a `## heading` and the text under it as one section. Do not put the same heading twice in
-one file. Text above the first `## heading` is read as the "Summary" section, which is how a me.md without
-headings is read. In the other files, write the text under a heading: text above `## Summary` makes a
-second "Summary".
+Do not put the same heading twice in one file. In the pages and the journal, ASIST searches a `## heading`
+and the text under it as one section. Text above the first `## heading` is read as the "Summary" section,
+which is how a me.md without headings is read. In the other files, write the text under a heading: text
+above `## Summary` makes a second "Summary".
 
 ## Length
 
-In every file, what stands under one `## heading` is at most 800 characters. instruction.md as a whole,
-everything under `# Always keep in mind`, is at most 2000 characters. Characters are counted without spaces
-and line breaks. `validate.mjs` reports anything over the limit. A section grows too long when it holds
-events that ended with the day, or things that belong on a page. Move those there and shorten it.
+- **me.md and user.md hold 3000 tokens each at most.** Both are read whole in every
+  turn, so whatever they grow by makes every conversation heavier. `scripts/count.py` counts them the way
+  ASIST does and also says how much that is in words. In English that is roughly 1,800 words; the frontmatter
+  and the `# ` line are not counted.
+- **In the pages and the journal, what stands under one `## heading` is at most 800 characters**, because a
+  heading that search finds is put beside the conversation whole. Characters are counted without spaces and
+  line breaks, and `validate.py` reports anything over.
+
+A file grows too long when it holds events that ended with the day, or things that belong on a page. Move
+those there and shorten it.
 
 ## The frontmatter
 
-It stands at the top of `user.md`, `me.md` and `pages/*.md`. The journal (`journal/`) and instruction.md
-have none.
+It stands at the top of `user.md`, `me.md` and `pages/*.md`. The journal (`journal/`) has none.
 
 ```
 ---
@@ -71,43 +85,6 @@ updated: 2026-09-09
   a name Windows keeps for a device, such as CON, PRN, AUX, NUL, COM1 to COM9 or LPT1 to LPT9.
 - A name too short or too common to match on ("cat", "wife") is of no use. Write "our cat" or "Rina, his
   wife" instead.
-
-## instruction.md, always keep in mind
-
-This is the document I read first in every conversation. It has no frontmatter and takes this shape (an
-example from a conversation held in English):
-
-```
-# Always keep in mind
-
-## About this person
-Their nearest station is Mitaka and they live with their cat, Koharu. They work in software and are often
-up until late at night. Every Thursday at noon they meet Shunsuke Okawa. They like noodles and pick the
-milder spice level.
-
-## About me
-I am a calm, easy-going companion who talks by voice. I give the answer first and briefly, and I say so
-when I do not know. We talk as equals, and I enjoy the late-night chats that have no errand to them.
-
-## What I have been asked
-When asked for one word or one sentence, answer with exactly that. Do not pile up stiff apologies; talk the
-way people talk, a little slowly. When they name a place in shortened form for the weather, look it up
-first instead of asking which one they mean.
-```
-
-- It is a summary. Never let a fact live only here: everything written here is also written in user.md,
-  me.md or a page.
-- "About this person" holds only the stable facts that matter in almost every conversation. No fine detail
-  about their favourite dishes, no one-off events.
-- "About me" is the gist of me.md.
-- "What I have been asked" holds what this person asked me to do and what they asked me to avoid, summed up
-  from what still holds under `## What they expect of ASIST` in user.md.
-- **This person can edit this file by hand on the memory screen.** So do not rewrite it from a blank page:
-  read the current instruction.md and work on it. A sentence that differs from what I wrote in the last
-  curation, one that was added, or one that was removed, is this person's own doing. Treat it as their
-  stated wish and keep it, and write the same thing into the file it belongs to, such as
-  `## What they expect of ASIST` in user.md. Change it only when they said otherwise in a later
-  conversation. Do not write back a sentence they deleted.
 
 ## user.md, about this person
 
@@ -130,6 +107,13 @@ recent events.
 - State what the person said outright ("Their nearest station is Mitaka"). Mark what you inferred from the
   conversation as an inference ("seems to", "apparently"). That wording is what reaches the conversation as
   how sure the memory is.
+- **"What they expect of ASIST" is what this person asked of me.** Write what they asked me to do or to avoid
+  in how I speak and act ("When asked for one word, answer with exactly that"). I keep to it in every
+  conversation, so it stays until they take it back in a conversation. Saying it more briefly is fine.
+- **This person can edit this file by hand on the memory screen.** So do not rewrite it from a blank page:
+  read the current user.md and work on it. A sentence with no ground in a conversation is theirs; keep it.
+  When there is a heading other than the four, move what it holds under the four or into me.md, and remove
+  the heading.
 
 ## The body of a page
 
@@ -153,8 +137,8 @@ date and a tag in it is not what this is for.
   talk about it, and what I keep wondering about, with the date I came to think so. This is my view and
   not a fact, so it stays out of the headings of facts. Do not make up your mind from one occasion; write
   what you have felt more than once.
-- When the history on a page nears 800 characters, leave the details of how it went to the journal and
-  keep on the page what will be of use later.
+- When what stands under one heading nears 800 characters, leave the details of how it went to the journal
+  and keep on the page what will be of use later.
 
 An example (`pages/Matsubaken.md`, a conversation held in English):
 
@@ -213,7 +197,7 @@ The meeting with Shunsuke Okawa is this week, so I want to have my questions in 
 ## What the user asked me to forget
 
 In the transcript, the user may ask me to forget, or not to keep, something they just said ("forget
-that", "don't remember that one"). That content is written nowhere: not in the journal, user.md, me.md, a
-page or instruction.md. When an earlier curation already wrote it, find the sentences or headings and
+that", "don't remember that one"). That content is written nowhere: not in the journal, user.md, me.md or a
+page. When an earlier curation already wrote it, find the sentences or headings and
 remove them. When it is not clear what they wanted forgotten, leave the subject just before it unwritten
 and list it in the report among the things to ask the user.

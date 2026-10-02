@@ -4,36 +4,33 @@ import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { MemoryDocument, MemoryDocumentKind, MemoryPageInput, MemoryUnit, MemoryUnitKind } from './ipc'
 import {
-  INSTRUCTION_MAX_CHARS,
+  PROMPT_DOCUMENTS,
   SECTION_MAX_CHARS,
   SUMMARY_HEADING,
   documentIssues,
-  instructionBody,
   pageNameIssue,
   parsePage,
+  promptBody,
   writtenInJapanese,
   type DocumentIssue,
   type PageNameIssue,
-  type ParsedPage
-} from '../../resources/skills/memory-format.mjs'
+  type ParsedPage,
+  type PromptDocumentKind
+} from './memory-format'
 import journalTemplateJa from '../../resources/skills/memory-curation/assets/templates/journal.md?raw'
-import meTemplateJa from '../../resources/skills/memory-curation/assets/templates/me.md?raw'
 import pageTemplateJa from '../../resources/skills/memory-curation/assets/templates/page.md?raw'
-import userTemplateJa from '../../resources/skills/memory-curation/assets/templates/user.md?raw'
 import journalTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/journal.md?raw'
-import meTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/me.md?raw'
 import pageTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/page.md?raw'
-import userTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/user.md?raw'
 
-export { instructionBody, parsePage }
+export { PROMPT_DOCUMENTS, parsePage, promptBody, type PromptDocumentKind }
 
 /**
  * Reading and writing the memory pages, which are markdown. They live in `userData/memory/`, and the
- * files are the memory itself. How a document is read and what breaks its rules live in
- * resources/skills/memory-format.mjs, which the curation skills' validate.mjs reads too; this file turns
- * what it reads into units and list entries, and its findings into sentences. A heading and the body under
- * it, called a section, is the unit of search and injection, and its id is derived from the file path and
- * the heading, so rewriting the body leaves the unit identical.
+ * files are the memory itself. How a document is read and what breaks its rules live in memory-format.ts,
+ * which the curation skills' Python answers the same; this file turns what it reads into units and list
+ * entries, and its findings into sentences. A heading and the body under it,
+ * called a section, is the unit of search and injection for the pages and the journal, and its id is
+ * derived from the file path and the heading, so rewriting the body leaves the unit identical.
  */
 
 /**
@@ -51,10 +48,9 @@ export const FIXED = {
   journalSelf: { ja: '今日の私', en: 'Myself today' },
   /** The heading the curation keeps on every page about a person, a place or a topic for its own view of them. */
   impression: { ja: '私の印象', en: 'My impression' },
-  /** The `# name` line of the three pages whose name comes from their role rather than from a person. */
+  /** The `# name` line of the two documents whose name comes from their role rather than from a person. */
   user: { ja: 'ユーザー', en: 'The user' },
   me: { ja: '私について', en: 'About me' },
-  instruction: { ja: 'いつも覚えておくこと', en: 'Always keep in mind' },
   /** The word that stands before a journal entry in the text that gets embedded. */
   journalOf: { ja: '{date}の日記', en: 'Journal of {date}' }
 } as const satisfies Record<string, PromptText>
@@ -88,7 +84,7 @@ export function unitId(file: string, key: string): string {
   return a.toString(16).padStart(8, '0') + b.toString(16).padStart(8, '0')
 }
 
-export type FileKind = 'user' | 'me' | 'instruction' | 'page' | 'journal' | null
+export type FileKind = 'user' | 'me' | 'page' | 'journal' | null
 
 /** Derives the kind and the page's default name from the file path. */
 export function classifyFile(file: string): { kind: FileKind; title: string } {
@@ -97,7 +93,6 @@ export function classifyFile(file: string): { kind: FileKind; title: string } {
   // The title is what a page is called when its own `# name` line is missing, so the Japanese form stands.
   if (base === 'user') return { kind: 'user', title: FIXED.user.ja }
   if (base === 'me') return { kind: 'me', title: FIXED.me.ja }
-  if (base === 'instruction') return { kind: 'instruction', title: FIXED.instruction.ja }
   if (base.startsWith('journal/')) return { kind: 'journal', title: name }
   if (base.startsWith('pages/')) return { kind: 'page', title: name }
   return { kind: null, title: name }
@@ -110,35 +105,30 @@ const templateHeadings = (fixed: readonly PromptText[], ...templates: string[]):
   ])
 
 /**
- * The headings the templates of the curation skills write into each kind of document that is searched, in the
- * two forms the templates exist in, with the fixed headings ASIST reads: the summary, which the text above a
+ * The headings the templates of the curation skills write into the two kinds of document that are searched, in
+ * the two forms the templates exist in, with the fixed headings ASIST reads: the summary, which the text above a
  * document's first heading is read under, the impression of a page and the close of a journal day.
  */
-const TEMPLATE_HEADINGS: Record<'user' | 'me' | 'page' | 'journal', ReadonlySet<string>> = {
-  user: templateHeadings([], userTemplateJa, userTemplateEn),
-  me: templateHeadings([], meTemplateJa, meTemplateEn),
+const TEMPLATE_HEADINGS: Record<'page' | 'journal', ReadonlySet<string>> = {
   page: templateHeadings([FIXED.impression], pageTemplateJa, pageTemplateEn),
   journal: templateHeadings([FIXED.journalSelf], journalTemplateJa, journalTemplateEn)
 }
 
 /**
- * Whether the heading of a section of the file is one its template writes, rather than one the curation or the
- * user chose for what the section says. Such a heading is the same in every memory and in ordinary words, so it
- * is no reason to put the section beside an utterance. Measured on 2026-10-02 over memories of 26 units written
- * from the templates in each language: as a search word, "who am I kidding" injected me.md's "Who I am" at bm25
- * -5.2 against the bar of -5 and 「気になっていることがあるんだけど」 me.md's 「好きなもの、気になっていること」 at
- * -11.4 against -2.5; in the embedded text, "I did not like myself today" brought the close of a journal day to a
+ * Whether the heading of a section of a page or a journal entry is one its template writes, rather than one the
+ * curation or the user chose for what the section says. Such a heading is the same in every memory and in
+ * ordinary words, so it is no reason to put the section beside an utterance. Measured on 2026-10-02 over
+ * memories written from the templates in each language: 「私の印象では悪くない」 injected the impression section of
+ * every page, and in the embedded text "I did not like myself today" brought the close of a journal day to a
  * cosine of 0.868 against the bar of 0.84, and 0.835 without the heading. A heading anyone else writes says what
- * the section holds: over 53 units, "Ken bought a bonsai yesterday" injects a "Bonsai" the curation added to
- * me.md at -8.3, and nothing once that heading is no search word. A curation held in a language other than
- * Japanese or English writes me.md's example headings in that language, and those are not in this set.
+ * the section holds, and stays a search word.
  */
 export function headingFromTemplate(file: string, heading: string): boolean {
   const { kind } = classifyFile(file)
-  return kind !== null && kind !== 'instruction' && TEMPLATE_HEADINGS[kind].has(heading)
+  return (kind === 'page' || kind === 'journal') && TEMPLATE_HEADINGS[kind].has(heading)
 }
 
-/** Turns the headings of a page, meaning user, me or pages, into units. */
+/** Turns the headings of a page into units. */
 export function unitsOfPage(file: string, page: ParsedPage, pageName: string): MemoryUnit[] {
   const date = page.frontmatter.updated ?? ''
   return page.sections.map((section, order) => ({
@@ -187,11 +177,8 @@ export function embeddingTextOf(unit: Pick<MemoryUnit, 'file' | 'kind' | 'page' 
 }
 
 
-/**
- * The files the memory screen can open: instruction.md, me.md, user.md, pages/<name>.md and
- * journal/YYYY-MM-DD.md.
- */
-export const DOCUMENT_FILE = /^(instruction\.md|me\.md|user\.md|pages\/[^/\\]+\.md|journal\/\d{4}-\d{2}-\d{2}\.md)$/
+/** The files the memory screen can open: me.md, user.md, pages/<name>.md and journal/YYYY-MM-DD.md. */
+export const DOCUMENT_FILE = /^(me\.md|user\.md|pages\/[^/\\]+\.md|journal\/\d{4}-\d{2}-\d{2}\.md)$/
 
 const MAX_PAGE_NAME_LENGTH = 60
 
@@ -253,7 +240,7 @@ export function documentOf(file: string, markdown: string): MemoryDocument {
 }
 
 /** A finding of documentIssues as a sentence in the language of the interface. */
-function issueText(file: string, issue: DocumentIssue, t: Translate): string {
+export function documentIssueText(file: string, issue: DocumentIssue, t: Translate): string {
   switch (issue.kind) {
     case 'duplicateHeading':
       return t('memory.check.duplicateHeading', { file, line: issue.line, heading: issue.heading, first: issue.first })
@@ -261,8 +248,8 @@ function issueText(file: string, issue: DocumentIssue, t: Translate): string {
       return t('memory.check.headingWithoutText', { file, line: issue.line, heading: issue.heading })
     case 'sectionTooLong':
       return t('memory.check.sectionTooLong', { file, line: issue.line, heading: issue.heading, limit: SECTION_MAX_CHARS })
-    case 'instructionTooLong':
-      return t('memory.check.instructionTooLong', { file, limit: INSTRUCTION_MAX_CHARS })
+    case 'tooManyTokens':
+      return t('memory.check.tooManyTokens', { file, tokens: issue.tokens, limit: issue.limit, characters: issue.cut.characters })
     case 'firstHeading':
       return t('memory.check.firstHeading', { file, heading: issue.heading })
     case 'obsoleteKey':
@@ -273,14 +260,14 @@ function issueText(file: string, issue: DocumentIssue, t: Translate): string {
 }
 
 /**
- * Checks the document against the rules of memory-format.mjs and returns what needs fixing, in the
+ * Checks the document against the rules of memory-format.ts and returns what needs fixing, in the
  * language of the interface, or nothing when it is valid. Reading the whole directory and saving from
  * the screen apply the same rules.
  */
 export function validateDocument(file: string, markdown: string, t: Translate): string[] {
   const kind = documentKindOf(file)
   if (!kind) return [t('memory.check.wrongPlace', { file })]
-  return documentIssues(kind, markdown).map((issue) => issueText(file, issue, t))
+  return documentIssues(kind, markdown).map((issue) => documentIssueText(file, issue, t))
 }
 
 export function parseMemoryPageInput(value: unknown): MemoryPageInput {
