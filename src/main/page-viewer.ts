@@ -15,8 +15,10 @@ import { FILE_SCHEME, handleFileScheme } from './file-protocol'
  *   through the session's proxy, which leads nowhere.
  * - A navigation, prefetch or resource the policy misses is a request, which webRequest cancels.
  *
- * WebRTC still asks the OS resolver for a host name the page writes as an ICE server or a remote candidate,
- * and nothing is sent to the host. Nothing in Electron stops that for one session or one renderer: Chromium 150
+ * WebRTC still has the network service resolve a host name the page writes as an ICE server or a remote
+ * candidate, which neither the proxy nor webRequest reaches: a name under .local is asked for by multicast DNS
+ * on the local network, and any other name by the system resolver (getaddrinfo in the network service). Nothing
+ * connects to the host. Nothing in Electron stops the lookup for one session or one renderer: Chromium 150
  * ignores a `webrtc` directive in the policy as unrecognised, turning off every WebRTC runtime feature of Blink
  * leaves RTCPeerConnection in place, and WebRTC asks for no permission.
  */
