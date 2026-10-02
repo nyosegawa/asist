@@ -10,9 +10,14 @@ const mocks = vi.hoisted(() => ({
   windows: false,
   noGpu: false,
   spawn: vi.fn(),
+  quitHooks: [] as Array<() => void>,
   settings: { ttsEngine: 'voicevox' as TtsEngine, voicevoxSpeaker: 3, aivisSpeaker: null as number | null, conversationLocale: 'ja-JP' as ConversationLocale }
 }))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('electron', () => ({ app: {
+  isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data',
+  on: (event: string, listener: () => void) => { if (event === 'will-quit') mocks.quitHooks.push(listener) }
+} }))
 vi.mock('../src/main/services/platform', async () => {
   const { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU } = await import('./helpers/platform')
   return { platformCapabilities: () => (mocks.noGpu ? WINDOWS_WITHOUT_GPU : mocks.windows ? WINDOWS : MACOS) }
@@ -23,7 +28,7 @@ vi.mock('../src/main/services/settings', () => ({
 }))
 
 const fetchMock = vi.fn<typeof fetch>()
-const children: Array<EventEmitter & { unref: ReturnType<typeof vi.fn> }> = []
+const children: Array<EventEmitter & { kill: ReturnType<typeof vi.fn> }> = []
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -36,8 +41,9 @@ beforeEach(() => {
   mocks.settings = { ttsEngine: 'voicevox', voicevoxSpeaker: 3, aivisSpeaker: null, conversationLocale: 'ja-JP' }
   mocks.windows = false
   mocks.noGpu = false
+  mocks.quitHooks.length = 0
   mocks.spawn.mockReset().mockImplementation(() => {
-    const child = Object.assign(new EventEmitter(), { unref: vi.fn() })
+    const child = Object.assign(new EventEmitter(), { unref: vi.fn(), kill: vi.fn() })
     children.push(child)
     return child
   })
@@ -126,6 +132,36 @@ describe('TTS process startup', () => {
     expect(mocks.spawn.mock.calls.map(([binary]) => binary)).toEqual([
       expect.stringContaining('voicevox_engine'), expect.stringContaining('aivisspeech_engine')
     ])
+  })
+})
+
+describe('an engine this app started', () => {
+  async function started(engine: 'voicevox' | 'aivisspeech'): Promise<typeof import('../src/main/services/tts')> {
+    const tts = await import('../src/main/services/tts')
+    const starting = tts.ensureEngine(engine)
+    await vi.waitFor(() => expect(children).toHaveLength(1))
+    children[0].emit('spawn')
+    await starting
+    return tts
+  }
+
+  it('stops when the app quits, instead of holding its memory with no app to read aloud for', async () => {
+    await started('voicevox')
+    for (const quit of mocks.quitHooks) quit()
+    expect(children[0].kill).toHaveBeenCalled()
+  })
+
+  it('stops once another engine is chosen', async () => {
+    const tts = await started('aivisspeech')
+    mocks.settings.ttsEngine = 'system'
+    await tts.ensureEngine()
+    expect(children[0].kill).toHaveBeenCalled()
+  })
+
+  it('keeps running while it is the engine the settings choose', async () => {
+    const tts = await started('voicevox')
+    await tts.ensureEngine('voicevox')
+    expect(children[0].kill).not.toHaveBeenCalled()
   })
 })
 
