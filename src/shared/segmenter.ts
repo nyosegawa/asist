@@ -49,8 +49,8 @@ export class SegmentAssembler {
   }
 
   /**
-   * Ends the sentence in progress where the model's text stops for a while: at the end of a response and
-   * where a web search begins. The sentence said before the pause is complete, and holding it for the text
+   * Ends the sentence in progress where the model's text stops for a while, as while its tools or a web
+   * search run. The sentence said before the pause is complete, and holding it for the text
    * after it would keep it silent through the whole pause. A model starts the text after a pause without
    * a space, so the next delta gets one where words are written apart, rather than running on ("up.It").
    */

@@ -141,6 +141,17 @@ function unsentReply(turn: HistoryTurn): string {
   return spoken.slice(at)
 }
 
+/**
+ * The message of a record written one message a line. Such a log can hold a response with nothing in it,
+ * which the API refuses anywhere but at the end of a request, so that one is read as no message. A turn
+ * now leaves such a response out itself, and what it writes without parts is a paused search the
+ * provider needs back.
+ */
+function oneMessageALine(record: Extract<ConversationRecord, { kind: 'message' }>): ConversationMessage[] {
+  const message: ConversationMessage = { role: record.role, parts: record.parts, ...(record.native ? { native: record.native } : {}) }
+  return hasContent(message) ? [message] : []
+}
+
 function highestTurnId(records: readonly ConversationRecord[]): number {
   let highest = 0
   for (const record of records) {
@@ -249,12 +260,7 @@ export class ConversationHistory {
       return
     }
     if (record.kind === 'messages' || record.kind === 'message') {
-      const written: ConversationMessage[] = record.kind === 'messages'
-        ? record.messages
-        : [{ role: record.role, parts: record.parts, ...(record.native ? { native: record.native } : {}) }]
-      // A log written before a response with nothing in it was left out can still hold one, which the API
-      // refuses anywhere but at the end of a request.
-      const sent = written.filter(hasContent)
+      const sent = record.kind === 'messages' ? record.messages : oneMessageALine(record)
       if (own && sent.length > 0) {
         own.messages.push(...sent)
         own.records.push(record)
