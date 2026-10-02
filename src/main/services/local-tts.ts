@@ -128,7 +128,7 @@ function armSilenceTimer(): void {
   if (silenceTimer) clearTimeout(silenceTimer)
   silenceTimer = requests.size === 0
     ? null
-    : setTimeout(() => stopWorker(new Error(`the worker sent nothing for ${SILENT_WORKER_TIMEOUT_MS / 1000} s`)), SILENT_WORKER_TIMEOUT_MS)
+    : setTimeout(() => stopWorker(new Error(errorText('voice.speech.engineNoResponse', { engine: workerLabel }))), SILENT_WORKER_TIMEOUT_MS)
 }
 
 function handleMessage(message: Record<string, unknown>): void {
@@ -141,7 +141,8 @@ function handleMessage(message: Record<string, unknown>): void {
   } else {
     requests.delete(message.id as string)
     if (message.type === 'end') queue.end()
-    else queue.fail(new Error(errorText('voice.speech.engineFailed', { engine: workerLabel, detail: typeof message.error === 'string' && message.error ? message.error : 'synthesis failed' })))
+    else if (typeof message.error === 'string' && message.error) queue.fail(workerFailure(new Error(message.error)))
+    else queue.fail(new Error(errorText('voice.speech.engineFailedWithoutReason', { engine: workerLabel })))
   }
   armSilenceTimer()
 }
@@ -162,7 +163,7 @@ async function startWorker(engine: LocalTtsEngine): Promise<boolean> {
       if (worker === started) handleMessage(message)
     },
     onFailure: (error) => {
-      if (worker === started) stopWorker(error)
+      if (worker === started) stopWorker(workerFailure(error))
     }
   })
   worker = started
@@ -192,14 +193,17 @@ export function stop(): void {
 }
 
 /**
- * Stops the worker and ends every request on it. The conversation shows the error of a sentence that breaks
- * off, so the error names the engine in the user's language, and that of a failure carries the worker's
- * message as its detail.
+ * The error of a request the worker failed. The conversation shows the error of a sentence that breaks off,
+ * so it names the engine in the user's language and carries the worker's own message as its detail.
  */
-function stopWorker(failure?: Error): void {
-  const error = failure
-    ? new Error(errorText('voice.speech.engineFailed', { engine: workerLabel, detail: failure.message }), { cause: failure })
-    : new DOMException(errorText('voice.speech.engineStopped', { engine: workerLabel }), 'AbortError')
+const workerFailure = (reason: Error): Error =>
+  new Error(errorText('voice.speech.engineFailed', { engine: workerLabel, detail: reason.message }), { cause: reason })
+
+/**
+ * Stops the worker and ends every request on it with `error`. A stop asked for, as when another engine or
+ * size is chosen, ends them as aborted, which the conversation does not report as a failure.
+ */
+function stopWorker(error: Error = new DOMException(errorText('voice.speech.engineStopped', { engine: workerLabel }), 'AbortError')): void {
   const stale = worker
   worker = null
   workerKey = null
