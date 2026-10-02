@@ -17,7 +17,7 @@ Output, one line each on stdout with the ASIST_JSON: prefix, carrying the latest
   {"type": "ready", "device": "cpu", "frameHz": 12.5}
   {"type": "state", "t": 12.3, "pNowUser": 0.9, "pNowAssistant": 0.1,
    "pFutureUser": 0.8, "pFutureAssistant": 0.2, "eotUser": 0.1, "bcDetUser": 0.02,
-   "bcReact": 0.3, "bcEmo": 0.05, "nodShort": 0.2, "nodLong": 0.6, "inferMs": 9.5}
+   "bcReact": 0.3, "bcEmo": 0.05, "nodShort": 0.2, "nodLong": 0.6, "inferMs": 9.5, "lagMs": 80}
   {"type": "fatal", "error": "..."}
 
 EOF on stdin stops the worker. All model and encoder weights arrive as local paths and the worker never
@@ -164,6 +164,12 @@ def drain(pipeline) -> dict | None:
             return latest
 
 
+def waiting_seconds(source, chunk_samples: int) -> float:
+    """The audio waiting in MaAI's queue for one input. MaaiMultiple leaves a single queue on each input, and MaAI
+    drops nothing from it until more than 100 chunks wait."""
+    return source._get_queue_size() * chunk_samples / SAMPLE_RATE
+
+
 def last_infer_ms(pipeline) -> float:
     times = getattr(pipeline, "list_process_time_context", None)
     if times:
@@ -227,6 +233,7 @@ def main() -> None:
         return
 
     feeder = StereoFeeder(sinks)
+    (vap_source, _, vap_chunk), (aux_source, _, aux_chunk) = sinks
 
     # Warm-up: silence is pushed through and the first result awaited, so that the kernels are initialized
     # before ready.
@@ -271,6 +278,12 @@ def main() -> None:
         # p_bc_det is the probability that an aizuchi is being made right now, as
         # [ch0 = user, ch1 = assistant].
         bc_det = result["bcdet"]["p_bc_det"]
+        # A worker slower than real time goes on sending one estimate per frame, each about older audio, so each
+        # carries how much newer audio waits behind the frames it was made from.
+        lag = max(
+            waiting_seconds(vap_source, vap_chunk) + vap.result_dict_queue.qsize() / args.vap_frame_rate,
+            waiting_seconds(aux_source, aux_chunk),
+        )
         emitted += 1
         emit(
             {
@@ -288,6 +301,7 @@ def main() -> None:
                 "nodShort": round(float(nod["p_nod_short"]), 4),
                 "nodLong": round(float(nod["p_nod_long"]), 4),
                 "inferMs": last_infer_ms(vap),
+                "lagMs": round(lag * 1000),
             }
         )
 

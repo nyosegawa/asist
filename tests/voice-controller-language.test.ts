@@ -122,13 +122,13 @@ describe('MaAI by conversation language', () => {
   })
 })
 
-describe('MaAI that starts taking part while the microphone is on', () => {
-  /** A pause inside a sentence: the EoT is low, so MaAI extends the wait past the fixed hangover. */
-  const midSentence: VapState = {
-    t: 0, pNowUser: 0.9, pNowAssistant: 0.1, pFutureUser: 0.9, pFutureAssistant: 0.1,
-    eotUser: 0.1, bcDetUser: 0, bcReact: 0, bcEmo: 0, nodShort: 0, nodLong: 0, inferMs: 1
-  }
+/** A pause inside a sentence: the EoT is low, so MaAI extends the wait past the fixed hangover. */
+const midSentence: VapState = {
+  t: 0, pNowUser: 0.9, pNowAssistant: 0.1, pFutureUser: 0.9, pFutureAssistant: 0.1,
+  eotUser: 0.1, bcDetUser: 0, bcReact: 0, bcEmo: 0, nodShort: 0, nodLong: 0, inferMs: 1, lagMs: 0
+}
 
+describe('MaAI that starts taking part while the microphone is on', () => {
   async function listeningWithout(change: 'setting' | 'language'): Promise<InstanceType<typeof VoiceController>> {
     const controller = new VoiceController()
     controller.nativeMicPreferred = false
@@ -193,6 +193,40 @@ describe('MaAI that starts taking part while the microphone is on', () => {
 
     expect(window.api.vapStart).toHaveBeenCalledTimes(3)
     expect(said).toHaveBeenCalledOnce()
+    controller.disable()
+  })
+})
+
+describe('MaAI estimates from a worker that has fallen behind the audio', () => {
+  it('leaves the end of speech to the fixed hangover while the estimates describe audio seconds old', async () => {
+    const listeners: Array<(state: VapState) => void> = []
+    vi.mocked(window.api.onVapState).mockImplementation((listener: (state: VapState) => void) => {
+      listeners.push(listener)
+      return vi.fn()
+    })
+    const controller = new VoiceController()
+    controller.nativeMicPreferred = false
+    controller.partialIntervalMs = 0
+    controller.vapEnabled = true
+    controller.conversationLocale = 'ja-JP'
+    internals(controller).microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    await controller.enable()
+    const ends: number[] = []
+    controller.events.on('speechend', ({ vadMs }) => ends.push(vadMs))
+    const vad = internals(controller).vad as { push(frame: Float32Array): void }
+    // The worker answers every frame on time, but about audio that reached it three seconds earlier.
+    const speak = (frames: number, level: number): void => {
+      for (let i = 0; i < frames; i++) {
+        for (const listener of listeners) listener({ ...midSentence, lagMs: 3_000 })
+        vad.push(new Float32Array(320).fill(level))
+      }
+    }
+
+    // A second of speech and a 500 ms pause, which the fixed hangover ends.
+    speak(50, 0.1)
+    speak(25, 0)
+
+    expect(ends).toHaveLength(1)
     controller.disable()
   })
 })

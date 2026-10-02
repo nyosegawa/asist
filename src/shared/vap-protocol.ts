@@ -52,7 +52,8 @@ export function parseVapWorkerLine(line: string): VapWorkerMessage | null {
           bcEmo: number(message.bcEmo),
           nodShort: number(message.nodShort),
           nodLong: number(message.nodLong),
-          inferMs: number(message.inferMs)
+          inferMs: number(message.inferMs),
+          lagMs: number(message.lagMs)
         }
       }
     default:

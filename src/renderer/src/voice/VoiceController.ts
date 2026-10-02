@@ -62,7 +62,10 @@ type Overlap =
  */
 const INPUT_STALL_MS = 1_000
 
-/** A VAP estimate older than this is not used, which covers a stopped or backed-up worker. It allows the 80 ms frame, about 20 ms of inference and the IPC. */
+/**
+ * A VAP estimate of audio older than this is not used: a stopped worker sends none, and a backed-up one says how far
+ * behind the audio its estimates are. It allows the 80 ms frame, about 20 ms of inference and the IPC.
+ */
 const VAP_STALE_MS = 500
 
 type VoiceEvents = {
@@ -189,6 +192,7 @@ export class VoiceController {
     })
   }
   private vapState: VapState | null = null
+  /** When the audio the newest estimate was made from reached the worker, on performance.now(). */
   private vapStateAt = 0
   private vapUnsubscribe: (() => void) | null = null
   private vapAudio = new VapAudio((user, assistant) => {
@@ -425,7 +429,7 @@ export class VoiceController {
     if (!this.usesMaai()) return
     this.vapUnsubscribe ??= window.api.onVapState((state) => {
       this.vapState = state
-      this.vapStateAt = performance.now()
+      this.vapStateAt = performance.now() - state.lagMs
       this.maybeNod()
     })
     void window.api.vapStart().then(
@@ -449,7 +453,7 @@ export class VoiceController {
     this.events.emit('maaiUnavailable')
   }
 
-  /** Whether the newest VAP estimate can be used. A stopped or backed-up worker leaves it stale. */
+  /** Whether the newest VAP estimate is about recent enough audio to be used. */
   private vapFresh(): boolean {
     return (
       this.usesMaai() && this.vapState !== null && performance.now() - this.vapStateAt < VAP_STALE_MS

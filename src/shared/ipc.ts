@@ -124,6 +124,11 @@ export interface VapState {
   nodLong: number
   /** The inference time of one frame, in milliseconds. */
   inferMs: number
+  /**
+   * How much audio had reached the worker beyond what this estimate was made from, in milliseconds. A worker
+   * slower than real time keeps sending an estimate per frame, each about older audio.
+   */
+  lagMs: number
 }
 
 export interface VapStatus {
