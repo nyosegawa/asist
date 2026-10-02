@@ -1,11 +1,12 @@
-import { errorText } from '@shared/i18n/error-text'
+import { errorKey } from '@shared/i18n/error-key'
 
 /**
  * A zip container (docx, xlsx, pptx) read by HTTP ranges, so that a viewer reads the directory and the entries
  * it shows and never the rest of the file. It runs in the preview iframe, with nothing but what a browser page
- * has. The layout follows PKWARE's APPNOTE: the end of central directory record at the end of the file, the
- * ZIP64 records in front of it when a count, a size or an offset does not fit in its field, the central
- * directory, and each entry's local header in front of its data.
+ * has, and throws its errors as keys, since the iframe does not load the dictionary. The layout follows
+ * PKWARE's APPNOTE: the end of central directory record at the end of the file, the ZIP64 records in front of it
+ * when a count, a size or an offset does not fit in its field, the central directory, and each entry's local
+ * header in front of its data.
  */
 
 type Bytes = Uint8Array<ArrayBuffer>
@@ -28,7 +29,7 @@ interface CentralRecord extends ZipEntry {
   readonly crc32: number
   readonly internalAttributes: number
   readonly externalAttributes: number
-  /** Where the entry's local header starts. */
+  /** Where the entry's local header starts in the file. */
   readonly offset: number
   /** Where the next entry, or the central directory, starts. The entry's local record never runs past it. */
   readonly end: number
@@ -70,25 +71,33 @@ const VERSION_NEEDED = 20
 /** The end of central directory record with the longest comment, and the ZIP64 locator in front of it. */
 const TAIL_LENGTH = END_LENGTH + U16_FULL + ZIP64_LOCATOR_LENGTH
 
-const damaged = (): Error => new Error(errorText('files.errors.zipDamaged'))
-const changed = (): Error => new Error(errorText('files.errors.changedWhileReading'))
+const damaged = (): Error => new Error(errorKey('files.errors.zipDamaged'))
+const changed = (): Error => new Error(errorKey('files.errors.changedWhileReading'))
+const loadFailed = (status: number): Error => new Error(errorKey('files.errors.loadFailed', { status }))
+
+/** The bytes of an answer to a Range request, where they start in the file, and how long the file is now. */
+interface Answer {
+  bytes: Bytes
+  start: number
+  size: number
+}
 
 /**
- * Bytes [start, end) of the file. The answer has to be a 206 with exactly those bytes: asist-file answers a
- * range that starts past the end with a 200 and the whole file, and one that runs past the end with fewer
- * bytes, and both mean the file is no longer the size it was listed with.
+ * Asks for a range of the file, and reads from the answer's Content-Range which bytes it holds and the file's
+ * length. asist-file answers a range that holds no byte of the file with a 200 and the whole file, which is left
+ * unread, and null stands for it.
  */
-async function fetchRange(url: string, start: number, end: number): Promise<Bytes> {
-  if (start === end) return new Uint8Array(0)
-  const response = await fetch(url, { headers: { Range: `bytes=${start}-${end - 1}` } })
-  if (!response.ok) throw new Error(errorText('files.errors.loadFailed', { status: response.status }))
-  if (response.status !== 206) {
+async function fetchRange(url: string, range: string): Promise<Answer | null> {
+  const response = await fetch(url, { headers: { Range: range } })
+  if (!response.ok) throw loadFailed(response.status)
+  const answered = /^bytes (\d+)-\d+\/(\d+)$/.exec(response.headers.get('Content-Range') ?? '')
+  if (response.status !== 206 || !answered) {
     await response.body?.cancel()
-    throw changed()
+    // A 206 always names its range, so one whose Content-Range cannot be read is not an answer this can use.
+    if (response.status === 206) throw loadFailed(response.status)
+    return null
   }
-  const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.length !== end - start) throw changed()
-  return bytes
+  return { bytes: new Uint8Array(await response.arrayBuffer()), start: Number(answered[1]), size: Number(answered[2]) }
 }
 
 const viewOf = (bytes: Bytes): DataView => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -100,11 +109,15 @@ function u64(view: DataView, at: number): number {
   return Number(value)
 }
 
-/** Where the end of central directory record starts in the tail: the last one whose comment ends the file. */
+/**
+ * Where the end of central directory record starts in the tail: the last signature whose comment fits before
+ * the end of the file. Bytes may follow the comment, as a newline does after some exports, which JSZip and
+ * SheetJS read past as well.
+ */
 function findEnd(tail: Bytes): number {
   const view = viewOf(tail)
   for (let at = tail.length - END_LENGTH; at >= 0; at--) {
-    if (view.getUint32(at, true) === END_SIGNATURE && at + END_LENGTH + view.getUint16(at + 20, true) === tail.length) return at
+    if (view.getUint32(at, true) === END_SIGNATURE && at + END_LENGTH + view.getUint16(at + 20, true) <= tail.length) return at
   }
   throw damaged()
 }
@@ -120,7 +133,8 @@ function zip64Values(extra: Bytes, wanted: number): number[] {
   throw damaged()
 }
 
-function parseCentral(directory: Bytes, count: number, directoryOffset: number): CentralRecord[] {
+/** The central directory's records. `shift` is how far into the file the zip starts, which every offset is counted from. */
+function parseCentral(directory: Bytes, count: number, directoryStart: number, shift: number): CentralRecord[] {
   const view = viewOf(directory)
   const decoder = new TextDecoder()
   const parsed: Array<Omit<CentralRecord, 'end'>> = []
@@ -156,14 +170,14 @@ function parseCentral(directory: Bytes, count: number, directoryOffset: number):
       crc32: view.getUint32(at + 16, true),
       internalAttributes: view.getUint16(at + 36, true),
       externalAttributes: view.getUint32(at + 38, true),
-      offset
+      offset: offset + shift
     })
     at = next
   }
-  const starts = [...new Set(parsed.map((record) => record.offset)), directoryOffset].sort((a, b) => a - b)
+  const starts = [...new Set(parsed.map((record) => record.offset)), directoryStart].sort((a, b) => a - b)
   return parsed.map((record) => {
     const end = starts.find((start) => start > record.offset)
-    if (end === undefined || end > directoryOffset || end - record.offset < LOCAL_LENGTH + record.compressedSize) throw damaged()
+    if (end === undefined || end > directoryStart || end - record.offset < LOCAL_LENGTH + record.compressedSize) throw damaged()
     return { ...record, end }
   })
 }
@@ -184,6 +198,9 @@ function dataOf(record: CentralRecord, local: Bytes): Bytes {
  */
 async function inflate(data: Bytes, size: number): Promise<Bytes> {
   const out = new Uint8Array(size)
+  // A writer can store an empty file as deflated with no bytes at all, which is no deflate stream and which
+  // DecompressionStream refuses; JSZip reads it as empty, and so does this.
+  if (data.length === 0 && size === 0) return out
   let filled = 0
   const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader()
   for (;;) {
@@ -226,14 +243,16 @@ interface Written {
 
 /**
  * Writes the entries as a plain zip, with no extra fields, data descriptors or ZIP64 records, which a container
- * without its pictures does not need. One that would need them is refused rather than written with fields
- * that overflow.
+ * without its pictures does not need. One that would need them, for a count, an offset or the size of an entry,
+ * is refused rather than written with fields that overflow.
  */
 function writeZip(written: Written[]): Bytes {
   const localLength = written.reduce((sum, { record, data }) => sum + LOCAL_LENGTH + record.rawName.length + data.length, 0)
   const centralLength = written.reduce((sum, { record }) => sum + CENTRAL_LENGTH + record.rawName.length, 0)
   const total = localLength + centralLength + END_LENGTH
-  if (written.length >= U16_FULL || total >= U32_FULL) throw new Error(errorText('files.viewer.tooLarge'))
+  if (written.length >= U16_FULL || total >= U32_FULL || written.some(({ size }) => size >= U32_FULL)) {
+    throw new Error(errorKey('files.viewer.tooLarge'))
+  }
   const out = new Uint8Array(total)
   const view = viewOf(out)
   const offsets: number[] = []
@@ -281,46 +300,62 @@ function writeZip(written: Written[]): Bytes {
 }
 
 /**
- * Opens the zip at url, whose size the caller knows from the file's listing. It reads the last 64 KB, which hold
- * the end of central directory record whatever its comment, and then the part of the central directory they
- * do not hold. Those last bytes are kept, so an entry inside them is not read again.
+ * Opens the zip at url. It reads the last 64 KB by a suffix range, whose answer gives the file's length as it is
+ * now, so a file saved again since it was listed is read as it is. Those bytes hold the end of central directory
+ * record whatever its comment, and they are kept, so the part of the central directory or an entry inside them is
+ * not read again. Every later answer has to come from a file of the same length.
  */
-export async function openZip(url: string, size: number): Promise<RangedZip> {
-  if (size < END_LENGTH) throw damaged()
-  const tailStart = Math.max(0, size - TAIL_LENGTH)
-  const tail = await fetchRange(url, tailStart, size)
+export async function openZip(url: string): Promise<RangedZip> {
+  const tail = await fetchRange(url, `bytes=-${TAIL_LENGTH}`)
+  // A suffix range holds no byte of an empty file alone.
+  if (!tail) throw damaged()
+  const { size, start: tailStart } = tail
+  // A server that does not take a suffix range, such as Vite's for a file over 64 KB, sends other bytes.
+  if (tailStart !== Math.max(0, size - TAIL_LENGTH) || tail.bytes.length !== size - tailStart) throw loadFailed(206)
+  const fetchBytes = async (start: number, end: number): Promise<Bytes> => {
+    if (start === end) return new Uint8Array(0)
+    const answer = await fetchRange(url, `bytes=${start}-${end - 1}`)
+    if (!answer || answer.size !== size || answer.start !== start || answer.bytes.length !== end - start) throw changed()
+    return answer.bytes
+  }
   const bytes = async (start: number, end: number): Promise<Bytes> => {
-    if (start >= tailStart) return tail.subarray(start - tailStart, end - tailStart)
-    if (end <= tailStart) return fetchRange(url, start, end)
+    if (start >= tailStart) return tail.bytes.subarray(start - tailStart, end - tailStart)
+    if (end <= tailStart) return fetchBytes(start, end)
     const joined = new Uint8Array(end - start)
-    joined.set(await fetchRange(url, start, tailStart))
-    joined.set(tail.subarray(0, end - tailStart), tailStart - start)
+    joined.set(await fetchBytes(start, tailStart))
+    joined.set(tail.bytes.subarray(0, end - tailStart), tailStart - start)
     return joined
   }
 
-  const endAt = findEnd(tail)
-  const endRecord = viewOf(tail.subarray(endAt))
+  const endAt = findEnd(tail.bytes)
+  const endRecord = viewOf(tail.bytes.subarray(endAt))
   let count = endRecord.getUint16(10, true)
   let directoryLength = endRecord.getUint32(12, true)
   let directoryOffset = endRecord.getUint32(16, true)
   // The central directory ends where the records after it start: the ZIP64 end record or the end record.
-  let directoryLimit = tailStart + endAt
+  let directoryEnd = tailStart + endAt
   const locatorAt = endAt - ZIP64_LOCATOR_LENGTH
-  const locator = locatorAt >= 0 ? viewOf(tail.subarray(locatorAt)) : null
-  if (locator && locator.getUint32(0, true) === ZIP64_LOCATOR_SIGNATURE) {
-    const zip64At = u64(locator, 8)
-    if (zip64At + ZIP64_END_LENGTH > tailStart + locatorAt) throw damaged()
+  if (locatorAt >= 0 && viewOf(tail.bytes.subarray(locatorAt)).getUint32(0, true) === ZIP64_LOCATOR_SIGNATURE) {
+    // The ZIP64 end record ends where its locator starts, and is 56 bytes long without the extensible data that
+    // only PKWARE's strong encryption writes, which this does not read. Its place is taken from there rather
+    // than from the locator's offset, which bytes in front of the zip would move.
+    const zip64At = tailStart + locatorAt - ZIP64_END_LENGTH
+    if (zip64At < 0) throw damaged()
     const zip64 = viewOf(await bytes(zip64At, zip64At + ZIP64_END_LENGTH))
     if (zip64.getUint32(0, true) !== ZIP64_END_SIGNATURE) throw damaged()
     count = u64(zip64, 32)
     directoryLength = u64(zip64, 40)
     directoryOffset = u64(zip64, 48)
-    directoryLimit = zip64At
+    directoryEnd = zip64At
   } else if (count === U16_FULL || directoryLength === U32_FULL || directoryOffset === U32_FULL) {
     throw damaged()
   }
-  if (directoryOffset + directoryLength > directoryLimit) throw damaged()
-  const records = parseCentral(await bytes(directoryOffset, directoryOffset + directoryLength), count, directoryOffset)
+  // Offsets count from the start of the zip, and bytes in front of it, such as a newline an export wrote first,
+  // move every one by the same distance: the one between where the central directory is and where it is said to be.
+  const directoryStart = directoryEnd - directoryLength
+  const shift = directoryStart - directoryOffset
+  if (shift < 0) throw damaged()
+  const records = parseCentral(await bytes(directoryStart, directoryEnd), count, directoryStart, shift)
   const byName = new Map(records.map((record) => [record.name, record]))
 
   return {
@@ -328,9 +363,9 @@ export async function openZip(url: string, size: number): Promise<RangedZip> {
 
     async read(name) {
       const record = byName.get(name)
-      if (!record) throw new Error(errorText('files.errors.zipEntryMissing', { path: name }))
+      if (!record) throw new Error(errorKey('files.errors.zipEntryMissing', { path: name }))
       if (record.flags & FLAG_ENCRYPTED || (record.method !== STORED && record.method !== DEFLATED)) {
-        throw new Error(errorText('files.errors.zipEntryUnsupported', { path: name }))
+        throw new Error(errorKey('files.errors.zipEntryUnsupported', { path: name }))
       }
       const data = dataOf(record, await bytes(record.offset, record.end))
       if (record.method === DEFLATED) return inflate(data, record.size)
