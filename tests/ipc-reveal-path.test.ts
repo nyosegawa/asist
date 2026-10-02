@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IpcChannel } from '@shared/ipc'
+import { errorText } from '@shared/i18n/error-text'
 import { registerIpc } from '../src/main/ipc'
 import { longTempFolder } from './helpers/temp'
 
@@ -68,12 +69,30 @@ describe('showing a file of the files card in Finder or File Explorer', () => {
   it('fails for a file no allowed folder holds any more, rather than doing nothing', async () => {
     const file = path.join(outside, 'report.md')
     fs.writeFileSync(file, '# report')
-    await expect(reveal(file)).rejects.toThrow()
+    await expect(reveal(file)).rejects.toThrow(new Error(errorText('files.errors.outsideRoots')))
     expect(mocks.showItemInFolder).not.toHaveBeenCalled()
   })
 
   it('fails for a file that was removed after the card showed it, which the OS would ignore without a word', async () => {
-    await expect(reveal(path.join(root, 'removed.md'))).rejects.toThrow()
+    await expect(reveal(path.join(root, 'removed.md'))).rejects.toThrow(new Error(errorText('files.errors.missing')))
     expect(mocks.showItemInFolder).not.toHaveBeenCalled()
   })
+
+  // A folder whose mode refuses the process stands in for what macOS keeps behind its privacy settings. Root and
+  // Windows read it all.
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+    'fails for a file the OS refuses with the reason the files card gives it, not the OS error',
+    async () => {
+      const folder = path.join(root, 'locked')
+      fs.mkdirSync(folder)
+      fs.writeFileSync(path.join(folder, 'report.md'), '# report')
+      fs.chmodSync(folder, 0o000)
+      try {
+        await expect(reveal(path.join(folder, 'report.md'))).rejects.toThrow(new Error(errorText('files.errors.denied')))
+      } finally {
+        fs.chmodSync(folder, 0o755)
+      }
+      expect(mocks.showItemInFolder).not.toHaveBeenCalled()
+    }
+  )
 })

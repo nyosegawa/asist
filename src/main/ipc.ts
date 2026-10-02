@@ -67,7 +67,7 @@ import { hotkeyStatus, notifyFromRenderer, quitAfterAgentsStop, refreshHotkey, r
 import { microphonePermission } from './services/microphone-permission'
 import { platformCapabilities } from './services/platform'
 import { completeSetup } from './services/setup-completion'
-import { allowedPath } from './services/file-preview'
+import { revealablePath } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
@@ -587,10 +587,6 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   })
 
   handle(IpcChannel.RevealPath, (_e, target: unknown) => {
-    const allowed = allowedPath(String(target), agent.allowedFileRoots())
-    if (allowed === null) throw new Error(errorText('files.errors.outsideRoots'))
-    // showItemInFolder says nothing when the file is gone, as when it was removed after the card showed it.
-    if (!fs.existsSync(allowed)) throw new Error(errorText('files.errors.missing'))
-    shell.showItemInFolder(allowed)
+    shell.showItemInFolder(revealablePath(String(target), agent.allowedFileRoots()))
   })
 }
