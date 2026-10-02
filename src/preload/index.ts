@@ -102,6 +102,7 @@ const api: RendererApi = {
   onHotkeyMic: subscribe<void>(IpcChannel.HotkeyMic),
   onToggleMic: subscribe<void>(IpcChannel.ToggleMic),
   getSetupStatus: () => ipcRenderer.invoke(IpcChannel.GetSetupStatus),
+  recheckAgentCli: () => ipcRenderer.invoke(IpcChannel.RecheckAgentCli),
   completeSetup: (request) => ipcRenderer.invoke(IpcChannel.CompleteSetup, request),
   prepareAsrModel: (model) => ipcRenderer.invoke(IpcChannel.AsrPrepare, model),
   cancelAsrPreparation: () => ipcRenderer.invoke(IpcChannel.AsrPrepareCancel),

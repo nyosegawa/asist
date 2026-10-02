@@ -77,6 +77,7 @@ export const rendererApiMethods = [
   'onHotkeyMic',
   'onToggleMic',
   'getSetupStatus',
+  'recheckAgentCli',
   'completeSetup',
   'prepareAsrModel',
   'cancelAsrPreparation',
