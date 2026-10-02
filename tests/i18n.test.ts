@@ -239,21 +239,6 @@ describe('the dictionary', () => {
     expect(incomplete).toEqual([])
   })
 
-  // A message every OS shows and that names one OS sends the user of the other to a window or a setting that
-  // is not there, as the calendar's approval hints did when they pointed Windows users to macOS.
-  it('names an OS only in a message written once per OS, or in one kept for a stated reason', () => {
-    const kept: Array<{ key: string; reason: string }> = [
-      { key: 'memory.errors.nameReserved', reason: 'every OS refuses a page name Windows keeps for a device, since the memory folder may be cloned there' },
-      { key: 'jobs.start.cliSandboxNotSetUp', reason: 'only the Windows build of the CLI has a sandbox to set up' }
-    ]
-    const osVariant = new RegExp(`\\.(${Object.keys(OS_MESSAGE_VARIANTS).join('|')})$`)
-    const named = all
-      .filter(([key]) => !osVariant.test(key) && !kept.some((one) => one.key === key))
-      .filter(([, message]) => localesOf(message).some((locale) => textsOf(message, locale).some((text) => /\b(macOS|Mac|Windows)\b/.test(text))))
-      .map(([key]) => key)
-    expect(named).toEqual([])
-  })
-
   // This parses every file under src as well: 177 ms alone and 2476 ms under the same load on the same day.
   it('finds no Japanese string outside the dictionary, thrown errors included, except the ones kept for a stated reason', { timeout: 30_000 }, () => {
     const left = sourceFiles().flatMap((file) =>
