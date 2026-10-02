@@ -39,7 +39,7 @@ const json = (text: string): Record<string, unknown> => {
   return data as Record<string, unknown>
 }
 
-interface GeocodedPlace {
+interface GeocodingResult {
   name?: unknown
   latitude?: unknown
   longitude?: unknown
@@ -52,39 +52,35 @@ const text = (value: unknown): string | null => (typeof value === 'string' && va
 const number = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
 
-/**
- * The place a name stands for. The geocoding answers with the best match first, and a name that exists
- * in several countries (Munich in Germany and in North Dakota) is read as the one in the user's own
- * region when there is one there, because that is the one the user is most likely asking about.
- */
 /** Open-Meteo writes miles per hour as "mp/h" (seen on 2026-09-22); everyone else writes mph. The other units are passed on as they are. */
 const windUnit = (unit: string | null): string | null => (unit === 'mp/h' ? 'mph' : unit)
 
-export async function geocodePlace(
-  requested: string,
-  language: string,
-  region: string,
-  signal: AbortSignal
-): Promise<GlobalWeatherLocation> {
-  const url = `${GEOCODING}?name=${encodeURIComponent(requested.trim())}&count=10&language=${encodeURIComponent(language)}&format=json`
-  const results = await cache.read(url, 24 * 3600_000, signal, (body) => {
-    const found = json(body).results
-    return Array.isArray(found) ? (found as GeocodedPlace[]) : []
-  })
-  const usable = results.filter(
+/** A place as Open-Meteo's geocoding knows it, with the zone its clock keeps. */
+export type GeocodedPlace = Omit<GlobalWeatherLocation, 'source' | 'requested' | 'cardId'>
+
+/** The request for the places a name may stand for, named in the language given. */
+export const geocodingUrl = (name: string, language: string): string =>
+  `${GEOCODING}?name=${encodeURIComponent(name.trim())}&count=10&language=${encodeURIComponent(language)}&format=json`
+
+/**
+ * The place a name stands for, from the `results` of the geocoding's answer, or null when none of them
+ * will do. A result without a zone is passed over, because neither a clock nor a forecast can be read
+ * for it, and the geocoding gives such results (Coral Sea Marine Park came first and without one on
+ * 2026-10-02). The geocoding answers with the best match first, and a name that exists in several
+ * countries (Munich in Germany and in North Dakota) is read as the one in the user's own region when
+ * there is one there, because that is the one the user is most likely asking about.
+ */
+export function chooseGeocoded(results: unknown, region: string): GeocodedPlace | null {
+  const usable = (Array.isArray(results) ? (results as GeocodingResult[]) : []).filter(
     (place) =>
       text(place.name) !== null &&
       number(place.latitude) !== null &&
       number(place.longitude) !== null &&
       text(place.timezone) !== null
   )
-  if (usable.length === 0)
-    throw new WeatherIssueError({ status: 'location_not_found', requestedLocation: requested, hint: NOT_FOUND_HINT })
   const chosen = usable.find((place) => place.country_code === region) ?? usable[0]
+  if (!chosen) return null
   return {
-    source: 'open-meteo',
-    requested,
-    cardId: placeCardId(requested),
     timeZone: text(chosen.timezone)!,
     name: text(chosen.name)!,
     admin: text(chosen.admin1),
@@ -93,6 +89,19 @@ export async function geocodePlace(
     latitude: number(chosen.latitude)!,
     longitude: number(chosen.longitude)!
   }
+}
+
+export async function geocodePlace(
+  requested: string,
+  language: string,
+  region: string,
+  signal: AbortSignal
+): Promise<GlobalWeatherLocation> {
+  const results = await cache.read(geocodingUrl(requested, language), 24 * 3600_000, signal, (body) => json(body).results)
+  const place = chooseGeocoded(results, region)
+  if (!place)
+    throw new WeatherIssueError({ status: 'location_not_found', requestedLocation: requested, hint: NOT_FOUND_HINT })
+  return { source: 'open-meteo', requested, cardId: placeCardId(requested), ...place }
 }
 
 interface Series {
