@@ -286,6 +286,18 @@ describe('viewer rendering', () => {
     expect(focus.querySelector('.fv-note')?.textContent).toBe(`6 ファイル · 合計 ${formatBytes(totals.size)}(圧縮後 ${formatBytes(totals.compressedSize)})`)
   })
 
+  it('draws only the start of a zip of thousands of files in the focus view and counts the rest in the note', async () => {
+    const zip = new JSZip()
+    for (let i = 0; i < 3000; i++) zip.file(`src/file-${String(i).padStart(4, '0')}.ts`, `${i}`)
+    stubFetch(await zip.generateAsync({ type: 'arraybuffer' }))
+    const focus = await render(ArchiveViewer, archive, 'focus')
+    await settle()
+    const drawn = focus.querySelectorAll('.fv-archive-row').length
+    // The tree holds the folder and its 3000 files.
+    expect(drawn).toBeLessThan(3001)
+    expect(focus.querySelector('.fv-note')?.textContent).toContain(createTranslator('ja-JP')('files.viewer.moreEntries', { count: 3001 - drawn }))
+  })
+
   it('shows the reason in a red note for a password-protected or a corrupt zip', async () => {
     // jszip cannot build a password-protected archive, so the encryption bit of the general purpose flag is set by hand.
     const bytes = new Uint8Array(await zipBytes())

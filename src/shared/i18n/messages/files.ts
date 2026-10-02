@@ -1254,6 +1254,19 @@ export const files = defineMessages({
         'es-419': 'Solo se leyeron los primeros {listed} de {count}. Abre la carpeta en el Explorador de archivos para ver el resto',
         'es-ES': 'Solo se han leído los primeros {listed} de {count}. Abre la carpeta en el Explorador de archivos para ver el resto'
       }
+    },
+    tooLarge: {
+      'ja-JP': '大きいので、ここでは中身を出しません',
+      'en-US': 'This file is too large to show here',
+      'fr-FR': 'Ce fichier est trop volumineux pour être affiché ici',
+      'de-DE': 'Diese Datei ist zu groß, um sie hier zu zeigen',
+      'hi-IN': 'यह फ़ाइल यहाँ दिखाने के लिए बहुत बड़ी है',
+      'id-ID': 'File ini terlalu besar untuk ditampilkan di sini',
+      'it-IT': 'Questo file è troppo grande per mostrarlo qui',
+      'ko-KR': '파일이 커서 여기에서는 내용을 보여 주지 않습니다',
+      'pt-BR': 'Este arquivo é grande demais para ser exibido aqui',
+      'es-419': 'Este archivo es demasiado grande para mostrarlo aquí',
+      'es-ES': 'Este archivo es demasiado grande para mostrarlo aquí'
     }
   },
   source: {

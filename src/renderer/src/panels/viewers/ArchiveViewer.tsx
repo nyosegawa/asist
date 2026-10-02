@@ -13,9 +13,11 @@ import { translate, useT } from '@/i18n'
  * The listing of a zip. The bytes are fetched, jszip reads the entries, and the folder tree is drawn with the
  * same rows as DirectoryViewer. An entry cannot be opened, because nothing is extracted. A row is about 50px
  * tall, so eight rows at l would hide the note under the blur at the bottom of the Frame. jszip cannot read a
- * password-protected zip, and a broken zip fails the same way; both end in the red note.
+ * password-protected zip, and a broken zip fails the same way; both end in the red note. The focus view draws the
+ * first 500 rows, as the spreadsheet viewer does: drawing all 129,000 entries of a 43 MB zip of small files took
+ * 4.9 s and 2.3 GB, against 0.6 s for reading them (2026-10-02, headless Chrome on an Apple M5).
  */
-const LIMIT = { l: 7, m: 5, s: 3, focus: Infinity } as const
+const LIMIT = { l: 7, m: 5, s: 3, focus: 500 } as const
 
 type Listing = { state: 'loading' } | { state: 'ready'; rows: ArchiveRow[] } | { state: 'error'; message: string }
 

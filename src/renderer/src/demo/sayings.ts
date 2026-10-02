@@ -10,7 +10,7 @@ import { DEMO_FILES_DIR, DEMO_IMAGE_PATHS, DEMO_MIXED_PATHS, demoFileItems } fro
 import { DEMO_PDF_PATHS } from './fixtures/files-pdf'
 import { DEMO_CODE_PATH, DEMO_HTML_PATH, DEMO_JSON_PATH, DEMO_NOTEBOOK_PATH } from './fixtures/files-code'
 import { DEMO_ARCHIVE_PATH, DEMO_AUDIO_PATH, DEMO_VIDEO_PATH } from './fixtures/files-media'
-import { DEMO_DOCX_PATH, DEMO_PPTX_PATH, DEMO_XLSX_PATH } from './fixtures/files-office'
+import { DEMO_DOCX_PATH, DEMO_LARGE_XLSX_PATH, DEMO_PPTX_PATH, DEMO_XLSX_PATH } from './fixtures/files-office'
 import { DEMO_MAIL_BODIES, DEMO_MAIL_CARD, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGE_CARD } from './fixtures/mail'
 import { createDemoDraft } from './mail-state'
 import { DEMO_NEWS, DEMO_SEARCH } from './fixtures/reading'
@@ -205,6 +205,9 @@ export function respondTo(text: string): DemoResponse {
   }
   if (/word|ワード|docx/i.test(text)) {
     return { cards: [fetched('files', { paths: [DEMO_DOCX_PATH] })], reply: '調査レポートの Word を開きました。' }
+  }
+  if (/売上/.test(text) && /excel|エクセル|xlsx/i.test(text)) {
+    return { cards: [fetched('files', { paths: [DEMO_LARGE_XLSX_PATH] })], reply: '売上の Excel は大きいので、Finder で開いてください。' }
   }
   if (/excel|エクセル|xlsx/i.test(text)) {
     return { cards: [fetched('files', { paths: [DEMO_XLSX_PATH] })], reply: '料金の Excel を開きました。シートは2枚あります。' }

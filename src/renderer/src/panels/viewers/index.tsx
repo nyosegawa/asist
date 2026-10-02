@@ -1,4 +1,4 @@
-import { isHtmlPage, type FileItem, type FileKind } from '@shared/files'
+import { isHtmlPage, tooLargeToRead, type FileItem, type FileKind } from '@shared/files'
 import { CodeViewer } from './CodeViewer'
 import { DataViewer } from './DataViewer'
 import { ArchiveViewer } from './ArchiveViewer'
@@ -12,7 +12,7 @@ import { ImageViewer } from './ImageViewer'
 import { MarkdownViewer } from './MarkdownViewer'
 import { PdfViewer } from './PdfViewer'
 import { NotebookViewer } from './NotebookViewer'
-import { StubViewer } from './StubViewer'
+import { StubViewer, TooLargeViewer } from './StubViewer'
 import { TableViewer } from './TableViewer'
 import { TextViewer } from './TextViewer'
 import { VideoViewer } from './VideoViewer'
@@ -40,6 +40,8 @@ const VIEWERS: Partial<Record<FileKind, Viewer>> = {
 
 export function viewerFor(item: FileItem): Viewer {
   if (item.error) return StubViewer
+  // Audio plays by ranges whatever its size, and AudioViewer leaves out only the waveform of a file over the limit.
+  if (item.kind !== 'audio' && tooLargeToRead(item)) return TooLargeViewer
   if (item.kind === 'code' && isHtmlPage(item.path)) return HtmlViewer
   return VIEWERS[item.kind] ?? StubViewer
 }
