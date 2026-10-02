@@ -101,6 +101,9 @@ comment refers to it. Something that can be checked is checked and written as a 
   changing Electron packaging, preload behavior or build configuration.
 - Never commit on main. Every change reaches main through a pull request, one coherent unit each: a
   feature, fix, refactor or documentation change. Do not let unrelated changes pile up in one branch.
+- The user follows the work on a private GitHub Project. Every unit of work has an issue on it before
+  the work starts, and its pull request closes the issue (`project-board` skill). A subagent never
+  touches the board.
 - Commit messages and pull request titles are one English sentence in the imperative, without a prefix
   such as `feat:`; the body says what changed and why.
 - The user merges pull requests, with a squash, once CI passes. An agent merges only when told to for
@@ -126,6 +129,9 @@ skill; each holds steps these rules do not repeat.
   a change would contradict a decision record.
 - `pull-request`: starting a change, committing and pushing, opening a pull request, following its
   review and CI, and cleaning up after it is merged.
+- `project-board`: the issue and the card of a change, work left for later, a decision the user has to
+  make, what must not become a public issue, an issue someone else opened, and the user asking what
+  is going on.
 - `worktree-delegation`: handing part of the work to a subagent, or taking its branch back into the
   branch of the pull request.
 - `install-mac-app`: installing, deploying or updating the app on this Mac, or verifying a change
