@@ -201,9 +201,10 @@ export interface BridgePlanRequest {
   text: string
   lastAssistantText: string
   /**
-   * An aizuchi can sound right before the phrase: the aizuchi are on, the conversation has them and the
-   * classifier runs. Whether one does is settled when speech ends, by the classification and the
-   * frequency, after the phrase has been asked for.
+   * An aizuchi sounds right before the phrase: the aizuchi are on, the conversation has them, the
+   * classifier runs, and the frequency drew one when the capture began. The opening at speech end, after
+   * the phrase has been asked for, still leaves it out when the classification finds no clip that fits or
+   * an aizuchi played while the user was speaking just before.
    */
   afterAizuchi: boolean
 }
@@ -1178,8 +1179,11 @@ export interface RendererApi {
   mailDraftCreate(input: MailDraftInput): Promise<MailDraft>
   mailDraftUpdate(id: string, patch: MailDraftPatch): Promise<MailDraft>
   mailDraftRemove(id: string): Promise<void>
-  /** Sends a draft. Pressing the button is the approval, so no confirmation screen appears, and the draft is removed once it is sent. */
-  mailDraftSend(id: string): Promise<MailChangeResult>
+  /**
+   * Sends a draft. Pressing the button is the approval, so no confirmation screen appears, and the draft is removed
+   * once it is sent. `updatedAt` is that of the draft as the screen showed it, and a draft changed since is not sent.
+   */
+  mailDraftSend(id: string, updatedAt: number): Promise<MailChangeResult>
   /** The confirmations main asks for, in mail, calendar and agent jobs. `open` shows the screen and `close` takes it away. */
   onConfirmEvent(callback: (event: ConfirmEvent) => void): () => void
   /** The requests main is waiting on, oldest first, whose `open` a page that loaded after them never heard. */
