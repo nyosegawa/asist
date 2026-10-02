@@ -93,6 +93,7 @@ function realPath(target: string, { path: paths, realpath }: PathSystem): string
   }
 }
 
+/** How many entries of a folder an item carries. The item also says how many the folder holds. */
 const MAX_DIRECTORY_ENTRIES = 200
 
 /** The contents of a folder, by name with folders first, leaving out hidden files and node_modules. */
@@ -118,13 +119,27 @@ export function listDirectory(dir: string): FileEntry[] {
     if ((a.kind === 'directory') !== (b.kind === 'directory')) return a.kind === 'directory' ? -1 : 1
     return a.name.localeCompare(b.name, 'ja')
   })
-  return out.slice(0, MAX_DIRECTORY_ENTRIES)
+  return out
 }
 
 /**
- * Turns one path into a FileItem. A path that cannot be read comes back with the reason in `error`, so
- * that the caller can still show the other items. `toUrl` builds the asist-file:// URL binary kinds are
- * fetched over.
+ * Turns one path asked for into a FileItem: checks it against the allowed roots and reads what it names. A path
+ * that is refused or cannot be read comes back with the reason in `error`, so that the caller can still show the
+ * other items.
+ */
+export function fileItem(target: string, allowedRoots: readonly string[], toUrl: (filePath: string) => string): FileItem {
+  let allowed: string | null
+  try {
+    allowed = allowedPath(target, allowedRoots)
+  } catch (error) {
+    return failedItem(target, failure(error))
+  }
+  return allowed === null ? failedItem(target, t('files.errors.outsideRoots')) : readFileItem(allowed, toUrl)
+}
+
+/**
+ * Turns a path that has passed allowedPath into a FileItem. A path that cannot be read comes back with the reason
+ * in `error`. `toUrl` builds the asist-file:// URL binary kinds are fetched over.
  */
 export function readFileItem(filePath: string, toUrl: (filePath: string) => string): FileItem {
   const name = path.basename(filePath)
@@ -132,23 +147,25 @@ export function readFileItem(filePath: string, toUrl: (filePath: string) => stri
   try {
     stat = fs.statSync(filePath)
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code
-    return {
-      path: filePath,
-      name,
-      kind: 'binary',
-      sizeBytes: 0,
-      error: code === 'ENOENT' ? t('files.errors.missing') : String(error)
-    }
+    return failedItem(filePath, failure(error))
   }
   if (stat.isDirectory()) {
     try {
-      return { path: filePath, name, kind: 'directory', sizeBytes: 0, modifiedAt: stat.mtimeMs, entries: listDirectory(filePath) }
+      const entries = listDirectory(filePath)
+      return {
+        path: filePath,
+        name,
+        kind: 'directory',
+        sizeBytes: 0,
+        modifiedAt: stat.mtimeMs,
+        entries: entries.slice(0, MAX_DIRECTORY_ENTRIES),
+        entryCount: entries.length
+      }
     } catch (error) {
       return { path: filePath, name, kind: 'directory', sizeBytes: 0, error: t('files.errors.folderFailed', { message: String(error) }) }
     }
   }
-  if (!stat.isFile()) return { path: filePath, name, kind: 'binary', sizeBytes: 0, error: t('files.errors.notAFile') }
+  if (!stat.isFile()) return failedItem(filePath, t('files.errors.notAFile'))
   const kind = classifyFile(filePath)
   const base: FileItem = { path: filePath, name, kind, sizeBytes: stat.size, modifiedAt: stat.mtimeMs }
   if (TEXT_KINDS.has(kind)) {
@@ -168,4 +185,19 @@ export function readFileItem(filePath: string, toUrl: (filePath: string) => stri
   }
   if (carriesUrl(kind, filePath)) base.url = toUrl(filePath)
   return base
+}
+
+const failedItem = (filePath: string, error: string): FileItem => ({ path: filePath, name: path.basename(filePath), kind: 'binary', sizeBytes: 0, error })
+
+/** Why the OS could not open a path, in the language of the interface. */
+function failure(error: unknown): string {
+  switch ((error as NodeJS.ErrnoException).code) {
+    case 'ENOENT':
+      return t('files.errors.missing')
+    case 'EACCES':
+    case 'EPERM':
+      return t('files.errors.denied')
+    default:
+      return t('files.errors.readFailed', { message: String(error) })
+  }
 }

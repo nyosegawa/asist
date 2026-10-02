@@ -273,6 +273,17 @@ describe('readFileItem', () => {
     expect(listDirectory(folder)).toHaveLength(3)
   })
 
+  it('says how many entries a folder holds even when the list it carries is cut short', () => {
+    const folder = path.join(dir, 'crowded')
+    mkdirSync(folder)
+    const count = 1000
+    for (let i = 0; i < count; i++) writeFileSync(path.join(folder, `file-${i}.txt`), '')
+    writeFileSync(path.join(folder, '.hidden'), '')
+    const item = readFileItem(folder, toUrl)
+    expect(item.entryCount).toBe(count)
+    expect(item.entries!.length).toBeLessThanOrEqual(count)
+  })
+
   it('returns an item carrying an error for a missing path instead of throwing', () => {
     const item = readFileItem(path.join(dir, 'missing.txt'), toUrl)
     expect(item).toMatchObject({ name: 'missing.txt', error: createTranslator('ja-JP')('files.errors.missing') })

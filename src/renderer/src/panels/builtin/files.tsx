@@ -25,7 +25,7 @@ const propsOf = (spec: PanelSpec): FilesProps => spec.props as unknown as FilesP
 
 function itemMeta(item: FileItem, t: Translate): string {
   const parts = [t(`files.kind.${item.kind}`)]
-  if (item.kind === 'directory') parts.push(t('files.entries', { count: item.entries?.length ?? 0 }))
+  if (item.kind === 'directory') parts.push(t('files.entries', { count: item.entryCount ?? 0 }))
   else if (item.sizeBytes > 0) parts.push(formatBytes(item.sizeBytes))
   if (item.modifiedAt) parts.push(relativeTime(item.modifiedAt))
   return parts.join(' · ')
