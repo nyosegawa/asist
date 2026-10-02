@@ -1844,7 +1844,7 @@ export const jobs = defineMessages({
       'es-ES': 'El agente ha cambiado el worktree ({dir}) de la rama de ASIST a {branch} y ha trabajado ahí, así que ASIST no lo fusiona. Fusiona tú lo que hay en {branch} o descarta el trabajo. Al descartarlo se borran el worktree y los cambios que solo existen ahí.'
     },
     alreadyMerged: {
-      'ja-JP': 'このジョブの commit は {into} の履歴にすでに入っています。取り込むと、取り込み済みとして記録し、worktree を消します。',
+      'ja-JP': 'このジョブのコミットは {into} の履歴にすでに入っています。取り込むと、取り込み済みとして記録し、worktree を消します。',
       'en-US': "This job's commit is already in the history of {into}. Merging records the job as merged and removes the worktree.",
       'fr-FR': "Le commit de ce job figure déjà dans l'historique de {into}. La fusion le marque comme fusionné et supprime le worktree.",
       'de-DE': 'Der commit dieses Jobs ist bereits in der Historie von {into}. Übernehmen vermerkt den Job als übernommen und entfernt den worktree.',
