@@ -2,10 +2,21 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import type { AgentProcessIdentity } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { childEnv } from '../child-env'
-import type { AgentOwner, AgentProcess } from './owner'
+import type { AgentEvents, AgentOwner, AgentProcess } from './owner'
 
 /** Carried across the exec and inherited by descendants. It identifies this one launch and is not a credential. */
 export const AGENT_PROCESS_TOKEN = 'ASIST_AGENT_EXECUTION_ID'
+
+/** A stop sends SIGTERM, and SIGKILL to whatever is left once this long has passed. */
+const KILL_AFTER_MS = 2_000
+/** A stop that has not seen the agent gone by then is reported as failed. */
+const STOP_DEADLINE_MS = 5_000
+/**
+ * How often the processes carrying the token are looked for. ps then reads the environment of every process
+ * of the user, which took about 50 ms for 500 processes on an Apple Silicon Mac (2026-10-02), on main's
+ * thread, so it runs far less often than the check of the CLI's own group.
+ */
+const TOKEN_SCAN_MS = 500
 
 interface GroupMember { pid: number; pgid: number; state: string; startedAt: string }
 
@@ -29,6 +40,12 @@ export function captureProcessIdentity(pid: number, token: string): AgentProcess
   return { pid, startedAt: member.startedAt, token }
 }
 
+/** Whether a line of ps holds the token as a variable of the environment. */
+function tokenPattern(token: string): RegExp {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|\\s)${AGENT_PROCESS_TOKEN}=${escaped}(?:\\s|$)`)
+}
+
 /**
  * Whether the member carries the agent's token. 'unreadable' means its environment could not be read on this
  * pass, so it is neither ours nor foreign yet.
@@ -47,8 +64,7 @@ function memberToken(pid: number, token: string): 'ours' | 'foreign' | 'unreadab
     if ((error as { status?: number | null }).status === 1) return 'unreadable'
     throw new Error(errorText('jobs.process.tokenUnreadable'))
   }
-  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  if (new RegExp(`(?:^|\\s)${AGENT_PROCESS_TOKEN}=${escaped}(?:\\s|$)`).test(environment)) return 'ours'
+  if (tokenPattern(token).test(environment)) return 'ours'
   // A process that is exiting stays in the table as "Ss", "Rs" or "?Es" for a few milliseconds after the
   // kernel has released its arguments, and ps then prints "(node)" or "<defunct>" with no environment.
   // Measured on macOS 26.2 on 2026-09-22: 22 of 1431 reads of a Node process around its exit. Another
@@ -57,13 +73,64 @@ function memberToken(pid: number, token: string): 'ours' | 'foreign' | 'unreadab
   return 'foreign'
 }
 
+interface TokenHolder { pid: number; pgid: number }
+
 /**
- * A PID alone never stops another process. Every remaining member is checked, even once the leader is gone.
- * 'unreadable' means a member's environment could not be read on this pass, so it is neither ours nor foreign yet.
+ * Every process whose environment carries the agent's token. claude and codex run each command in a session
+ * or process group of their own, which a signal to the CLI's group does not reach but which inherits the
+ * CLI's environment. ps prints each process's environment on its line, and a value can hold a newline, so a
+ * line that shows the token is only a lead, confirmed by reading that one process.
  */
-export function inspectProcessIdentity(identity: AgentProcessIdentity): 'gone' | 'owned' | 'unreadable' {
+function tokenHolders(token: string): TokenHolder[] {
+  // The environment ps prints can contain secrets, so it is only matched against and neither the raw
+  // output nor the underlying error leaves this function.
+  let output: string
+  try {
+    output = execFileSync('/bin/ps', ['-x', '-ww', '-E', '-o', 'pid=,pgid=,command='], {
+      encoding: 'utf8', timeout: 2_000, maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'], env: childEnv(), windowsHide: true
+    })
+  } catch {
+    throw new Error(errorText('jobs.process.tokenUnreadable'))
+  }
+  const carries = tokenPattern(token)
+  const leads = new Map<number, number>()
+  let current: TokenHolder | undefined
+  for (const line of output.split('\n')) {
+    const start = /^\s*(\d+)\s+(\d+)\s/.exec(line)
+    if (start) current = { pid: Number(start[1]), pgid: Number(start[2]) }
+    if (current && carries.test(line)) leads.set(current.pid, current.pgid)
+  }
+  return [...leads].filter(([pid]) => memberToken(pid, token) === 'ours').map(([pid, pgid]) => ({ pid, pgid }))
+}
+
+/** The signal a stop sends at this point: SIGTERM, and SIGKILL to whatever is left from KILL_AFTER_MS on. */
+const phaseSignal = (elapsed: number): NodeJS.Signals => (elapsed >= KILL_AFTER_MS ? 'SIGKILL' : 'SIGTERM')
+
+/** Sends each process the signal once, and nothing more once it was sent SIGKILL. */
+function signalOnce(sent: Map<number, NodeJS.Signals>, pids: number[], signal: NodeJS.Signals): void {
+  for (const pid of pids) {
+    const previous = sent.get(pid)
+    if (previous === signal || previous === 'SIGKILL') continue
+    sent.set(pid, signal)
+    try {
+      process.kill(pid, signal)
+    } catch (error) {
+      // ESRCH is a process that ended after it was read.
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw new Error(errorText('jobs.process.exitUnconfirmed'))
+    }
+  }
+}
+
+/** What a later run of ASIST finds of an agent: nothing, processes it cannot judge on this pass, or its processes to stop. */
+export type AgentRemains = { state: 'gone' } | { state: 'unreadable' } | { state: 'owned'; pids: number[] }
+
+/**
+ * A PID alone never stops another process. Every remaining member of the agent's group is checked, even once
+ * the leader is gone, and every process outside the group that carries the agent's token is the agent's too.
+ */
+export function inspectProcessIdentity(identity: AgentProcessIdentity): AgentRemains {
   const members = processTable().filter((row) => row.pgid === identity.pid && !row.state.startsWith('Z'))
-  if (members.length === 0) return 'gone'
   const tokens = members.map((member) => memberToken(member.pid, identity.token))
   const leader = members.find((row) => row.pid === identity.pid)
   // macOS, like BSD, never gives a new process a PID that is still the id of a process group, so a leader
@@ -71,12 +138,16 @@ export function inspectProcessIdentity(identity: AgentProcessIdentity): 'gone' |
   // ended and its PID went to another process, which is left alone. ps prints the start time in the local
   // time zone, so the same agent also shows another start time after the Mac changed time zone, and its
   // token tells it apart.
-  if (leader && leader.startedAt !== identity.startedAt && !tokens.includes('ours')) return 'gone'
-  for (const token of tokens) {
-    if (token === 'unreadable') return 'unreadable'
-    if (token === 'foreign') throw new Error(errorText('jobs.process.tokenMismatch'))
+  const reused = leader !== undefined && leader.startedAt !== identity.startedAt && !tokens.includes('ours')
+  if (!reused) {
+    for (const token of tokens) {
+      if (token === 'unreadable') return { state: 'unreadable' }
+      if (token === 'foreign') throw new Error(errorText('jobs.process.tokenMismatch'))
+    }
   }
-  return 'owned'
+  const pids = new Set(tokenHolders(identity.token).map((holder) => holder.pid))
+  if (!reused) for (const member of members) pids.add(member.pid)
+  return pids.size === 0 ? { state: 'gone' } : { state: 'owned', pids: [...pids] }
 }
 
 /** Stops only an agent whose parent link a restart broke, and settles its output once it can no longer write. */
@@ -86,59 +157,70 @@ export function recoverAgentProcess(identity: AgentProcessIdentity, onStopped: (
   let reject!: (error: Error) => void
   const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail })
   void completion.catch(() => {})
-  const stop = (): void => {
-    if (running) return
+  const stop = (): Promise<void> => {
+    if (running) return completion
     running = true
     const started = Date.now()
-    let termSent = false
-    let killSent = false
+    const sent = new Map<number, NodeJS.Signals>()
     const check = (): void => {
       try {
-        const state = inspectProcessIdentity(identity)
-        if (state === 'gone') {
+        const remains = inspectProcessIdentity(identity)
+        if (remains.state === 'gone') {
           onStopped()
           resolve()
           return
         }
         const elapsed = Date.now() - started
-        if (elapsed >= 5_000) {
-          throw new Error(errorText(state === 'owned' ? 'jobs.process.staleRunning' : 'jobs.process.tokenUnreadable'))
+        if (elapsed >= STOP_DEADLINE_MS) {
+          throw new Error(errorText(remains.state === 'owned' ? 'jobs.process.staleRunning' : 'jobs.process.tokenUnreadable'))
         }
         // An unconfirmed group receives no signal; the next pass sees an exiting member as a zombie or gone.
-        const signal = state !== 'owned' ? null : !termSent ? 'SIGTERM' : elapsed >= 2_000 && !killSent ? 'SIGKILL' : null
-        if (signal) {
-          try { process.kill(-identity.pid, signal) } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw new Error(errorText('jobs.process.staleSignalFailed'))
-          }
-          if (signal === 'SIGTERM') termSent = true
-          else killSent = true
-        }
-        setTimeout(check, 100)
+        if (remains.state === 'owned') signalOnce(sent, remains.pids, phaseSignal(elapsed))
+        setTimeout(check, TOKEN_SCAN_MS)
       } catch (error) {
         reject(error instanceof Error ? error : new Error(errorText('jobs.process.exitUnconfirmed')))
       }
     }
     // The recovery event fires only after the caller has registered the completion and the process.
     queueMicrotask(check)
+    return completion
   }
   return { completion, stop }
 }
 
-/** Owns the agent until stdout has closed and its own process group is confirmed gone. */
-export function manageAgentProcess(child: ChildProcess, onClose: (code: number | null) => void): AgentProcess {
+/** One stop of a running agent, from its SIGTERM to the agent gone or the deadline. */
+interface Stop {
+  startedAt: number
+  /** The signals sent to each process outside the CLI's group, and to the group under its negative id. */
+  sent: Map<number, NodeJS.Signals>
+  timers: Array<ReturnType<typeof setTimeout>>
+  done: Promise<void>
+  resolve: () => void
+  reject: (error: Error) => void
+}
+
+/**
+ * Owns the agent until stdout has closed, its own process group is confirmed gone, and no process carrying
+ * its token is left.
+ */
+export function manageAgentProcess(child: ChildProcess, token: string, events: AgentEvents): AgentProcess {
   let streamsClosed = false
   let exitCode: number | null = null
   let finished = false
-  let stopping = false
-  let forceTimer: ReturnType<typeof setTimeout> | undefined
-  let deadlineTimer: ReturnType<typeof setTimeout> | undefined
-  let groupWatch: ReturnType<typeof setInterval> | undefined
+  let lastScan = -Infinity
+  let watch: ReturnType<typeof setInterval> | undefined
+  let stopping: Stop | undefined
   let resolve!: () => void
   let reject!: (error: Error) => void
   const completion = new Promise<void>((done, fail) => { resolve = done; reject = fail })
   // A rejection that happens before anyone awaits must not become an unhandled rejection. The caller
   // still receives the original promise.
   void completion.catch(() => {})
+  const fail = (error: unknown): void => {
+    const failure = error instanceof Error ? error : new Error(String(error))
+    reject(failure)
+    stopping?.reject(failure)
+  }
   const signalGroup = (signal: NodeJS.Signals | 0): boolean => {
     if (child.pid === undefined) return false
     try {
@@ -154,49 +236,91 @@ export function manageAgentProcess(child: ChildProcess, onClose: (code: number |
       throw error
     }
   }
-  const clearTimers = (): void => {
-    clearTimeout(forceTimer)
-    clearTimeout(deadlineTimer)
-    clearInterval(groupWatch)
+  /** Sends the signal of the stop's phase to the CLI's group and to each process outside it that carries the token. */
+  const signalAll = (current: Stop, holders: TokenHolder[]): void => {
+    const signal = phaseSignal(Date.now() - current.startedAt)
+    if (child.pid !== undefined) {
+      const group = -child.pid
+      const previous = current.sent.get(group)
+      if (previous !== signal && previous !== 'SIGKILL') {
+        current.sent.set(group, signal)
+        signalGroup(signal)
+      }
+    }
+    signalOnce(current.sent, holders.filter((holder) => holder.pgid !== child.pid).map((holder) => holder.pid), signal)
   }
-  const checkCompletion = (): boolean => {
-    if (finished) return true
-    if (!streamsClosed) return false
+  const finish = (): void => {
+    finished = true
+    clearInterval(watch)
+    for (const timer of stopping?.timers ?? []) clearTimeout(timer)
     try {
-      if (signalGroup(0)) return false
-      finished = true
-      clearTimers()
-      onClose(exitCode)
+      events.onClose(exitCode)
       resolve()
     } catch (error) {
       reject(error instanceof Error ? error : new Error(String(error)))
     }
-    return finished
+    stopping?.resolve()
   }
-  const stop = (): void => {
-    if (finished || stopping) return
-    stopping = true
-    try { signalGroup('SIGTERM') } catch (error) { reject(error as Error) }
+  const checkCompletion = (): void => {
+    if (finished || !streamsClosed) return
+    try {
+      if (signalGroup(0)) return
+      if (Date.now() - lastScan < TOKEN_SCAN_MS) return
+      lastScan = Date.now()
+      const holders = tokenHolders(token)
+      if (holders.length === 0) {
+        finish()
+        return
+      }
+      if (stopping) signalAll(stopping, holders)
+    } catch (error) {
+      fail(error)
+    }
+  }
+  const stop = (): Promise<void> => {
+    if (finished) return completion
+    if (stopping) return stopping.done
+    let resolveStop!: () => void
+    let rejectStop!: (error: Error) => void
+    const done = new Promise<void>((settled, failed) => { resolveStop = settled; rejectStop = failed })
+    // A caller may leave the stop's outcome to onStopFailed and never wait for it.
+    void done.catch(() => {})
+    const current: Stop = { startedAt: Date.now(), sent: new Map(), timers: [], done, resolve: resolveStop, reject: rejectStop }
+    stopping = current
+    try {
+      signalAll(current, tokenHolders(token))
+    } catch (error) {
+      fail(error)
+    }
     // Sending the signal successfully does not make the process finished: settling the output waits until
     // the descendants are gone.
-    forceTimer = setTimeout(() => {
+    current.timers.push(setTimeout(() => {
       try {
-        signalGroup('SIGKILL')
+        signalAll(current, tokenHolders(token))
         checkCompletion()
-      } catch (error) { reject(error as Error) }
-    }, 2_000)
-    deadlineTimer = setTimeout(() => reject(new Error(errorText('jobs.process.stopTimedOut'))), 5_000)
+      } catch (error) {
+        fail(error)
+      }
+    }, KILL_AFTER_MS))
+    // Ownership is not given up after the deadline: a late confirmation still settles the job's state, and
+    // the next stop sends the signals again.
+    current.timers.push(setTimeout(() => {
+      clearTimeout(current.timers[0])
+      if (stopping === current) stopping = undefined
+      const error = new Error(errorText('jobs.process.stopTimedOut'))
+      events.onStopFailed(error)
+      current.reject(error)
+    }, STOP_DEADLINE_MS))
+    return done
   }
   child.once('close', (code: number | null) => {
     streamsClosed = true
     exitCode = code
-    if (checkCompletion()) return
-    // Even a CLI that exited on its own can leave a child process behind with its stdio detached.
-    stop()
-    if (!finished) {
-      // Ownership is not given up after the deadline: a late confirmation still settles the job's state.
-      groupWatch = setInterval(checkCompletion, 25)
-    }
+    checkCompletion()
+    if (finished) return
+    // Even a CLI that exited on its own can leave processes behind, in its group or in groups of their own.
+    if (!stopping) void stop()
+    watch = setInterval(checkCompletion, 25)
   })
   return { completion, stop }
 }
@@ -208,7 +332,7 @@ export function manageAgentProcess(child: ChildProcess, onClose: (code: number |
  * first line from a pipe, and the CLI reads the rest (see agent-cli).
  */
 export const posixOwner: AgentOwner = {
-  start(cli, args, { cwd, env, token }, onClose) {
+  start(cli, args, { cwd, env, token }, events) {
     const child = spawn('/bin/sh', ['-c', 'IFS= read -r ready && [ "$ready" = start ] && exec "$@"', 'asist-agent-launcher', cli, ...args], {
       cwd,
       env: { ...env, [AGENT_PROCESS_TOKEN]: token },
@@ -216,7 +340,7 @@ export const posixOwner: AgentOwner = {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
-    return { child, identity: () => captureProcessIdentity(child.pid!, token), lifetime: manageAgentProcess(child, onClose) }
+    return { child, identity: () => captureProcessIdentity(child.pid!, token), lifetime: manageAgentProcess(child, token, events) }
   },
   recover: recoverAgentProcess
 }

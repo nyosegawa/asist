@@ -21,6 +21,8 @@ let root: string
 let parent: ChildProcess | undefined
 let group: number | undefined
 let agent: typeof import('../src/main/services/agent') | undefined
+/** Commands a test started outside every group it kills, which a failed test would otherwise leave running. */
+const commands: number[] = []
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
 const alive = (pid: number): boolean => { try { process.kill(pid, 0); return true } catch { return false } }
 /** How long a real process may take to start and write its files. With other test files running in parallel it took longer than vi.waitFor's default of one second (2026-09-23). */
@@ -41,6 +43,7 @@ afterEach(async () => {
   if (parent?.pid && alive(parent.pid)) parent.kill('SIGKILL')
   if (group) { try { process.kill(-group, 'SIGKILL') } catch { /* fixture already exited */ } }
   if (group) await vi.waitFor(() => expect(alive(-group!)).toBe(false), { timeout: 2_000 })
+  for (const command of commands.splice(0)) { try { process.kill(command, 'SIGKILL') } catch { /* already stopped */ } }
   fs.writeFileSync(path.join(root, 'release'), '')
   if (agent) await agent.shutdown().catch(() => {})
   vi.unstubAllEnvs()
@@ -250,11 +253,11 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
       group = parent.pid!
       await vi.waitFor(() => expect(captureProcessIdentity(group!, token).pid).toBe(group), PROCESS_START)
       const identity = captureProcessIdentity(group, token)
-      let state = inspectProcessIdentity(identity)
+      let state = inspectProcessIdentity(identity).state
       expect(state).toBe('owned')
       process.kill(group, 'SIGTERM')
       const deadline = Date.now() + 5_000
-      while (state !== 'gone' && Date.now() < deadline) state = inspectProcessIdentity(identity)
+      while (state !== 'gone' && Date.now() < deadline) state = inspectProcessIdentity(identity).state
       expect(state).toBe('gone')
     }
   })
@@ -296,10 +299,10 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
     group = parent.pid!
     await vi.waitFor(() => expect(captureProcessIdentity(group!, token).pid).toBe(group), PROCESS_START)
     const identity = captureProcessIdentity(group, token)
-    expect(inspectProcessIdentity(identity)).toBe('owned')
+    expect(inspectProcessIdentity(identity).state).toBe('owned')
     vi.stubEnv('TZ', 'America/New_York')
     expect(captureProcessIdentity(group, token).startedAt).not.toBe(identity.startedAt)
-    expect(inspectProcessIdentity(identity)).toBe('owned')
+    expect(inspectProcessIdentity(identity).state).toBe('owned')
   })
 
   it('settles a restored job whose group PID was reused and releases its worktree, leaving the other process alone', async () => {
@@ -317,5 +320,63 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
     expect(() => agent!.diff(job.id)).not.toThrow(writerRunning)
     expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(false)
     expect(alive(writer)).toBe(true)
+  })
+
+  /**
+   * A CLI that runs a command the way claude's Bash tool and codex do, in a session and process group of its
+   * own that inherits the CLI's environment, and prints the command's pid.
+   */
+  function launchWithCommand(then: string) {
+    vi.stubEnv('CODEX_CLI_PATH', process.execPath)
+    return import('../src/main/services/agent-process').then(({ launchAgentProcess }) => {
+      const exits: Array<number | null> = []
+      let reportCommand!: (pid: number) => void
+      const command = new Promise<number>((resolve) => { reportCommand = resolve })
+      const run = launchAgentProcess({
+        id: 'command', title: 'fixture', prompt: 'fixture', cwd: root,
+        engine: 'codex', readonly: true, status: 'running', startedAt: Date.now()
+      }, ['-e', `const command = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); command.unref(); console.log(command.pid); ${then}`], {
+        onSpawn: (identity) => { group = identity.pid },
+        onEvent: (event) => {
+          if (event.kind !== 'raw') return
+          commands.push(Number(event.text))
+          reportCommand(Number(event.text))
+        },
+        onStderr: () => {}, onError: () => {}, onExit: (code) => exits.push(code)
+      })
+      return { run, command, exits }
+    })
+  }
+
+  it('stops the commands the agent runs in process groups of their own before it reports the agent stopped', async () => {
+    const { run, command, exits } = await launchWithCommand('setInterval(() => {}, 1000)')
+    const pid = await command
+    run.stop()
+    await run.completion
+    expect(exits).toHaveLength(1)
+    expect(alive(pid)).toBe(false)
+  })
+
+  it('settles a CLI that exits on its own only once the command it left in a process group of its own is gone', async () => {
+    const { run, command, exits } = await launchWithCommand('setTimeout(() => process.exit(0), 200)')
+    const pid = await command
+    await run.completion
+    expect(exits).toEqual([0])
+    expect(alive(pid)).toBe(false)
+  })
+
+  it('stops, after a restart, a command the agent left in a process group of its own once the agent\'s own group is gone', async () => {
+    const token = crypto.randomUUID()
+    const command = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], {
+      detached: true, stdio: 'ignore', env: { ...process.env, [AGENT_PROCESS_TOKEN]: token }
+    })
+    commands.push(command.pid!)
+    const stopped = vi.fn()
+    // The group of the agent's CLI, whose leader had this PID, ended with the crash.
+    const recovery = recoverAgentProcess({ pid: 2_147_483_647, startedAt: 'not running', token }, stopped)
+    recovery.stop()
+    await recovery.completion
+    expect(stopped).toHaveBeenCalledOnce()
+    expect(alive(command.pid!)).toBe(false)
   })
 })

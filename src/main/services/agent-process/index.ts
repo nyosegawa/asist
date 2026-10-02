@@ -37,6 +37,7 @@ interface ProcessHandlers {
   onStderr: (text: string) => void
   onError: (error: Error) => void
   onExit: (code: number | null) => void
+  onStopFailed: (error: Error) => void
 }
 
 const OWNERS: Record<OsFamily, AgentOwner> = { macos: posixOwner, windows: windowsOwner }
@@ -75,7 +76,7 @@ export function launchAgentProcess(job: AgentJob, args: string[], handlers: Proc
     completion,
     stop: () => {
       stopped = true
-      running?.stop()
+      return running ? running.stop() : completion
     }
   }
 }
@@ -86,7 +87,10 @@ function startCli(job: AgentJob, cli: FoundCli, args: string[], handlers: Proces
   // The CLI must not start writing before the job is persisted, so it runs only once "start" is written
   // to its standard input, after onSpawn. The prompt follows on the same input.
   const env = childEnv({ ...cli.env, ...spec.env })
-  const { child, identity, lifetime } = owner().start(cli.path, args, { cwd: job.cwd, env, token: randomUUID() }, handlers.onExit)
+  const { child, identity, lifetime } = owner().start(cli.path, args, { cwd: job.cwd, env, token: randomUUID() }, {
+    onClose: handlers.onExit,
+    onStopFailed: handlers.onStopFailed
+  })
 
   // A chunk split in the middle of a UTF-8 sequence is reassembled before the JSONL lines are split out.
   child.stdout!.setEncoding('utf8')
@@ -142,9 +146,8 @@ function startCli(job: AgentJob, cli: FoundCli, args: string[], handlers: Proces
     } catch (error) {
       child.stdin!.end()
       handlers.onError(error instanceof Error ? error : new Error(String(error)))
-      try { lifetime.stop() } catch (stopError) {
-        handlers.onError(stopError instanceof Error ? stopError : new Error(String(stopError)))
-      }
+      // A stop that fails is reported through onStopFailed, and an error that leaves the end unconfirmed through the completion.
+      void lifetime.stop()
     }
   }
   return lifetime

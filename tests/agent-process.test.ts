@@ -8,8 +8,9 @@ import type { AgentJob } from '@shared/ipc'
 /** What the user's shell answers: the folders its startup files add, which an app opened from Finder does not inherit. */
 const SHELL_PATH = '/Users/me/.nvm/versions/node/v22.19.0/bin:/opt/homebrew/bin:/usr/bin:/bin'
 
-const mocks = vi.hoisted(() => ({ spawn: vi.fn(), installed: vi.fn<(file: string) => boolean>(), readShellPath: vi.fn() }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+const mocks = vi.hoisted(() => ({ spawn: vi.fn(), execFileSync: vi.fn(), installed: vi.fn<(file: string) => boolean>(), readShellPath: vi.fn() }))
+// ps, which looks for the processes carrying the agent's token once the CLI has closed, lists none.
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn, execFileSync: mocks.execFileSync }))
 vi.mock('node:fs', () => {
   const missing = (file: string): void => {
     if (!mocks.installed(file)) throw Object.assign(new Error(`ENOENT: ${file}`), { code: 'ENOENT' })
@@ -35,6 +36,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.installed.mockReturnValue(true)
   mocks.readShellPath.mockResolvedValue(SHELL_PATH)
+  mocks.execFileSync.mockReturnValue('')
 })
 afterEach(() => {
   vi.unstubAllEnvs()
