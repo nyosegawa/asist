@@ -78,6 +78,7 @@ let demoTasks: Task[] = DEMO_TASKS.map((task) => ({ ...task }))
 let demoNotes: DemoNote[] = DEMO_NOTES.map((note) => ({ ...note }))
 const demoMemory: Record<string, string> = { ...DEMO_MEMORY }
 let turnSeq = 1
+let statusReads = 0
 
 /** `?lang=en-US` opens the demo in that interface language, which is how the other dictionaries are checked. */
 const requestedLocale = new URLSearchParams(location.search).get('lang')
@@ -405,6 +406,7 @@ function startScriptedSayings(): void {
 
 export const mockApi: RendererApi = {
   getStatus: async (): Promise<AppStatus> => ({
+    sequence: ++statusReads,
     llm: true,
     conversationModel: settings.conversationModel,
     llmKeys: { anthropic: 'verified', openai: 'missing', google: 'missing', cerebras: 'saved' },
@@ -575,6 +577,7 @@ export const mockApi: RendererApi = {
   notify: async () => {},
   reportMiniAppView: async () => {},
   onHotkeyMic: () => () => {},
+  onToggleMic: () => () => {},
   recheckAgentCli: async () => {},
   getSetupStatus: async () => ({
     services: await mockApi.getStatus(),

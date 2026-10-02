@@ -67,10 +67,11 @@ import { hotkeyStatus, notifyFromRenderer, quitAfterAgentsStop, refreshHotkey, r
 import { microphonePermission } from './services/microphone-permission'
 import { platformCapabilities } from './services/platform'
 import { completeSetup } from './services/setup-completion'
-import { allowedPath } from './services/file-preview'
+import { revealablePath } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
+import { sliceCodePoints } from '@shared/text-slice'
 import { reportOpenMiniApp } from './services/mini-app-view'
 import { windowChrome } from './window-chrome'
 import { isLaunchPage } from './page-lifetime'
@@ -157,7 +158,9 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   live.events.on('event', (event) => send(IpcChannel.LiveEvent, event))
   timers.init()
 
+  let statusReads = 0
   const computeStatus = async (): Promise<AppStatus> => {
+    const sequence = ++statusReads
     const settings = getSettings()
     const [ttsUp, asrUp, apiUp] = await Promise.all([
       tts.available(),
@@ -165,6 +168,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       configuredApiKeyAvailable()
     ])
     return {
+      sequence,
       llm: apiUp,
       conversationModel: settings.conversationModel,
       llmKeys: llmKeyStates(),
@@ -335,8 +339,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.BridgePlan, (_e, input: { text: unknown; lastAssistantText: unknown }) => {
     const text = typeof input?.text === 'string' ? input.text.trim() : ''
     if (!text || text.length > 500) throw new Error('invalid bridge plan input')
-    const lastAssistantText =
-      typeof input.lastAssistantText === 'string' ? input.lastAssistantText.slice(-300) : ''
+    const lastAssistantText = typeof input.lastAssistantText === 'string' ? input.lastAssistantText : ''
     return bridgePlan.plan({ text, lastAssistantText })
   })
   handle(IpcChannel.BridgeClip, (_e, text: unknown) => {
@@ -348,7 +351,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.AizuchiClassify, (_e, input: { prev: unknown; text: unknown }) => {
     const text = typeof input?.text === 'string' ? input.text.trim() : ''
     if (!text || text.length > 500) throw new Error('invalid aizuchi classify input')
-    const prev = typeof input.prev === 'string' ? input.prev.slice(-300) : ''
+    const prev = typeof input.prev === 'string' ? sliceCodePoints(input.prev, -300) : ''
     return aizuchiClassifier.classify({ prev, text })
   })
   handle(IpcChannel.AizuchiClassifierStatus, () => aizuchiClassifier.status())
@@ -586,8 +589,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     return shell.openExternal(target)
   })
 
-  handle(IpcChannel.RevealPath, (_e, target: string) => {
-    const allowed = allowedPath(String(target), agent.allowedFileRoots())
-    if (allowed !== null) shell.showItemInFolder(allowed)
+  handle(IpcChannel.RevealPath, (_e, target: unknown) => {
+    shell.showItemInFolder(revealablePath(String(target), agent.allowedFileRoots()))
   })
 }
