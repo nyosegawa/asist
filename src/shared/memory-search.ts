@@ -101,39 +101,53 @@ export function searchTokens(text: string): string[] {
 }
 
 /**
+ * Written after the last character of a run in the index. A private-use character is part of a token for
+ * unicode61, and no token cut from text holds one after a character written without spaces, so only the
+ * prefix of ftsKeywordQuery reaches the token. Stored bare, the character matched the lone "は" of the
+ * utterance "は?" as a whole token at the end of "パスタは", and injected that diary at a bm25 of -3.76
+ * where nothing had matched (23 units, 2026-10-02).
+ */
+const RUN_END = '\uE000'
+
+/**
  * The token string stored in the FTS5 column: the tokens separated by spaces. A run written without spaces
- * also ends with its last character alone, so that every character of the run begins a token, which the
- * match of a single character in ftsQuery relies on.
+ * also ends with its last character, marked by RUN_END, so that every character of the run begins a token.
  */
 export function ftsTokens(text: string): string {
   return pieces(text)
     .flatMap((piece) => {
       const chars = Array.from(piece.text)
-      return piece.kind === 'cjk' && chars.length > 1 ? [...pieceTokens(piece), chars[chars.length - 1]] : pieceTokens(piece)
+      return piece.kind === 'cjk' && chars.length > 1 ? [...pieceTokens(piece), `${chars[chars.length - 1]}${RUN_END}`] : pieceTokens(piece)
     })
     .join(' ')
 }
 
+/** The FTS5 MATCH expression, joining the tokens with OR, or null when there is no token. */
+export function ftsQuery(text: string): string | null {
+  const tokens = [...new Set(searchTokens(text))]
+  if (tokens.length === 0) return null
+  return tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' OR ')
+}
+
 /**
- * The FTS5 MATCH expression, joining the tokens with OR, or null when there is no token. A run of one
- * character written without spaces, such as the query "猫" or "姉", yields that character alone. FTS5 matches
- * whole tokens, and the index holds such a character as the start of a bigram, or alone only at the end of
- * its run, so the token is matched as a prefix, which finds the character wherever it stands.
+ * The FTS5 MATCH expression for a keyword the model recalls. A keyword of one character written without
+ * spaces, such as "猫" or "姉", is matched as a prefix: FTS5 matches whole tokens, and the index holds such a
+ * character only as the start of a bigram or of the marked end of its run. Only a keyword that is one
+ * character as a whole is: a lone character inside an utterance, such as the "分" of "あと5分" or a filler
+ * such as "お", names nothing, and as a prefix it injected a diary about "分量" or "お茶".
  *
  * Indexing every character alone instead would double the length of each unit in such a script, and bm25
  * divides by the length. Measured on 2026-10-02 over 13 units in English, German, Hindi, Korean and
  * Japanese, that weakened the Japanese matches of every other query by 11 to 15 % and strengthened the
  * English and Korean ones by 15 to 21 %, bringing an English utterance that shares only a common word with
- * a unit from -3.7 to -4.3 against the bar of -5 for injection; with the last character alone, every score
- * moved by 2 % at most.
+ * a unit from -3.7 to -4.3 against the bar of -5 for injection. With the marked end of each run alone, no
+ * score of an utterance moved by more than 3 % over that index and one of 23 units, and every utterance
+ * injected the same units as before.
  */
-export function ftsQuery(text: string): string | null {
-  const phrases = pieces(text).flatMap((piece) => {
-    const quoted = pieceTokens(piece).map((token) => `"${token.replace(/"/g, '""')}"`)
-    return piece.kind === 'cjk' && Array.from(piece.text).length === 1 ? quoted.map((phrase) => `${phrase}*`) : quoted
-  })
-  if (phrases.length === 0) return null
-  return [...new Set(phrases)].join(' OR ')
+export function ftsKeywordQuery(text: string): string | null {
+  const [only, ...rest] = pieces(text)
+  if (only?.kind === 'cjk' && rest.length === 0 && Array.from(only.text).length === 1) return `"${only.text}"*`
+  return ftsQuery(text)
 }
 
 const DEVANAGARI_MARKS = [

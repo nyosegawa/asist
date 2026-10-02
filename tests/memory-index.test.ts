@@ -223,6 +223,18 @@ describe('MemoryIndex over memories in several languages', () => {
     expect(ids('松葉軒行ったんだけどさあ', { mode: 'utterance' })[0]).toBe('u1')
   })
 
+  it('matches a recall keyword of one character wherever it stands, and a lone character inside an utterance only as a whole token', () => {
+    const journal = (id: string, heading: string, text: string): MemoryUnit =>
+      unit(id, text, { file: `journal/${id}.md`, kind: 'journal', page: '2026-09-25', heading, aliases: [], date: '2026-09-25' })
+    index.rebuild([...MULTI, journal('j-pasta', '料理', 'パスタは8分ゆでる。分量は100グラム。'), journal('j-tea', 'お茶', '緑茶を飲むと落ち着く。')])
+    expect(ids('分')).toEqual(['j-pasta'])
+    expect(ids('あと5分', { mode: 'utterance' })).toEqual([])
+    expect(ids('タイマー3分', { mode: 'utterance' })).toEqual([])
+    expect(ids('お', { mode: 'utterance' })).toEqual([])
+    // "パスタは" ends its run with "は", which the index holds marked so that a whole token never matches it.
+    expect(ids('は?', { mode: 'utterance' })).toEqual([])
+  })
+
   it('injects a memory the utterance names and nothing for an utterance that only shares a common word', () => {
     expect(ids('I think I am allergic to walnuts', { mode: 'utterance' })).toEqual(['en-allergy'])
     expect(ids('that was a really long week and I want to sleep', { mode: 'utterance' })).toEqual([])
