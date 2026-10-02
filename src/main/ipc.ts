@@ -274,15 +274,11 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     vap.pushAudio(new Float32Array(user), new Float32Array(assistant))
   )
   handle(IpcChannel.VapStatus, () => vap.installationStatus())
-  handle(IpcChannel.VapPrepare, async () => {
-    const result = await vap.prepare(reportProgress('vap'))
-    // The preparation loads the worker to check that it runs. The first-run setup leaves MaAI off, and a
-    // worker left loaded would hold torch and its models until the app quits with nothing reading them. The
-    // settings turn MaAI on after their preparation, which starts it again once the microphone is on.
-    if (!vap.wanted(getSettings())) vap.stop()
-    return result
-  })
+  handle(IpcChannel.VapPrepare, () =>
+    vap.prepare(reportProgress('vap'))
+  )
   handle(IpcChannel.VapPrepareCancel, () => vap.cancelPreparation())
+  handle(IpcChannel.VapStop, () => vap.stop())
 
   handle(IpcChannel.EmbeddingStatus, () => memory.embeddingStatus())
   handle(IpcChannel.EmbeddingPrepare, async () => {

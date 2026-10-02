@@ -126,15 +126,15 @@ describe('the status the watchdog pushes', () => {
 })
 
 describe('the preparation of MaAI', () => {
-  it('leaves no worker loaded once it has checked one while the setting keeps MaAI off, as the first-run setup leaves it', async () => {
-    await expect(invoke(IpcChannel.VapPrepare)).resolves.toMatchObject({ ok: true })
-    expect(mocks.spawn).toHaveBeenCalledOnce()
-    expect(vap.installationStatus().running).toBe(false)
-  })
-
-  it('keeps the worker it loaded where the setting has MaAI on', async () => {
-    mocks.settings.vapEnabled = true
+  it('keeps the worker it loaded to check, which the settings use once they turn MaAI on', async () => {
     await expect(invoke(IpcChannel.VapPrepare)).resolves.toMatchObject({ ok: true })
     expect(vap.installationStatus().running).toBe(true)
+    expect(mocks.spawn).toHaveBeenCalledOnce()
+  })
+
+  it('unloads the worker when the first-run setup, which leaves MaAI off, is done with its check', async () => {
+    await invoke(IpcChannel.VapPrepare)
+    await invoke(IpcChannel.VapStop)
+    expect(vap.installationStatus().running).toBe(false)
   })
 })
