@@ -1,5 +1,5 @@
 import type { BridgeClip, AizuchiClip, BridgePlan, ClipRole, SpeechSegment, TurnTimings } from '@shared/ipc'
-import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-classifier'
+import type { AizuchiClassification } from '@shared/aizuchi-classifier'
 
 /**
  * Opens a turn with an aizuchi and a bridging phrase. Playback starts the moment the VAD decides
@@ -9,9 +9,10 @@ import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-class
  * the partial transcripts instead.
  *
  * The bridge synthesizes the phrase that the BridgePlan looked ahead for, such as "会議の件ですね。",
- * and plays it after the aizuchi and before the answer. bridgeAllowed keeps it out of replies,
- * corrections, greetings and unfinished sentences. If the answer's own text got queued first, the
- * bridge does not play and the outcome is recorded in the measurements.
+ * and plays it after the aizuchi and before the answer. Whether an utterance may have one at all is
+ * the caller's to decide, and an utterance given no look-ahead settles at once without one. If the
+ * answer's own text got queued first, the bridge does not play and the outcome is recorded in the
+ * measurements.
  *
  * An utterance is identified by startedAt, the time capture began. A speech that yields no turn,
  * because its transcription failed, meant nothing or was dropped as echo, cancels it, and an
@@ -26,10 +27,13 @@ const LISTENING_OVERLAP_MS = 2500
 export interface OpeningInput {
   startedAt: number
   speechEndAt: number
-  /** The classification available when speech ended; nothing waits for a newer one. Without it neither the aizuchi nor the bridge plays. */
+  /** The classification available when speech ended; nothing waits for a newer one. Without it no aizuchi plays. */
   classification: AizuchiClassification | null
-  /** The look-ahead, waited out to the end of the request in flight. The bridge phrase comes from it, and only has to play before the answer. */
-  plan: Promise<BridgePlan | null>
+  /**
+   * The look-ahead, waited out to the end of the request in flight, or null when no bridge may play
+   * after this utterance. The bridge phrase comes from it, and only has to play before the answer.
+   */
+  plan: Promise<BridgePlan | null> | null
   /** Milliseconds since the last aizuchi that played while the user was speaking. */
   sinceListeningMs: number
 }
@@ -53,7 +57,7 @@ interface Opening {
   startedAt: number
   speechEndAt: number
   aizuchi: AizuchiClip | null
-  /** It is pending while the look-ahead runs, and decided once the phrase is settled, which may be null. */
+  /** It is pending while the look-ahead runs, and decided once the phrase is settled, which may be null, as it is from the start for an utterance given no look-ahead. */
   bridge: { state: 'pending' } | { state: 'decided'; text: string | null }
   /** The bridge as it was handed to play. */
   queuedBridge: SpeechSegment | null
@@ -62,7 +66,7 @@ interface Opening {
 export interface ClaimedOpening {
   aizuchi: string | null
   bridge: string | null
-  /** The bridge phrase is not settled yet. brain is told that a short opening phrase is still coming. */
+  /** A bridge may still play and its phrase is not settled yet. brain is told that a short opening phrase is still coming. */
   bridgePending: boolean
 }
 
@@ -84,16 +88,15 @@ export class TurnOpening {
       startedAt: input.startedAt,
       speechEndAt: input.speechEndAt,
       aizuchi,
-      bridge: { state: 'pending' },
+      bridge: input.plan ? { state: 'pending' } : { state: 'decided', text: null },
       queuedBridge: null
     }
     this.current = opening
     this.claimed = null
     if (aizuchi) this.ports.play(aizuchi, 'aizuchi')
-    const allowBridge = input.classification !== null && bridgeAllowed(input.classification.cls)
-    void input.plan.then((plan) => {
+    void input.plan?.then((plan) => {
       if (!this.alive(opening)) return
-      const text = (allowBridge && plan?.bridge) || null
+      const text = plan?.bridge || null
       opening.bridge = { state: 'decided', text }
       if (text) this.requestBridge(opening, text)
     })

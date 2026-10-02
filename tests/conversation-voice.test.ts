@@ -380,6 +380,82 @@ describe('the bridge of a turn that goes wrong', () => {
   })
 })
 
+describe('the bridge and what brain is told of it', () => {
+  const playedRoles = (): string[] =>
+    player().playClip.mock.calls.map((call) => ((call as unknown[])[2] as { role: string }).role)
+  const startOptions = (turnStart: Mock): { bridge?: string; bridgePending?: boolean } =>
+    (turnStart.mock.calls[0] as unknown[])[1] as { bridge?: string; bridgePending?: boolean }
+
+  /** Speaks one utterance whose look-ahead answers only when `planned` is called, after the final transcript. */
+  async function speakAheadOfTheLookahead(
+    words: { partial: string; final: string },
+    overrides: Record<string, unknown> = {}
+  ): Promise<{ turnStart: Mock; bridgeSynthesize: Mock; planned: (plan: { bridge: string }) => void }> {
+    let planned!: (plan: { bridge: string }) => void
+    const turnStart = vi.fn(async () => 42)
+    const bridgeSynthesize = vi.fn(async (text: string) => ({ text, audio: 'eA==' }))
+    await start({
+      bridgePlan: vi.fn(() => new Promise((resolve) => (planned = resolve))),
+      bridgeSynthesize,
+      turnStart,
+      ...overrides
+    })
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', words.partial)
+    await flush()
+    utterance(speechEnd(performance.now() - 3000, words.partial), words.final)
+    await flush()
+    return { turnStart, bridgeSynthesize, planned: (plan) => planned(plan) }
+  }
+
+  it('plays in a language with no aizuchi classifier, decided by the look-ahead alone', async () => {
+    mocks.settings.conversationLocale = 'en-US'
+    const bridgeSynthesize = vi.fn(async (text: string) => ({ text, audio: 'eA==' }))
+    const turnStart = vi.fn(async () => 42)
+    await start({ bridgePlan: vi.fn(async () => ({ bridge: "Tomorrow's weather, right." })), bridgeSynthesize, turnStart })
+
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', 'what is the weather tomorrow')
+    await flush()
+    const end = speechEnd(performance.now() - 3000, 'what is the weather tomorrow')
+    await flush()
+    utterance(end, 'What is the weather tomorrow?')
+    await flush()
+
+    expect(bridgeSynthesize).toHaveBeenCalledWith("Tomorrow's weather, right.")
+    expect(playedRoles()).toContain('bridge')
+    expect(startOptions(turnStart).bridge).toBe("Tomorrow's weather, right.")
+  })
+
+  it('is announced as coming while the look-ahead runs in a language with no classifier, and then plays', async () => {
+    mocks.settings.conversationLocale = 'en-US'
+    const { turnStart, planned } = await speakAheadOfTheLookahead({ partial: 'what is the weather tomorrow', final: 'What is the weather tomorrow?' })
+    expect(startOptions(turnStart).bridgePending).toBe(true)
+
+    planned({ bridge: "Tomorrow's weather, right." })
+    await flush()
+
+    expect(playedRoles()).toContain('bridge')
+  })
+
+  for (const cls of ['flow', 'correct', 'hold', 'none', null] as const) {
+    it(`is neither announced nor played for a Japanese utterance classified as ${cls ?? 'nothing yet'}`, async () => {
+      const aizuchiClassify = vi.fn(() => (cls ? Promise.resolve({ cls, prob: 0.9, complete: 0.9 }) : new Promise(() => {})))
+      const { turnStart, bridgeSynthesize, planned } = await speakAheadOfTheLookahead(
+        { partial: '明日の天気を教えて', final: '明日の天気を教えて' },
+        { aizuchiClassify }
+      )
+      expect(startOptions(turnStart).bridgePending).toBeUndefined()
+
+      planned({ bridge: '明日の天気ですね。' })
+      await flush()
+
+      expect(bridgeSynthesize).not.toHaveBeenCalled()
+      expect(playedRoles()).not.toContain('bridge')
+    })
+  }
+})
+
 describe('echo of what the speaker played', () => {
   const question = { turnId: 5, index: 0, text: 'クラシックとジャズ、どちらを再生しますか？', audio: 'eA==', phonemes: null }
   const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

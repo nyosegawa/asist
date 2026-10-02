@@ -1,5 +1,6 @@
 import type { HangoverMode, LiveEvent, TurnEvent, TurnTimings } from '@shared/ipc'
 import { isSelfEcho, PlaybackLog, stripClipEcho } from '@shared/self-echo'
+import { bridgeAllowed, type AizuchiClassification } from '@shared/aizuchi-classifier'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { isLiveEngine, liveTextInput, type VoiceEngine } from '@shared/voice-engine'
 import { stopsLiveEngine } from '@shared/live-session-policy'
@@ -35,14 +36,30 @@ let aiLineId: number | null = null
 let pendingRequestId: string | null = null
 let activeRequestId: string | null = null
 const turnMetrics = new TurnMetrics((payload) => window.api.metricsLog(payload))
+interface OpeningPolicy {
+  /** The aizuchi may play, and the classifier that picks it runs on the partial transcripts. */
+  aizuchi: boolean
+  bridge: boolean
+}
 /**
- * What may sound at the opening of a turn. With the TTS engine set to none neither part is played,
- * and the aizuchi are Japanese while the bridge sentence is spoken in every language.
+ * What may sound at the opening of a turn. With the TTS engine set to none neither part is played.
+ * The aizuchi and the classifier that picks them are Japanese, while the bridge sentence is spoken in
+ * every language.
  */
-function openingPolicy(): { aizuchi: boolean; bridge: boolean } {
+function openingPolicy(): OpeningPolicy {
   const settings = useSettingsStore.getState().settings
   if (!settings || !settings.aizuchi || settings.ttsEngine === 'none') return { aizuchi: false, bridge: false }
   return { aizuchi: conversationFeatures(settings.conversationLocale).aizuchi, bridge: true }
+}
+/**
+ * Whether the bridge may play after an utterance that ended with this classification. Where the
+ * classifier runs, it keeps the bridge out of replies, corrections, greetings and unfinished sentences,
+ * and no bridge plays before it has a classification. Where it does not, the look-ahead's own answer
+ * decides, since its prompt returns no line for those.
+ */
+function bridgeMayPlay(policy: OpeningPolicy, classification: AizuchiClassification | null): boolean {
+  if (!policy.bridge) return false
+  return !policy.aizuchi || (classification !== null && bridgeAllowed(classification.cls))
 }
 /** The configured voice engine. A live engine takes the microphone and the typed text instead of the voice pipeline and brain. */
 const voiceEngine = (): VoiceEngine => useSettingsStore.getState().settings?.voiceEngine ?? 'cascade'
@@ -269,15 +286,16 @@ async function initializeConversation(): Promise<void> {
       vadMode: end.vadMode,
       ...(end.listening.length > 0 ? { listening: end.listening } : {})
     })
+    // The aizuchi is chosen from the classification available now and is skipped when there is none,
+    // while the bridge waits for the look-ahead in flight.
+    const classification = policy.aizuchi ? classifier.current() : null
     opening.begin({
       startedAt: end.startedAt,
       speechEndAt: end.speechEndAt,
-      // The aizuchi is chosen from the classification available now and is skipped when there is
-      // none, while the bridge waits for the look-ahead in flight.
-      classification: policy.aizuchi ? classifier.current() : null,
-      plan: policy.bridge
+      classification,
+      plan: bridgeMayPlay(policy, classification)
         ? planner.finish({ text: end.partialText, lastAssistantText: lastAssistantText() })
-        : Promise.resolve(null),
+        : null,
       sinceListeningMs: voiceController.msSinceBackchannel
     })
   })

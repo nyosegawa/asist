@@ -95,17 +95,12 @@ describe('TurnOpening', () => {
     expect(opening.claim(10)).toEqual({ aizuchi: 'なるほど。', bridge: null, bridgePending: false })
   })
 
-  it('plays neither aizuchi nor bridge without a classification, and asks for no bridge on flow, correct, hold and none', async () => {
+  it('settles at once without a bridge for an utterance that may have none, so brain is never told one is coming', async () => {
     const { opening, play, synthesizeBridge } = setup(null)
-    opening.begin({ ...input, classification: null })
+    opening.begin({ ...input, classification: null, plan: null })
+    expect(opening.claim(10)).toEqual({ aizuchi: null, bridge: null, bridgePending: false })
     await flush()
     expect(play).not.toHaveBeenCalled()
-    expect(synthesizeBridge).not.toHaveBeenCalled()
-    expect(opening.claim(10)).toEqual({ aizuchi: null, bridge: null, bridgePending: false })
-    for (const cls of ['flow', 'correct', 'hold', 'none'] as const) {
-      opening.begin({ ...input, startedAt: 20, classification: { cls, prob: 0.95, complete: 0.9 } })
-      await flush()
-    }
     expect(synthesizeBridge).not.toHaveBeenCalled()
   })
 
