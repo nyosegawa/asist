@@ -258,7 +258,7 @@ Windows では、インストーラーで入れたアプリで、上の項目を
 | [src/preload/](../src/preload/) | main と画面の間の API。契約は [src/shared/ipc.ts](../src/shared/ipc.ts) にあります。 |
 | [src/renderer/](../src/renderer/) | React の画面、マイクの入力、音声の再生、カード |
 | [src/shared/](../src/shared/) | プロセスの間で共有する型とロジック。画面の文言の辞書は [i18n/messages/](../src/shared/i18n/messages/) にあります。 |
-| [resources/](../resources/) | 音声と検索の worker、[記憶を整理する Agent の手順](../resources/skills/memory-curation/SKILL.md)(日本語以外の会話では[英語の手順](../resources/skills/memory-curation-en/SKILL.md)) |
+| [resources/](../resources/) | 音声と検索の worker、[記憶を整理する Agent の手順](../resources/skills/memory-curation/SKILL.md)(日本語以外の会話では[英語の手順](../resources/skills/memory-curation-en/SKILL.md))と、会話の言語ごとの[記憶の雛形](../resources/skills/memory-templates/) |
 | [tests/](../tests/) | Vitest のテスト |
 
 カードを足すときは、[カタログ](../src/shared/panel-catalog.ts)にスキーマを定義し、[builtin/](../src/renderer/src/panels/builtin/) に表示を実装して、[registry.tsx](../src/renderer/src/panels/registry.tsx) に登録します。会話のモデルに渡すカード用のツールは、スキーマから作られます。

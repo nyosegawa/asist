@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/memory-format'
+import { FIXED_HEADINGS } from '@shared/memory-page'
 import { sectionsOverTheLimit } from './helpers/memory'
 
 const ja = createTranslator('ja-JP')
@@ -514,13 +515,13 @@ it('starts no job for a day the user did not speak on, whatever language the tra
   expect(curation.curatedThrough()).toBe('2026-09-11')
 })
 
-it('writes the prompt, the transcript and the worktree AGENTS.md in English for a conversation held in another language', async () => {
+it('writes the prompt, the transcript and the worktree AGENTS.md in English for a conversation held in another language, and gives the skill the templates of that language', async () => {
   mocks.conversationLocale = 'de-DE'
   mocks.day = [{ t: new Date(2026, 8, 11, 9, 5).getTime(), kind: 'user', turnId: 1, text: 'Ich mag Katzen' }]
   const { curation } = await setup()
   const job = curation.pendingJob()!
   expect(job.prompt).toContain('[09:05 #1] User: Ich mag Katzen')
-  expect(job.prompt).toContain('write the body of every file in German')
+  expect(job.prompt).toContain('write every file in German')
   expect(/[぀-ヿ一-鿿]/.test(job.prompt)).toBe(false)
   const agents = fs.readFileSync(path.join(job.cwd, 'AGENTS.md'), 'utf8')
   expect(agents).toContain('memory-curation')
@@ -528,6 +529,8 @@ it('writes the prompt, the transcript and the worktree AGENTS.md in English for 
   // The English skill is the one installed, and it lands under the same name the prompt uses.
   const skill = fs.readFileSync(path.join(job.cwd, '.claude', 'skills', 'memory-curation', 'SKILL.md'), 'utf8')
   expect(skill).toContain('the language of the conversation')
+  const page = fs.readFileSync(path.join(job.cwd, '.claude', 'skills', 'memory-curation', 'assets', 'templates', 'page.md'), 'utf8')
+  expect(page).toContain(`\n## ${FIXED_HEADINGS.summary['de-DE']}\n`)
 })
 
 it('completes the day only when the run succeeds and leaves no changes behind', async () => {

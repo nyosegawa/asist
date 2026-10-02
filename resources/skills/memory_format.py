@@ -18,6 +18,7 @@ import re
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'memory-format.json'), encoding='utf-8') as _file:
     FORMAT = json.load(_file)
 
+# The heading every page opens with, by conversation language. A page may open with any of them.
 SUMMARY_HEADING = FORMAT['summaryHeading']
 PROMPT_DOCUMENTS = [(document['kind'], document['file']) for document in FORMAT['promptDocuments']]
 PROMPT_DOCUMENT_MAX_TOKENS = FORMAT['promptDocumentMaxTokens']
@@ -132,7 +133,8 @@ def _parse_frontmatter(lines):
 
 
 def _summary_for(markdown):
-    return SUMMARY_HEADING['ja' if written_in_japanese(markdown) else 'en']
+    """The summary heading text above the first heading is read under: Japanese when kana tell it, else English."""
+    return SUMMARY_HEADING['ja-JP' if written_in_japanese(markdown) else 'en-US']
 
 
 def _read_body(markdown):
@@ -228,7 +230,7 @@ def document_issues(kind, markdown):
         elif length > SECTION_MAX_CHARS and not _in_prompt(kind):
             issues.append({'kind': 'sectionTooLong', 'line': line, 'heading': heading, 'length': length})
     opening = sections[0]['heading'] if sections else None
-    if kind == 'page' and opening is not None and opening not in (SUMMARY_HEADING['ja'], SUMMARY_HEADING['en']):
+    if kind == 'page' and opening is not None and opening not in SUMMARY_HEADING.values():
         issues.append({'kind': 'firstHeading', 'heading': _summary_for(markdown)})
     if _in_prompt(kind):
         size = prompt_size(markdown)

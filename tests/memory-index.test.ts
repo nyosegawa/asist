@@ -298,6 +298,37 @@ describe('MemoryIndex over memories in several languages', () => {
     expect(ids('私の印象')).toEqual(['ja-impression'])
   })
 
+  it('injects no section for an utterance that only says the words of a heading the template of any language wrote', () => {
+    const journal = (id: string, heading: string, text: string): MemoryUnit =>
+      unit(id, text, { file: 'journal/2026-09-20.md', kind: 'journal', page: '2026-09-20', heading, aliases: [], date: '2026-09-20' })
+    const section = (id: string, file: string, name: string, heading: string, text: string): MemoryUnit =>
+      unit(id, text, { file, page: name, heading, aliases: [], order: 1 })
+    index.rebuild([
+      ...MULTI,
+      section('de-impression', 'pages/Bäckerei.md', 'Bäckerei', 'Mein Eindruck', 'Wenn die Bäckerei zur Sprache kommt, ist der Morgen gut gelaufen.'),
+      section('de-placeholder', 'pages/Bäckerei.md', 'Bäckerei', 'Überschriften, die zum Thema passen', 'Roggenbrot am Samstag, Brezeln unter der Woche.'),
+      section('es-impression', 'pages/Panadería.md', 'Panadería', 'Mi impresión', 'Cuando sale la panadería, suele ser una mañana tranquila.'),
+      journal('fr-self', 'Mon bilan du jour', 'Un dimanche calme, et j’ai aimé entendre parler du bonsaï.'),
+      journal('ko-self', '오늘의 나', '조용한 일요일. 분재 이야기를 들어서 기뻤다.'),
+      journal('hi-self', 'मेरा आज का दिन', 'शांत रविवार। बोनसाई की बात सुनकर अच्छा लगा।')
+    ])
+    const ordinary = [
+      'Mein Eindruck von dem Film war gemischt',
+      'Welche Überschriften passen zu dem Thema?',
+      'mi impresión es que va a llover',
+      'mon bilan du jour est mitigé',
+      '오늘의 나는 좀 지쳤어',
+      'मेरा आज का दिन अच्छा नहीं रहा'
+    ]
+    const injected = (utterances: string[]): Record<string, string[]> =>
+      Object.fromEntries(utterances.map((utterance) => [utterance, ids(utterance, { mode: 'utterance' })]))
+    expect(injected(ordinary)).toEqual(Object.fromEntries(ordinary.map((utterance) => [utterance, []])))
+    expect(injected(['Gibt es am Samstag wieder Roggenbrot?', '분재 이야기 또 해 줘'])).toEqual({
+      'Gibt es am Samstag wieder Roggenbrot?': ['de-placeholder'],
+      '분재 이야기 또 해 줘': ['ko-self']
+    })
+  })
+
   it('injects a section of a page by a heading the curation or the user added to it', () => {
     index.rebuild([
       ...MULTI,

@@ -171,6 +171,29 @@
       ]
     },
     {
+      "name": "a page in German under its summary heading",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# Bäckerei\n\n## Zusammenfassung\nDie Bäckerei am Bahnhof.\n\n## Mein Eindruck\nEin ruhiger Ort.\n",
+      "issues": []
+    },
+    {
+      "name": "a page in Hindi under its summary heading",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# चायवाला\n\n## सारांश\nस्टेशन के पास की चाय की दुकान।\n",
+      "issues": []
+    },
+    {
+      "name": "a page in German that opens with another heading, named the English summary as no kana stand in it",
+      "kind": "page",
+      "markdown": "---\nupdated: 2026-09-09\n---\n# Bäckerei\n\n## Brot\nRoggenbrot am Samstag.\n",
+      "issues": [
+        {
+          "kind": "firstHeading",
+          "heading": "Summary"
+        }
+      ]
+    },
+    {
       "name": "a page in English with the wrong first heading",
       "kind": "page",
       "markdown": "---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Tastes\nNot too spicy.\n",

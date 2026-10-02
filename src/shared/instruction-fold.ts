@@ -54,7 +54,7 @@ function trimBlank(lines: readonly string[]): string[] {
  * summary heading, so a `## 要約` and that text are one section, and moving either beside the other would
  * make the heading stand twice.
  */
-const isSummary = (heading: string | null): boolean => heading === null || heading === SUMMARY_HEADING.ja || heading === SUMMARY_HEADING.en
+const isSummary = (heading: string | null): boolean => heading === null || Object.values(SUMMARY_HEADING).includes(heading)
 
 const aboutMe = (heading: string | null): boolean => heading === FIXED.me.ja || heading === FIXED.me.en
 

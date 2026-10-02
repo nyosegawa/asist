@@ -205,7 +205,8 @@ describe('the memory screen', () => {
 
   it.each([
     { conversation: 'ja-JP', name: '田中さん', summary: '## 要約', text: '本人の上司。毎週木曜に打ち合わせをする。' },
-    { conversation: 'en-US', name: 'Tanaka', summary: '## Summary', text: 'Their boss, met every Thursday.' }
+    { conversation: 'en-US', name: 'Tanaka', summary: '## Summary', text: 'Their boss, met every Thursday.' },
+    { conversation: 'de-DE', name: 'Frau Tanaka', summary: '## Zusammenfassung', text: 'Ihre Chefin, jeden Donnerstag.' }
   ] as const)(
     'opens a new page held in $conversation with its name and an empty summary, writes nothing until its first save, and saves what the user wrote',
     async ({ conversation, name, summary, text }) => {

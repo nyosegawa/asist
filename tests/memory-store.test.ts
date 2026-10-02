@@ -482,7 +482,7 @@ describe('the memory store', () => {
     const page = '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Summary\nThe ramen shop.\n'
     fs.writeFileSync(path.join(dir, 'pages', 'Matsubaken.md'), page)
     store.writeDocument('pages/Matsubaken.md', page.replace('The ramen shop.', 'The ramen shop they keep going back to.'), page)
-    store.createPage({ name: 'Tanaka', markdown: newPageMarkdown('Tanaka', 'de-DE', '2026-10-03').replace('## Summary\n', '## Summary\nTheir boss.\n') })
+    store.createPage({ name: 'Tanaka', markdown: newPageMarkdown('Tanaka', 'de-DE', '2026-10-03').replace('## Zusammenfassung\n', '## Zusammenfassung\nIhr Chef.\n') })
     store.deleteDocument('pages/Tanaka.md')
     expect(subjects(dir).slice(0, 4)).toEqual([
       'asist: delete pages/Tanaka.md',

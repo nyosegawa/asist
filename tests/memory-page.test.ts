@@ -168,7 +168,7 @@ describe('units', () => {
     )
   })
 
-  it('leaves a heading the template of the document wrote out of the embedded text, in either form, and keeps one anyone else wrote', () => {
+  it('leaves a heading the template of the document wrote out of the embedded text, in every language, and keeps one anyone else wrote', () => {
     const embedded = (file: string, page: string, heading: string): string =>
       embeddingTextOf({ file, kind: file.startsWith('journal/') ? 'journal' : 'section', page, heading, text: 'x', date: '2026-09-20' })
     expect([
@@ -176,13 +176,41 @@ describe('units', () => {
       embedded('pages/Mugi.md', 'Mugi', 'My impression'),
       embedded('pages/ムギ.md', 'ムギ', '私の印象'),
       embedded('journal/2026-09-20.md', '2026-09-20', 'Myself today'),
-      embedded('journal/2026-09-20.md', '2026-09-20', 'A subject')
-    ]).toEqual(['Mugi: x', 'Mugi: x', 'ムギ: x', 'Journal of 2026-09-20: x', 'Journal of 2026-09-20: x'])
+      embedded('journal/2026-09-20.md', '2026-09-20', 'A subject'),
+      embedded('pages/Mugi.md', 'Mugi', 'Zusammenfassung'),
+      embedded('pages/Mugi.md', 'Mugi', 'Mein Eindruck'),
+      embedded('pages/Mugi.md', 'Mugi', 'Überschriften, die zum Thema passen'),
+      embedded('pages/Mugi.md', 'Mugi', 'Mi impresión'),
+      embedded('journal/2026-09-20.md', '2026-09-20', 'मेरा आज का दिन'),
+      embedded('journal/2026-09-20.md', '2026-09-20', '오늘의 나'),
+      embedded('journal/2026-09-20.md', '2026-09-20', 'Un sujet')
+    ]).toEqual([
+      'Mugi: x',
+      'Mugi: x',
+      'ムギ: x',
+      'Journal of 2026-09-20: x',
+      'Journal of 2026-09-20: x',
+      'Mugi: x',
+      'Mugi: x',
+      'Mugi: x',
+      'Mugi: x',
+      'Journal of 2026-09-20: x',
+      'Journal of 2026-09-20: x',
+      'Journal of 2026-09-20: x'
+    ])
     expect([
       embedded('pages/Mugi.md', 'Mugi', 'Walnut allergy'),
       embedded('pages/松葉軒.md', '松葉軒', '好み'),
-      embedded('journal/2026-09-20.md', '2026-09-20', 'Bonsai')
-    ]).toEqual(['Mugi Walnut allergy: x', '松葉軒 好み: x', 'Journal of 2026-09-20 Bonsai: x'])
+      embedded('journal/2026-09-20.md', '2026-09-20', 'Bonsai'),
+      embedded('pages/Mugi.md', 'Mugi', 'Walnussallergie'),
+      embedded('journal/2026-09-20.md', '2026-09-20', '분재')
+    ]).toEqual([
+      'Mugi Walnut allergy: x',
+      '松葉軒 好み: x',
+      'Journal of 2026-09-20 Bonsai: x',
+      'Mugi Walnussallergie: x',
+      'Journal of 2026-09-20 분재: x'
+    ])
   })
 
   it('names the journal in English in an entry written in another language, and leaves a Japanese entry as it was', () => {
@@ -339,9 +367,14 @@ describe('documents', () => {
     expect(textForTokens(size, 20)).toEqual({ characters: 30, words: 6 })
   })
 
-  it('accepts a page under either fixed heading, and names the English one to a page written in English', () => {
+  it('accepts a page under the summary heading of any language, and names the English one to a page written in a language other than Japanese', () => {
     expect(validateDocument('pages/Matsubaken.md', PAGE_EN, ja)).toEqual([])
     expect(validateDocument('pages/松葉軒.md', MATSUBAKEN, ja)).toEqual([])
+    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## Zusammenfassung'), ja)).toEqual([])
+    expect(validateDocument('pages/Matsubaken.md', PAGE_EN.replace('## Summary', '## सारांश'), ja)).toEqual([])
+    expect(validateDocument('pages/Matsubaken.md', '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Bestellung\nNicht zu scharf.\n', ja)).toEqual([
+      ja('memory.check.firstHeading', { file: 'pages/Matsubaken.md', heading: 'Summary' })
+    ])
     expect(validateDocument('pages/Matsubaken.md', '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Tastes\nNot too spicy.\n', ja)).toEqual([
       ja('memory.check.firstHeading', { file: 'pages/Matsubaken.md', heading: 'Summary' })
     ])

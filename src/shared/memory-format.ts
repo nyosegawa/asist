@@ -1,4 +1,5 @@
 import FORMAT from '../../resources/skills/memory-format.json'
+import type { ConversationLocale } from './conversation-locale'
 
 /**
  * The rules of the memory's markdown: how a document is read into its frontmatter, its `# name` line and
@@ -67,8 +68,14 @@ export type DocumentIssue =
 
 export type PageNameIssue = 'characters' | 'reserved'
 
-/** The heading every page opens with, and the one the text above a document's first `## ` heading is read as. */
-export const SUMMARY_HEADING = FORMAT.summaryHeading as { readonly ja: string; readonly en: string }
+/**
+ * The heading every page opens with, in each conversation language, as the curation copies it from the page
+ * template of the language the memory is written in. A page may open with any of them, since the memory keeps
+ * the pages written before the user changed the language.
+ */
+export const SUMMARY_HEADING: Readonly<Record<ConversationLocale, string>> = FORMAT.summaryHeading
+
+const SUMMARY_HEADINGS: readonly string[] = Object.values(SUMMARY_HEADING)
 
 /**
  * The documents that go whole into the system prompt of every turn, by kind, in the order they go there.
@@ -190,9 +197,8 @@ interface Body {
 
 /**
  * Splits a document into its frontmatter, its `# ` line and its sections, empty ones included. A section is
- * a `## ` heading and the text under it. The text above the first heading is a section too, under the
- * summary heading in the form the document is written in, which is how a short page or a me.md written as
- * prose is read.
+ * a `## ` heading and the text under it. The text above the first heading is a section too, under a summary
+ * heading (summaryFor), which is how a short page or a me.md written as prose is read.
  */
 function readBody(markdown: string): Body {
   const lines = markdown.split(/\r?\n/)
@@ -223,7 +229,12 @@ function readBody(markdown: string): Body {
   return { frontmatter, unclosed, title, headed, sections }
 }
 
-const summaryFor = (markdown: string): string => SUMMARY_HEADING[writtenInJapanese(markdown) ? 'ja' : 'en']
+/**
+ * The summary heading the text above a document's first `## ` heading is read under: the Japanese one in a document
+ * written in Japanese, which its kana tell, and the English one in any other. No other language of the eleven can
+ * be told from the text without guessing, and either heading is one the rules accept on any page.
+ */
+const summaryFor = (markdown: string): string => SUMMARY_HEADING[writtenInJapanese(markdown) ? 'ja-JP' : 'en-US']
 
 /**
  * Reads user.md, me.md, a page or a journal entry into the sections that carry text. A document without
@@ -306,7 +317,7 @@ export function documentIssues(kind: DocumentKind, markdown: string): DocumentIs
     else if (length > SECTION_MAX_CHARS && !inPrompt(kind)) issues.push({ kind: 'sectionTooLong', line, heading, length })
   }
   const opening = sections[0]?.heading
-  if (kind === 'page' && opening !== undefined && opening !== SUMMARY_HEADING.ja && opening !== SUMMARY_HEADING.en) {
+  if (kind === 'page' && opening !== undefined && !SUMMARY_HEADINGS.includes(opening)) {
     issues.push({ kind: 'firstHeading', heading: summaryFor(markdown) })
   }
   if (inPrompt(kind)) {

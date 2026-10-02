@@ -28,7 +28,7 @@ MESSAGES = {
     'duplicateHeading': lambda p: f"the heading \"{p['heading']}\" is also on line {p['first']}; merge the two into one",
     'headingWithoutText': lambda p: f"there is nothing under the heading \"{p['heading']}\" (delete a heading you have nothing to write under)",
     'sectionTooLong': lambda p: f"the heading \"{p['heading']}\" holds {p['length']} characters (keep it to {SECTION_MAX_CHARS})",
-    'firstHeading': lambda p: f"make the first heading \"{p['heading']}\" (it is what gets read when the name comes up in the conversation)",
+    'firstHeading': lambda p: 'make the first heading the summary heading that assets/templates/page.md opens with (it is what gets read when the name comes up in the conversation)',
     'tooManyTokens': lambda p: f"it comes to {p['tokens']} tokens (keep it to {p['limit']}: cut about {p['cut']['words']} words, and check with count.py)",
     'pageName': lambda p: (
         'the page name holds a character a file name cannot (/ \\ : * ? " < > |); rename the page'

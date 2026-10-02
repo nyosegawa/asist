@@ -35,15 +35,19 @@ files them during the conversation.
 
 ## The fixed headings
 
-These stay in English whatever language the body is written in, because ASIST reads them:
+ASIST reads these by name. Copy them from the templates in `assets/templates/`, which are in the language of
+the conversation, exactly as they stand there. They are named here as the English templates write them:
 
-- `## Summary`: the first heading of every page under `pages/`.
-- `## My impression`: the last heading of a page.
-- `## Myself today`: the last heading of every journal entry.
-- The `# ` name line of `user.md` (`# The user`) and `me.md` (`# About me`).
-- The headings of `user.md` (`## Attributes`, `## Preferences`, `## Habits`, `## What they expect of ASIST`).
+- `## Summary`: the first heading of every page under `pages/` (page.md).
+- `## My impression`: the last heading of a page (page.md).
+- `## Myself today`: the last heading of every journal entry (journal.md).
 
-Every other heading you write yourself, in the language of the conversation.
+Copy the headings of `user.md` and the `# ` name lines of `user.md` and `me.md` from their templates the same
+way, so that the two documents keep their shape from one curation to the next. Every other heading you write
+yourself, in the language of the conversation.
+
+ASIST reads the fixed headings of every language, so a page written before the language changed may keep the
+ones it has.
 
 ## Headings
 
@@ -88,9 +92,9 @@ updated: 2026-09-09
 
 ## user.md, about this person
 
-user.md is a document you rewrite every time, not a record you keep adding to. Its headings are
-`## Attributes`, `## Preferences`, `## Habits` and `## What they expect of ASIST`. There is no heading for
-recent events.
+user.md is a document you rewrite every time, not a record you keep adding to. Its headings are the four of
+the template: `## Attributes`, `## Preferences`, `## Habits` and `## What they expect of ASIST`. There is no
+heading for recent events.
 
 - **Write tendencies, generalized.** Do not line up dated episodes; say what they add up to. Not "On the
   evening of 2026-09-20 they had ramen and chose it mild", but "They like noodles and pick the milder spice
