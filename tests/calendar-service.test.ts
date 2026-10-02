@@ -505,6 +505,25 @@ describe('calendar dates', () => {
       else process.env.TZ = previous
     }
   })
+  it('refuses an all-day event that starts where the clock turns back into the day before, or that covers no day', () => {
+    const reasons = (start: string, end: string, timeZone: string): string[] => {
+      const result = calendarEventInputSchema.safeParse({ title: 'Holiday', allDay: true, start, end, timeZone, location: '', notes: '' })
+      return result.success ? [] : result.error.issues.map((issue) => issue.message)
+    }
+    // St. John's turned its clock back from 00:01 on 2010-11-07 to 23:01 on 2010-11-06.
+    expect(reasons('2010-11-06T23:01:00-03:30', '2010-11-08T00:00:00-03:30', 'America/St_Johns')).toEqual([errorText('calendar.errors.allDayNotMidnight')])
+    // The two midnights of 2026-10-25 in the Azores are an hour apart and name the same day.
+    expect(reasons('2026-10-25T00:00:00+00:00', '2026-10-25T00:00:00-01:00', 'Atlantic/Azores')).toEqual([errorText('calendar.errors.allDayEmpty')])
+  })
+  it('gives an all-day event a time zone or a time it cannot read as its reason rather than throwing', () => {
+    const allDay = { ...fields, allDay: true, start: '2026-09-15T00:00:00+09:00', end: '2026-09-16T00:00:00+09:00' }
+    const reasons = (patch: Partial<typeof allDay>): string[] => {
+      const result = calendarEventInputSchema.safeParse({ ...allDay, ...patch })
+      return result.success ? [] : result.error.issues.map((issue) => issue.message)
+    }
+    expect(reasons({ timeZone: 'Mars/Olympus' })).toEqual([errorText('calendar.errors.timeZoneUnknown')])
+    expect(calendarEventInputSchema.safeParse({ ...allDay, start: 'the fifteenth' }).success).toBe(false)
+  })
   it('tells the model that an event ending at midnight is on the day it starts', () => {
     const previous = process.env.TZ
     try {
