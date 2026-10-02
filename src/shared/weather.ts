@@ -313,3 +313,17 @@ export function zonedDate(at: number, timeZone: string): string {
     day: '2-digit'
   }).format(at)
 }
+
+const hourFormats = new Map<string, Intl.DateTimeFormat>()
+/**
+ * The hour, from 0 to 23, that the clock of a zone reads at a moment, with the offset in force there at
+ * that moment, wherever the Mac stands.
+ */
+export function zonedHour(at: number, timeZone: string): number {
+  let format = hourFormats.get(timeZone)
+  if (!format) {
+    format = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: 'numeric' })
+    hourFormats.set(timeZone, format)
+  }
+  return Number(format.format(at))
+}

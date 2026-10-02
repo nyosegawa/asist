@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import type { PanelSpec } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
-import { zonedDate, type WeatherCondition, type WeatherData, type WeatherUnits } from '@shared/weather'
+import { zonedDate, zonedHour, type WeatherCondition, type WeatherData, type WeatherUnits } from '@shared/weather'
 import { useT, useFormatLocale } from '@/i18n'
 import { usePanelStore } from '@/state/stores'
 import type { CardContext, CardDefinition } from '../shell/card'
@@ -34,16 +34,7 @@ const weatherOf = (spec: PanelSpec): WeatherData => spec.props.weather as Weathe
 const number = (value: number | null): string => (value === null ? '—' : String(Math.round(value)))
 /** The degree sign alone reads as Celsius, so only another unit is named beside the number. */
 const degree = (units: WeatherUnits): string => (units.temperature === '°C' ? '°' : units.temperature)
-// A forecast keeps the hours of the place it is for, wherever the Mac stands.
-const hours = new Map<string, Intl.DateTimeFormat>()
-function hour(at: string, timeZone: string): number {
-  let format = hours.get(timeZone)
-  if (!format) {
-    format = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: 'numeric' })
-    hours.set(timeZone, format)
-  }
-  return Number(format.format(new Date(at)))
-}
+const hour = (at: string, timeZone: string): number => zonedHour(Date.parse(at), timeZone)
 const endHour = (from: string, to: string, timeZone: string): number =>
   hour(to, timeZone) === 0 && Date.parse(to) > Date.parse(from) ? 24 : hour(to, timeZone)
 const time = (at: string, locale: string, timeZone: string): string =>
