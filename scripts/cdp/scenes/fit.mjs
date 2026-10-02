@@ -211,8 +211,10 @@ const LAYOUT_ONLY = `(() => {
 
 /**
  * The screens are split across this many Chromes that run at once. For the 42 screens in every theme and
- * language on a 10-core Mac (2026-10-02), 2 took 52 s, 3 about 38 s and 4 32 s, but each Chrome holds
- * about 1.1 GB, and four would bring the run back to what CI's 7 GB runner stalled under.
+ * language on a 10-core Mac (2026-10-02), 2 took 52 s, 3 about 38 s and 4 32 s. Three stay: each Chrome
+ * holds about 1.1 GB, so four would hold about as much as the four Chromes that stalled on CI, while three
+ * without the cards' Chrome are what opened a Chrome's eighth screen onwards there, about 4,000 screens on
+ * 2026-10-02 without a stall.
  */
 const WORKERS = 3
 
@@ -244,11 +246,12 @@ async function screensOf(all, screenList = screens, wait = 0) {
 }
 
 // One demo serves every Chrome: a demo of its own for each would compile the modules again for each.
-// The cards and the screens are measured one after the other, in Chromes of their own. At once, their four
-// Chromes and the demo held about 5.0 GB (physical footprint on a Mac, 2026-10-02) and the screens' three
-// alone about 3.7 GB, while CI's macOS runner has 7 GB. Run at once on CI, a screen sometimes had not loaded
-// its modules 30 to 70 s after it was opened, in 15 runs on 2026-10-02, each time at a Chrome's third to
-// seventh screen, the ones a run opens while the cards are being measured.
+// The cards and the screens are measured one after the other, in Chromes of their own. Measured at once on
+// CI, a screen was still loading its modules when the 30 s wait for it ended 18 times on 2026-10-02 and once
+// on 10-01, each time at a Chrome's third to seventh screen and so while the cards' Chrome was running, and
+// the wait overran its 30 s by 3 to 41 s in 15 of the 18, so Chrome or this process had stopped as a whole.
+// The four Chromes and the demo held about 5.0 GB at once (physical footprint on a Mac, 2026-10-02), and
+// CI's macOS runner has 7 GB, so memory pressure there is the likely cause, though it was not observed.
 const demo = await startDemo()
 const BASELINE_PAIR = `${BASELINE_THEME}|${BASELINE}`
 const measuredPairs = pairs(themes, locales)
