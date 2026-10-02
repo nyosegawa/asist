@@ -15,6 +15,7 @@ import * as store from '../src/main/services/memory-store'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { MEMORY_GITIGNORE } from '@shared/memory-curation'
+import { longTempFolder } from './helpers/temp'
 
 const ja = createTranslator('ja-JP')
 
@@ -60,7 +61,7 @@ describe('the memory store', () => {
   })
 
   it('makes the memory folder a repository of its own inside a repository that git refuses to open', () => {
-    const parent = mkdtempSync(path.join(tmpdir(), 'asist-memory-parent-'))
+    const parent = longTempFolder('asist-memory-parent-')
     git(parent, ['init', '-q'])
     // A repository of a form this git does not know, which it refuses as it refuses one owned by another user.
     git(parent, ['config', 'core.repositoryformatversion', '99'])
