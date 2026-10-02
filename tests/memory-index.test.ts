@@ -280,6 +280,61 @@ describe('MemoryIndex over memories in several languages', () => {
     expect(ids('口調')).toEqual(['ja-me'])
   })
 
+  it('injects no section for an utterance that only says the words of a heading its template wrote, and still injects one for what is written under it', () => {
+    const journal = (id: string, heading: string, text: string): MemoryUnit =>
+      unit(id, text, { file: 'journal/2026-09-20.md', kind: 'journal', page: '2026-09-20', heading, aliases: [], date: '2026-09-20' })
+    index.rebuild([
+      ...MULTI,
+      page('en-me', 'me.md', 'About me', 'Who I am', 'A calm companion who collects old railway maps.'),
+      page('de-me', 'me.md', 'About me', 'Wer ich bin', 'Ein ruhiger Begleiter, der alte Landkarten sammelt.'),
+      page('ja-me', 'me.md', '私について', '好きなもの、気になっていること', '古い地図と電車の名前。最近は盆栽。'),
+      page('en-user', 'user.md', 'The user', 'Preferences', 'Likes noodles and picks the milder spice level.'),
+      page('ja-user', 'user.md', 'ユーザー', '習慣', '平日は夜更かしで、日曜は川沿いを走る。'),
+      unit('en-impression', 'The evenings are calmer when the cat comes up.', { file: 'pages/Mugi.md', page: 'Mugi', heading: 'My impression', aliases: [], order: 1 }),
+      unit('ja-impression', '疲れた日に名前が出る。', { heading: '私の印象', order: 3 }),
+      journal('en-self', 'Myself today', 'A quiet Sunday, and I liked hearing about the bonsai.'),
+      journal('ja-self', '今日の私', '静かな日曜日。盆栽の話を聞けてうれしかった。')
+    ])
+    const ordinary = [
+      'who am I kidding, I will never finish this',
+      'Ich bin heute so müde',
+      '気になっていることがあるんだけど',
+      '朝の習慣を変えたい',
+      'my impression of the movie was mixed',
+      '私の印象では悪くない',
+      'I did not like myself today',
+      '今日の私はだめだった'
+    ]
+    const injected = (utterances: string[]): Record<string, string[]> =>
+      Object.fromEntries(utterances.map((utterance) => [utterance, ids(utterance, { mode: 'utterance' })]))
+    expect(injected(ordinary)).toEqual(Object.fromEntries(ordinary.map((utterance) => [utterance, []])))
+    expect(injected(['do you still collect old railway maps', 'Sammelst du noch alte Landkarten?', '古い地図を見に行こう'])).toEqual({
+      'do you still collect old railway maps': ['en-me'],
+      'Sammelst du noch alte Landkarten?': ['de-me'],
+      古い地図を見に行こう: ['ja-me']
+    })
+    // Recall still reads a section by such a heading.
+    expect(ids('preferences')).toEqual(['en-user'])
+    expect(ids('私の印象')).toEqual(['ja-impression'])
+  })
+
+  it('scores a section for an utterance as recall does when no template wrote its heading, so a word the templates write on many headings stays as common as it is', () => {
+    index.rebuild([
+      ...MULTI,
+      page('me-like', 'me.md', 'About me', 'What I like and what I am curious about', 'Old maps and the names of trains.'),
+      page('me-mind', 'me.md', 'About me', 'What is on my mind', 'Whether Ken takes up bonsai.'),
+      page('me-past', 'me.md', 'About me', 'What we have been through', 'The talk about electricity prices on 2026-09-14.'),
+      unit('j-quiz', 'They asked me what year a song came out, and I found it.', {
+        file: 'journal/2026-09-26.md', kind: 'journal', page: '2026-09-26', heading: 'Pub quiz', aliases: [], date: '2026-09-26'
+      })
+    ])
+    const utterance = 'what year did that song come out'
+    const scoreOf = (mode: 'keyword' | 'utterance'): number | undefined =>
+      index.search(utterance, { mode }).find((hit) => hit.record.id === 'j-quiz')?.bm25
+    expect(scoreOf('utterance')).toBeLessThan(INJECTION_MAX_BM25.word)
+    expect(scoreOf('utterance')).toBeCloseTo(scoreOf('keyword')!, 9)
+  })
+
   it('rebuilds every token when the schema version on disk is not the current one', () => {
     index.close()
     const db = new DatabaseSync(path.join(dir, 'index.db'))

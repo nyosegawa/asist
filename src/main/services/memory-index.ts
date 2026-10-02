@@ -5,7 +5,7 @@ import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import type { MemoryUnit, MemoryUnitKind } from '@shared/ipc'
 import { EMBEDDING_MODEL, cosine, vectorFromBytes, vectorToBytes } from '@shared/memory-embedding'
-import { classifyFile, embeddingTextOf } from '@shared/memory-page'
+import { FIXED, classifyFile, embeddingTextOf } from '@shared/memory-page'
 import {
   FTS5_TOKENIZE,
   dominantTokenKind,
@@ -64,7 +64,12 @@ function isDamaged(error: unknown): boolean {
 /** The files SQLite keeps beside the database. A hot journal left beside a deleted file would be played into its successor. */
 const SIDE_FILES = ['', '-journal', '-wal', '-shm']
 
-/** The tables every rebuild makes anew from the files. */
+/**
+ * The tables every rebuild makes anew from the files. The search words of a unit stand in two columns, so that
+ * the heading a template wrote (headingFromTemplate) stands apart in `template_heading`. bm25 adds up the
+ * columns by their weights and measures the length of a unit and the rarity of a word over all of them, so
+ * with equal weights it scores a unit as one column holding the same words would.
+ */
 const UNIT_TABLES = `
   CREATE TABLE IF NOT EXISTS units (
     id TEXT PRIMARY KEY,
@@ -78,7 +83,7 @@ const UNIT_TABLES = `
     date TEXT NOT NULL,
     ord INTEGER NOT NULL
   );
-  CREATE VIRTUAL TABLE IF NOT EXISTS units_fts USING fts5(id UNINDEXED, tokens, tokenize="${FTS5_TOKENIZE}");
+  CREATE VIRTUAL TABLE IF NOT EXISTS units_fts USING fts5(id UNINDEXED, tokens, template_heading, tokenize="${FTS5_TOKENIZE}");
 `
 
 /**
@@ -93,6 +98,35 @@ function namesOf(unit: MemoryUnit): string[] {
   const kind = classifyFile(unit.file).kind
   return kind === 'user' || kind === 'me' ? [] : [unit.page, ...unit.aliases]
 }
+
+/** The headings every page and every journal entry carries, in either of their two forms. */
+const FIXED_HEADINGS = new Set<string>([FIXED.summary, FIXED.impression, FIXED.journalSelf].flatMap((text) => [text.ja, text.en]))
+
+/**
+ * Whether a template wrote the unit's heading rather than the curation choosing it for what the section says.
+ * The templates lay out every heading of user.md and me.md, me.md's as examples the curation writes in the
+ * language of the conversation, so no list of words holds them all, and the summary, the impression and the
+ * close of the day on every page and journal entry. Their words are the same in every memory, and an utterance
+ * that only said them injected the section. Measured on 2026-10-02 over a memory of 26 units written from the
+ * templates in each language: "who am I kidding" injected me.md's "Who I am" at bm25 -5.2 against the bar of
+ * -5, 「気になっていることがあるんだけど」 me.md's 「好きなもの、気になっていること」 at -11.4 against -2.5, and
+ * 「私の印象では悪くない」 the impression of all three pages at -5.6 to -6.6. Recall still finds a section by such
+ * a heading, because the model is told to recall a heading, such as a preference, that the injection did not
+ * carry.
+ */
+function headingFromTemplate(unit: MemoryUnit): boolean {
+  const kind = classifyFile(unit.file).kind
+  return kind === 'user' || kind === 'me' || FIXED_HEADINGS.has(unit.heading)
+}
+
+/**
+ * The bm25 of each kind of search, with the weights of the columns of units_fts, id first. An utterance gives a
+ * heading a template wrote no weight rather than leaving its column out of the match, because bm25 counts how
+ * many units hold a word only in the columns the match reads: filtered to `tokens`, a word the templates write
+ * on many headings, such as "what" or 「こと」, looks rare, and over the same two memories 15 sections that shared
+ * only such a word with an utterance crossed the bar, where with the weight none does.
+ */
+const SCORE = { keyword: 'bm25(units_fts)', utterance: 'bm25(units_fts, 0, 1, 0)' } as const
 
 export interface IndexSearchOptions {
   /**
@@ -234,7 +268,7 @@ export class MemoryIndex {
         `INSERT INTO units (id, file, line, kind, page, heading, aliases, text, date, ord)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      const insertFts = this.db.prepare('INSERT INTO units_fts (id, tokens) VALUES (?, ?)')
+      const insertFts = this.db.prepare('INSERT INTO units_fts (id, tokens, template_heading) VALUES (?, ?, ?)')
       const removeChangedVector = this.db.prepare('DELETE FROM vectors WHERE id = ? AND fingerprint <> ?')
       // A heading repeated in one file gives two units the same id. The rules refuse such a file on a save
       // and at a merge, and one written by hand is reported by the reindex; until it is fixed, the first
@@ -255,7 +289,12 @@ export class MemoryIndex {
           unit.date,
           unit.order
         )
-        insertFts.run(unit.id, ftsTokens([...namesOf(unit), unit.heading, unit.text].join(' ')))
+        const template = headingFromTemplate(unit)
+        insertFts.run(
+          unit.id,
+          ftsTokens([...namesOf(unit), ...(template ? [] : [unit.heading]), unit.text].join(' ')),
+          template ? ftsTokens(unit.heading) : ''
+        )
         if (model !== null) removeChangedVector.run(unit.id, embeddingFingerprint(embeddingTextOf(unit), model))
       }
       this.db.exec('DELETE FROM vectors WHERE id NOT IN (SELECT id FROM units)')
@@ -294,7 +333,7 @@ export class MemoryIndex {
     if (match) {
       const rows = this.db
         .prepare(
-          `SELECT u.*, bm25(units_fts) AS score FROM units_fts f JOIN units u ON u.id = f.id
+          `SELECT u.*, ${SCORE[mode]} AS score FROM units_fts f JOIN units u ON u.id = f.id
            WHERE units_fts MATCH ?${where} ORDER BY score LIMIT ?`
         )
         .all(match, ...params, LEXICAL_LIMIT) as Row[]
