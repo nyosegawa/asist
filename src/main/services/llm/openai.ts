@@ -166,6 +166,10 @@ class OpenAIStream extends AdapterStream {
           break
         case 'response.output_item.done': {
           const item = event.item
+          // A function call the output limit cut off ends incomplete with its arguments cut short. It is
+          // neither run nor sent back, since a call without its result is refused, and the response ends
+          // on max_tokens.
+          if (item.type === 'function_call' && item.status === 'incomplete') break
           this.items.push(item)
           if (item.type === 'message') {
             if (citations) this.emitText(citations.flush())
@@ -204,7 +208,7 @@ class OpenAIStream extends AdapterStream {
 
     const hasToolCall = this.parts.some((part) => part.type === 'tool_call')
     const incomplete = response.status === 'incomplete' ? response.incomplete_details?.reason : undefined
-    const stop: StopReason = hasToolCall ? 'tool_calls' : incomplete === 'max_output_tokens' ? 'max_tokens' : incomplete === 'content_filter' || refused ? 'refusal' : 'end'
+    const stop: StopReason = incomplete === 'max_output_tokens' ? 'max_tokens' : hasToolCall ? 'tool_calls' : incomplete === 'content_filter' || refused ? 'refusal' : 'end'
     if (incomplete && stop === 'end') throw new Error(`OpenAI: the response was cut short (${incomplete})`)
 
     return {

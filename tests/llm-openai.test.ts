@@ -243,6 +243,21 @@ describe('the OpenAI stream', () => {
     expect(isTransientApiError(error)).toBe(true)
   })
 
+  it('drops a function call the output limit cut off and reports max_tokens, keeping the whole call before it', async () => {
+    const cut = { ...CALL, id: 'fc_2', call_id: 'call_2', arguments: '{"location":', status: 'incomplete' }
+    mocks.events = [
+      { type: 'response.output_item.done', item: CALL },
+      { type: 'response.output_item.done', item: cut },
+      { type: 'response.incomplete', response: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' } } }
+    ]
+    const { stream, seen } = await open()
+    const result = await stream.final()
+    expect(seen.calls.map((call) => call.id)).toEqual(['call_1'])
+    // The brain sends the result of the whole call with its request for the rest; a call sent back without a result is refused.
+    expect(result.stop).toBe('max_tokens')
+    expect(result.message.native).toEqual({ provider: 'openai', model: 'gpt-5.5', payload: [CALL] })
+  })
+
   it('fails instead of running a tool call whose arguments are broken', async () => {
     mocks.events = [{ type: 'response.output_item.done', item: { ...CALL, arguments: '{"location":' } }, completed()]
     const { stream, seen } = await open()
