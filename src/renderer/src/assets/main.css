@@ -724,9 +724,12 @@ body {
   flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  /* Only a crowded header closes up to it. At 4px a note such as 「München · Bayern · Deutschland」 stays
+     whole beside the pill of the pop theme, where 8px left it 130px of the 133px it needs (2026-10-03). */
+  gap: 4px;
 }
 .panel-kicker {
+  flex-shrink: 0;
   padding: var(--card-kicker-padding);
   border-radius: 999px;
   background: var(--card-kicker-fill);
@@ -743,12 +746,19 @@ body {
 }
 .panel-head-side {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 2px;
 }
+/* The note is the part of the header that gives way: a long one, such as the place a worldwide weather card
+   found (「Lord Howe Island · New South Wales · Australia」), is cut short before it pushes the frame's
+   buttons or itself past the card's edge. */
 .panel-meta {
+  min-width: 0;
   margin-right: 6px;
+  overflow: hidden;
   font-size: 9px;
+  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-holo-muted);
 }

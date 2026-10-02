@@ -10,10 +10,12 @@ import { startDemo } from '../demo-server.mjs'
  * The scene that tells whether the text still fits in every language of the interface (npm run demo:fit).
  *
  * Cards: every card sample at s, m, l and focus. It looks for a card taller than the height it was given,
- * text pushed past the edge of its card, and text cut short with an ellipsis or a hidden overflow. The
- * layout was tuned in Japanese and data such as a mail subject is cut short on purpose in every language,
- * so Japanese in the future theme is the baseline, and a language or theme reports only what that baseline
- * does not show at the same place.
+ * text pushed past the edge of its card, and text cut short with an ellipsis or a hidden overflow. A card
+ * taller than its height is never meant, so it is reported in every theme and language, Japanese in the
+ * future theme too: judged against that baseline, a world weather card that Japanese also overflowed at m
+ * was reported nowhere (2026-10-03). Data such as a mail subject is cut short on purpose in every language,
+ * so for text past the edge or cut short, Japanese in the future theme is the baseline, and a language or
+ * theme reports only what that baseline does not show at the same place.
  *
  * Screens: every screen of the demo. The controls (buttons, links, chips, tabs,
  * selects) are judged without a baseline, in Japanese too: one that wraps onto a second line, is cut
@@ -68,7 +70,8 @@ const MEASURE_CARDS = `(() => {
   for (const card of document.querySelectorAll('.gallery-card')) {
     for (const dock of card.querySelectorAll('.dock[data-size], .gallery-column.is-focus')) {
       const size = dock.dataset.size ?? 'focus'
-      const edge = (dock.querySelector('.panel-card') ?? dock).getBoundingClientRect()
+      const frame = dock.querySelector('.panel-card, .panel-focus') ?? dock
+      const edge = frame.getBoundingClientRect()
       const at = (kind, element, text) => {
         const name = element.tagName.toLowerCase() + (element.classList[0] ? '.' + element.classList[0] : '')
         const index = [...dock.querySelectorAll(name)].indexOf(element)
@@ -81,7 +84,14 @@ const MEASURE_CARDS = `(() => {
         if (!element.textContent.trim()) continue
         const rect = element.getBoundingClientRect()
         if (rect.width === 0) continue
-        if (rect.right > edge.right + 1 || rect.left < edge.left - 1) at('past the edge', element)
+        // Text that reaches past a box inside the card that hides its overflow is cut short by that box, as a
+        // long note in the header is, and shows nothing past the card's edge. A box that scrolls, as the
+        // hourly row does, shows the rest when scrolled.
+        let clip = element.parentElement
+        while (clip && clip !== frame && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement
+        const box = clip && clip !== frame && getComputedStyle(clip).overflowX === 'hidden' ? clip.getBoundingClientRect() : null
+        if (box && (rect.right > box.right + 1 || rect.left < box.left - 1)) at('cut short', element)
+        else if (rect.right > edge.right + 1 || rect.left < edge.left - 1) at('past the edge', element)
         else if (element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX !== 'visible') at('cut short', element)
       }
     }
@@ -255,18 +265,18 @@ async function screensOf(all, screenList = screens, wait = 0) {
 const demo = await startDemo()
 const BASELINE_PAIR = `${BASELINE_THEME}|${BASELINE}`
 const measuredPairs = pairs(themes, locales)
-const comparedCardPairs = measuredPairs.filter((one) => one !== BASELINE_PAIR)
 const unique = (list) => [...new Set(list)]
 const cardKey = (finding) => `${finding.where}|${finding.kind}|${finding.place}`
 const screenKey = (finding) => `${finding.where}|${finding.kind}|${finding.place}|${finding.text}`
 
-const cardFirst = only === '--screens' ? null : await cards([BASELINE_PAIR, ...comparedCardPairs])
+const cardFirst = only === '--screens' ? null : await cards(unique([BASELINE_PAIR, ...measuredPairs]))
 const screenFirst = only === '--cards' ? null : await screensOf(measuredPairs)
 const candidates = []
 if (cardFirst) {
   const baseline = new Set(cardFirst.get(BASELINE_PAIR).map(cardKey))
-  for (const pair of comparedCardPairs) {
-    for (const finding of cardFirst.get(pair)) if (!baseline.has(cardKey(finding))) candidates.push({ section: 'cards', pair, ...finding })
+  const reported = (pair, finding) => finding.kind === 'too tall' || (pair !== BASELINE_PAIR && !baseline.has(cardKey(finding)))
+  for (const pair of measuredPairs) {
+    for (const finding of cardFirst.get(pair)) if (reported(pair, finding)) candidates.push({ section: 'cards', pair, ...finding })
   }
 }
 if (screenFirst) {
@@ -343,15 +353,15 @@ const scope = [
   ...(only === '--cards' ? [] : [`${screens.length} screens`])
 ]
 lines.push(`demo:fit  ${scope.join(' · ')}`)
-for (const [section, compared] of [['cards', comparedCardPairs.length], ['screens', measuredPairs.length]]) {
+for (const section of ['cards', 'screens']) {
   if (section === 'cards' ? !cardFirst : !screenFirst) continue
   const entries = grouped.filter((entry) => entry.section === section)
   if (entries.length === 0) {
-    lines.push(`${section.padEnd(8)} everything fits in ${compared} combinations`)
+    lines.push(`${section.padEnd(8)} everything fits in ${measuredPairs.length} combinations`)
     continue
   }
   const affected = unique(entries.flatMap((entry) => entry.pairs)).length
-  lines.push(`${section.padEnd(8)} ${entries.length} to look at, in ${affected} of ${compared} combinations`)
+  lines.push(`${section.padEnd(8)} ${entries.length} to look at, in ${affected} of ${measuredPairs.length} combinations`)
   for (const entry of entries) {
     lines.push('', `  ${entry.where}  ${entry.kind}  ${entry.place}`, `    ${textOf(entry)}`, `    in ${whereIn(entry.pairs)}`, `    shot: ${onCi ? `fit-shots/${entry.shot}.png` : path.join(shotDir, `${entry.shot}.png`)}`)
   }

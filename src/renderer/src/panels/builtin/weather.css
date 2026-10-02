@@ -99,9 +99,12 @@
   height: 235px;
 }
 
+/* The note lies on the sky, and in the focus view of a clear day the bright cirrus behind it took the end of
+   「München · Bayern · Deutschland」 beside the close button, so it carries the glow the heading carries. */
 .wx-issued {
   font-size: 9px;
   color: var(--ui-text-soft);
+  text-shadow: 0 1px 6px var(--ui-glow);
 }
 
 .wx-hero {

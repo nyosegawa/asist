@@ -5,7 +5,9 @@ import { zonedDate, type WeatherCondition, type WeatherData, type WeatherDay, ty
  * though it had been issued at 17:00 on 2026-09-15, not a real forecast. Nagano stands for today, with
  * an observation but no published high and low, and Tokyo for tomorrow, with no observation, so that
  * both shapes of the card appear. Munich stands for the worldwide source, whose card has no landscape,
- * no issue time and no station, and which names the sky by a weather code instead of in words.
+ * no issue time and no station, and which names the sky by a weather code instead of in words. The other
+ * worldwide samples hold a step for every three hours of a day, as a card for tomorrow does and a card for
+ * today asked for in the small hours does, which is the widest the hourly row grows.
  */
 
 const condition = (
@@ -295,6 +297,169 @@ export const DEMO_WEATHER_MUNICH: WeatherData = {
       product: 'forecast',
       issuedAt: null,
       fetchedAt: at('2026-09-15', 18, BERLIN),
+      status: 'ready',
+      url: 'https://api.open-meteo.com/v1/forecast'
+    }
+  ]
+}
+
+/** The chance of rain of each step of a worldwide card, whose periods are its steps. */
+const periodsOf = (hourly: WeatherData['hourly'], percents: number[]): WeatherData['precipitationPeriods'] =>
+  hourly.map((hour, k) => ({ from: hour.at, to: hour.until, percent: percents[k] }))
+
+const MUNICH_TOMORROW_HOURS = hours(
+  '2026-09-16',
+  [
+    [0, 10, MAINLY_CLEAR],
+    [3, 9, MAINLY_CLEAR],
+    [6, 9, PARTLY_CLOUDY],
+    [9, 13, PARTLY_CLOUDY],
+    [12, 16, MAINLY_CLEAR],
+    [15, 17, PARTLY_CLOUDY],
+    [18, 14, MAINLY_CLEAR],
+    [21, 11, MAINLY_CLEAR]
+  ],
+  BERLIN
+)
+/** The worldwide source's card for tomorrow, whose eight steps run through the whole day. */
+export const DEMO_WEATHER_MUNICH_TOMORROW: WeatherData = {
+  ...DEMO_WEATHER_MUNICH,
+  targetDate: '2026-09-16',
+  date: 'tomorrow',
+  observation: null,
+  hourly: MUNICH_TOMORROW_HOURS,
+  precipitationPeriods: periodsOf(MUNICH_TOMORROW_HOURS, [0, 5, 5, 10, 10, 5, 0, 0]),
+  day: MUNICH_WEEK[1]
+}
+
+const MIAMI = '-04:00'
+const MIAMI_HOURS = hours(
+  '2026-09-15',
+  [
+    [1, 79, OVERCAST],
+    [4, 78, OVERCAST],
+    [7, 78, PARTLY_CLOUDY],
+    [10, 84, PARTLY_CLOUDY],
+    [13, 88, MAINLY_CLEAR],
+    [16, 89, SHOWERS],
+    [19, 84, LIGHT_RAIN],
+    [22, 81, OVERCAST]
+  ],
+  MIAMI
+)
+const MIAMI_WEEK = week('2026-09-15', [
+  [SHOWERS, 89, 78, 55],
+  [PARTLY_CLOUDY, 88, 77, 10],
+  [MAINLY_CLEAR, 90, 78, 5],
+  [OVERCAST, 87, 77, 30],
+  [LIGHT_RAIN, 85, 76, 65],
+  [PARTLY_CLOUDY, 87, 76, 15],
+  [MAINLY_CLEAR, 89, 77, 5]
+])
+/**
+ * A card for today asked for in the small hours, in the units the United States reads, so that it holds the
+ * eight steps of a whole day beside the reading of the present.
+ */
+export const DEMO_WEATHER_MIAMI: WeatherData = {
+  location: {
+    source: 'open-meteo',
+    requested: 'Miami',
+    cardId: 'place:miami',
+    timeZone: 'America/New_York',
+    name: 'Miami',
+    admin: 'Florida',
+    country: 'United States',
+    countryCode: 'US',
+    latitude: 25.77427,
+    longitude: -80.19366
+  },
+  targetDate: '2026-09-15',
+  date: 'today',
+  fetchedAt: '2026-09-15T01:40:00-04:00',
+  units: { temperature: '°F', wind: 'mph' },
+  observation: {
+    at: '2026-09-15T01:30:00-04:00',
+    station: null,
+    temperature: 79.3,
+    humidity: 84,
+    wind: { speed: 7, direction: 200 }
+  },
+  hourly: MIAMI_HOURS,
+  temperaturePoint: null,
+  precipitationPeriods: periodsOf(MIAMI_HOURS, [0, 0, 5, 10, 20, 55, 40, 15]),
+  day: MIAMI_WEEK[0],
+  daily: MIAMI_WEEK,
+  sources: [
+    {
+      product: 'forecast',
+      issuedAt: null,
+      fetchedAt: '2026-09-15T01:40:00-04:00',
+      status: 'ready',
+      url: 'https://api.open-meteo.com/v1/forecast'
+    }
+  ]
+}
+
+const LORD_HOWE_STARTS = [
+  '2026-10-04T00:00:00+10:30',
+  ...[3, 6, 9, 12, 15, 18, 21].map((hour) => `2026-10-04T${String(hour).padStart(2, '0')}:30:00+11:00`)
+]
+const LORD_HOWE_ENDS = [...LORD_HOWE_STARTS.slice(1), '2026-10-05T00:00:00+11:00']
+const LORD_HOWE_HOURS: WeatherData['hourly'] = (
+  [
+    [18.5, OVERCAST],
+    [18.3, OVERCAST],
+    [18.3, OVERCAST],
+    [18.4, PARTLY_CLOUDY],
+    [18.9, MAINLY_CLEAR],
+    [19, MAINLY_CLEAR],
+    [19.2, OVERCAST],
+    [19.1, PARTLY_CLOUDY]
+  ] as const
+).map(([temperature, sky], k) => ({ at: LORD_HOWE_STARTS[k], until: LORD_HOWE_ENDS[k], temperature, condition: sky }))
+const LORD_HOWE_WEEK = week('2026-10-03', [
+  [LIGHT_RAIN, 20, 19, 6],
+  [OVERCAST, 19, 18, 2],
+  [OVERCAST, 20, 18, 6],
+  [LIGHT_RAIN, 20, 19, 76],
+  [SHOWERS, 20, 17, 84],
+  [LIGHT_RAIN, 19, 16, 21],
+  [MAINLY_CLEAR, 20, 19, 35]
+])
+/**
+ * Tomorrow at Lord Howe Island on the day its clock goes forward by half an hour, from an answer written in
+ * +10:30 the day before, so that from 02:00 its steps fall on the half hours of the clock and the card writes
+ * its times with minutes. It keeps its day, since which of its times are off the hour depends on the offset
+ * the island keeps on the day, and its place has the longest name of the samples.
+ */
+export const DEMO_WEATHER_LORD_HOWE: WeatherData = {
+  location: {
+    source: 'open-meteo',
+    requested: 'Lord Howe Island',
+    cardId: 'place:lord howe island',
+    timeZone: 'Australia/Lord_Howe',
+    name: 'Lord Howe Island',
+    admin: 'New South Wales',
+    country: 'Australia',
+    countryCode: 'AU',
+    latitude: -31.53103,
+    longitude: 159.0683
+  },
+  targetDate: '2026-10-04',
+  date: 'tomorrow',
+  fetchedAt: '2026-10-03T12:00:00+10:30',
+  units: { temperature: '°C', wind: 'km/h' },
+  observation: null,
+  hourly: LORD_HOWE_HOURS,
+  temperaturePoint: null,
+  precipitationPeriods: periodsOf(LORD_HOWE_HOURS, [0, 1, 2, 1, 0, 1, 2, 1]),
+  day: LORD_HOWE_WEEK[1],
+  daily: LORD_HOWE_WEEK,
+  sources: [
+    {
+      product: 'forecast',
+      issuedAt: null,
+      fetchedAt: '2026-10-03T12:00:00+10:30',
       status: 'ready',
       url: 'https://api.open-meteo.com/v1/forecast'
     }

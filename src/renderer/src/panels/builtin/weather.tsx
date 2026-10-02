@@ -151,7 +151,11 @@ function Issued({ spec }: CardContext): React.JSX.Element {
   const w = weatherOf(spec)
   if (w.location.source === 'open-meteo') {
     const place = [w.location.name, w.location.admin, w.location.country].filter(Boolean)
-    return <span className="wx-issued">{place.join(' · ')}</span>
+    return (
+      <span className="wx-issued" title={place.join(' · ')}>
+        {place.join(' · ')}
+      </span>
+    )
   }
   const issued = w.sources.find((s) => s.product === 'forecast')?.issuedAt
   return (
@@ -253,13 +257,23 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
                     : []
                 )
                 if (!indexes.length) return null
+                // A period that is the step of its one column, as every period of the worldwide source is,
+                // would repeat the time above it, and in a 43px column its range broke onto a second line
+                // that made a card of eight steps too tall at m (587px in 562px in English, 2026-10-03).
+                // Only a longer period names its range: the agency's six hours over two columns, or over
+                // the one column left of them today.
+                const column = hourly[indexes[0]]
+                const ownColumn =
+                  indexes.length === 1 &&
+                  Date.parse(column.at) === Date.parse(p.from) &&
+                  Date.parse(column.until) === Date.parse(p.to)
                 return (
                   <div
                     className="wx-pop"
                     key={p.from}
                     style={{ gridColumn: `${indexes[0] + 1} / span ${indexes.length}`, gridRow: 2 }}
                   >
-                    <span>{rangeLabel(p.from, p.to, zone, minutes, t)}</span>
+                    {!ownColumn && <span>{rangeLabel(p.from, p.to, zone, minutes, t)}</span>}
                     <b>{t('cardsWeather.hourly.rain', { percent: number(p.percent) })}</b>
                   </div>
                 )

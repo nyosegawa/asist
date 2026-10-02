@@ -13,7 +13,7 @@ import { FocusOverlay } from '@/ui/FocusOverlay'
 import { CARD_SIZE_MIN_HEIGHT, cardSizeFor } from '@/panels/shell/card'
 import { OVERFLOW_SETTLE_MS } from '@/panels/shell/PanelContent'
 import type { WeatherData } from '@shared/weather'
-import { DEMO_WEATHER_MUNICH, DEMO_WEATHER_NAGANO, DEMO_WEATHER_TOKYO } from '@/demo/fixtures/weather'
+import { DEMO_WEATHER_MUNICH, DEMO_WEATHER_MUNICH_TOMORROW, DEMO_WEATHER_NAGANO, DEMO_WEATHER_TOKYO } from '@/demo/fixtures/weather'
 
 const t = createTranslator('ja-JP')
 
@@ -249,18 +249,39 @@ describe('the day a weather card names', () => {
 })
 
 describe('the hours a weather card shows', () => {
-  it('ends the last period at 24 on the day before a midnight the clocks skip, where the day ends at 1:00', async () => {
+  const rain = (percent: number): string => t('cardsWeather.hourly.rain', { percent })
+  const periodTexts = (dock: HTMLElement): string[] => [...dock.querySelectorAll('.wx-pop')].map((cell) => cell.textContent ?? '')
+
+  it('shows a period that is the step of its one column by its chance of rain alone, as every worldwide period is', async () => {
+    const dock = await render([weather({ key: 'weather:place:munich:2026-09-16', props: { location: 'Munich', date: 'tomorrow', weather: DEMO_WEATHER_MUNICH_TOMORROW } })])
+    expect(periodTexts(dock)).toEqual(DEMO_WEATHER_MUNICH_TOMORROW.precipitationPeriods.map((period) => rain(period.percent!)))
+  })
+
+  it('names the range of a period longer than its column, over two columns or over the one left of them today', async () => {
+    const range = t('cardsWeather.hourly.range', { from: 18, to: 24 })
+    const both = await render([weather()])
+    expect(periodTexts(both)).toEqual([range + rain(60)])
+    // At 22:00 only the step of 21:00 is left of the period from 18:00 to 24:00.
+    const late: WeatherData = { ...DEMO_WEATHER_NAGANO, hourly: DEMO_WEATHER_NAGANO.hourly.slice(1) }
+    const one = await render([weather({ props: { location: '長野県', date: 'today', weather: late } })])
+    expect(periodTexts(one)).toEqual([range + rain(60)])
+  })
+
+  it('ends a longer period at 24 on the day before a midnight the clocks skip, where the day ends at 1:00', async () => {
     // Santiago's clocks went from 2025-09-07 00:00 to 01:00, so its 2025-09-06 ended at 04:00 UTC.
-    const end = { from: '2025-09-07T01:00:00.000Z', to: '2025-09-07T04:00:00.000Z' }
+    const steps = [
+      { at: '2025-09-06T22:00:00.000Z', until: '2025-09-07T01:00:00.000Z', temperature: 11, condition: null },
+      { at: '2025-09-07T01:00:00.000Z', until: '2025-09-07T04:00:00.000Z', temperature: 9, condition: null }
+    ]
     const santiago: WeatherData = {
       ...DEMO_WEATHER_MUNICH,
       location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'America/Santiago' },
       targetDate: '2025-09-06',
-      hourly: [{ at: end.from, until: end.to, temperature: 9, condition: null }],
-      precipitationPeriods: [{ ...end, percent: 2 }]
+      hourly: steps,
+      precipitationPeriods: [{ from: steps[0].at, to: steps[1].until, percent: 2 }]
     }
     const dock = await render([weather({ key: 'weather:place:santiago:2025-09-06', props: { location: 'Santiago', date: 'today', weather: santiago } })])
-    expect(dock.querySelector('.wx-pop span')?.textContent).toBe(t('cardsWeather.hourly.range', { from: 21, to: 24 }))
+    expect(periodTexts(dock)).toEqual([t('cardsWeather.hourly.range', { from: 18, to: 24 }) + rain(2)])
   })
 
   // Lord Howe Island's clock went back from +11:00 to +10:30 on 2026-04-05 at 02:00 and goes forward again on
@@ -281,19 +302,35 @@ describe('the hours a weather card shows', () => {
       precipitationPeriods: starts.map((from, k) => ({ from, to: ends[k], percent: 1 }))
     }
     const dock = await render([weather({ key: `weather:place:lord howe island:${date}`, props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
-    // Each time as the clock of the island reads it, with the end of the day as 24:00.
-    const time = (at: string): string => {
-      const [hour, minute] = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Lord_Howe', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })
-        .format(new Date(at))
-        .split(':')
-      return t('cardsWeather.hourly.time', { hour: at === midnight ? 24 : Number(hour), minute })
+    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual(starts.map((at) => lordHoweTime(at, midnight)))
+  })
+
+  it('writes the range of a longer period with minutes in a row whose times have them', async () => {
+    const steps = ['2026-10-05T18:30:00+11:00', '2026-10-05T21:30:00+11:00']
+    const midnight = '2026-10-06T00:00:00+11:00'
+    const lordHowe: WeatherData = {
+      ...DEMO_WEATHER_MUNICH,
+      location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'Australia/Lord_Howe' },
+      targetDate: '2026-10-05',
+      date: 'tomorrow',
+      observation: null,
+      hourly: steps.map((at, k) => ({ at, until: steps[k + 1] ?? midnight, temperature: 18, condition: null })),
+      precipitationPeriods: [{ from: steps[0], to: midnight, percent: 4 }]
     }
-    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual(starts.map(time))
-    expect([...dock.querySelectorAll('.wx-pop span')].map((label) => label.textContent)).toEqual(
-      starts.map((from, k) => t('cardsWeather.hourly.timeRange', { from: time(from), to: time(ends[k]) }))
-    )
+    const dock = await render([weather({ key: 'weather:place:lord howe island:2026-10-05', props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
+    expect(periodTexts(dock)).toEqual([
+      t('cardsWeather.hourly.timeRange', { from: lordHoweTime(steps[0], midnight), to: lordHoweTime(midnight, midnight) }) + rain(4)
+    ])
   })
 })
+
+/** A time as the clock of Lord Howe Island reads it, written with its minutes, with the midnight given as 24:00. */
+function lordHoweTime(at: string, midnight: string): string {
+  const [hour, minute] = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Lord_Howe', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })
+    .format(new Date(at))
+    .split(':')
+  return t('cardsWeather.hourly.time', { hour: at === midnight ? 24 : Number(hour), minute })
+}
 
 describe('a card whose data could not be fetched', () => {
   it('words the error the main process sent in the language of the interface', async () => {
