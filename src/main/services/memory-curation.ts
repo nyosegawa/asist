@@ -1,4 +1,4 @@
-import { isJobExecuting, isJobTerminal } from '@shared/job-status'
+import { isJobTerminal } from '@shared/job-status'
 import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -45,22 +45,26 @@ export function lastFailure(): CurationState['lastFailure'] {
   return readState().lastFailure
 }
 
-/**
- * A curation job that is still running, or that ended well and is still to be merged or to have its day
- * saved. A job that failed never reaches the memory, so it holds no later curation back even while its
- * worktree waits for a removal that failed.
- */
+/** A curation job that can still bring its changes into the memory, which holds every later curation back. */
 export function pendingJob(): AgentJob | null {
-  return (
-    agentRunner
-      .list()
-      .find(
-        (job) =>
-          job.memoryCuration && !job.memoryCuration.applied &&
-          (isJobExecuting(job.status) || (job.status === 'done' && ['pending', 'merged', 'unchanged'].includes(job.mergeState ?? '')))
-      ) ?? null
-  )
+  return agentRunner.list().find((job) => job.memoryCuration && !job.memoryCuration.applied && reachesMemory(job)) ?? null
 }
+
+/**
+ * Whether the job can still bring its changes into the memory: while its Agent runs, and once it ended well
+ * until its merge and its day are done. A job that stops ends cancelled or in error, and neither is merged. A
+ * job refused by the check before its merge is discarded, and when that removal fails halfway git counts what
+ * is left of its worktree as none, so that the job is neither checked again nor waited for.
+ */
+function reachesMemory(job: AgentJob): boolean {
+  if (job.status === 'running') return true
+  if (job.status !== 'done') return false
+  if (job.mergeState === 'merged' || job.mergeState === 'unchanged') return true
+  return job.mergeState === 'pending' && worktreeIntact(job.worktree!.dir)
+}
+
+const worktreeIntact = (dir: string): boolean =>
+  fs.existsSync(dir) && git.toplevel(dir) === git.resolvedAsFarAsExists(dir)
 
 const worktreeRoot = (): string => path.join(app.getPath('userData'), 'memory-worktrees')
 
@@ -216,6 +220,7 @@ function processJob(job: AgentJob): void {
   processing.add(job.id)
   try {
     if (job.mergeState === 'pending') {
+      if (!reachesMemory(job)) return
       const checked = assertInsideMemory(job)
       const merged = readMerged(job, checked.commit)
       if (merged !== null && merged.errors.length > 0) {
@@ -260,10 +265,6 @@ function fail(job: AgentJob, message: string): void {
   discardUnmerged(job)
 }
 
-/** A job that ended and whose changes will never be merged: its Agent failed or was stopped, or its merge could not be made. */
-const endedUnmerged = (job: AgentJob): boolean =>
-  isJobTerminal(job.status) && (job.status !== 'done' || job.mergeState === 'conflict' || job.mergeState === 'error')
-
 /**
  * Throws away the changes of a job that were never merged, because nobody sees the job to decide on it; the
  * same days are curated again. A removal that fails, as on Windows while a scanner holds a file in the
@@ -281,15 +282,27 @@ function discardUnmerged(job: AgentJob): void {
 
 /**
  * A curation job the Agent ended without success, or whose merge could not be made. Only the app cancels a
- * curation, as it quits, which says nothing about the curation itself: the changes are discarded without a
+ * curation, as it quits, which alone says nothing about the curation: its changes are discarded without a
  * failure, so that the next start curates the same days rather than waiting for the next midnight.
  */
 function observeFailure(job: AgentJob): void {
-  if (!job.memoryCuration || job.memoryCuration.applied || processing.has(job.id)) return
-  if (job.status === 'cancelled') discardUnmerged(job)
-  else if (job.status === 'error') {
-    if (job.mergeState !== 'discarded') fail(job, job.summary ?? job.status)
-  } else if (job.mergeState === 'conflict' || job.mergeState === 'error') fail(job, job.summary ?? job.mergeState)
+  if (!job.memoryCuration || job.memoryCuration.applied || processing.has(job.id) || job.mergeState === 'discarded') return
+  if (job.status === 'cancelled') {
+    if (quitAfterQuit(job)) fail(job, t('memory.curation.quitTwice'))
+    else discardUnmerged(job)
+  } else if (job.status === 'error') fail(job, job.summary ?? job.status)
+  else if (job.mergeState === 'conflict' || job.mergeState === 'error') fail(job, job.summary ?? job.mergeState)
+}
+
+/**
+ * Whether the curation before this one was stopped by a quit as well, which the job history tells. A
+ * curation that cannot end by itself, such as a CLI waiting for an answer, runs until the app quits; tried
+ * again at every start, it would spend the Agent's usage each time and give no reason. The second quit in a
+ * row is therefore a failure, and the next curation waits for the next day.
+ */
+function quitAfterQuit(job: AgentJob): boolean {
+  const before = agentRunner.list().find((other) => other.memoryCuration && other.startedAt < job.startedAt)
+  return before?.status === 'cancelled'
 }
 
 /**
@@ -322,16 +335,13 @@ function startIfDue(): void {
 
 /**
  * Resumes from the saved jobs. A job that was already merged is not merged again and continues from the
- * reindex. A job that ended without success has its worktree discarded where an earlier removal failed. A
- * stopping job is one the app stopped, as it quit or after a restart, where the Agent left from before is
- * confirmed gone first; a cancel asks again where that check could not tell, as it does for a job the user sees.
+ * reindex. A job that ended and will never reach the memory has its worktree discarded where an earlier
+ * removal failed.
  */
 export function reconcileMemoryCuration(): void {
   for (const job of agentRunner.list()) {
     processJob(job)
-    if (!job.memoryCuration || job.memoryCuration.applied) continue
-    if (endedUnmerged(job)) discardUnmerged(job)
-    else if (job.status === 'stopping') agentRunner.cancel(job.id)
+    if (job.memoryCuration && !job.memoryCuration.applied && isJobTerminal(job.status) && !reachesMemory(job)) discardUnmerged(job)
   }
 }
 

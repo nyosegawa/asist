@@ -246,15 +246,38 @@ describe('MemoryIndex over memories in several languages', () => {
     expect(ids('개')).toEqual(['ko-dog'])
   })
 
+  it('matches as a prefix only a recall keyword of one character that stands alone, not one beside a number or a Latin word', () => {
+    index.rebuild([
+      ...MULTI,
+      page('ja-gym', 'pages/ジム.md', 'ジム', '要約', '月曜日はジムに行く。人が多い。'),
+      page('ja-errand', 'pages/用事.md', '用事', '要約', '用事は昼に済ませる。')
+    ])
+    expect(ids('9月1日')).toEqual([])
+    expect(ids('3人')).toEqual([])
+    expect(ids('iPhone用')).toEqual([])
+    expect(ids('月 人')[0]).toBe('ja-gym')
+  })
+
   it('injects a memory the utterance names and nothing for an utterance that only shares a common word', () => {
     expect(ids('I think I am allergic to walnuts', { mode: 'utterance' })).toEqual(['en-allergy'])
     expect(ids('that was a really long week and I want to sleep', { mode: 'utterance' })).toEqual([])
   })
 
-  it('reads the role user.md opens with as no name of a page, so that an utterance saying those words does not inject it', () => {
-    index.rebuild([...MULTI, page('en-user', 'user.md', 'The user', 'Attributes', 'Lives in Lisbon and works as a nurse.')])
+  it('reads the role user.md and me.md open with as no name of a page, so that an utterance saying those words does not inject them', () => {
+    index.rebuild([
+      ...MULTI,
+      page('en-user', 'user.md', 'The user', 'Attributes', 'Lives in Lisbon and works as a nurse.'),
+      page('en-me', 'me.md', 'About me', 'Who I am', 'A calm assistant who keeps replies short.'),
+      page('ja-me', 'me.md', '私について', '口調', '語尾は柔らかく、冗談は控えめ。')
+    ])
     expect(ids('where did I put the user manual', { mode: 'utterance' })).toEqual([])
+    expect(ids('what about me, can I come too', { mode: 'utterance' })).toEqual([])
+    expect(ids('ユーザー数が増えた', { mode: 'utterance' })).toEqual([])
+    expect(ids('私について話すね', { mode: 'utterance' })).toEqual([])
     expect(index.search('I should take Mugi to the vet', { mode: 'utterance' })[0]).toMatchObject({ record: { id: 'en-cat' }, exact: true })
+    // Their headings and text still find them.
+    expect(ids('住まい')).toEqual(['u5'])
+    expect(ids('口調')).toEqual(['ja-me'])
   })
 
   it('rebuilds every token when the schema version on disk is not the current one', () => {
@@ -268,6 +291,20 @@ describe('MemoryIndex over memories in several languages', () => {
     index.rebuild(MULTI)
     expect(index.count).toBe(MULTI.length)
     expect(ids('walnuts')).toEqual(['en-allergy'])
+  })
+
+  it('builds the text search anew on every rebuild, so that damage inside its data, which no rebuild reads, fails no search', () => {
+    const file = path.join(dir, 'index.db')
+    index.rebuild(Array.from({ length: 300 }, (_, n) => page(`p${n}`, `pages/p${n}.md`, `p${n}`, 'Summary', `Page ${n} talks about the river and walnut ${n}.`)))
+    index.close()
+    // What bit rot inside a page does: the bytes of the search data change while the b-tree that holds them stays intact.
+    const db = new DatabaseSync(file)
+    db.exec("UPDATE units_fts_data SET block = CAST(replace(hex(block), '0', 'F') AS BLOB) WHERE id > 10")
+    db.close()
+    index = new MemoryIndex(file)
+    index.rebuild(MULTI)
+    expect(ids('walnuts')).toEqual(['en-allergy'])
+    expect(ids('I think I am allergic to walnuts', { mode: 'utterance' })).toEqual(['en-allergy'])
   })
 
   it('builds the index anew from the files when SQLite finds its file damaged', () => {
