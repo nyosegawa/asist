@@ -1,7 +1,6 @@
 import { isHtmlPage, tooLargeToRead, type FileItem, type FileKind } from '@shared/files'
 import { CodeViewer } from './CodeViewer'
 import { DataViewer } from './DataViewer'
-import { ArchiveViewer } from './ArchiveViewer'
 import { AudioViewer } from './AudioViewer'
 import { DirectoryViewer } from './DirectoryViewer'
 import { DocxViewer } from './DocxViewer'
@@ -32,7 +31,6 @@ const VIEWERS: Partial<Record<FileKind, Viewer>> = {
   notebook: NotebookViewer,
   video: VideoViewer,
   audio: AudioViewer,
-  archive: ArchiveViewer,
   docx: DocxViewer,
   xlsx: XlsxViewer,
   pptx: PptxViewer
