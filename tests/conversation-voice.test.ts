@@ -794,23 +794,30 @@ describe('the aizuchi and the bridge phrase, each turned on and off by its own s
     for (const [input] of bridgePlan.mock.calls as Array<[{ afterAizuchi?: boolean }]>) expect(input.afterAizuchi).toBe(afterAizuchi)
   })
 
-  it.each([0, 1])('tells the look-ahead of an aizuchi exactly when one opens the turn, with the aizuchi frequency at %s', async (rate) => {
-    mocks.settings.aizuchiRate = rate
+  it.each([
+    ['opens', 0.1],
+    ['does not open', 0.9]
+  ] as const)('tells the look-ahead of an aizuchi exactly when one opens the turn, here one that %s it', async (_case, first) => {
+    mocks.settings.aizuchiRate = 0.5
     // The opening takes its clip from the bank itself, here one that has a clip for the classification.
     const bank = await vi.importActual<typeof import('@/voice/aizuchi-bank')>('@/voice/aizuchi-bank')
     vi.stubGlobal('window', { api: { aizuchiBank: async () => [{ text: 'なるほど。', category: 'understand', weight: 1, audio: 'eA==' }] } })
     await bank.loadAizuchiBank()
     const pickAizuchi = vi.mocked((await import('@/voice/aizuchi-bank')).pickAizuchi)
     pickAizuchi.mockImplementation(bank.pickAizuchi)
+    // Every draw after the first comes out the other way, so a second draw for the same utterance disagrees with the first.
+    let draws = 0
+    const random = vi.spyOn(Math, 'random').mockImplementation(() => (draws++ % 2 === 0 ? first : 1 - first))
     try {
       const { bridgePlan, turnStart } = await speakOnce(japanese, '会議の件ですね。')
 
       const opened = playedRoles().includes('aizuchi')
-      expect(opened).toBe(rate === 1)
+      expect(opened).toBe(first < 0.5)
       expect(bridgePlan).toHaveBeenCalled()
       for (const [input] of bridgePlan.mock.calls as Array<[{ afterAizuchi?: boolean }]>) expect(input.afterAizuchi).toBe(opened)
       expect(startOptions(turnStart).aizuchi !== undefined).toBe(opened)
     } finally {
+      random.mockRestore()
       pickAizuchi.mockReset()
     }
   })

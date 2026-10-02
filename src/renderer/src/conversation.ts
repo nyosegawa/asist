@@ -49,6 +49,13 @@ interface OpeningPolicy {
   /**
    * The utterance being captured may open with an aizuchi: the classifier runs, and the frequency drew
    * one when the capture began. Its classification at speech end picks the clip, or none.
+   *
+   * The look-ahead is told this as afterAizuchi while the user speaks, and the opening at speech end can
+   * still leave the aizuchi out. When a listening aizuchi played just before speech end, the note still
+   * holds, because that aizuchi sounded right before the phrase. A classification too unsure to pick a
+   * clip, or a category without one, leaves a phrase written for an aizuchi that does not play. The
+   * look-ahead is not asked again at speech end, which would delay every bridge phrase, and the phrase is
+   * not dropped, which would lose it.
    */
   aizuchi: boolean
   /** The bridge phrase may play, and the look-ahead that words it runs on the partial transcripts. */
