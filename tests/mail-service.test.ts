@@ -712,7 +712,7 @@ describe('accounts', () => {
     expect(failure).toEqual(new Error(errorText('mail.errors.account.connectFailed', { reason: 'read ECONNRESET' })))
   })
 
-  it('refuses an account past the limit before connecting, and stores its password only once the settings hold the account', async () => {
+  it('refuses an account past the limit before connecting, and leaves neither its password nor the account when one of the two writes fails', async () => {
     const f = await setup({ provider: 'icloud' })
     const input = { label: '個人', email: 'other@example.com', name: '', provider: 'icloud' as const, imap: account().imap, smtp: account().smtp, password: 'pw2' }
     const full = Array.from({ length: MAX_MAIL_ACCOUNTS - 1 }, (_, index) => account({ id: `more-${index}`, email: `more${index}@example.com` }))
@@ -731,6 +731,14 @@ describe('accounts', () => {
     })
     await expect(f.service.addAccount(input)).rejects.toThrow('EACCES')
     expect(f.secrets.data.has('new-id')).toBe(false)
+    // A password that cannot be stored keeps the account out of the settings, so it can be added again.
+    vi.spyOn(f.secrets, 'set').mockImplementationOnce(() => {
+      throw new Error(errorText('mail.errors.account.encryptionUnavailable'))
+    })
+    await expect(f.service.addAccount(input)).rejects.toThrow(errorText('mail.errors.account.encryptionUnavailable'))
+    expect(f.settings()).toMatchObject({ accounts: [{ id: 'a1' }], defaultAccountId: 'a1' })
+    await expect(f.service.addAccount(input)).resolves.toMatchObject({ id: 'new-id' })
+    expect(f.secrets.data.get('new-id')).toBe('pw2')
     await f.service.stop()
   })
 

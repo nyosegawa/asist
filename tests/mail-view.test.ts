@@ -23,6 +23,7 @@ const demoList = async (query: MailListQuery) => {
     .sort((a, b) => b.date - a.date)
   return { messages: list, total: list.length, unread: list.filter((m) => m.unread).length }
 }
+const draftUpdate = async (id: string, patch: Record<string, unknown>) => ({ ...DEMO_MAIL_DRAFTS.find((d) => d.id === id)!, ...patch })
 const api = {
   mailList: vi.fn(demoList),
   mailThread: vi.fn(async (accountId: string, threadId: string) => DEMO_MAIL_MESSAGES.filter((m) => m.accountId === accountId && m.threadId === threadId).sort((a, b) => a.date - b.date)),
@@ -34,7 +35,7 @@ const api = {
   mailSyncNow: vi.fn(async () => {}),
   mailDraftList: vi.fn(async () => DEMO_MAIL_DRAFTS),
   mailDraftCreate: vi.fn(async () => DEMO_MAIL_DRAFTS[0]),
-  mailDraftUpdate: vi.fn(async (id: string, patch: Record<string, unknown>) => ({ ...DEMO_MAIL_DRAFTS.find((d) => d.id === id)!, ...patch })),
+  mailDraftUpdate: vi.fn(draftUpdate),
   mailDraftRemove: vi.fn(async () => {}),
   mailDraftSend: vi.fn(async () => ({ saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '田中' }) }))
 }
@@ -47,6 +48,7 @@ beforeEach(() => {
   vi.stubGlobal('window', Object.assign(window, { api }))
   for (const fn of Object.values(api)) fn.mockClear()
   api.mailList.mockImplementation(demoList)
+  api.mailDraftUpdate.mockImplementation(draftUpdate)
   useSettingsStore.setState({
     settings: { mail: { enabled: true, accounts: DEMO_MAIL_ACCOUNTS, defaultAccountId: 'demo-work', syncDays: 30, notifyNewMail: true } } as AppSettings
   })
@@ -485,6 +487,98 @@ describe('composing and Escape', () => {
     api.mailDraftUpdate.mockRejectedValueOnce(new Error(errorText('mail.errors.form.badAddress', { text: 'suzuki@' })))
     await typeAndClose(`${draft.body}\n追伸2`)
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'error', title: t('mail.composer.draftSaveFailed'), body: t('mail.errors.form.badAddress', { text: 'suzuki@' }) })
+  })
+
+  it('saves nothing more of a draft that is discarded or sent right after typing into it', async () => {
+    // Main tells the renderer that the draft is gone before the removal or the send returns.
+    const gone = async (id: string): Promise<void> => {
+      useMailStore.getState().applyDrafts(useMailStore.getState().drafts.filter((draft) => draft.id !== id))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    api.mailDraftRemove.mockImplementationOnce(gone)
+    api.mailDraftSend.mockImplementationOnce(async (id: string) => {
+      await gone(id)
+      return { saved: true, operation: 'send', id: '<x>', summary: t('mail.result.send', { recipients: '採用チーム' }) }
+    })
+    const view = await render()
+    const typeAndPress = async (id: string, button: string): Promise<void> => {
+      await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: id }))
+      await act(async () => setValue(view.querySelector(`.ml-composer [aria-label="${t('mail.fields.body')}"]`)!, '書き直しました。'))
+      await act(async () => view.querySelector<HTMLButtonElement>(button)!.click())
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+      expect(view.querySelector('.ml-composer')).toBeNull()
+    }
+    await typeAndPress(DEMO_MAIL_DRAFTS[0].id, '.ml-composer .cal-btn.is-danger')
+    expect(api.mailDraftUpdate).not.toHaveBeenCalled()
+    // Sending saves the change first, and that one save is all.
+    await typeAndPress(DEMO_MAIL_DRAFTS[1].id, '.ml-composer .cal-primary')
+    expect(api.mailDraftSend).toHaveBeenCalledWith(DEMO_MAIL_DRAFTS[1].id)
+    expect(api.mailDraftUpdate).toHaveBeenCalledOnce()
+    expect(useToastStore.getState().toasts.filter((toast) => toast.kind === 'error')).toEqual([])
+  })
+
+  it('asks before a draft whose change main refused to save is closed or left, and saves nothing more once the user gives the change up', async () => {
+    api.mailDraftUpdate.mockRejectedValue(new Error(errorText('mail.errors.form.badAddress', { text: 'suzuki@' })))
+    const view = await render()
+    await act(async () => useViewStore.getState().openApp({ app: 'mail', draftId: DEMO_MAIL_DRAFTS[0].id }))
+    const field = (label: string) => view.querySelector<HTMLInputElement & HTMLTextAreaElement>(`.ml-composer [aria-label="${label}"]`)
+    await act(async () => setValue(field('Cc')!, 'suzuki@'))
+    await act(async () => setValue(field(t('mail.fields.body'))!, '追記しました。'))
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 700)))
+    expect(view.querySelector('.ml-composer [role="alert"]')?.textContent).toBe(t('mail.errors.form.badAddress', { text: 'suzuki@' }))
+    const leaves: Array<() => void> = [
+      () => view.querySelector<HTMLButtonElement>(`.ml-composer [aria-label="${t('common.close')}"]`)!.click(),
+      () => field(t('mail.fields.body'))!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })),
+      () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click(),
+      () => void useViewStore.getState().openApp({ app: 'notes' })
+    ]
+    for (const leave of leaves) {
+      await act(async () => leave())
+      expect(useConfirmStore.getState().queue).toHaveLength(1)
+      await act(async () => answer(false))
+      expect(field(t('mail.fields.body'))?.value).toBe('追記しました。')
+    }
+    const saves = api.mailDraftUpdate.mock.calls.length
+    await act(async () => view.querySelector<HTMLButtonElement>(`.ml-composer [aria-label="${t('common.close')}"]`)!.click())
+    await act(async () => answer(true))
+    expect(view.querySelector('.ml-composer')).toBeNull()
+    expect(api.mailDraftUpdate.mock.calls.length).toBe(saves)
+    expect(useToastStore.getState().toasts.filter((toast) => toast.kind === 'error')).toEqual([])
+  })
+
+  it('asks before a typed reply is thrown away by Escape, cancel, closing the reader or leaving it, and keeps it while the user declines', async () => {
+    const reply = '火曜 14時でお願いします。'
+    const view = await render()
+    await act(async () => view.querySelector<HTMLButtonElement>('.ml-row-main')!.click())
+    await act(async () => {})
+    const reader = (): Element => view.querySelector('.ml-reader')!
+    // Every message of the thread is opened, so that another one offers its own reply.
+    for (const head of reader().querySelectorAll<HTMLButtonElement>('.ml-message:not([data-open]) .ml-message-head')) await act(async () => head.click())
+    const replyTo = (message: Element): HTMLButtonElement => [...message.querySelectorAll<HTMLButtonElement>('.ml-actions .cal-btn')].find((el) => el.textContent?.trim() === t('mail.reply'))!
+    await act(async () => replyTo(reader().querySelector('.ml-message:last-child')!).click())
+    const textarea = (): HTMLTextAreaElement | null => view.querySelector<HTMLTextAreaElement>('.ml-reply textarea')
+    await act(async () => setValue(textarea()!, reply))
+    const leaves: Array<() => void> = [
+      () => textarea()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })),
+      () => [...view.querySelectorAll<HTMLButtonElement>('.ml-reply button')].find((el) => el.textContent === t('common.cancel'))!.click(),
+      () => replyTo(reader().querySelector('.ml-message:first-child')!).click(),
+      () => reader().querySelector<HTMLButtonElement>(`.ml-reader-head [aria-label="${t('common.close')}"]`)!.click(),
+      () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })),
+      () => view.querySelectorAll<HTMLButtonElement>('.ml-row-main')[1].click(),
+      () => [...view.querySelectorAll<HTMLButtonElement>('.ml-view')].find((el) => el.textContent?.includes(t('mail.boxes.sent')))!.click(),
+      () => void useViewStore.getState().openApp({ app: 'notes' })
+    ]
+    for (const leave of leaves) {
+      await act(async () => leave())
+      expect(useConfirmStore.getState().queue).toHaveLength(1)
+      await act(async () => answer(false))
+      expect(textarea()?.value).toBe(reply)
+      expect(useViewStore.getState().open).toMatchObject({ app: 'mail', pane: { kind: 'message' } })
+    }
+    await act(async () => textarea()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    await act(async () => answer(true))
+    expect(textarea()).toBeNull()
+    expect(view.querySelector('.ml-reader')).not.toBeNull()
   })
 
   it('closes the reader on the first Escape and the screen on the second', async () => {

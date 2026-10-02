@@ -3,6 +3,7 @@ import { Archive, ChevronDown, ChevronRight, CornerUpLeft, MailOpen, Paperclip, 
 import { errorText } from '@shared/i18n/error-text'
 import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailMessage, type MailReply } from '@shared/mail'
 import { useMailStore, useToastStore } from '@/state/stores'
+import { useAskBeforeDiscard } from './ask-before-discard'
 import { fullTime, sizeLabel } from './format'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
@@ -12,7 +13,8 @@ import { useT } from '@/i18n'
  * expanded. That message carries reply, reply to all, archive, trash, star and mark as unread. A
  * reply is written below it in the same pane, and pressing send is itself the approval, so no
  * confirm sheet appears; the form shows the To and Cc of the reply main settled, and that same reply
- * is what is sent. A message that is unread when it opens is marked as read.
+ * is what is sent. A typed reply lives here alone, so closing the form or leaving the reader asks
+ * first. A message that is unread when it opens is marked as read.
  */
 
 interface Loaded {
@@ -52,6 +54,10 @@ export function Reader({
   const marked = useRef<string | null>(null)
   const settling = useRef(0)
   const toast = useToastStore((s) => s.push)
+  const discardReply = useAskBeforeDiscard(Boolean(reply?.text.trim()), () => setReply(null))
+  const close = async (): Promise<void> => {
+    if (await discardReply()) onClose()
+  }
 
   useEffect(() => {
     let active = true
@@ -115,7 +121,9 @@ export function Reader({
    * Opens the reply form, or switches it between reply and reply-all while keeping what was typed. Only
    * the answer to the latest request is taken, so the form never shows the recipients of the other mode.
    */
-  const openReply = (target: string, mode: ReplyMode): void => {
+  const openReply = async (target: string, mode: ReplyMode): Promise<void> => {
+    // A reply to another message starts empty, so the one typed is given up first.
+    if (reply && reply.id !== target && !(await discardReply())) return
     const request = ++settling.current
     setReply((current) => ({ id: target, mode, text: current?.id === target ? current.text : '', settled: null, error: '' }))
     const settle = (patch: Partial<ReplyForm>): void => setReply((current) => (current && settling.current === request ? { ...current, ...patch } : current))
@@ -143,7 +151,7 @@ export function Reader({
     return (
       <div className="ml-reader">
         <div className="ml-reader-head">
-          <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={onClose}>
+          <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={() => void close()}>
             <X size={18} />
           </button>
         </div>
@@ -162,7 +170,7 @@ export function Reader({
         <h2>{message.subject || t('mail.noSubject')}</h2>
         <span className="ml-reader-account">{account?.label ?? message.accountId}</span>
         {thread.length > 1 && <span className="ml-reader-count">{t('mail.reader.threadCount', { count: thread.length })}</span>}
-        <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={onClose}>
+        <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={() => void close()}>
           <X size={18} />
         </button>
       </div>
@@ -212,10 +220,10 @@ export function Reader({
                   )}
                   <pre className="ml-text">{body === undefined ? t('common.loading') : body || t('mail.noBody')}</pre>
                   <div className="ml-actions" role="group" aria-label={t('mail.reader.actions')}>
-                    <button type="button" className="cal-btn" disabled={busy} onClick={() => openReply(item.id, 'reply')}>
+                    <button type="button" className="cal-btn" disabled={busy} onClick={() => void openReply(item.id, 'reply')}>
                       <Reply size={14} /> {t('mail.reply')}
                     </button>
-                    <button type="button" className="cal-btn" disabled={busy} onClick={() => openReply(item.id, 'all')}>
+                    <button type="button" className="cal-btn" disabled={busy} onClick={() => void openReply(item.id, 'all')}>
                       <ReplyAll size={14} /> {t('mail.replyAll')}
                     </button>
                     {item.folder === 'inbox' && (
@@ -275,13 +283,13 @@ export function Reader({
                         onKeyDown={(event) => {
                           if (event.key === 'Escape') {
                             event.stopPropagation()
-                            setReply(null)
+                            void discardReply()
                           }
                         }}
                       />
                       <div className="cal-pop-actions">
                         <span className="cal-pop-hint">{t('mail.reader.sendHint')}</span>
-                        <button type="button" className="cal-btn" onClick={() => setReply(null)}>
+                        <button type="button" className="cal-btn" onClick={() => void discardReply()}>
                           {t('common.cancel')}
                         </button>
                         <button type="submit" className="cal-primary" disabled={busy || !reply.settled || !reply.text.trim()}>

@@ -40,6 +40,10 @@ export function useDraftEditor(draft: MailDraft | null): {
    */
   sendStarted: boolean
   error: string
+  /** A typed change is not saved and the last attempt failed, as when main refuses an address it cannot read. */
+  refused: boolean
+  /** Gives up the change main refused, so that nothing of it is saved when the editor goes. */
+  abandon: () => void
   /** The summary once the draft has been sent, or null on failure, with the reason in `error`. */
   send: () => Promise<string | null>
   discard: () => Promise<boolean>
@@ -70,10 +74,13 @@ export function useDraftEditor(draft: MailDraft | null): {
 
   const unsaved = useRef<{ id: string; fields: DraftFields } | null>(null)
   unsaved.current = dirty && id ? { id, fields } : null
+  // Set before a send or a discard starts, since main can report the draft gone and the editor can go
+  // before either returns, and when the user gives up a refused change. Nothing is saved on unmount then.
+  const released = useRef(false)
   useEffect(
     () => () => {
       const left = unsaved.current
-      if (!left) return
+      if (!left || released.current) return
       // The editor that would show a failure is gone, so a toast says it.
       window.api.mailDraftUpdate(left.id, patchOf(left.fields)).catch((err: unknown) => {
         useToastStore.getState().push({ kind: 'error', title: translate('mail.composer.draftSaveFailed'), body: displayError(err) })
@@ -81,11 +88,6 @@ export function useDraftEditor(draft: MailDraft | null): {
     },
     []
   )
-  // A draft sent or discarded leaves nothing to save, and the editor can go before it draws again.
-  const forget = (): void => {
-    unsaved.current = null
-    setDirty(false)
-  }
 
   useEffect(() => {
     if (!dirty || !id) return
@@ -109,14 +111,15 @@ export function useDraftEditor(draft: MailDraft | null): {
     if (!id || sending || busy === 'discard') return null
     setBusy('send')
     setSending(id, true)
+    released.current = true
     try {
       if (dirty) await save()
       const result = await window.api.mailDraftSend(id)
       if (!result.saved) throw new Error(errorText('mail.composer.notSent'))
-      forget()
       setError('')
       return result.summary
     } catch (err) {
+      released.current = false
       setError(displayError(err))
       return null
     } finally {
@@ -128,11 +131,12 @@ export function useDraftEditor(draft: MailDraft | null): {
   const discard = async (): Promise<boolean> => {
     if (!id || sending) return false
     setBusy('discard')
+    released.current = true
     try {
       await window.api.mailDraftRemove(id)
-      forget()
       return true
     } catch (err) {
+      released.current = false
       setError(displayError(err))
       return false
     } finally {
@@ -140,7 +144,11 @@ export function useDraftEditor(draft: MailDraft | null): {
     }
   }
 
+  const abandon = (): void => {
+    released.current = true
+  }
+
   const sendStarted = (draft?.sendStartedAt ?? null) !== null && !sending
-  return { fields, set, dirty, busy, sending, sendStarted, error, send, discard }
+  return { fields, set, dirty, busy, sending, sendStarted, error, refused: dirty && error !== '', abandon, send, discard }
 }
 

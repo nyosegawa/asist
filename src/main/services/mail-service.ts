@@ -255,9 +255,15 @@ export class MailService {
     // An account the settings would refuse, one past the limit of accounts for one, is turned down before the server is asked.
     parseMailInput(mailSettingsSchema, withAccount({ sent: null, archive: null, trash: null }))
     const next = withAccount((await this.probe(input)).folders)
-    // The password is stored only once the settings hold the account, because only removing the account removes its password.
-    this.deps.saveSettings(next)
+    // Only removing the account removes its password, so the password is taken back when the settings cannot
+    // be saved with the account, and neither is left without the other.
     this.deps.secrets.set(id, password)
+    try {
+      this.deps.saveSettings(next)
+    } catch (error) {
+      this.deps.secrets.remove(id)
+      throw error
+    }
     this.applySettings()
     return next.accounts.at(-1)!
   }

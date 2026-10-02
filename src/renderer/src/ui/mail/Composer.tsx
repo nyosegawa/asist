@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { CornerUpLeft, X } from 'lucide-react'
 import { displayName, formatAddress, type MailAccount, type MailChangeInput, type MailDraft } from '@shared/mail'
 import type { Toast } from '@/state/stores'
-import { askConfirm } from '@/state/confirm'
-import { useLeaveGuard } from '@/state/view'
+import { useAskBeforeDiscard } from './ask-before-discard'
 import { useDraftEditor } from './draft-editor'
 import { splitRecipients } from './format'
 import { displayError } from '@/display-error'
@@ -18,8 +17,8 @@ import { useT } from '@/i18n'
  * body is written.
  *
  * The fields are not a form: Enter in a text field of a form clicks its submit button, and a mail must
- * go out only on a press of "送信". A new message lives here alone until it is sent or saved, so it is
- * the leave guard of the mail view while anything is typed into it.
+ * go out only on a press of "送信". A new message lives here alone until it is sent or saved, and a
+ * draft's change lives here alone while main refuses to save it, so leaving either asks first.
  */
 export function Composer({
   accounts,
@@ -36,7 +35,7 @@ export function Composer({
   /** Sends a new message through main and answers whether it went out. */
   onSend: (change: MailChangeInput) => Promise<boolean>
   onNotice: (toast: Omit<Toast, 'id'>) => void
-  /** Takes the composer away at once; a new message with something typed asks first itself. */
+  /** Takes the composer away at once; the composer asks first itself when leaving would lose something typed. */
   onClose: () => void
 }): React.JSX.Element {
   return draft ? <DraftComposer accounts={accounts} draft={draft} onNotice={onNotice} onClose={onClose} /> : <NewComposer accounts={accounts} defaultAccountId={defaultAccountId} onSend={onSend} onNotice={onNotice} onClose={onClose} />
@@ -75,12 +74,7 @@ function NewComposer({
   const recipients = splitRecipients(to)
   const ready = recipients.length > 0 && body.trim().length > 0 && accountId
   const typed = [to, cc, subject, body].some((value) => value.trim() !== '')
-  const leave = async (): Promise<boolean> => {
-    if (typed && !(await askConfirm({ message: t('common.confirmDiscard'), confirmLabel: t('common.discardChanges'), destructive: true }))) return false
-    onClose()
-    return true
-  }
-  useLeaveGuard(typed, leave)
+  const leave = useAskBeforeDiscard(typed, onClose)
   const stopEscape = stopEscapeWith(() => void leave())
   const send = async (): Promise<void> => {
     if (!ready || busy) return
@@ -164,7 +158,12 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
   const busy = editor.sending || editor.busy === 'discard'
   const locked = busy || editor.sendStarted
   const ready = editor.fields.body.trim().length > 0 && (draft.reply !== null || splitRecipients(editor.fields.to).length > 0)
-  const stopEscape = stopEscapeWith(onClose)
+  // A change still waiting for its save is saved as the composer goes; only one main refused would be lost.
+  const leave = useAskBeforeDiscard(editor.refused, () => {
+    if (editor.refused) editor.abandon()
+    onClose()
+  })
+  const stopEscape = stopEscapeWith(() => void leave())
   const send = async (): Promise<void> => {
     if (!ready || locked) return
     const summary = await editor.send()
@@ -185,7 +184,7 @@ function DraftComposer({ accounts, draft, onNotice, onClose }: { accounts: MailA
       <div className="ml-reader-head">
         <h2>{draft.reply ? t('mail.composer.replyDraft') : t('mail.composer.draftTitle')}</h2>
         <span className="ml-reader-account">{editor.busy === 'save' ? t('common.saving') : editor.dirty ? t('mail.composer.notSaved') : t('mail.composer.saved')}</span>
-        <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={onClose}>
+        <button type="button" className="ml-icon" aria-label={t('common.close')} onClick={() => void leave()}>
           <X size={18} />
         </button>
       </div>
