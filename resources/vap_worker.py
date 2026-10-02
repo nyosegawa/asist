@@ -274,14 +274,18 @@ def main() -> None:
     zeros = np.zeros(int(WARMUP_SEC * SAMPLE_RATE), dtype=np.float32)
     feeder.push(zeros, zeros)
     deadline = time.time() + READY_TIMEOUT_SEC
-    warmed = False
-    while time.time() < deadline:
-        if drain(vap) is not None:
-            warmed = True
-            break
-        time.sleep(0.05)
-    if not warmed:
+    warmup = None
+    while time.time() < deadline and warmup is None:
+        warmup = drain(vap)
+        if warmup is None:
+            time.sleep(0.05)
+    if warmup is None:
         fatal("warmup produced no output")
+        return
+    # A result numbered 0 was made from a frame MaAI did not take through NumberedInput, as after a change in how it
+    # reads its input. Every lag would then count from before the first frame, and no estimate would ever be used.
+    if warmup[0] == 0:
+        fatal("warmup result carries no frame number")
         return
     drain(aux)
 
