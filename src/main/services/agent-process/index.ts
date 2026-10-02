@@ -2,11 +2,12 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEngine, AgentJob, AgentProcessIdentity } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
 import { createClaudeStreamParser, createCodexStreamParser, type AgentStreamEvent, type AgentStreamParser } from '@shared/agent-stream'
+import { errorText } from '@shared/i18n/error-text'
 import { t } from '../i18n'
 import { requireCli, type FoundCli } from './cli-locator'
 import { platformCapabilities } from '../platform'
 import { childEnv } from '../child-env'
-import type { AgentOwner, AgentProcess } from './owner'
+import { STOP_DEADLINE_MS, type AgentOwner, type AgentProcess } from './owner'
 import { posixOwner } from './posix'
 import { windowsOwner } from './windows'
 
@@ -72,11 +73,27 @@ export function launchAgentProcess(job: AgentJob, args: string[], handlers: Proc
   // A rejection that happens before anyone awaits must not become an unhandled rejection. The caller
   // still receives the original promise.
   void completion.catch(() => {})
+  // A stop asked before the CLI started ends with the search, which can wait for the user's shell, and fails
+  // by the same deadline as a stop of a running CLI.
+  let stopping: Promise<void> | undefined
+  const stopBeforeStart = (): Promise<void> => {
+    stopping ??= new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => {
+        stopping = undefined
+        const error = new Error(errorText('jobs.process.stopTimedOut'))
+        handlers.onStopFailed(error)
+        reject(error)
+      }, STOP_DEADLINE_MS)
+      completion.then(resolve, reject).finally(() => clearTimeout(deadline))
+    })
+    void stopping.catch(() => {})
+    return stopping
+  }
   return {
     completion,
     stop: () => {
       stopped = true
-      return running ? running.stop() : completion
+      return running ? running.stop() : stopBeforeStart()
     }
   }
 }

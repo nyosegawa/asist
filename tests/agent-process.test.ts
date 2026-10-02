@@ -9,7 +9,7 @@ import type { AgentJob } from '@shared/ipc'
 const SHELL_PATH = '/Users/me/.nvm/versions/node/v22.19.0/bin:/opt/homebrew/bin:/usr/bin:/bin'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), execFileSync: vi.fn(), installed: vi.fn<(file: string) => boolean>(), readShellPath: vi.fn() }))
-// ps, which looks for the processes carrying the agent's token once the CLI has closed, lists none.
+// ps, which reads the agent's processes once the CLI has closed, finds none but launchd.
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn, execFileSync: mocks.execFileSync }))
 vi.mock('node:fs', () => {
   const missing = (file: string): void => {
@@ -36,9 +36,10 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.installed.mockReturnValue(true)
   mocks.readShellPath.mockResolvedValue(SHELL_PATH)
-  mocks.execFileSync.mockReturnValue('')
+  mocks.execFileSync.mockImplementation((_file: string, args: string[]) => (args[0] === '-axo' ? '    1     0     1 Ss   Thu Jan  1 09:00:00 2026\n' : ''))
 })
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllEnvs()
 })
 
@@ -106,6 +107,20 @@ describe('launchAgentProcess', () => {
     answer(SHELL_PATH)
     await run.completion
     expect(handlers.onExit).toHaveBeenCalledExactlyOnceWith(null)
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+
+  it('reports a stop that the search for the CLI keeps from ending by its deadline, as any stop that fails', async () => {
+    vi.useFakeTimers()
+    mocks.readShellPath.mockReturnValue(new Promise(() => {}))
+    const handlers = { onSpawn: vi.fn(), onEvent: vi.fn(), onStderr: vi.fn(), onError: vi.fn(), onExit: vi.fn(), onStopFailed: vi.fn() }
+    const { launchAgentProcess } = await import('../src/main/services/agent-process')
+    const run = launchAgentProcess(job, ['exec'], handlers)
+    let failure: unknown
+    run.stop().catch((error: unknown) => { failure = error })
+    await vi.advanceTimersByTimeAsync(5_001)
+    expect(handlers.onStopFailed).toHaveBeenCalledExactlyOnceWith(new Error(errorText('jobs.process.stopTimedOut')))
+    expect(failure).toEqual(new Error(errorText('jobs.process.stopTimedOut')))
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 

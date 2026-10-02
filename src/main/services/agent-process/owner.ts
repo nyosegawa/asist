@@ -1,6 +1,9 @@
 import type { ChildProcess } from 'node:child_process'
 import type { AgentProcessIdentity } from '@shared/ipc'
 
+/** A stop that has not seen the agent gone by then is reported as failed. */
+export const STOP_DEADLINE_MS = 5_000
+
 /** An agent ASIST owns until the CLI and every process it started are gone. */
 export interface AgentProcess {
   /**

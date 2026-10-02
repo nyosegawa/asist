@@ -9,7 +9,8 @@ import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import type { AgentJob } from '@shared/ipc'
 import { buildStartArgs } from '@shared/agent-cli'
-import { AGENT_PROCESS_TOKEN, captureProcessIdentity, inspectProcessIdentity, recoverAgentProcess } from '../src/main/services/agent-process/posix'
+import { captureProcessIdentity, inspectProcessIdentity, recoverAgentProcess } from '../src/main/services/agent-process/posix'
+import { AGENT_PROCESS_TOKEN } from '../src/main/services/agent-process/process-table'
 import { fakeLoginShell } from './helpers/shell'
 
 const ja = createTranslator('ja-JP')
@@ -43,7 +44,8 @@ afterEach(async () => {
   if (parent?.pid && alive(parent.pid)) parent.kill('SIGKILL')
   if (group) { try { process.kill(-group, 'SIGKILL') } catch { /* fixture already exited */ } }
   if (group) await vi.waitFor(() => expect(alive(-group!)).toBe(false), { timeout: 2_000 })
-  for (const command of commands.splice(0)) { try { process.kill(command, 'SIGKILL') } catch { /* already stopped */ } }
+  // Each command leads a group of its own, which also holds what a shell loop started.
+  for (const command of commands.splice(0)) { try { process.kill(-command, 'SIGKILL') } catch { /* already stopped */ } }
   fs.writeFileSync(path.join(root, 'release'), '')
   if (agent) await agent.shutdown().catch(() => {})
   vi.unstubAllEnvs()
@@ -326,16 +328,16 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
    * A CLI that runs a command the way claude's Bash tool and codex do, in a session and process group of its
    * own that inherits the CLI's environment, and prints the command's pid.
    */
-  function launchWithCommand(then: string) {
+  function launchWithCommand(then: string, command: [string, string[]] = [process.execPath, ['-e', 'setInterval(() => {}, 1000)']]) {
     vi.stubEnv('CODEX_CLI_PATH', process.execPath)
     return import('../src/main/services/agent-process').then(({ launchAgentProcess }) => {
       const exits: Array<number | null> = []
       let reportCommand!: (pid: number) => void
-      const command = new Promise<number>((resolve) => { reportCommand = resolve })
+      const started = new Promise<number>((resolve) => { reportCommand = resolve })
       const run = launchAgentProcess({
         id: 'command', title: 'fixture', prompt: 'fixture', cwd: root,
         engine: 'codex', readonly: true, status: 'running', startedAt: Date.now()
-      }, ['-e', `const command = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' }); command.unref(); console.log(command.pid); ${then}`], {
+      }, ['-e', `const command = require('node:child_process').spawn(${JSON.stringify(command[0])}, ${JSON.stringify(command[1])}, { detached: true, stdio: 'ignore' }); command.unref(); console.log(command.pid); ${then}`], {
         onSpawn: (identity) => { group = identity.pid },
         onEvent: (event) => {
           if (event.kind !== 'raw') return
@@ -344,9 +346,44 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
         },
         onStderr: () => {}, onError: () => {}, onExit: (code) => exits.push(code)
       })
-      return { run, command, exits }
+      return { run, command: started, exits }
     })
   }
+
+  /**
+   * The command of the review that found the defect: a shell Apple ships under System Integrity Protection,
+   * whose environment ps does not show, so its token cannot be read, writing to a file every 0.2 s.
+   */
+  const shellLoop = (out: string): [string, string[]] => ['/bin/zsh', ['-c', `while :; do echo x >> '${out}'; sleep 0.2; done`]]
+
+  /** Whether the file still grows, which it does while the shell loop runs. */
+  async function grows(file: string): Promise<boolean> {
+    const size = fs.statSync(file).size
+    await new Promise((resolve) => setTimeout(resolve, 700))
+    return fs.statSync(file).size > size
+  }
+
+  it('stops a shell the agent runs in a session of its own, whose token cannot be read, before it reports the agent stopped', async () => {
+    const out = path.join(root, 'out.txt')
+    const { run, command, exits } = await launchWithCommand('setInterval(() => {}, 1000)', shellLoop(out))
+    const pid = await command
+    await vi.waitFor(() => expect(fs.existsSync(out)).toBe(true), PROCESS_START)
+    void run.stop()
+    await run.completion
+    expect(exits).toHaveLength(1)
+    expect(alive(pid)).toBe(false)
+    expect(await grows(out)).toBe(false)
+  })
+
+  it('settles a CLI that exits on its own only once the shell it left in a session of its own is gone', async () => {
+    const out = path.join(root, 'out.txt')
+    const { run, command, exits } = await launchWithCommand('setTimeout(() => process.exit(0), 1500)', shellLoop(out))
+    const pid = await command
+    await run.completion
+    expect(exits).toEqual([0])
+    expect(alive(pid)).toBe(false)
+    expect(await grows(out)).toBe(false)
+  })
 
   it('stops the commands the agent runs in process groups of their own before it reports the agent stopped', async () => {
     const { run, command, exits } = await launchWithCommand('setInterval(() => {}, 1000)')

@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { errorText } from '@shared/i18n/error-text'
 import { nativeHelperPath } from '../resource-path'
-import type { AgentEvents, AgentOwner, AgentProcess } from './owner'
+import { STOP_DEADLINE_MS, type AgentEvents, type AgentOwner, type AgentProcess } from './owner'
 
 /**
  * An agent on Windows runs inside the job object of asist-agent-launcher.exe, named after its token. The
@@ -90,7 +90,7 @@ function ownLauncher(child: ChildProcess, token: string, events: AgentEvents): A
         () => failed(new Error(errorText('jobs.process.exitUnconfirmed')))
       )
     }
-    deadline = setTimeout(() => failed(new Error(errorText('jobs.process.stopTimedOut'))), 5_000)
+    deadline = setTimeout(() => failed(new Error(errorText('jobs.process.stopTimedOut'))), STOP_DEADLINE_MS)
     stopping = current
     send()
     return done
