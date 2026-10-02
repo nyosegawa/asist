@@ -2,7 +2,14 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import type { PanelSpec } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
-import { zonedDate, zonedHour, type WeatherCondition, type WeatherData, type WeatherUnits } from '@shared/weather'
+import {
+  zonedDate,
+  zonedTime,
+  type ClockTime,
+  type WeatherCondition,
+  type WeatherData,
+  type WeatherUnits
+} from '@shared/weather'
 import { useT, useFormatLocale } from '@/i18n'
 import { usePanelStore } from '@/state/stores'
 import type { CardContext, CardDefinition } from '../shell/card'
@@ -34,13 +41,32 @@ const weatherOf = (spec: PanelSpec): WeatherData => spec.props.weather as Weathe
 const number = (value: number | null): string => (value === null ? '—' : String(Math.round(value)))
 /** The degree sign alone reads as Celsius, so only another unit is named beside the number. */
 const degree = (units: WeatherUnits): string => (units.temperature === '°C' ? '°' : units.temperature)
-const hour = (at: string, timeZone: string): number => zonedHour(Date.parse(at), timeZone)
+const clock = (at: string, timeZone: string): ClockTime => zonedTime(Date.parse(at), timeZone)
 /**
- * The hour a period ends at, as 24 when it ends with its day. That end is not always 0:00 on the clock:
+ * The time a period ends at, as 24:00 when it ends with its day. That end is not always 0:00 on the clock:
  * where the next day's midnight is skipped (Santiago, 2025-09-07), the day ends at 1:00.
  */
-const endHour = (from: string, to: string, timeZone: string): number =>
-  zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone) ? 24 : hour(to, timeZone)
+const endClock = (from: string, to: string, timeZone: string): ClockTime =>
+  zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone)
+    ? { hour: 24, minute: 0 }
+    : clock(to, timeZone)
+/** A time with its minutes, as the hourly row writes a time off the hour and both ends of a period that has one. */
+const withMinutes = ({ hour, minute }: ClockTime, t: Translate): string =>
+  t('cardsWeather.hourly.time', { hour, minute: String(minute).padStart(2, '0') })
+/**
+ * A time of the hourly row: the hour alone, as on most clocks, or with its minutes where the rows fall on the
+ * half hours of the clock, as Lord Howe Island's do while its clock is half an hour off the forecast's offset.
+ */
+const timeLabel = (at: ClockTime, t: Translate): string =>
+  at.minute ? withMinutes(at, t) : t('cardsWeather.hourly.hour', { hour: at.hour })
+/** A period of the hourly row, written in hours alone when both of its ends are on the hour. */
+function rangeLabel(from: string, to: string, timeZone: string, t: Translate): string {
+  const start = clock(from, timeZone)
+  const end = endClock(from, to, timeZone)
+  return start.minute || end.minute
+    ? t('cardsWeather.hourly.timeRange', { from: withMinutes(start, t), to: withMinutes(end, t) })
+    : t('cardsWeather.hourly.range', { from: start.hour, to: end.hour })
+}
 const time = (at: string, locale: string, timeZone: string): string =>
   new Date(at).toLocaleTimeString(locale, { ...timeFields(locale), timeZone })
 const dayOf = (date: string, locale: string, fields: Intl.DateTimeFormatOptions): string =>
@@ -211,7 +237,7 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
             <div className="wx-hours" style={style}>
               {hourly.map((h, i) => (
                 <div className="wx-hour" key={h.at} style={{ gridColumn: i + 1, gridRow: 1 }}>
-                  <time dateTime={h.at}>{t('cardsWeather.hourly.hour', { hour: hour(h.at, zone) })}</time>
+                  <time dateTime={h.at}>{timeLabel(clock(h.at, zone), t)}</time>
                   <Condition value={h.condition} />
                   <b>{number(h.temperature)}°</b>
                 </div>
@@ -229,12 +255,7 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
                     key={p.from}
                     style={{ gridColumn: `${indexes[0] + 1} / span ${indexes.length}`, gridRow: 2 }}
                   >
-                    <span>
-                      {t('cardsWeather.hourly.range', {
-                        from: hour(p.from, zone),
-                        to: endHour(p.from, p.to, zone)
-                      })}
-                    </span>
+                    <span>{rangeLabel(p.from, p.to, zone, t)}</span>
                     <b>{t('cardsWeather.hourly.rain', { percent: number(p.percent) })}</b>
                   </div>
                 )

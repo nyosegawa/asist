@@ -9,6 +9,12 @@ import sydneyForecast from './fixtures/weather/sydney-forecast.json'
 import helsinkiForecast from './fixtures/weather/helsinki-forecast-spring-forward.json'
 import chathamForecast from './fixtures/weather/chatham-forecast-spring-forward.json'
 import santiagoForecast from './fixtures/weather/santiago-forecast-midnight-skipped.json'
+import lordHoweForward from './fixtures/weather/lord-howe-forecast-half-hour-forward.json'
+import lordHoweBack from './fixtures/weather/lord-howe-forecast-half-hour-back.json'
+import mumbaiForecast from './fixtures/weather/mumbai-forecast.json'
+import mumbaiPlaces from './fixtures/weather/mumbai-geocoding.json'
+import kathmanduForecast from './fixtures/weather/kathmandu-forecast.json'
+import kathmanduPlaces from './fixtures/weather/kathmandu-geocoding.json'
 import clockChangeAnswers from './fixtures/weather/clock-change-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
 
@@ -23,7 +29,12 @@ import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
  * that day: Helsinki's around its change on 2026-03-29 at 03:00, the Chatham Islands' (Waitangi) around
  * 2025-09-28 at 02:45, Santiago's around 2025-09-07, whose midnight its clocks skip, and Munich's around
  * 2025-10-26, when its clocks went back, since no zone's clocks go back within a week of the day they were
- * recorded. The clock-change geocoding holds the answers for their names. Every forecast was recorded
+ * recorded. Lord Howe Island's clock moves by half an hour, and both of its answers are in +10:30: its
+ * forecast of 2026-10-02 around 2026-10-04 at 02:00, when the clock goes forward to +11:00, and its
+ * historical forecast around 2026-04-05 at 02:00, when the clock went back from +11:00, so in each the rows
+ * lie on the half hours of the clock while it reads +11:00. Mumbai's and Kathmandu's forecasts of 2026-10-02
+ * are in +05:30 and +05:45, which their clocks keep all year. The clock-change geocoding holds the answers
+ * for the names of the places whose clocks change. Every forecast was recorded
  * with Open-Meteo's own daily values as well, which the source no longer asks for, so that the days it
  * works out can be compared with them. The fake service cuts each recording to the days a request asks
  * for, and the values the tests expect are read from the recordings.
@@ -388,6 +399,10 @@ const HELSINKI: Answer = { place: 'Helsinki', region: 'FI', places: clockChangeP
 const CHATHAM: Answer = { place: 'Waitangi', region: 'NZ', places: clockChangePlaces.Waitangi, days: recording(chathamForecast) }
 const SANTIAGO: Answer = { place: 'Santiago', region: 'CL', places: clockChangePlaces.Santiago, days: recording(santiagoForecast) }
 const MUNICH_FALL_BACK: Answer = { place: 'Munich', region: 'DE', places: geocoding, days: fallBack }
+const LORD_HOWE_FORWARD: Answer = { place: 'Lord Howe Island', region: 'AU', places: clockChangePlaces['Lord Howe Island'], days: recording(lordHoweForward) }
+const LORD_HOWE_BACK: Answer = { ...LORD_HOWE_FORWARD, days: recording(lordHoweBack) }
+const MUMBAI: Answer = { place: 'Mumbai', region: 'IN', places: mumbaiPlaces, days: recording(mumbaiForecast) }
+const KATHMANDU: Answer = { place: 'Kathmandu', region: 'NP', places: kathmanduPlaces, days: recording(kathmanduForecast) }
 /**
  * The card of a place with the clock set to a moment, written with the place's offset at that moment. The
  * module is loaded afresh for each card, because its cache keeps the fetch it was loaded with.
@@ -532,6 +547,50 @@ describe('a day on which the clocks change', () => {
       )
     const before = periods(await cardAt(dayBefore, 'tomorrow', answer))
     expect(periods(await cardAt(change, 'tomorrow', answer))).toEqual(before.map((period) => skipping(period, skipped)))
+  })
+})
+
+describe('a clock that is not on the hours of the answer', () => {
+  /** Each step of a card as the model is told it, from its first row to its end on the place's clock. */
+  const steps = (w: WeatherData): string[][] =>
+    weatherForModel(w, 'en-US').hourly.map((hour) => [hour.at, hour.until])
+  /** Steps of a date that begin at the times given, each ending where the next begins and the last at midnight. */
+  const stepsFrom = (date: string, starts: string[]): string[][] =>
+    starts.map((start, k) => [`${date} ${start}`, k + 1 < starts.length ? `${date} ${starts[k + 1]}` : `${dateAfter(date, 1)} 00:00`])
+  /** The times three hours apart from midnight, at the minute given. */
+  const everyThreeHours = (minute: string): string[] =>
+    Array.from({ length: 8 }, (_, k) => `${String(3 * k).padStart(2, '0')}:${minute}`)
+
+  it.each([
+    ['the day before Lord Howe Island moves its clock forward by half an hour', LORD_HOWE_FORWARD, '2026-10-02T12:00:00+10:30', '2026-10-03', everyThreeHours('00')],
+    ['the day Lord Howe Island moves its clock forward', LORD_HOWE_FORWARD, '2026-10-03T12:00:00+10:30', '2026-10-04', ['00:00', ...everyThreeHours('30').slice(1)]],
+    ['the day after Lord Howe Island moves its clock forward', LORD_HOWE_FORWARD, '2026-10-04T12:00:00+11:00', '2026-10-05', everyThreeHours('30')],
+    ['the day before Lord Howe Island moves its clock back by half an hour', LORD_HOWE_BACK, '2026-04-03T12:00:00+11:00', '2026-04-04', everyThreeHours('30')],
+    ['the day Lord Howe Island moves its clock back', LORD_HOWE_BACK, '2026-04-04T12:00:00+11:00', '2026-04-05', ['00:30', ...everyThreeHours('00').slice(1)]],
+    ['the day after Lord Howe Island moves its clock back', LORD_HOWE_BACK, '2026-04-05T12:00:00+10:30', '2026-04-06', everyThreeHours('00')]
+  ] as const)('shows %s from the times its rows fall on to the midnight of the place', async (_, answer, now, date, starts) => {
+    const w = await cardAt(now, 'tomorrow', answer)
+    expect(w.targetDate).toBe(date)
+    expect(steps(w)).toEqual(stepsFrom(date, [...starts]))
+    expectRestOfDay(w)
+  })
+
+  it('ends a card of today opened in the last half hour of the day at midnight, not half an hour into the next day', async () => {
+    const w = await cardAt('2026-10-05T23:50:00+11:00', 'today', LORD_HOWE_FORWARD)
+    expect(steps(w)).toEqual([['2026-10-05 23:30', '2026-10-06 00:00']])
+    expectRestOfDay(w)
+  })
+
+  it.each([
+    ['India', MUMBAI, '2026-10-02T12:00:00+05:30'],
+    ['Nepal', KATHMANDU, '2026-10-02T12:00:00+05:45'],
+    ['the Chatham Islands', CHATHAM, '2025-09-29T12:00:00+13:45']
+  ] as const)('keeps the steps of %s, whose offset is not a whole hour, on the hours of its clock', async (_, answer, now) => {
+    const today = await cardAt(now, 'today', answer)
+    expect(steps(today)).toEqual(stepsFrom(today.targetDate, ['12:00', '15:00', '18:00', '21:00']))
+    const tomorrow = await cardAt(now, 'tomorrow', answer)
+    expect(steps(tomorrow)).toEqual(stepsFrom(tomorrow.targetDate, everyThreeHours('00')))
+    for (const w of [today, tomorrow]) expectRestOfDay(w)
   })
 })
 

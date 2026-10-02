@@ -262,6 +262,36 @@ describe('the hours a weather card shows', () => {
     const dock = await render([weather({ key: 'weather:place:santiago:2025-09-06', props: { location: 'Santiago', date: 'today', weather: santiago } })])
     expect(dock.querySelector('.wx-pop span')?.textContent).toBe(t('cardsWeather.hourly.range', { from: 21, to: 24 }))
   })
+
+  it('writes the minutes of a time off the hour, where the rows fall on the half hours of the clock', async () => {
+    // Lord Howe Island's clock goes from 2026-10-04 02:00 at +10:30 to 02:30 at +11:00, and the rows of a
+    // forecast written in +10:30 lie on its half hours after that.
+    const starts = [
+      '2026-10-04T00:00:00+10:30',
+      ...[3, 6, 9, 12, 15, 18, 21].map((hour) => `2026-10-04T${String(hour).padStart(2, '0')}:30:00+11:00`)
+    ]
+    const ends = [...starts.slice(1), '2026-10-05T00:00:00+11:00']
+    const lordHowe: WeatherData = {
+      ...DEMO_WEATHER_MUNICH,
+      location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'Australia/Lord_Howe' },
+      targetDate: '2026-10-04',
+      date: 'tomorrow',
+      observation: null,
+      hourly: starts.map((at, k) => ({ at, until: ends[k], temperature: 18, condition: null })),
+      precipitationPeriods: starts.map((from, k) => ({ from, to: ends[k], percent: 1 }))
+    }
+    const dock = await render([weather({ key: 'weather:place:lord howe island:2026-10-04', props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
+    const time = (hour: number, minute: string): string => t('cardsWeather.hourly.time', { hour, minute })
+    const halfHours = [3, 6, 9, 12, 15, 18, 21].map((hour) => time(hour, '30'))
+    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual([
+      t('cardsWeather.hourly.hour', { hour: 0 }),
+      ...halfHours
+    ])
+    const until = [...halfHours, time(24, '00')]
+    expect([...dock.querySelectorAll('.wx-pop span')].map((label) => label.textContent)).toEqual(
+      [time(0, '00'), ...halfHours].map((from, k) => t('cardsWeather.hourly.timeRange', { from, to: until[k] }))
+    )
+  })
 })
 
 describe('a card whose data could not be fetched', () => {

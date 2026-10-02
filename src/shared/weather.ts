@@ -306,11 +306,11 @@ export function japanDate(at: number): string {
 
 const ZONED_FORMS = {
   date: ['en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }],
-  hour: ['en-US', { hourCycle: 'h23', hour: 'numeric' }]
+  time: ['en-US', { hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }]
 } as const satisfies Record<string, readonly [string, Intl.DateTimeFormatOptions]>
 const zonedFormats = new Map<string, Intl.DateTimeFormat>()
 /**
- * The formatter of a form in a zone, made once: a forecast reads the date and the hour of each of its 216
+ * The formatter of a form in a zone, made once: a forecast reads the date and the time of each of its 216
  * hours, and reading 216 dates with a new formatter each took 4.5 ms against 0.1 ms with one (Node 22 on
  * an Apple M5, Sydney and Helsinki, 2026-10-02).
  */
@@ -328,8 +328,17 @@ function zonedFormat(form: keyof typeof ZONED_FORMS, timeZone: string): Intl.Dat
 /** The calendar date a moment falls on in a zone, as `YYYY-MM-DD`. */
 export const zonedDate = (at: number, timeZone: string): string => zonedFormat('date', timeZone).format(at)
 
+/** A time of day as a clock reads it, the hour from 0 to 23. */
+export interface ClockTime {
+  hour: number
+  minute: number
+}
+
 /**
- * The hour, from 0 to 23, that the clock of a zone reads at a moment, with the offset in force there at
- * that moment, wherever the Mac stands.
+ * The time that the clock of a zone reads at a moment, with the offset in force there at that moment,
+ * wherever the Mac stands.
  */
-export const zonedHour = (at: number, timeZone: string): number => Number(zonedFormat('hour', timeZone).format(at))
+export function zonedTime(at: number, timeZone: string): ClockTime {
+  const [hour, minute] = zonedFormat('time', timeZone).format(at).split(':').map(Number)
+  return { hour, minute }
+}

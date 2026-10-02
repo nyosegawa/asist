@@ -217,6 +217,20 @@ export const cardsWeather = defineMessages({
       'es-419': '{hour}:00',
       'es-ES': '{hour}:00'
     },
+    /** A time off the hour, with its minute as two digits, where a place's clock is half an hour off its forecast's hours. */
+    time: {
+      'ja-JP': '{hour}:{minute}',
+      'en-US': '{hour}:{minute}',
+      'fr-FR': '{hour}h{minute}',
+      'de-DE': '{hour}:{minute}',
+      'hi-IN': '{hour}:{minute}',
+      'id-ID': '{hour}:{minute}',
+      'it-IT': '{hour}:{minute}',
+      'ko-KR': '{hour}:{minute}',
+      'pt-BR': '{hour}h{minute}',
+      'es-419': '{hour}:{minute}',
+      'es-ES': '{hour}:{minute}'
+    },
     range: {
       'ja-JP': '{from}–{to}時',
       'en-US': '{from}:00–{to}:00',
@@ -229,6 +243,20 @@ export const cardsWeather = defineMessages({
       'pt-BR': '{from}h–{to}h',
       'es-419': '{from}:00–{to}:00',
       'es-ES': '{from}:00–{to}:00'
+    },
+    /** A period that begins or ends off the hour, between two times written as `time`. */
+    timeRange: {
+      'ja-JP': '{from}–{to}',
+      'en-US': '{from}–{to}',
+      'fr-FR': '{from}–{to}',
+      'de-DE': '{from}–{to}',
+      'hi-IN': '{from}–{to}',
+      'id-ID': '{from}–{to}',
+      'it-IT': '{from}–{to}',
+      'ko-KR': '{from}–{to}',
+      'pt-BR': '{from}–{to}',
+      'es-419': '{from}–{to}',
+      'es-ES': '{from}–{to}'
     },
     rain: {
       'ja-JP': '降水 {percent}%',
