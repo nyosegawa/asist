@@ -136,6 +136,7 @@ const settings: AppSettings = {
   bargeIn: true,
   aizuchi: true,
   aizuchiRate: 0.85,
+  bridgePhrase: true,
   hangoverMs: 350,
   partialIntervalMs: 600,
   agentCwd: '/Users/demo',
@@ -433,6 +434,7 @@ export const mockApi: RendererApi = {
   vapStatus: async () => ({ runtimeInstalled: false, modelsInstalled: false, running: false }),
   vapPrepare: async () => ({ ok: false, message: 'demo' }),
   vapPrepareCancel: async () => false,
+  vapStop: async () => {},
   embeddingStatus: async () => ({
     runtimeInstalled: false,
     modelInstalled: false,

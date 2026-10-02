@@ -196,6 +196,18 @@ export interface BridgePlan {
   bridge: string
 }
 
+/** What the look-ahead is given: the partial transcript and the assistant's previous line. */
+export interface BridgePlanRequest {
+  text: string
+  lastAssistantText: string
+  /**
+   * An aizuchi can sound right before the phrase: the aizuchi are on, the conversation has them and the
+   * classifier runs. Whether one does is settled when speech ends, by the classification and the
+   * frequency, after the phrase has been asked for.
+   */
+  afterAizuchi: boolean
+}
+
 /** The state of the aizuchi classifier worker (ModernBERT-ja 70m). */
 export interface AizuchiClassifierStatus {
   runtimeInstalled: boolean
@@ -396,9 +408,17 @@ export type LiveEvent =
   /** The message of an error as it was thrown, key and all, which the renderer words when it shows it. */
   | { type: 'error'; message: string }
 
-export interface LiveStartResult {
-  ok: boolean
-  reason?: string
+/** `run` numbers this start of the engine, and every piece of voice the engine speaks carries it. */
+export type LiveStartResult = { ok: true; run: number } | { ok: false; reason?: string }
+
+/**
+ * A piece of the live model's voice, mono Float32 at 24 kHz, with the run of the engine that spoke it.
+ * Electron does not keep a send in order with the answer to an invoke, so the voice of a stopped engine
+ * can arrive after the answer to the next start, and only the run tells whose voice it is.
+ */
+export interface LiveAudio {
+  run: number
+  samples: Float32Array
 }
 
 export type PanelSlot = 'left' | 'right'
@@ -800,6 +820,7 @@ export const IpcChannel = {
   VapStatus: 'vap-status',
   VapPrepare: 'vap-prepare',
   VapPrepareCancel: 'vap-prepare-cancel',
+  VapStop: 'vap-stop',
   EmbeddingStatus: 'embedding-status',
   EmbeddingPrepare: 'embedding-prepare',
   EmbeddingPrepareCancel: 'embedding-prepare-cancel',
@@ -954,6 +975,8 @@ export interface RendererApi {
   /** Prepares the Python environment and the models for VAP. Progress arrives through onSetupProgress. */
   vapPrepare(): Promise<{ ok: boolean; message: string }>
   vapPrepareCancel(): Promise<boolean>
+  /** Unloads the worker a preparation left loaded, which the first-run setup does since it leaves MaAI off. */
+  vapStop(): Promise<void>
   embeddingStatus(): Promise<EmbeddingStatus>
   /** Prepares the Python environment and the model for the memory embedding. Progress arrives through onSetupProgress. */
   embeddingPrepare(): Promise<{ ok: boolean; message: string }>
@@ -987,8 +1010,8 @@ export interface RendererApi {
   liveActivity(active: boolean): Promise<void>
   /** Typed input, which Gemini receives as a text turn. */
   liveText(text: string): Promise<void>
-  /** The live model's audio, 24 kHz mono Float32, to be played in the order it arrives. */
-  onLiveAudio(callback: (samples: Float32Array) => void): () => void
+  /** The live model's audio, to be played in the order it arrives by the run that started its engine. */
+  onLiveAudio(callback: (audio: LiveAudio) => void): () => void
   onLiveEvent(callback: (event: LiveEvent) => void): () => void
 
   /** Fetches a built-in panel's data through the fetcher in main and returns the completed props. */
@@ -1009,7 +1032,7 @@ export interface RendererApi {
   /** Main threw the bank away, after a change of the voice or the language or when TTS came back, and a new one is on its way. */
   onAizuchiBankChanged(callback: () => void): () => void
   /** The look-ahead on a fast model. It is called on every update of the partial transcript, and the last result before the utterance ends is used. */
-  bridgePlan(input: { text: string; lastAssistantText: string }): Promise<BridgePlan>
+  bridgePlan(input: BridgePlanRequest): Promise<BridgePlan>
   /** Synthesizes the bridge phrase. */
   bridgeSynthesize(text: string): Promise<BridgeClip>
   /**
