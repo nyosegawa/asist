@@ -75,6 +75,26 @@ describe('formatToolResult', () => {
     expect(parsed.summary).toMatch(/…\(元は1000文字\)$/)
   })
 
+  it('keeps as much of a long body as the limit allows, counting the line that says it was cut, and leaves the short strings beside it whole', () => {
+    const note = { id: 'n1', title: '議事録', markdown: 'あ'.repeat(13_000) }
+    const result = formatToolResult(note, 12_000, 'ja')
+    const shown = JSON.parse(result.content.split('\n')[1]) as typeof note
+    expect(result.content.length).toBeLessThanOrEqual(12_000)
+    expect(shown.title).toBe('議事録')
+    // A body cut far below the limit would leave the model reading a fraction of what fits.
+    expect(shown.markdown.length).toBeGreaterThan(11_500)
+  })
+
+  it('shares the limit between several long strings, cutting each to the same length', () => {
+    const value = { a: 'a'.repeat(5000), b: 'b'.repeat(5000), c: 'c'.repeat(100) }
+    const result = formatToolResult(value, 6000, 'en')
+    const shown = JSON.parse(result.content.split('\n')[1]) as typeof value
+    expect(result.content.length).toBeLessThanOrEqual(6000)
+    expect(shown.c).toBe(value.c)
+    expect(shown.a.length).toBe(shown.b.length)
+    expect(shown.a.length).toBeGreaterThan(2500)
+  })
+
   it('throws when shrinking still does not fit, rather than returning broken JSON', () => {
     const wide: Record<string, number> = {}
     for (let i = 0; i < 200; i++) wide[`key-${i}`] = i

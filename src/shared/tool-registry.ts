@@ -283,15 +283,19 @@ function shrink(
   return { value, changed: false }
 }
 
-const INITIAL_LIMITS: ShrinkLimits = { arrayItems: 20, stringChars: 400 }
-const MIN_LIMITS: ShrinkLimits = { arrayItems: 1, stringChars: 24 }
+/** How many items of each array are kept, one step after another, while the result does not fit. */
+const ARRAY_ITEM_STEPS = [20, 10, 5, 2, 1] as const
+/** The shortest a string leaf is cut to; a result that fits only with shorter strings keeps fewer array items instead. */
+const MIN_STRING_CHARS = 24
 
 /**
  * Turns a tool's result into the string that goes into tool_result, and returns beside it the value that
  * string shows. A string is used as it is, with the middle dropped when it exceeds the limit. An object
- * becomes JSON, and when that exceeds the limit the array counts and string lengths are shrunk step by
- * step until it fits, so the JSON is never cut off mid-structure; a line saying so goes before it, which
- * is why a caller that needs what the model saw reads `value` rather than parsing content.
+ * becomes JSON, and when that exceeds the limit its arrays are cut by count step by step, and at each
+ * step every string leaf is cut to the longest length with which the whole still fits, so one long body
+ * keeps nearly the whole limit and the short strings beside it stay whole. The JSON is never cut off
+ * mid-structure; a line saying so goes before it, which is why a caller that needs what the model saw
+ * reads `value` rather than parsing content.
  */
 export function formatToolResult(
   value: unknown,
@@ -305,26 +309,34 @@ export function formatToolResult(
   if (value === undefined) return { content: '', truncated: false, resultLength: 0, value }
   const full = JSON.stringify(value)
   if (full.length <= maxChars) return { content: full, truncated: false, resultLength: full.length, value }
-  let limits = { ...INITIAL_LIMITS }
-  for (;;) {
-    const shrunk = shrink(value, limits, language)
-    const text = JSON.stringify(shrunk.value)
-    if (text.length <= maxChars) {
-      return {
-        content: `${TEXTS.cutJson(full.length)[language]}\n${text}`,
-        truncated: true,
-        resultLength: full.length,
-        value: shrunk.value
+  const header = `${TEXTS.cutJson(full.length)[language]}\n`
+  const shrinkToFit = (limits: ShrinkLimits): { value: unknown; text: string } | null => {
+    const shrunk = shrink(value, limits, language).value
+    const text = JSON.stringify(shrunk)
+    return header.length + text.length <= maxChars ? { value: shrunk, text } : null
+  }
+  for (const arrayItems of ARRAY_ITEM_STEPS) {
+    let fitting = shrinkToFit({ arrayItems, stringChars: MIN_STRING_CHARS })
+    if (!fitting) continue
+    // A binary search for the longest cut that fits; no string longer than the limit can. The note of the
+    // original length makes a string cut just short of its end longer than the string itself, so the
+    // length is not monotonic near there and the search may settle a few characters short of the
+    // longest; whatever it settles on fits.
+    let fits = MIN_STRING_CHARS
+    let tooLong = maxChars + 1
+    while (tooLong - fits > 1) {
+      const middle = Math.floor((fits + tooLong) / 2)
+      const shrunk = shrinkToFit({ arrayItems, stringChars: middle })
+      if (shrunk) {
+        fits = middle
+        fitting = shrunk
+      } else {
+        tooLong = middle
       }
     }
-    if (limits.arrayItems <= MIN_LIMITS.arrayItems && limits.stringChars <= MIN_LIMITS.stringChars) {
-      throw new ToolError(TEXTS.tooLarge(full.length, maxChars))
-    }
-    limits = {
-      arrayItems: Math.max(MIN_LIMITS.arrayItems, Math.floor(limits.arrayItems / 2)),
-      stringChars: Math.max(MIN_LIMITS.stringChars, Math.floor(limits.stringChars / 2))
-    }
+    return { content: `${header}${fitting.text}`, truncated: true, resultLength: full.length, value: fitting.value }
   }
+  throw new ToolError(TEXTS.tooLarge(full.length, maxChars))
 }
 
 export interface ToolRegistry<Ctx> {
