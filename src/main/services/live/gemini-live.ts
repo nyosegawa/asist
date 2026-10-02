@@ -411,11 +411,14 @@ export class GeminiLiveEngine implements ConversationOwner {
   }
 
   /**
-   * A notice is stamped with the time it is sent, as the conversation engine stamps its notices. A
-   * session resumed from a handle keeps the instruction it first opened with, start time included,
-   * whatever instruction the resume sends (measured with gemini-3.8-live on 2026-10-02), and the provider
-   * ends a session about every ten minutes, so without the stamp the model works from a start time that
-   * a chain of resumes leaves hours behind.
+   * A notice is stamped with the time it is sent, as the conversation engine stamps its notices, since
+   * without a stamp the model has no reliable clock. Measured with gemini-3.8-live on 2026-10-02 in
+   * Asia/Tokyo, asked for the time two hours after a job report in a session whose instruction gave a
+   * start three hours earlier, it answered from a UTC clock of its own read as local time, or from that
+   * start, in 12 of 14 runs, and rightly in 19 of 21 with the report stamped. With the right start and no
+   * report it still answered from the UTC clock in 4 of 6. The start does not move either: a session
+   * resumed from a handle keeps the instruction it first opened with, whatever instruction the resume
+   * sends.
    */
   async notify(text: string): Promise<void> {
     await this.lifecycle.ensureOpen()

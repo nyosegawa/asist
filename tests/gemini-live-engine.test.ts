@@ -335,6 +335,25 @@ describe('GeminiLiveEngine', () => {
     await engine.stop()
   })
 
+  it('stamps a notice that comes minutes into an open session with the time it is sent, not the time the session opened', async () => {
+    const openedAt = new Date(2026, 9, 2, 10, 0)
+    vi.setSystemTime(openedAt)
+    const call = held()
+    const { engine, sessions } = await setup(() => call.task)
+    const session = await open(engine, sessions)
+    // A call waiting for approval keeps the session open past its idle time.
+    session.message({ toolCall: { functionCalls: [{ id: 'a', name: 'run_agent_task', args: {} }] } })
+    await vi.advanceTimersByTimeAsync(7 * 60_000)
+    expect(sessions).toEqual([session])
+    expect(session.closed).toBe(false)
+    const report = '[システム通知] ジョブ「調査」(jobId: j1)が完了した。'
+    await engine.notify(report)
+    const sentAt = new Date(openedAt.getTime() + 7 * 60_000)
+    expect(session.contents.at(-1)).toEqual({ turns: [{ role: 'user', parts: [{ text: stampUserMessage('ja-JP', report, sentAt) }] }], turnComplete: true })
+    call.finish()
+    await engine.stop()
+  })
+
   it('marks typed text and a sentence to read out with the markers of the conversation language', async () => {
     mocks.conversationLocale = 'en-US'
     const { engine, sessions } = await setup()
