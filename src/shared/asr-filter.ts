@@ -27,7 +27,8 @@ const CONTENT_CHAR = /[\p{L}\p{N}]/u
  */
 export function isMeaningfulTranscript(text: string, locale: ConversationLocale): boolean {
   const trimmed = text.trim()
-  // Counted in code points: a string's length counts a kanji outside the Basic Multilingual Plane, such as 𠮷, twice.
+  // Counted in code points: a string's length counts a kanji outside the Basic Multilingual Plane, such as
+  // `𠮷`, twice.
   const chars = [...trimmed]
   if (chars.length < 2) return false
   if (!CONTENT_CHAR.test(trimmed)) return false

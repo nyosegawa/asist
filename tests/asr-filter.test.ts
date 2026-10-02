@@ -28,7 +28,7 @@ describe('isMeaningfulTranscript', () => {
   })
 
   it('judges a character outside the Basic Multilingual Plane as one character', () => {
-    // 𠮷 is written with two UTF-16 code units, 吉 with one.
+    // `𠮷` is written with two UTF-16 code units, `吉` with one.
     expect(isMeaningfulTranscript('𠮷', 'ja-JP')).toBe(isMeaningfulTranscript('吉', 'ja-JP'))
     expect(isMeaningfulTranscript('𠮷𠮷𠮷𠮷', 'ja-JP')).toBe(isMeaningfulTranscript('吉吉吉吉', 'ja-JP'))
   })
