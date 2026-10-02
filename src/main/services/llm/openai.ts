@@ -219,13 +219,14 @@ class OpenAIStream extends AdapterStream {
   }
 }
 
-/** Every web_search_call item of the output is one billed search. */
+/** The input tokens count the ones read from and written to the cache as well. Every web_search_call item of the output is one billed search. */
 function roundUsage(usage: OpenAI.Responses.ResponseUsage | undefined, output: readonly OpenAI.Responses.ResponseOutputItem[]): RoundUsage {
   const cachedTokens = usage?.input_tokens_details?.cached_tokens ?? 0
+  const writtenTokens = usage?.input_tokens_details?.cache_write_tokens ?? 0
   return {
-    input: Math.max((usage?.input_tokens ?? 0) - cachedTokens, 0),
+    input: Math.max((usage?.input_tokens ?? 0) - cachedTokens - writtenTokens, 0),
     cacheRead: cachedTokens,
-    cacheCreation: (usage?.input_tokens_details as { cache_write_tokens?: number } | undefined)?.cache_write_tokens ?? 0,
+    cacheCreation: writtenTokens,
     output: usage?.output_tokens ?? 0,
     webSearches: output.filter((item) => item.type === 'web_search_call').length
   }

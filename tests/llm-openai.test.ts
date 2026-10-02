@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
 import { isTransientApiError } from '@shared/api-errors'
+import { summarizeTurnUsage } from '@shared/turn-usage'
 
 /** The OpenAI adapter. These tests run fake Responses API events and check the conversion to the ASIST types. */
 
@@ -256,6 +257,14 @@ describe('the OpenAI stream', () => {
     // The brain sends the result of the whole call with its request for the rest; a call sent back without a result is refused.
     expect(result.stop).toBe('max_tokens')
     expect(result.message.native).toEqual({ provider: 'openai', model: 'gpt-5.5', payload: [CALL] })
+  })
+
+  it('counts a prompt written to the cache once, apart from the input, so the context length is the prompt that was sent', async () => {
+    const usage = { input_tokens: 60_000, input_tokens_details: { cached_tokens: 20_000, cache_write_tokens: 30_000 }, output_tokens: 10 }
+    mocks.events = [completed(usage)]
+    const result = await (await open()).stream.final()
+    expect(result.usage).toEqual({ input: 10_000, cacheRead: 20_000, cacheCreation: 30_000, output: 10, webSearches: 0 })
+    expect(summarizeTurnUsage([result.usage!]).contextTokens).toBe(60_000)
   })
 
   it('fails instead of running a tool call whose arguments are broken', async () => {
