@@ -14,8 +14,6 @@ const MIN_FINISH_CHARS = 2
 
 export interface PlannerPorts {
   plan(input: BridgePlanRequest): Promise<BridgePlan>
-  /** Called whenever a plan comes back; the HUD displays it. */
-  onPlan(plan: BridgePlan, input: BridgePlanRequest): void
   onFailure(error: unknown): void
 }
 
@@ -26,7 +24,6 @@ export class BridgePlanner {
     this.lookahead = new PartialLookahead({
       request: (input) => ports.plan(input),
       fold: (_latest, plan) => plan,
-      onResult: (plan, input) => ports.onPlan(plan, input),
       onFailure: (error) => ports.onFailure(error)
     })
   }

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import mitt from 'mitt'
 import type { AppStatus, LiveAudio } from '@shared/ipc'
 import { createTranslator } from '@shared/i18n'
+import type { RouterNote } from '@/state/stores'
+import { routerNoteText } from '@/ui/router-note'
 
 /**
  * The conversation driven by the events of the voice pipeline: the voice controller and the speech
@@ -29,7 +31,11 @@ const mocks = vi.hoisted(() => {
     setPartial: (partial: string) => {
       turn.partial = partial
     },
-    setRouterNote: () => {},
+    /** What the HUD's ROUTER field holds. */
+    routerNote: null as unknown,
+    setRouterNote: (note: unknown) => {
+      turn.routerNote = note
+    },
     setMic: () => {}
   }
   const settings: Record<string, unknown> = {}
@@ -264,6 +270,10 @@ function sound(segment: Record<string, unknown>, durationMs: number): void {
   player().events.emit('segmentstart', { segment, durationMs })
 }
 
+/** What the HUD's ROUTER field says now, in English. */
+const routerText = (): string =>
+  mocks.turn.routerNote ? routerNoteText(mocks.turn.routerNote as RouterNote, createTranslator('en-US')) : ''
+
 /** The rows of measurements saved, in order. */
 const savedRows = (metricsLog: Mock): Array<Record<string, unknown>> =>
   metricsLog.mock.calls.map((call) => (call as Array<Record<string, unknown>>)[0])
@@ -293,6 +303,7 @@ beforeEach(async () => {
   mocks.turn.partial = ''
   mocks.turn.activeTurnId = -1
   mocks.turn.timings = {}
+  mocks.turn.routerNote = null
   mocks.confirmOpened = []
   mocks.realLive = null
   mocks.feed.lines.length = 0
@@ -492,6 +503,29 @@ describe('the bridge and what brain is told of it', () => {
     expect(startOptions(turnStart).bridge).toBe("Tomorrow's weather, right.")
   })
 
+  it('has its phrase shown in the HUD only once it sounds', async () => {
+    mocks.settings.conversationLocale = 'en-US'
+    await start({
+      bridgePlan: vi.fn(async () => ({ bridge: "Tomorrow's weather, right." })),
+      bridgeSynthesize: vi.fn(async (text: string) => ({ text, audio: 'eA==' })),
+      turnStart: vi.fn(async () => 42)
+    })
+
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', 'what is the weather tomorrow')
+    await flush()
+    const end = speechEnd(performance.now() - 3000, 'what is the weather tomorrow')
+    await flush()
+    utterance(end, 'What is the weather tomorrow?')
+    await flush()
+    const bridge = lastClip()
+    expect(bridge.clip).toBe('bridge')
+    expect(routerText()).not.toContain("Tomorrow's weather, right.")
+
+    sound(bridge, 900)
+    expect(routerText()).toContain("Tomorrow's weather, right.")
+  })
+
   it('is neither announced nor played in a language with no classifier when the look-ahead has not answered by the final transcript', async () => {
     mocks.settings.conversationLocale = 'en-US'
     const { turnStart, bridgeSynthesize, planned } = await speakAheadOfTheLookahead({
@@ -505,6 +539,23 @@ describe('the bridge and what brain is told of it', () => {
 
     expect(bridgeSynthesize).not.toHaveBeenCalled()
     expect(playedRoles()).not.toContain('bridge')
+  })
+
+  it('is shown in the HUD and kept in the measurements as given up, without its phrase, when the look-ahead has not answered by the final transcript', async () => {
+    mocks.settings.conversationLocale = 'en-US'
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    const { planned } = await speakAheadOfTheLookahead(
+      { partial: 'how did the meeting go', final: 'How did the meeting go?' },
+      { metricsLog }
+    )
+    planned({ bridge: 'The meeting, right.' })
+    await flush()
+    const conversation = await import('@/conversation')
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: 'It went well.' })
+
+    expect(savedRows(metricsLog).at(-1)).toMatchObject({ bridge: 'unsettled' })
+    expect(routerText()).not.toContain('The meeting, right.')
+    expect(routerText()).toBe(createTranslator('en-US')('hud.router.bridgeUnsettled'))
   })
 
   it('is announced as coming for a Japanese utterance the classifier lets have one, and plays once the look-ahead answers', async () => {
@@ -694,6 +745,7 @@ describe('the bridge and what brain is told of it', () => {
 
       expect(bridgeSynthesize).not.toHaveBeenCalled()
       expect(playedRoles()).not.toContain('bridge')
+      expect(routerText()).not.toContain('明日の天気ですね。')
     })
   }
 })

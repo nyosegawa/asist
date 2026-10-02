@@ -100,12 +100,13 @@ function lastAssistantText(): string {
   return ''
 }
 
-/** Look-ahead on a fast model while the user is still speaking, so the bridge sentence is ready before speech ends. */
+/**
+ * Look-ahead on a fast model while the user is still speaking, so the bridge sentence is ready before speech
+ * ends. Its plans are not shown in the HUD, because a phrase it worded may never sound; the opening reports
+ * what came of the bridge instead.
+ */
 const planner = new BridgePlanner({
   plan: (input) => window.api.bridgePlan(input),
-  onPlan: (plan) => {
-    if (plan.bridge) useTurnStore.getState().setRouterNote({ kind: 'bridge', text: plan.bridge })
-  },
   onFailure: (error) => {
     console.warn('bridge plan failed:', error)
     useTurnStore.getState().setRouterNote({ kind: 'bridgeFailed' })
@@ -139,6 +140,7 @@ const opening = new TurnOpening({
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   measure: (startedAt, timings) => turnMetrics.updateUtterance(startedAt, timings),
+  bridgeEnded: (end) => useTurnStore.getState().setRouterNote({ kind: 'bridge', ...end }),
   sounding: () => speechPlayer.isPlaying,
   withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })

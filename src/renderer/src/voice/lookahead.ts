@@ -22,8 +22,8 @@ export interface LookaheadPorts<I, R> {
   request(input: I): Promise<R>
   /** Folds a result into the latest one of the capture. */
   fold(latest: R | null, result: R): R
-  /** Called whenever the latest result of the current capture changes; the HUD displays it. */
-  onResult(latest: R, input: I): void
+  /** Called whenever the latest result of the current capture changes. */
+  onResult?(latest: R, input: I): void
   onFailure(error: unknown): void
 }
 
@@ -88,7 +88,7 @@ export class PartialLookahead<I extends { text: string }, R> {
     try {
       const result = await this.ports.request(input)
       capture.latest = this.ports.fold(capture.latest, result)
-      if (capture === this.capture) this.ports.onResult(capture.latest, input)
+      if (capture === this.capture) this.ports.onResult?.(capture.latest, input)
     } catch (error) {
       if (capture === this.capture) this.ports.onFailure(error)
     } finally {

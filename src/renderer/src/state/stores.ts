@@ -18,6 +18,7 @@ import type {
   TurnTimings
 } from '@shared/ipc'
 import type { AizuchiClass } from '@shared/aizuchi-classifier'
+import type { BridgeEnd } from '@/voice/opening'
 import { catalogByType } from '@shared/panel-catalog'
 import { displayError } from '@/display-error'
 import { translate } from '@/i18n'
@@ -67,7 +68,7 @@ export type Phase = 'idle' | 'listen' | 'think' | 'speak'
  */
 export type RouterNote =
   | { kind: 'bridgeFailed' | 'heardAsBackchannel' | 'droppedClipEcho' | 'droppedSelfEcho' | 'interrupted' }
-  | { kind: 'bridge'; text: string }
+  | ({ kind: 'bridge' } & BridgeEnd)
   | { kind: 'aizuchi'; cls: AizuchiClass; percent: number }
   | { kind: 'live'; state: LiveConnection; detail?: string }
   | { kind: 'tool'; name: string; status: Extract<TurnEvent, { type: 'tool' }>['status']; detail?: string }
