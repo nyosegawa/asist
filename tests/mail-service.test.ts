@@ -435,6 +435,17 @@ describe('drafts', () => {
     await f.service.stop()
   })
 
+  it('makes no reply draft for the Agent once its call is cut off while the original is read from the server', async () => {
+    const f = await setup()
+    const call = new AbortController()
+    const reply = f.service.change({ operation: 'reply', id: f.ids.question, body: '了解です。' }, call.signal, 'agent')
+    // The model is told the call was interrupted, which it may try again, so nothing may come of it.
+    call.abort()
+    await expect(reply).rejects.toMatchObject({ name: 'AbortError' })
+    expect(f.drafts.list()).toEqual([])
+    await f.service.stop()
+  })
+
   it('refuses a second send, an edit and a discard of a draft while its send is under way, and sends it once', async () => {
     const f = await setup()
     const draft = f.service.draftCreate({ to: ['t@example.com'], subject: 'x', body: 'y' }, 'screen')
