@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 import { errorText } from '@shared/i18n/error-text'
 import { childEnv } from '../child-env'
 
@@ -24,11 +25,14 @@ export const SHELL_ANSWER_TIMEOUT_MS = 10_000
 export function readShellPath(): Promise<string> {
   const shell = process.env.SHELL ?? ''
   const marker = `asist-path-${randomUUID()}`
+  // tcsh and csh refuse -l together with other options ("Unknown option: `-l'"), so they are asked as an
+  // interactive shell alone, which reads ~/.tcshrc or ~/.cshrc, where their users set PATH.
+  const flags = ['tcsh', 'csh'].includes(path.posix.basename(shell)) ? ['-i'] : ['-i', '-l']
   return new Promise((resolve, reject) => {
     const unread = (): Error => new Error(errorText('jobs.start.shellPathUnread', { shell }))
     let child: ChildProcess
     try {
-      child = spawn(shell, ['-i', '-l', '-c', `echo ${marker}; /usr/bin/printenv PATH; echo ${marker}`], {
+      child = spawn(shell, [...flags, '-c', `echo ${marker}; /usr/bin/printenv PATH; echo ${marker}`], {
         detached: true,
         stdio: ['ignore', 'pipe', 'ignore'],
         env: childEnv(),

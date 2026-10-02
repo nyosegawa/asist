@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { AgentCliState, AgentEngine } from '@shared/ipc'
+import type { AgentCliState, AgentCliStatus, AgentEngine } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
 import { AGENT_CLI_UNAVAILABLE_TEXT } from '@shared/agent-cli'
 import { errorText } from '@shared/i18n/error-text'
@@ -86,8 +86,8 @@ const SEARCH: Record<OsFamily, (engine: AgentEngine) => Promise<CliSearch>> = {
       console.error(`the ${engine} CLI cannot be looked for:`, error)
       return { state: 'shell-unreadable' }
     }
-    const folders = PATH.split(path.delimiter).filter((folder) => path.isAbsolute(folder))
-    const candidates = [...listed(engine, 'macos'), ...folders.map((folder) => path.join(folder, engine))]
+    const folders = PATH.split(path.posix.delimiter).filter((folder) => path.posix.isAbsolute(folder))
+    const candidates = [...listed(engine, 'macos'), ...folders.map((folder) => path.posix.join(folder, engine))]
     const found = candidates.find((file): file is string => file !== undefined && isExecutable(file))
     return found ? { state: 'found', path: found, env: { PATH } } : { state: 'missing' }
   },
@@ -113,15 +113,44 @@ const SEARCH: Record<OsFamily, (engine: AgentEngine) => Promise<CliSearch>> = {
 }
 
 const kept = new Map<AgentEngine, Promise<CliSearch>>()
+/** The searches that have ended, which the status reads without waiting. */
+const settled = new Map<AgentEngine, CliSearch>()
+const searchListeners = new Set<() => void>()
 
 /** Where the engine's CLI is, searched once and then kept until `forgetCliSearches`. */
 export function locateCli(engine: AgentEngine): Promise<CliSearch> {
-  let search = kept.get(engine)
-  if (!search) {
-    search = SEARCH[platformCapabilities().os](engine)
-    kept.set(engine, search)
-  }
+  const existing = kept.get(engine)
+  if (existing) return existing
+  const search: Promise<CliSearch> = SEARCH[platformCapabilities().os](engine).then((found) => {
+    // A search that started before forgetCliSearches leaves the newer one alone.
+    if (kept.get(engine) === search) {
+      settled.set(engine, found)
+      for (const listener of searchListeners) listener()
+    }
+    return found
+  })
+  kept.set(engine, search)
   return search
+}
+
+/**
+ * The engine's CLI as the status reports it, without waiting for the user's shell: 'checking' until a search
+ * has ended, which this starts when none has.
+ */
+export function cliStatus(engine: AgentEngine): AgentCliStatus {
+  const found = settled.get(engine)
+  if (found) return found.state
+  // A search that fails is reported where a job needs the CLI; the status goes on saying it is being checked.
+  void locateCli(engine).catch(() => {})
+  return 'checking'
+}
+
+/** Calls the listener whenever a search ends, so that the status can be sent again. Returns the unsubscribe. */
+export function onCliSearched(listener: () => void): () => void {
+  searchListeners.add(listener)
+  return () => {
+    searchListeners.delete(listener)
+  }
 }
 
 /**
@@ -130,6 +159,7 @@ export function locateCli(engine: AgentEngine): Promise<CliSearch> {
  */
 export function forgetCliSearches(): void {
   kept.clear()
+  settled.clear()
   shellAnswer = undefined
 }
 

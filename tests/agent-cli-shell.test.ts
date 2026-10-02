@@ -50,6 +50,17 @@ describe.runIf(process.platform === 'darwin')('the agent CLI on the PATH of the 
     expect(await locateCli('codex')).toMatchObject({ state: 'found', path: path.join(bin, 'codex') })
   })
 
+  it.each(['/bin/tcsh', '/bin/csh'])('finds a CLI that %s puts on PATH, asking the shell in the form it accepts', async (shell) => {
+    const bin = path.join(home, 'tools', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    // tcsh reads ~/.cshrc when there is no ~/.tcshrc, and csh on macOS is tcsh.
+    fs.writeFileSync(path.join(home, '.cshrc'), `setenv PATH "${bin}:$PATH"\n`)
+    vi.stubEnv('SHELL', shell)
+    const { locateCli } = await import('../src/main/services/agent-process/cli-locator')
+    expect(await locateCli('codex')).toMatchObject({ state: 'found', path: path.join(bin, 'codex') })
+  })
+
   it('runs a CLI installed by npm, whose node is on the user\'s PATH and not on the PATH the app was opened with', { timeout: 15_000 }, async () => {
     const bin = folderOnZshrcPath()
     // npm writes the CLI as a Node script that `env` runs with the first node on PATH; this node answers like `codex exec --json`.

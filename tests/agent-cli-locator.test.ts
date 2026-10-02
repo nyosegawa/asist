@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
 import type { AgentEngine } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
-import { availableEngines, forgetCliSearches, locateCli, requireCli } from '../src/main/services/agent-process/cli-locator'
+import { availableEngines, cliStatus, forgetCliSearches, locateCli, onCliSearched, requireCli } from '../src/main/services/agent-process/cli-locator'
 
 const mocks = vi.hoisted(() => ({
   os: 'windows' as OsFamily,
@@ -166,7 +166,7 @@ describe('finding the CLI on macOS', () => {
     mocks.exists = (file) => file !== override
     const installed = await locateCli('codex')
     expect(installed.state === 'found' && installed.path).not.toBe(override)
-    expect(installed.state === 'found' && path.dirname(installed.path)).not.toBe('/Users/me/.nvm/versions/node/v22.19.0/bin')
+    expect(installed.state === 'found' && path.posix.dirname(installed.path)).not.toBe('/Users/me/.nvm/versions/node/v22.19.0/bin')
 
     forgetCliSearches()
     const onPath = new Set(['relative/codex', '/Users/me/.volta/bin/codex', '/usr/bin/codex'])
@@ -190,6 +190,24 @@ describe('finding the CLI on macOS', () => {
     mocks.exists = (file) => file === '/opt/homebrew/bin/codex'
     expect(await locateCli('codex')).toEqual({ state: 'shell-unreadable' })
     await expect(requireCli('codex')).rejects.toThrow(errorText('jobs.start.cliShellUnreadable', { engine: 'codex' }))
+  })
+
+  it('reports the CLI as being checked, without waiting for the shell, and tells when the search has ended', async () => {
+    let answer!: (path: string) => void
+    mocks.readShellPath.mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    mocks.exists = (file) => file === '/Users/me/.volta/bin/codex'
+    const searched = vi.fn()
+    const stopListening = onCliSearched(searched)
+    try {
+      expect(cliStatus('codex')).toBe('checking')
+      expect(cliStatus('codex')).toBe('checking')
+      expect(mocks.readShellPath).toHaveBeenCalledOnce()
+      answer(SHELL_PATH)
+      await vi.waitFor(() => expect(searched).toHaveBeenCalledOnce())
+      expect(cliStatus('codex')).toBe('found')
+    } finally {
+      stopListening()
+    }
   })
 
   it('asks the shell once for every engine, and again once the kept results are dropped', async () => {

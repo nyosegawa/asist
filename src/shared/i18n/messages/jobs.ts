@@ -1203,6 +1203,20 @@ export const jobs = defineMessages({
       'pt-BR': 'Não foi possível ler o PATH do shell de login (SHELL={shell}).',
       'es-419': 'No se pudo leer el PATH del shell de inicio de sesión (SHELL={shell}).',
       'es-ES': 'No se ha podido leer el PATH del shell de inicio de sesión (SHELL={shell}).'
+    },
+    /** The status while the CLI is still being looked for, which on a Mac waits for the login shell. The settings screens show it. */
+    cliChecking: {
+      'ja-JP': '{engine} の CLI を探しています。',
+      'en-US': 'Looking for the {engine} CLI.',
+      'fr-FR': 'Recherche du CLI {engine} en cours.',
+      'de-DE': 'Die CLI von {engine} wird gesucht.',
+      'hi-IN': '{engine} का CLI खोजा जा रहा है।',
+      'id-ID': 'Sedang mencari CLI {engine}.',
+      'it-IT': 'Ricerca della CLI di {engine} in corso.',
+      'ko-KR': '{engine} CLI를 찾고 있습니다.',
+      'pt-BR': 'Procurando o CLI do {engine}.',
+      'es-419': 'Buscando el CLI de {engine}.',
+      'es-ES': 'Buscando la CLI de {engine}.'
     }
   },
   worktree: {

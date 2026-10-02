@@ -490,6 +490,9 @@ export type AgentEngine = 'codex' | 'claude'
  */
 export type AgentCliState = 'found' | 'missing' | 'script-only' | 'sandbox-not-set-up' | 'shell-unreadable'
 
+/** The agent CLI as the status reports it: 'checking' until the search, which on a Mac waits for the user's shell, has ended. */
+export type AgentCliStatus = AgentCliState | 'checking'
+
 export interface AgentProcessIdentity {
   pid: number
   startedAt: string
@@ -682,7 +685,7 @@ export interface AppStatus {
    */
   asrInstalled: boolean
   /** Whether the CLI of the selected agent engine was found. */
-  agent: AgentCliState
+  agent: AgentCliStatus
   agentEngine: AgentEngine
   /** The voice engine from the settings. With `live` the ASR and TTS states are not used. */
   voiceEngine: VoiceEngine
@@ -819,6 +822,7 @@ export const IpcChannel = {
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
   GetSetupStatus: 'get-setup-status',
+  RecheckAgentCli: 'recheck-agent-cli',
   CompleteSetup: 'complete-setup',
   AsrPrepare: 'asr-prepare',
   AsrPrepareCancel: 'asr-prepare-cancel',
@@ -1027,6 +1031,8 @@ export interface RendererApi {
   onHotkeyMic(callback: () => void): () => void
 
   getSetupStatus(): Promise<SetupStatus>
+  /** Looks for the agent CLI again, on the PATH the user's shell gives now; a new status follows once the search ends. */
+  recheckAgentCli(): Promise<void>
   /** Validates the chosen API, ASR and TTS again, and marks onboarding complete only when they all pass. */
   completeSetup(request: CompleteSetupRequest): Promise<AppSettings>
   prepareAsrModel(model?: AsrModel): Promise<{ ok: boolean; message: string }>

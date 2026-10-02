@@ -124,6 +124,11 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
     applyStatus(next.services)
   }
   const refreshEmbedding = async (): Promise<void> => setEmbedding(await window.api.embeddingStatus())
+  // The user may have installed or removed an agent CLI before opening the settings. Looking runs the user's
+  // shell, so it happens when they open, not whenever a model changes; the status follows when it ends.
+  useEffect(() => {
+    if (open) void window.api.recheckAgentCli()
+  }, [open])
   // What is installed and recommended follows the models the settings name, so it is read again whenever
   // one of them changes, from whichever page changed it.
   useEffect(() => {
