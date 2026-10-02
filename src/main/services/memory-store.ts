@@ -84,9 +84,9 @@ const notRegular = (file: string): Error => new Error(errorText('memory.errors.n
 
 /**
  * Reads a file of the memory, or returns null when there is none. Anything but a regular file is refused
- * before a byte of it is read. A curation worktree can hold what git never shows, a named pipe anywhere or
- * a symbolic link in a path the Agent added to .gitignore, and assertInsideMemory sees only what git
- * shows: reading a pipe blocks the main process until a writer appears, and a link to /dev/zero never
+ * before a byte of it is read. The memory folder can hold a named pipe or a symbolic link that was put there
+ * by hand, and ensureRepo commits a link like any file, so a checkout of a curation's merge can hold one
+ * too: reading a pipe blocks the main process until a writer appears, and a link to /dev/zero never
  * ends. The file is opened without following a link and without waiting for a writer, and its type is
  * checked on the open descriptor, so nothing can be put in its place in between.
  *

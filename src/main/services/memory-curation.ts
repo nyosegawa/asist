@@ -142,9 +142,9 @@ const MEMORY_FILE_MODES = new Set(['100644', '100755', '000000'])
  * The curation merges without asking anyone, and its prompt holds the day's transcript, which can carry
  * text from a mail or a web page written to steer the agent. So the merge takes only plain files of the
  * memory repository itself. A symbolic link counts as outside, because the reindex and the memory screen
- * would read the file it points to after the merge. This sees only what git shows; a named pipe, or a link
- * in a path the Agent added to .gitignore, reaches the check that follows, whose reader refuses anything
- * but a regular file.
+ * would read the file it points to after the merge. This sees only what git shows; what it does not show,
+ * such as a named pipe or a link in a path the Agent added to .gitignore, is never merged, and the check
+ * that follows reads a checkout of the merge rather than the Agent's worktree.
  */
 function assertInsideMemory(job: AgentJob): ReviewedMerge {
   const worktree = job.worktree
@@ -175,6 +175,29 @@ function assertInsideMemory(job: AgentJob): ReviewedMerge {
   return { commit: worktree.commit, base, into: git.checkedOut(worktree.repo) }
 }
 
+/**
+ * The memory as merging the job's commit would leave it, read in a worktree of its own that is cut from the
+ * memory's HEAD and has the commit merged the way agentRunner.merge then merges it into the memory. The
+ * memory screen can commit while the Agent runs, and two changes that each keep the rules can break them
+ * together, as when both add the same heading to user.md or their sections together pass the length of
+ * instruction.md. Merged, such a job could be neither discarded nor completed, and no later curation would
+ * start. Null when the two conflict, which agentRunner.merge then records as for any job.
+ */
+function readMerged(job: AgentJob, commit: string): store.ReadResult | null {
+  const worktree = job.worktree!
+  const dir = `${worktree.dir}-merged`
+  const branch = `${worktree.branch}-merged`
+  git.worktreeAdd(worktree.repo, dir, branch)
+  try {
+    const outcome = git.mergeNoFf(dir, commit, `asist: ${job.title} (${job.id})`)
+    if (outcome.ok) return store.readAll(dir)
+    if (outcome.conflict) return null
+    throw new Error(errorText('jobs.merging.failed', { detail: outcome.message }))
+  } finally {
+    git.worktreeRemove(worktree.repo, dir, branch)
+  }
+}
+
 /** Events overlap, so a job is locked only while it is being processed. A failure is retried from the last saved step. */
 function processJob(job: AgentJob): void {
   if (!job.memoryCuration || job.memoryCuration.applied || job.status !== 'done' || processing.has(job.id)) return
@@ -183,8 +206,10 @@ function processJob(job: AgentJob): void {
   try {
     if (job.mergeState === 'pending') {
       const checked = assertInsideMemory(job)
-      const { errors } = store.readAll(job.cwd)
-      if (errors.length > 0) throw new Error(errorText('memory.errors.checkFailed', { errors: errors.slice(0, 10).join('\n') }))
+      const merged = readMerged(job, checked.commit)
+      if (merged !== null && merged.errors.length > 0) {
+        throw new Error(errorText('memory.errors.checkFailed', { errors: merged.errors.slice(0, 10).join('\n') }))
+      }
       agentRunner.merge(job.id, checked)
       // The update that merge emits is synchronous, so the job in hand is already stale and is read again.
       job = agentRunner.get(job.id)!

@@ -160,6 +160,36 @@ it('discards a job whose merge conflicts with an edit made on the memory screen 
   expect(fs.readFileSync(path.join(repo, 'memory.md'), 'utf8')).toBe('edited\n')
 })
 
+it('discards a job whose merge with an edit made on the memory screen meanwhile breaks the rules that neither side breaks alone, and curates again the next day', async () => {
+  const actual = await vi.importActual<typeof import('../src/main/services/memory-store')>('../src/main/services/memory-store')
+  mocks.readAll.mockImplementation((dir: string) => actual.readAll(dir))
+  const repo = path.join(mocks.root, 'repo')
+  const user = '---\nupdated: 2026-09-10\n---\n# ユーザー\n\n## 属性\n東京に住んでいる。\n\n## 好み\n辛いものは控えめが好き。\n'
+  fs.writeFileSync(path.join(repo, 'instruction.md'), '# いつも覚えておくこと\n\n## この人について\n東京に住んでいる。\n')
+  fs.writeFileSync(path.join(repo, 'user.md'), user)
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-qm', 'memory')
+  const { curation, agent } = await setup()
+  const job = curation.pendingJob()!
+  // While the Agent runs, the user adds a heading at the end of user.md on the memory screen.
+  const edited = `${user}\n## 趣味\n釣りが好き。\n`
+  fs.writeFileSync(path.join(repo, 'user.md'), edited)
+  git(repo, 'commit', '-qam', 'asist: edit user.md')
+  // The Agent adds the same heading after the first section, and its worktree alone keeps the rules.
+  fs.writeFileSync(path.join(job.cwd, 'user.md'), user.replace('## 好み', '## 趣味\n将棋が好きらしい。\n\n## 好み'))
+  expect(actual.readAll(job.cwd).errors).toEqual([])
+  lastLaunch().onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('discarded')
+  expect(curation.lastFailure()).not.toBeNull()
+  expect(curation.pendingJob()).toBeNull()
+  expect(curation.curatedThrough()).toBeNull()
+  expect(fs.readFileSync(path.join(repo, 'user.md'), 'utf8')).toBe(edited)
+  expect(actual.readAll(repo).errors).toEqual([])
+  vi.setSystemTime(now + DAY)
+  vi.advanceTimersByTime(MINUTE)
+  expect(mocks.launch).toHaveBeenCalledTimes(2)
+})
+
 it('starts no job for a day the user did not speak on, whatever language the transcript is written in', async () => {
   mocks.conversationLocale = 'de-DE'
   mocks.day = [{ t: 1000, kind: 'assistant', text: 'Guten Morgen' }, { t: 2000, kind: 'notice', text: 'job done' }]
