@@ -28,19 +28,27 @@ vi.mock('../src/main/services/brain/session', () => ({
 }))
 
 class FakeSession implements GeminiSession {
-  readonly realtime: unknown[] = []
-  readonly contents: unknown[] = []
-  readonly toolResponses: unknown[] = []
+  /** Everything sent to the session, in the order it was sent. */
+  readonly sent: Array<{ kind: 'realtime' | 'content' | 'toolResponse'; params: unknown }> = []
   closed = false
   constructor(readonly params: GeminiConnectParams) {}
+  get realtime(): unknown[] {
+    return this.sent.filter((entry) => entry.kind === 'realtime').map((entry) => entry.params)
+  }
+  get contents(): unknown[] {
+    return this.sent.filter((entry) => entry.kind === 'content').map((entry) => entry.params)
+  }
+  get toolResponses(): unknown[] {
+    return this.sent.filter((entry) => entry.kind === 'toolResponse').map((entry) => entry.params)
+  }
   sendRealtimeInput(params: unknown): void {
-    this.realtime.push(params)
+    this.sent.push({ kind: 'realtime', params })
   }
   sendClientContent(params: unknown): void {
-    this.contents.push(params)
+    this.sent.push({ kind: 'content', params })
   }
   sendToolResponse(params: { functionResponses: unknown[] }): void {
-    this.toolResponses.push(params)
+    this.sent.push({ kind: 'toolResponse', params })
   }
   close(): void {
     this.closed = true
@@ -81,9 +89,11 @@ async function setup(execute?: ExecuteTool): Promise<{
     settings: () => ({ liveIdleSeconds: 30, geminiLive: { model: 'gemini-3.8-live', voice: 'Kore' } }) as never,
     apiKey: () => 'key',
     connect: async (params) => {
-      await mocks.connected
+      // The session exists from the call on, so that a test can deliver messages before connecting
+      // resolves, as the SDK does with those that come with setupComplete.
       const session = new FakeSession(params)
       sessions.push(session)
+      await mocks.connected
       return session
     },
     systemInstruction: () => 'SYSTEM',
@@ -457,6 +467,90 @@ describe('GeminiLiveEngine', () => {
     const second = await open(engine, sessions)
     expect(second.params.resumptionHandle).toBeNull()
     expect(openingNote(second)).toContain(jobStatusNote('ja-JP', 'JOBS: survey running 3 min', null)!)
+    await engine.stop()
+  })
+
+  it('tells a session that resumed with the status unchanged, and resumes again once the jobs are gone, that they are gone', async () => {
+    mocks.jobContext = 'JOBS: survey running 3 min'
+    const { engine, sessions } = await setup()
+    const first = await open(engine, sessions)
+    const shown = jobStatusNote('ja-JP', 'JOBS: survey running 3 min', null)!
+    expect(openingNote(first)).toContain(shown)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const second = await open(engine, sessions)
+    expect(openingNote(second)).not.toContain(shown)
+    second.message({ sessionResumptionUpdate: { newHandle: 'h2', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    mocks.jobContext = null
+    const third = await open(engine, sessions)
+    expect(openingNote(third)).toContain(jobStatusNote('ja-JP', null, shown)!)
+    await engine.stop()
+  })
+
+  it('tells a session resumed from a handle the job status that handle carried, not what a later session that issued no handle read', async () => {
+    mocks.jobContext = 'JOBS: survey running 3 min'
+    const { engine, sessions } = await setup()
+    const first = await open(engine, sessions)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const running = jobStatusNote('ja-JP', 'JOBS: survey running 3 min', null)!
+    mocks.jobContext = 'JOBS: survey done 1 min ago'
+    const second = await open(engine, sessions)
+    const done = jobStatusNote('ja-JP', 'JOBS: survey done 1 min ago', running)!
+    expect(openingNote(second)).toContain(done)
+    // The provider ends the session before it offers a handle, so the next one resumes from h1 again,
+    // which never read that the job was done.
+    second.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    const third = await open(engine, sessions)
+    expect(third.params.resumptionHandle).toBe('h1')
+    expect(openingNote(third)).toContain(done)
+    await engine.stop()
+  })
+
+  it('ties a handle that comes with setupComplete, before connecting resolves, to the job status the new session reads', async () => {
+    mocks.jobContext = 'JOBS: survey running 3 min'
+    const { engine, sessions } = await setup()
+    const first = await open(engine, sessions)
+    first.message({ sessionResumptionUpdate: { newHandle: 'h1', resumable: true } })
+    await vi.advanceTimersByTimeAsync(31_000)
+    const running = jobStatusNote('ja-JP', 'JOBS: survey running 3 min', null)!
+    mocks.jobContext = 'JOBS: survey done 1 min ago'
+    let connect!: () => void
+    mocks.connected = new Promise((resolve) => (connect = resolve))
+    engine.activity(true)
+    await vi.advanceTimersByTimeAsync(0)
+    const second = sessions[1]
+    second.message({ setupComplete: {} })
+    second.message({ sessionResumptionUpdate: { newHandle: 'h2', resumable: true } })
+    connect()
+    await vi.advanceTimersByTimeAsync(0)
+    const done = jobStatusNote('ja-JP', 'JOBS: survey done 1 min ago', running)!
+    expect(openingNote(second)).toContain(done)
+    second.params.callbacks.onclose('session time limit')
+    await vi.advanceTimersByTimeAsync(0)
+    const third = await open(engine, sessions)
+    expect(third.params.resumptionHandle).toBe('h2')
+    // h2 came from a session that read that the job was done, so a session resumed from it is not told again.
+    expect(openingNote(third).startsWith(noticeAt(new Date()))).toBe(true)
+    expect(openingNote(third)).not.toContain(done)
+    await engine.stop()
+  })
+
+  it('gives a session its opening note before the audio of the speech that opened it', async () => {
+    const { engine, sessions } = await setup()
+    // The start of speech opens the session, and what is heard while it connects goes out once it is open.
+    engine.activity(true)
+    engine.pushAudio(new Float32Array(1600))
+    await vi.advanceTimersByTimeAsync(0)
+    const session = sessions[0]
+    engine.pushAudio(new Float32Array(1600))
+    session.message({ setupComplete: {} })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.sent.map((entry) => entry.kind)).toEqual(['content', 'realtime', 'realtime'])
+    expect(session.sent[0].params).toEqual(session.contents[0])
+    expect(openingNote(session).startsWith(noticeAt(new Date()))).toBe(true)
     await engine.stop()
   })
 

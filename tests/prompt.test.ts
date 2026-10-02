@@ -93,7 +93,7 @@ describe('the base prompt for the brain speaking for itself and for Live', () =>
     expect(text.indexOf('MEMORY-BLOCK')).toBeGreaterThan(text.indexOf('PERSONA-TEXT'))
   })
 
-  it('builds the same Live instruction at any time, since a session resumed hours later keeps the one it first opened with', () => {
+  it('reads no clock when it builds the Live instruction, since a session resumed hours later keeps the one it first opened with', () => {
     vi.useFakeTimers()
     try {
       const input = { locale: 'ja-JP' as const, persona: 'PERSONA-TEXT', memoryBlock: 'MEMORY-BLOCK', historySummary: 'S' }
