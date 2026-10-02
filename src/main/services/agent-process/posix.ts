@@ -280,36 +280,57 @@ export function manageAgentProcess(child: ChildProcess, token: string, events: A
 }
 
 /**
- * The shell an agent starts through. It waits for permission to start: the CLI must not start writing before
- * the job is persisted, and if ASIST exits first, the EOF on stdin ends the shell before the exec. The prompt
- * follows the permission on the same stdin: the shell's read takes only the first line from a pipe, and the
- * CLI reads the rest (see agent-cli).
- *
- * Before the exec it leaves a watcher in the CLI's group that reads fd 3, a pipe whose other end only ASIST
- * holds. When ASIST ends, crashed or killed, the pipe reaches EOF and the watcher sends the group the SIGTERM a
- * stop begins with, as the launcher on Windows stops its job: a CLI whose output nobody reads goes on with its
- * task otherwise. Measured with claude 2.1.276 on 2026-10-02: after the process that started it was killed, it
- * finished the running command, asked the model again and ran another one, and with the watcher it exited
- * within a second and its running command never finished. What outlives the SIGTERM is stopped by the
- * recovery at the next launch. The watcher is started from a subshell that exits at once, so that it is not a
- * child of the CLI, which never started it.
+ * The watcher's script, given the CLI's PID, which is also its group's. A line on its input means the CLI has
+ * exited; an end without one means ASIST is gone, and the CLI's group and every process descended from the CLI
+ * are sent SIGTERM. The descendants are read while the CLI still links them, since claude's Bash tool and codex
+ * run each command in a process group of their own, and codex 0.155.0 left its running command to finish after
+ * it got SIGTERM itself (2026-10-02). The depth limit keeps a table read while processes come and go from
+ * looping.
  */
-const LAUNCHER = 'IFS= read -r ready && [ "$ready" = start ] || exit; ( { read -r _ <&3; kill -TERM 0; } </dev/null >/dev/null 2>&1 & ); exec "$@" 3<&-'
+const WATCHER = [
+  'read -r _ && exit',
+  'descendants=$(/bin/ps -axo pid=,ppid= | /usr/bin/awk -v root="$1" \'{ parent[$1] = $2 } END { for (pid in parent) { up = parent[pid]; for (depth = 0; (up in parent) && up != root && depth < 64; depth++) up = parent[up]; if (up == root) print pid } }\')',
+  'kill -TERM -"$1" $descendants'
+].join('\n')
 
-/** An agent on macOS is the process group of the launcher shell, which becomes the CLI. */
+/**
+ * Sends the agent SIGTERM, as a stop begins, if ASIST ends, crashed or killed, while the CLI runs, as the
+ * launcher on Windows stops its job. Measured with claude 2.1.276 on 2026-10-02: once the process that started
+ * it was killed, it finished the running command, asked the model again and ran another one. The watcher is a
+ * shell in a session of its own that reads a pipe only ASIST writes to, and ASIST writes a line there once the
+ * CLI has exited. Kept out of the agent's group, it never keeps the group alive after the CLI, which would make
+ * every end that settles on its own run a stop and cut short what the CLI left in its group.
+ */
+function watchForAsistEnd(group: number, env: NodeJS.ProcessEnv, child: ChildProcess): void {
+  const watcher = spawn('/bin/sh', ['-c', WATCHER, 'asist-agent-watcher', String(group)], {
+    env,
+    detached: true,
+    stdio: ['pipe', 'ignore', 'ignore'],
+    windowsHide: true
+  })
+  // The agent runs on without the watcher, but would then outlive a crash of ASIST.
+  const lost = (error: Error): void => console.error(`the watcher of agent ${group} is gone:`, error)
+  watcher.on('error', lost)
+  watcher.stdin!.on('error', lost)
+  child.once('exit', () => watcher.stdin!.end('\n'))
+}
+
+/**
+ * An agent on macOS is the process group of a shell that waits for permission to start: the CLI must not
+ * start writing before the job is persisted, and if ASIST exits first, the EOF on stdin ends the shell
+ * before the exec. The prompt follows the permission on the same stdin: the shell's read takes only the
+ * first line from a pipe, and the CLI reads the rest (see agent-cli).
+ */
 export const posixOwner: AgentOwner = {
   start(cli, args, { cwd, env, token }, events) {
-    const child = spawn('/bin/sh', ['-c', LAUNCHER, 'asist-agent-launcher', cli, ...args], {
+    const child = spawn('/bin/sh', ['-c', 'IFS= read -r ready && [ "$ready" = start ] && exec "$@"', 'asist-agent-launcher', cli, ...args], {
       cwd,
       env: { ...env, [AGENT_PROCESS_TOKEN]: token },
       detached: true,
-      stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true
     })
-    // Once the CLI has exited, ASIST lets go of the watcher's pipe, and the watcher's SIGTERM reaches only what
-    // the CLI left in its group, which ASIST stops in any case. Node's close waits for that pipe as well, so it
-    // would never come while the watcher waits on it.
-    child.once('exit', () => child.stdio[3]!.destroy())
+    if (child.pid !== undefined) watchForAsistEnd(child.pid, env, child)
     return { child, identity: () => captureProcessIdentity(child.pid!, token), lifetime: manageAgentProcess(child, token, events) }
   },
   recover: recoverAgentProcess

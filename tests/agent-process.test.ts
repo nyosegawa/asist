@@ -44,10 +44,7 @@ afterEach(() => {
 })
 
 async function launch(engine: AgentJob['engine'] = 'codex') {
-  const stdout = new PassThrough()
-  const stderr = new PassThrough()
-  // The fourth pipe is the one the launcher's watcher reads.
-  const child = Object.assign(new EventEmitter(), { stdout, stderr, stdio: [null, stdout, stderr, new PassThrough()] })
+  const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() })
   const handlers = { onSpawn: vi.fn(), onEvent: vi.fn(), onStderr: vi.fn(), onError: vi.fn(), onExit: vi.fn() }
   mocks.spawn.mockReturnValue(child)
   const { launchAgentProcess } = await import('../src/main/services/agent-process')

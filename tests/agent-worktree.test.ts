@@ -185,8 +185,9 @@ it('moves to the repository on merge a file the CLI names by its real path while
   handlers.onEvent({ kind: 'file-change', paths: [path.join(fs.realpathSync(job.cwd), 'pages', 'note.md')] })
   handlers.onExit(0)
   mergeReviewed(agent, job.id)
-  expect(agent.get(job.id)?.artifacts).toEqual([path.join(repo, 'pages', 'note.md')])
-  expect(fs.readFileSync(agent.get(job.id)!.artifacts![0], 'utf8')).toBe('hello\n')
+  const [artifact] = agent.get(job.id)!.artifacts!
+  expect(fs.readFileSync(artifact, 'utf8')).toBe('hello\n')
+  expect(fs.realpathSync.native(artifact)).toBe(path.join(repo, 'pages', 'note.md'))
 })
 
 it('lets the files card open what a merged job produced, in the repository where the merge put it', async () => {

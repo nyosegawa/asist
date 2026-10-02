@@ -52,7 +52,12 @@ afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true })
 })
 
-function prepareCrashFixture(descendant: boolean): { entry: string; repo: string; env: NodeJS.ProcessEnv } {
+/**
+ * A repository and a CLI whose writer works in the job's folder. With `descendant`, the CLI starts the writer as
+ * a child, in its own group or, with `ownGroup`, in a session and process group of its own, as claude's Bash tool
+ * and codex run their commands.
+ */
+function prepareCrashFixture(descendant: boolean, ownGroup = false): { entry: string; repo: string; env: NodeJS.ProcessEnv } {
   const repo = path.join(root, 'repo')
   fs.mkdirSync(repo)
   git(repo, 'init', '-q')
@@ -78,7 +83,7 @@ function prepareCrashFixture(descendant: boolean): { entry: string; repo: string
     const fs = require('node:fs');
     fs.writeFileSync('leader.pid',String(process.pid));
     process.stdout.write(JSON.stringify({type:'thread.started',thread_id:'fixture-session'})+'\\n');
-    ${descendant ? `require('node:child_process').spawn(process.execPath,[${JSON.stringify(writer)}],{stdio:'ignore'}); setInterval(()=>{if(fs.existsSync(process.env.ASIST_TEST_LEADER_EXIT))process.exit(0)},20);` : `require(${JSON.stringify(writer)});`}
+    ${descendant ? `require('node:child_process').spawn(process.execPath,[${JSON.stringify(writer)}],{stdio:'ignore',detached:${ownGroup}}); setInterval(()=>{if(fs.existsSync(process.env.ASIST_TEST_LEADER_EXIT))process.exit(0)},20);` : `require(${JSON.stringify(writer)});`}
   `, { mode: 0o755 })
   const entry = path.join(root, 'parent.cjs')
   // The real agent service runs in a separate Node process, with only Electron's storage path replaced by a temporary directory.
@@ -99,8 +104,8 @@ function prepareCrashFixture(descendant: boolean): { entry: string; repo: string
   } }
 }
 
-async function crashParent(descendant: boolean): Promise<{ job: AgentJob; repo: string; writer: number }> {
-  const fixture = prepareCrashFixture(descendant)
+async function crashParent(descendant: boolean, ownGroup = false): Promise<{ job: AgentJob; repo: string; writer: number }> {
+  const fixture = prepareCrashFixture(descendant, ownGroup)
   parent = spawn(process.execPath, [fixture.entry], { env: fixture.env, stdio: ['ignore', 'pipe', 'pipe'] })
   let output = ''
   let error = ''
@@ -163,6 +168,19 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
 
   it.each([false, true])('sends the agent\'s group the stop as soon as ASIST ends, without waiting for ASIST to start again (descendant only=%s)', async (descendant) => {
     const { job } = await crashParent(descendant)
+    await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
+  })
+
+  it('sends the stop when ASIST ends to a command the CLI runs in a process group of its own', async () => {
+    const { job } = await crashParent(true, true)
+    await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
+  })
+
+  it('sends the stop when ASIST ends while the environment it passes on turns on job control in /bin/sh', async () => {
+    // bash, which macOS runs as /bin/sh, reads its options from SHELLOPTS, and with monitor on it gives each
+    // job it starts in the background a process group of its own.
+    vi.stubEnv('SHELLOPTS', 'braceexpand:hashall:interactive-comments:monitor')
+    const { job } = await crashParent(false)
     await vi.waitFor(() => expect(fs.existsSync(path.join(job.cwd, 'stop-requested'))).toBe(true), PROCESS_START)
   })
 
@@ -401,6 +419,31 @@ describe.runIf(process.platform !== 'win32')('Agent crash recovery with real pro
     expect(exits).toEqual([0])
     expect(alive(pid)).toBe(false)
     expect(await grows(out)).toBe(false)
+  })
+
+  /** Runs a /bin/sh script as the agent's CLI until the agent has ended, and returns the lines it wrote. */
+  async function runShellCli(script: string): Promise<string[]> {
+    vi.stubEnv('CODEX_CLI_PATH', '/bin/sh')
+    const { launchAgentProcess } = await import('../src/main/services/agent-process')
+    const lines: string[] = []
+    const run = launchAgentProcess({
+      id: 'shell', title: 'fixture', prompt: 'fixture', cwd: root,
+      engine: 'codex', readonly: true, status: 'running', startedAt: Date.now()
+    }, ['-c', script], {
+      onSpawn: (identity) => { group = identity.pid },
+      onEvent: (event) => { if (event.kind === 'raw') lines.push(event.text) },
+      onStderr: () => {}, onError: () => {}, onExit: () => {}
+    })
+    await run.completion
+    return lines
+  }
+
+  it('sends no stop to a process the CLI leaves in its group when the CLI exits on its own', async () => {
+    expect(await runShellCli(`( trap 'echo stopped' TERM; sleep 0.5; echo finished ) & exit 0`)).toEqual(['finished'])
+  })
+
+  it('reads what a process the CLI leaves in its group writes after the CLI exits on its own', async () => {
+    expect(await runShellCli('( sleep 0.5; echo late ) & echo early; exit 0')).toEqual(['early', 'late'])
   })
 
   it('stops the commands the agent runs in process groups of their own before it reports the agent stopped', async () => {
