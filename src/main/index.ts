@@ -11,7 +11,7 @@ import dns from 'node:dns'
 net.setDefaultAutoSelectFamily?.(false)
 dns.setDefaultResultOrder('ipv4first')
 import { registerIpc } from './ipc'
-import { setupOsIntegration } from './os-integration'
+import { notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
 import * as asr from './services/asr'
 import * as tts from './services/tts'
 import * as aizuchi from './services/aizuchi'
@@ -20,14 +20,14 @@ import * as watchdog from './services/watchdog'
 import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
 import * as memory from './services/memory'
-import { initAppUpdates } from './services/app-update'
+import { initAppUpdates, installAfterFailedStart, versionAfterFailedStart } from './services/app-update'
 import { initMemoryCuration } from './services/memory-curation'
 import { allowedFileRoots } from './services/agent'
 import { handleFileScheme, registerFileScheme } from './file-protocol'
-import { errorMessage, t } from './services/i18n'
+import { errorMessageIn, translatorIn } from './services/i18n'
 import { platformCapabilities } from './services/platform'
 import { getSettings } from './services/settings'
-import { createTranslator } from '@shared/i18n'
+import type { UiLocale } from '@shared/i18n'
 import { initMail } from './services/mail'
 import { isAppPage } from '@shared/app-page'
 import { isExternalLink } from '@shared/external-link'
@@ -113,17 +113,41 @@ function createWindow(): void {
 }
 
 /**
- * The interface language is read from the settings file, and a settings file that cannot be read is one
- * of the failures reported here, so a failing read leaves the dialog in the language the messages are
- * written in rather than leaving no window at all.
+ * The interface language of what a failed start shows. It is read from the settings file, and a settings file
+ * that cannot be read is one of the failures reported here, so a failing read leaves the text in the language
+ * the messages are written in rather than leaving no window at all.
  */
-function showStartupFailure(error: unknown): void {
+function startupLocale(): UiLocale {
   try {
-    dialog.showErrorBox(t('app.startup.launchFailed'), errorMessage(error))
+    return getSettings().uiLocale
   } catch {
-    const title = createTranslator('ja-JP')('app.startup.launchFailed')
-    dialog.showErrorBox(title, error instanceof Error ? error.message : String(error))
+    return 'ja-JP'
   }
+}
+
+/**
+ * Shows why the start failed, then quits. A release that cannot start is fixed only by a newer one, which an
+ * app that fails at every start would otherwise never receive, so the quit installs and starts a newer version
+ * when the check finds one. The check runs once the error is closed and the window is hidden, so the
+ * notification is all that tells the user a download is under way.
+ */
+async function quitAfterFailedStart(error: unknown): Promise<void> {
+  const locale = startupLocale()
+  const text = translatorIn(locale)
+  dialog.showErrorBox(text('app.startup.launchFailed'), errorMessageIn(locale, error))
+  mainWindow?.hide()
+  try {
+    const version = await versionAfterFailedStart()
+    if (version !== null) {
+      notify(text('app.startup.launchFailed'), text('app.startup.updating', { version }))
+      quitAfterAgentsStop(await installAfterFailedStart())
+      return
+    }
+  } catch (updateError) {
+    console.error('app update after a failed start:', updateError)
+    dialog.showErrorBox(text('app.startup.updateFailed'), errorMessageIn(locale, updateError))
+  }
+  app.quit()
 }
 
 if (!hasSingleInstanceLock) {
@@ -189,10 +213,7 @@ if (!hasSingleInstanceLock) {
     app.on('activate', () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show()
     })
-  }).catch((error: unknown) => {
-    showStartupFailure(error)
-    app.quit()
-  })
+  }).catch((error: unknown) => quitAfterFailedStart(error))
 }
 
 app.on('window-all-closed', () => {
