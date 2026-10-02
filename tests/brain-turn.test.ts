@@ -979,7 +979,7 @@ describe('brain turn', () => {
     expect(textOf((await historyMessages())[0])).toContain('最寄り駅どこだっけ\n\n[記憶]\n# 中野\n\n## 要約\n最寄り駅')
 
     await runToDone(brain, '駅まで歩いて何分')
-    expect(textOf(mocks.requests[1].messages.at(-1)!)).not.toContain('[記憶]')
+    expect(textOf(mocks.requests[1].messages.at(-1)!)).not.toContain(marker('ja-JP', 'memory'))
     // The note of the previous turn is still sent as part of the history.
     expect(JSON.stringify(mocks.requests[1].messages[0])).toContain('# 中野')
     const injected = events
@@ -1428,8 +1428,8 @@ describe('brain turn', () => {
     await runToDone(brain, '駅まで歩いて何分')
     const sent = mocks.requests[0].messages
     // The failed turn's utterance keeps the note it was recorded with, and that note is the only one.
-    expect(textOf(sent[0])).toContain('[記憶]')
-    expect(textOf(sent.at(-1)!)).not.toContain('[記憶]')
+    expect(textOf(sent[0])).toContain(marker('ja-JP', 'memory'))
+    expect(textOf(sent.at(-1)!)).not.toContain(marker('ja-JP', 'memory'))
   })
 
   it('reports a finished job once, not once per attempt, when reading aloud is off and no segment plays', async () => {
