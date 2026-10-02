@@ -118,6 +118,7 @@ const opening = new TurnOpening({
   synthesizeBridge: (text) => window.api.bridgeSynthesize(text),
   bodyQueuedAfter: (time) => speechPlayer.bodyQueuedAfter(time),
   measure: (startedAt, timings) => turnMetrics.updateUtterance(startedAt, timings),
+  sounding: () => speechPlayer.isPlaying,
   withdrawBridge: (queued) => speechPlayer.dropWaiting(queued)
 })
 const interjectPlayback = new InterjectPlaybackAcks((turnId, status) =>

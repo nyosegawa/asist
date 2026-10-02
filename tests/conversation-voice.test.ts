@@ -49,6 +49,8 @@ const mocks = vi.hoisted(() => {
     windows: false,
     playing: false,
     readingTurn: -1,
+    /** When the player was last handed a sentence of an answer. */
+    bodyQueuedAt: -Infinity,
     settingsListener: null as ((state: { settings: unknown }, before: { settings: unknown }) => void) | null,
     player: null as unknown,
     voice: null as unknown,
@@ -124,11 +126,11 @@ vi.mock('@/voice/SpeechPlayer', async () => {
       return { turnId: -1, index: -1, text, audio, phonemes: null, clip: options.role }
     }),
     discardBody: vi.fn(),
-    dropWaiting: vi.fn(() => true),
+    dropWaiting: vi.fn(),
     beginTurn: vi.fn(),
     enqueue: vi.fn(),
     interrupt: vi.fn(),
-    bodyQueuedAfter: () => false,
+    bodyQueuedAfter: (time: number) => mocks.bodyQueuedAt > time,
     recover: () => {},
     streamPush: () => {},
     streamClear: () => {},
@@ -202,8 +204,8 @@ type Mock = ReturnType<typeof vi.fn>
 
 const voice = (): { events: Emitter; enable: Mock; disable: Mock; current: string } =>
   mocks.voice as { events: Emitter; enable: Mock; disable: Mock; current: string }
-const player = (): { events: Emitter; playClip: Mock; beginTurn: Mock } =>
-  mocks.player as { events: Emitter; playClip: Mock; beginTurn: Mock }
+const player = (): { events: Emitter; playClip: Mock; beginTurn: Mock; dropWaiting: Mock } =>
+  mocks.player as { events: Emitter; playClip: Mock; beginTurn: Mock; dropWaiting: Mock }
 
 function api(overrides: Record<string, unknown>): unknown {
   return new Proxy(overrides, {
@@ -271,6 +273,7 @@ beforeEach(async () => {
   mocks.toasts = []
   mocks.playing = false
   mocks.readingTurn = -1
+  mocks.bodyQueuedAt = -Infinity
   mocks.turn.phase = 'idle'
   mocks.turn.phases = []
   mocks.turn.partial = ''
@@ -549,6 +552,9 @@ describe('the bridge and what brain is told of it', () => {
       await flush()
       const first = speechEnd(performance.now() - 3000, meeting)
       sound(lastClip(), 400)
+      mocks.playing = false
+      player().events.emit('idle', { turnId: -1 })
+      // The user goes on once the aizuchi has ended.
       voice().events.emit('state', 'capturing')
       utterance(first, meeting)
       await flush()
@@ -567,7 +573,7 @@ describe('the bridge and what brain is told of it', () => {
       expect(playedRoles()).toContain('bridge')
     })
 
-    it('plays once that capture ends in speech that comes to nothing, such as the echo of the opening aizuchi', async () => {
+    it('plays once that capture ends in speech that yields no turn', async () => {
       await speakThenCaptureAgain()
       const echo = speechEnd(performance.now() - 300)
       voice().events.emit('state', 'transcribing')
@@ -591,6 +597,47 @@ describe('the bridge and what brain is told of it', () => {
       expect(turnStart).toHaveBeenCalledTimes(2)
       expect(playedRoles()).not.toContain('bridge')
     })
+  })
+
+  it('plays as queued behind the opening aizuchi when the echo of that aizuchi opens a capture and the answer arrives while the echo is transcribed', async () => {
+    const metricsLog = vi.fn(async (_payload: Record<string, unknown>) => {})
+    let planned!: (plan: { bridge: string }) => void
+    const turnStart = vi.fn(async () => 42)
+    const conversation = await start({
+      aizuchiClassify: vi.fn(async () => ({ cls: 'understand', prob: 0.9, complete: 0.9 })),
+      bridgePlan: vi.fn(() => new Promise((resolve) => (planned = resolve))),
+      bridgeSynthesize: vi.fn(async (text: string) => ({ text, audio: 'eA==' })),
+      turnStart,
+      metricsLog
+    })
+    voice().events.emit('state', 'capturing')
+    voice().events.emit('partial', '昨日の会議の件なんですけど')
+    await flush()
+    const first = speechEnd(performance.now() - 3000, '昨日の会議の件なんですけど')
+    voice().events.emit('state', 'transcribing')
+    const aizuchi = lastClip()
+    planned({ bridge: '会議の件ですね。' })
+    await flush()
+    const bridge = lastClip()
+    sound(aizuchi, 600)
+    // The echo of the aizuchi opens a capture while the bridge waits behind it.
+    voice().events.emit('state', 'capturing')
+    utterance(first, '昨日の会議の件なんですけど')
+    await flush()
+    const echo = speechEnd(performance.now() - 100)
+    voice().events.emit('state', 'transcribing')
+    // The answer's first sentence is queued while the echo is transcribed.
+    mocks.bodyQueuedAt = performance.now()
+    utterance(echo, 'はい')
+    await flush()
+    voice().events.emit('state', 'listening')
+    sound(bridge, 700)
+    conversation.handleTurnEvent({ type: 'metrics', turnId: 42, timings: { ttftMs: 800 } })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: 'その件は予算の話でした。' })
+
+    expect(startOptions(turnStart).bridge).toBe('会議の件ですね。')
+    expect(player().dropWaiting).not.toHaveBeenCalled()
+    expect(savedRows(metricsLog).at(-1)).toMatchObject({ bridge: 'played' })
   })
 
   it('is not played before the reply to a message typed right after the utterance it was made for', async () => {

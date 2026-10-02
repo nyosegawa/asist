@@ -252,6 +252,22 @@ describe('SpeechPlayer.dropWaiting, which withdraws a bridge that no answer foll
   })
 })
 
+describe('SpeechPlayer with a clip that is being decoded', () => {
+  it('counts it as sounding, and plays it though it is dropped then, as it is about to be heard', async () => {
+    const { player, context } = await createHarness()
+    const starts: string[] = []
+    player.events.on('segmentstart', ({ segment }) => starts.push(segment.text))
+    player.beginTurn(1)
+    const bridge = player.playClip('eA==', '会議の件ですね。', { role: 'bridge' })
+    expect(player.isPlaying).toBe(true)
+    player.dropWaiting(bridge)
+    context.decodeResolvers[0]({ duration: 1 } as AudioBuffer)
+    await flushMicrotasks()
+    expect(starts).toEqual(['会議の件ですね。'])
+    player.interrupt()
+  })
+})
+
 describe('SpeechPlayer.bodyQueuedAfter, which tells whether the bridge came too late', () => {
   it('does not count the filler played while a tool runs as the answer', async () => {
     const { player } = await createHarness()

@@ -17,11 +17,20 @@ import type { AizuchiClassification } from '@shared/aizuchi-classifier'
  * An utterance is identified by startedAt, the time capture began. A speech that yields no turn,
  * because its transcription failed, meant nothing or was dropped as echo, cancels it. An opening
  * lasts until a newer utterance becomes a turn, which replaces the older turn and its bridge.
- * A bridge never starts over the user: while a newer capture is open, or its speech waits for the
- * transcript, the bridge waits, and it plays once that capture comes to nothing, which it often
- * does, being noise or the echo of the opening aizuchi. A bridge promises that an answer follows,
- * so one that has not started sounding is withdrawn when no answer will: the speech is cancelled,
- * or its turn ends without saying anything.
+ *
+ * A bridge brain was told of plays before the answer, unless the user's speech replaces the turn,
+ * and it never starts over the user. A capture that opens in silence may be the user going on: a
+ * bridge not yet handed to the player waits while it is open and, should it end in speech, until
+ * that speech's transcript, and it plays once the capture comes to nothing. A capture that opens
+ * while the player sounds is as often the echo of the opening's own clip, and the barge-in judgement
+ * settles which while that sound lasts, stopping the opening when it is the user. A bridge already
+ * queued behind the aizuchi plays on as part of that sound, and one synthesized meanwhile joins it,
+ * but none starts the sound again over that capture, where the judgement would begin anew on the
+ * voice the capture already holds. With barge-in off the VAD is muted while the opening sounds, so
+ * no capture opens then.
+ *
+ * A bridge promises that an answer follows, so one that has not started sounding is withdrawn when
+ * no answer will: the speech is cancelled, or its turn ends without saying anything.
  */
 
 /** No aizuchi opens a turn this soon after one played while the user was speaking, because "うん。なるほど。" back to back sounds wrong. */
@@ -61,8 +70,10 @@ export interface OpeningPorts {
   bodyQueuedAfter(speechEndAt: number): boolean
   /** Records a measurement of an utterance's opening: when one of its clips started sounding, or why its bridge did not. */
   measure(startedAt: number, timings: TurnTimings): void
-  /** Drops this bridge if it has not started yet, and tells whether it had not. */
-  withdrawBridge(queued: SpeechSegment): boolean
+  /** Whether the player sounds now, or is about to. */
+  sounding(): boolean
+  /** Drops this bridge if it has not started yet. */
+  withdrawBridge(queued: SpeechSegment): void
 }
 
 interface Opening {
@@ -83,6 +94,8 @@ interface Opening {
   queuedBridge: SpeechSegment | null
   /** The final transcript has claimed it for its turn. */
   claimed: boolean
+  /** Its capture opened in silence, so it may be the user going on, and older bridges wait for its transcript. */
+  holdsOlder: boolean
 }
 
 export interface ClaimedOpening {
@@ -93,10 +106,10 @@ export interface ClaimedOpening {
 }
 
 export class TurnOpening {
-  /** The openings in the order their speech ended. Only the newest may sound its bridge. */
+  /** The openings in the order their speech ended. */
   private openings: Opening[] = []
-  /** A capture is open that began after the newest speech end. */
-  private captureOpen = false
+  /** The capture open after the newest speech end, and whether it opened while the player sounded. */
+  private capture: { overSound: boolean } | null = null
 
   constructor(private readonly ports: OpeningPorts) {}
 
@@ -111,12 +124,14 @@ export class TurnOpening {
       bridge: input.bridge ? { state: 'pending', screened: input.bridge.screened } : { state: 'decided', text: null },
       synthesized: null,
       queuedBridge: null,
-      claimed: false
+      claimed: false,
+      holdsOlder: !this.capture?.overSound
     }
     this.openings.push(opening)
-    // The capture this speech ends is the utterance's own.
-    this.captureOpen = false
+    // The capture that ends in this speech is the utterance's own.
+    this.capture = null
     if (aizuchi) opening.queuedAizuchi = this.ports.play(aizuchi, 'aizuchi')
+    this.release()
     void input.bridge?.plan.then((plan) => {
       if (!this.alive(opening) || opening.bridge.state !== 'pending') return
       const text = plan?.bridge || null
@@ -144,30 +159,34 @@ export class TurnOpening {
     )
   }
 
-  /** Queues the bridge of the newest opening once no newer capture is being heard. */
+  /** Hands the player every synthesized bridge that may sound now. */
   private release(): void {
-    const opening = this.openings.at(-1)
-    if (!opening?.synthesized || opening.queuedBridge || this.captureOpen) return
-    if (this.ports.bodyQueuedAfter(opening.speechEndAt)) {
-      opening.synthesized = null
-      this.ports.measure(opening.startedAt, { bridge: 'late' })
-      return
-    }
-    opening.queuedBridge = this.ports.play(opening.synthesized, 'bridge')
+    this.openings.forEach((opening, index) => {
+      if (!opening.synthesized || opening.queuedBridge || !this.maySound(index)) return
+      if (this.ports.bodyQueuedAfter(opening.speechEndAt)) {
+        opening.synthesized = null
+        this.ports.measure(opening.startedAt, { bridge: 'late' })
+        return
+      }
+      opening.queuedBridge = this.ports.play(opening.synthesized, 'bridge')
+    })
   }
 
-  /** A capture opened. A bridge that has not started yet waits, since it would sound over the user. */
+  /** Whether the bridge of the opening at this index may start now. */
+  private maySound(index: number): boolean {
+    if (this.openings.slice(index + 1).some((newer) => newer.holdsOlder)) return false
+    return !this.capture || (this.capture.overSound && this.ports.sounding())
+  }
+
+  /** A capture opened. */
   captureStarted(): void {
-    this.captureOpen = true
-    for (const opening of this.openings) {
-      if (opening.queuedBridge && this.ports.withdrawBridge(opening.queuedBridge)) opening.queuedBridge = null
-    }
+    this.capture = { overSound: this.ports.sounding() }
   }
 
   /** A capture closed. When it ended in no speech, the bridge it held back plays. */
   captureEnded(): void {
-    if (!this.captureOpen) return
-    this.captureOpen = false
+    if (!this.capture) return
+    this.capture = null
     this.release()
   }
 

@@ -34,6 +34,8 @@ function setup(picked: AizuchiClip | null = clip) {
       })
   )
   const bodyQueued = { after: false }
+  /** Whether the player sounds, as the aizuchi does right after the speech ends. */
+  const player = { sounding: false }
   const measure = vi.fn()
   const opening = new TurnOpening({
     pickAizuchi,
@@ -41,13 +43,12 @@ function setup(picked: AizuchiClip | null = clip) {
     synthesizeBridge,
     bodyQueuedAfter: () => bodyQueued.after,
     measure,
+    sounding: () => player.sounding,
     withdrawBridge: (queued) => {
-      const wasWaiting = waiting.includes(queued)
       waiting.splice(0, waiting.length, ...waiting.filter((waitingClip) => waitingClip !== queued))
-      return wasWaiting
     }
   })
-  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, measure, waiting }
+  return { opening, play, pickAizuchi, synthesizeBridge, resolvers, rejecters, bodyQueued, measure, waiting, player }
 }
 
 /** The clips handed to the player, in order. */
@@ -218,30 +219,53 @@ describe('TurnOpening', () => {
     expect(bridgesOf(queued(play))).toEqual(['会議の件ですね。'])
   })
 
-  it('holds a bridge while a newer capture is open, taking back one that has not started, and plays it once that capture ends without speech', async () => {
+  it('starts no bridge while a capture opened in silence is open, and plays it once that capture ends without speech', async () => {
     const { opening, resolvers, waiting } = setup()
-    const bridge = { text: '会議の件ですね。', audio: 'YQ==' }
     opening.begin(input)
     await flush()
     opening.claim(10)
-    resolvers[0](bridge)
-    await flush()
-    expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi', 'bridge'])
     opening.captureStarted()
-    expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi'])
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    expect(bridgesOf(waiting)).toEqual([])
     opening.captureEnded()
+    expect(bridgesOf(waiting)).toEqual(['会議の件ですね。'])
+  })
+
+  it('leaves a capture opened over the aizuchi to the barge-in judgement: the bridge queued behind it stays, and one synthesized meanwhile joins it', async () => {
+    const { opening, resolvers, waiting, player } = setup()
+    opening.begin(input)
+    player.sounding = true
+    await flush()
+    opening.claim(10)
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    opening.captureStarted()
     expect(waiting.map((waitingClip) => waitingClip.clip)).toEqual(['aizuchi', 'bridge'])
 
-    // A bridge synthesized while the capture is open waits for it too.
     opening.begin({ ...input, startedAt: 20, speechEndAt: 2000 })
     await flush()
     opening.claim(20)
     opening.captureStarted()
     resolvers[1]({ text: '明日の件ですね。', audio: 'Yg==' })
     await flush()
-    expect(bridgesOf(waiting)).toEqual([])
-    opening.captureEnded()
     expect(bridgesOf(waiting)).toEqual(['明日の件ですね。'])
+  })
+
+  it('starts no bridge over a capture opened over the aizuchi once the aizuchi has ended, and lets the speech that capture ends in hold none back', async () => {
+    const { opening, resolvers, waiting, player } = setup()
+    opening.begin(input)
+    player.sounding = true
+    await flush()
+    opening.claim(10)
+    opening.captureStarted()
+    player.sounding = false
+    resolvers[0]({ text: '会議の件ですね。', audio: 'YQ==' })
+    await flush()
+    expect(bridgesOf(waiting)).toEqual([])
+    // The echo of the aizuchi ends in speech of its own, whose transcript the bridge does not wait for.
+    opening.begin({ ...input, startedAt: 20, speechEndAt: 2000 })
+    expect(bridgesOf(waiting)).toEqual(['会議の件ですね。'])
   })
 
   it('drops the recorded opening when the transcript is discarded as an echo, and ignores a cancel for another utterance', () => {
