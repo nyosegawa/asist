@@ -229,14 +229,23 @@ export async function fetchGlobalWeather(
     const at = Date.parse(instant(local, offset))
     return { at, date: zonedDate(at, timeZone), clock: zonedHour(at, timeZone), index }
   })
-  // The answer's first and last dates can hold only part of their hours, so neither is a day of the week.
-  const dates = [...new Set(rows.map((row) => row.date))].slice(1, -1)
+  const hoursOn = new Map<string, typeof rows>()
+  for (const row of rows) hoursOn.set(row.date, [...(hoursOn.get(row.date) ?? []), row])
+  // A date at either end of the answer can lack some of its hours, so a date is a day of the week only
+  // when the hour before its first row and the hour after its last fall on other dates.
+  const dates = [...hoursOn]
+    .filter(
+      ([date, hours]) =>
+        zonedDate(hours[0].at - 3600_000, timeZone) !== date &&
+        zonedDate(hours[hours.length - 1].at + 3600_000, timeZone) !== date
+    )
+    .map(([date]) => date)
   const todayIndex = dates.indexOf(zonedDate(now, timeZone))
   const week = dates.slice(todayIndex, todayIndex + DAYS)
   const targetIndex = request.date === 'tomorrow' ? 1 : 0
   const targetDate = week[targetIndex]
   if (todayIndex < 0 || targetDate === undefined) throw new Error(errorText('cardsWeather.errors.badData'))
-  const days = week.map((date) => dayOf(date, rows.filter((row) => row.date === date), forecast))
+  const days = week.map((date) => dayOf(date, hoursOn.get(date)!, forecast))
 
   // The card shows the target day from the hour that is still running, as the card of Japan does, in
   // steps of three hours of the place's clock, counted from that hour today and from midnight tomorrow.
