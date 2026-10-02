@@ -111,14 +111,28 @@ describe('note service', () => {
       .map((name) => summarizeNote(name.slice(0, -3), fs.readFileSync(path.join(folderOf(), name), 'utf8'), fs.statSync(path.join(folderOf(), name)).mtimeMs))
       .sort(byUpdated)
   }
-  /** What the notes screen shows: the list it read once, with every change it was told from then on. */
+  const showsWhatIsOnDisk = (shown: () => NoteSummary[]): Promise<void> =>
+    vi.waitFor(() => expect(shown()).toEqual(onDisk()), { timeout: 10_000, interval: 20 })
+  /**
+   * What the notes screen shows: the list it read once, with every change it was told from then on. It
+   * returns once the watch reports: on macOS a watch reports only from a moment after it opens, so a note is
+   * written again until the screen shows it, and then removed.
+   */
   const screen = async (service: NoteService, changed: Mock): Promise<() => NoteSummary[]> => {
     const from = changed.mock.calls.length
     const list = await service.list()
-    return () => changed.mock.calls.slice(from).reduce<NoteSummary[]>((notes, [changes]) => applyNoteChanges(notes, changes as NoteChange[]), list)
+    const shown = (): NoteSummary[] =>
+      changed.mock.calls.slice(from).reduce<NoteSummary[]>((notes, [changes]) => applyNoteChanges(notes, changes as NoteChange[]), list)
+    const probe = '20200101-000000-0000'
+    const showsProbe = (): boolean => shown().some((note) => note.id === probe)
+    for (let attempt = 0; attempt < 25 && !showsProbe(); attempt++) {
+      fs.writeFileSync(fileOf(probe), `# ${'a'.repeat(attempt + 1)}\n`)
+      await vi.waitFor(() => expect(showsProbe()).toBe(true), { timeout: 200, interval: 20 }).catch(() => undefined)
+    }
+    fs.rmSync(fileOf(probe))
+    await showsWhatIsOnDisk(shown)
+    return shown
   }
-  const showsWhatIsOnDisk = (shown: () => NoteSummary[]): Promise<void> =>
-    vi.waitFor(() => expect(shown()).toEqual(onDisk()), { timeout: 10_000, interval: 20 })
 
   it('writes each note to its own markdown file named by its id, and lists the most recently changed first', async () => {
     const { service, changed } = setup()
@@ -203,6 +217,7 @@ describe('note service', () => {
     fs.mkdirSync(folderOf())
     for (const id of ['20260901-090000-0001', '20260902-090000-0002']) fs.writeFileSync(fileOf(id), `# ${id}\n`)
     const shown = await screen(service, changed)
+    const from = changed.mock.calls.length
     const readFile = vi.spyOn(fsp, 'readFile')
     const created = await service.create('# 新しいメモ\n')
     const rewritten = await service.write(created.id, '# 書き直したメモ\n')
@@ -212,7 +227,7 @@ describe('note service', () => {
     fs.writeFileSync(fileOf(outside), '# 外で書いたメモ\n')
     await showsWhatIsOnDisk(shown)
     expect(readFile.mock.calls.map(([file]) => file)).toEqual([fileOf(outside)])
-    expect(changed.mock.calls.map(([changes]) => changes)).toEqual([
+    expect(changed.mock.calls.slice(from).map(([changes]) => changes)).toEqual([
       [{ type: 'saved', note: created }],
       [{ type: 'saved', note: rewritten }],
       [{ type: 'removed', id: created.id }],

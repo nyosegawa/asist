@@ -143,10 +143,13 @@ export function createNoteService(options: NoteServiceOptions): NoteService {
       for (const error of failures) console.error('notes: a note changed outside ASIST could not be read:', error)
     }).catch((error: unknown) => console.error('notes: the notes folder could not be read after a change outside ASIST:', error))
   }
-  // The watch starts before the folder is read, so that no change made during the read is missed.
+  // The watch starts before the folder is read, so that no change made during the read is missed. The folder
+  // is made first, so that its watch opens now rather than when the first note is saved: on macOS each watch
+  // opened leaves a moment in which changes go unreported.
   const ready = async (): Promise<Map<string, HeldNote>> => {
     if (held) return held
     const notes = new Map<string, HeldNote>()
+    await fs.mkdir(options.directory, { recursive: true })
     const started = await watchFolder(options.directory, follow)
     try {
       const { failures } = await lookAt(notes, 'all')

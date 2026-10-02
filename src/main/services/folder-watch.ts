@@ -17,6 +17,17 @@ export interface FolderWatch {
 const SETTLE_MS = 100
 
 /**
+ * FSEvents watches a path, so on macOS a watch that is open goes on reporting the folder put at the path in
+ * place of the one it was opened on, and it is never opened again for that. Opening another would lose
+ * changes: libuv (1.52) makes a new FSEvents stream for every watch opened or closed, on a thread of its own
+ * after fs.watch has returned, and what changes before that stream runs is never reported. Under load from
+ * other work, a note written into a replaced folder after its new watch was opened went unreported (Apple M5,
+ * 2026-10-02). ReadDirectoryChangesW watches the folder it was opened on wherever it is moved, and it runs
+ * once fs.watch has returned, so on Windows the watch is opened again on the folder now at the path.
+ */
+const WATCH_FOLLOWS_PATH = process.platform === 'darwin'
+
+/**
  * Reports what may have changed in one folder, from fs.watch on macOS (FSEvents) and Windows
  * (ReadDirectoryChangesW). An event says only that something happened to a name: FSEvents reports a new
  * file, a write in place and a deletion all as 'rename', so the caller looks at each named entry itself.
@@ -24,9 +35,12 @@ const SETTLE_MS = 100
  *
  * A report of everything means the caller has to look at the whole folder again: when Windows's buffer of
  * events overflowed (no name), when FSEvents reports the folder itself (it does so when it coalesced events
- * below it, and when the folder was moved, removed or put back), and when the folder at the path is no
- * longer the one watched. The parent folder is watched for that last case, because on Windows the watch
- * follows the folder it was opened on wherever it is moved, and sees nothing of a new folder put at the path.
+ * below it, and when the folder was moved, removed or put back), and when the folder at the path is another
+ * one than before. The parent folder is watched for that last case, because on Windows the watch follows the
+ * folder it was opened on wherever it is moved, and sees nothing of a new folder put at the path.
+ *
+ * On macOS a watch reports only from a moment after it opens (see WATCH_FOLLOWS_PATH), so a change made in
+ * that moment is seen only when that entry changes again.
  */
 export async function watchFolder(directory: string, onChange: (change: FolderChange) => void): Promise<FolderWatch> {
   const ownName = path.basename(directory)
@@ -75,13 +89,15 @@ export async function watchFolder(directory: string, onChange: (change: FolderCh
     schedule()
   }
 
-  // Watches the folder now at the path, and says whether it is another one than was watched.
+  // Watches the folder now at the path, and says whether what is there may differ from what was reported.
   const follow = async (): Promise<boolean> => {
     const now = await identityOf(directory)
-    if (closed || (now === identity && (now === null || folder !== null))) return false
-    stopFolder()
+    if (closed) return false
+    const replaced = now !== identity
     identity = now
-    if (now === null) return true
+    if (folder && (!replaced || WATCH_FOLLOWS_PATH)) return replaced
+    stopFolder()
+    if (now === null) return replaced
     try {
       folder = fs.watch(directory, { persistent: false }, onFolderEvent)
       folder.on('error', onFolderError)
