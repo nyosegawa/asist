@@ -1,11 +1,13 @@
 import { errorKey } from '@shared/i18n/error-key'
+import { attributes, tags, unescapeXml } from '@shared/office-package'
 
 /**
  * The parts of an xlsx workbook as the Excel viewer reads them in the preview iframe. A sheet's XML stays as bytes
  * with an index of where each row starts, and only the rows on screen are decoded and parsed; the shared strings
- * stay as bytes in the same way, with an index of where each string starts. The small parts (the workbook, its
- * relationships and the styles) are parsed whole. Element names are matched by their local name, since a writer
- * may give the SpreadsheetML namespace a prefix, as the Open XML SDK's x: does.
+ * stay as bytes in the same way, with an index of where each string starts. The styles are parsed whole, and the
+ * workbook and the relationships between its parts are read as main reads them (shared/office-package.ts). Element
+ * names are matched by their local name, since a writer may give the SpreadsheetML namespace a prefix, as the Open
+ * XML SDK's x: does.
  */
 
 type Bytes = Uint8Array<ArrayBuffer>
@@ -300,36 +302,6 @@ export function indexStrings(xml: Bytes): StringIndex {
   return { starts: itemStarts, ends: itemEnds }
 }
 
-const ENTITY = /&(?:(lt|gt|amp|quot|apos)|#(\d+)|#x([\da-fA-F]+));/g
-const NAMED_ENTITIES: Record<string, string> = { lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" }
-/** The escape OOXML writes a character that XML cannot hold with, such as _x000D_ for a carriage return. */
-const OOXML_ESCAPE = /_x([\da-fA-F]{4})_/g
-
-/** The text of XML character data or an attribute value, with its references and OOXML's escapes undone, as SheetJS does. */
-export function unescapeXml(text: string): string {
-  if (!text.includes('&') && !text.includes('_x')) return text
-  return text
-    .replace(ENTITY, (_, name: string | undefined, decimal: string | undefined, hex: string | undefined) =>
-      name ? NAMED_ENTITIES[name] : String.fromCodePoint(decimal ? Number(decimal) : parseInt(hex!, 16))
-    )
-    .replace(OOXML_ESCAPE, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
-}
-
-const ATTRIBUTE = /([\w.:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
-
-/** The attributes of a tag, by their local names. */
-function attributes(tag: string): Map<string, string> {
-  const found = new Map<string, string>()
-  for (const [, name, double, single] of tag.matchAll(ATTRIBUTE)) found.set(name.slice(name.indexOf(':') + 1), unescapeXml(double ?? single))
-  return found
-}
-
-/** Every start tag of an element of this local name, self-closing or not, as its attributes. */
-function tags(xml: string, local: string): Array<Map<string, string>> {
-  const tag = new RegExp(`<(?:[\\w.-]+:)?${local}(?=[\\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>`, 'g')
-  return Array.from(xml.matchAll(tag), ([, inside]) => attributes(inside))
-}
-
 /** The content of the first element of this local name, or null. */
 function element(xml: string, local: string): string | null {
   const found = new RegExp(`<(?:[\\w.-]+:)?${local}(?:\\s(?:[^>"']|"[^"]*"|'[^']*')*)?(?:/>|>([\\s\\S]*?)</(?:[\\w.-]+:)?${local}\\s*>)`).exec(xml)
@@ -402,50 +374,6 @@ export function parseCells(row: string): RawCell[] {
     })
   }
   return cells
-}
-
-/** The sheets of a workbook in their order, with the relationship that names each one's part, and its date system. */
-export function parseWorkbook(xml: string): { sheets: Array<{ name: string; id: string }>; date1904: boolean } {
-  const sheets = tags(xml, 'sheet').map((found) => {
-    const name = found.get('name')
-    const id = found.get('id')
-    if (name === undefined || id === undefined) throw damaged()
-    return { name, id }
-  })
-  const date1904 = tags(xml, 'workbookPr').some((found) => ['1', 'true'].includes(found.get('date1904') ?? ''))
-  return { sheets, date1904 }
-}
-
-/** A part's relationships: what each Id points at and the type of the relationship. */
-export function parseRelationships(xml: string): Array<{ id: string; type: string; target: string }> {
-  return tags(xml, 'Relationship').flatMap((found) => {
-    const id = found.get('Id')
-    const type = found.get('Type')
-    const target = found.get('Target')
-    // A link to something outside the package, such as a hyperlink's web page, names no part.
-    if (id === undefined || type === undefined || target === undefined || found.get('TargetMode') === 'External') return []
-    return [{ id, type, target }]
-  })
-}
-
-/**
- * A relationship's target as the name of a part in the zip, from the folder of the part that holds the
- * relationship. Part names inside a zip are URIs, written with / on every OS, so they are joined as such.
- */
-export function resolvePart(folder: string, target: string): string {
-  const parts = target.startsWith('/') ? [] : folder.split('/').filter(Boolean)
-  for (const segment of target.split('/')) {
-    if (segment === '..') parts.pop()
-    else if (segment !== '.' && segment !== '') parts.push(segment)
-  }
-  return parts.join('/')
-}
-
-/** The folder of a part and the name of the part that holds its relationships. */
-export function relationshipsOf(part: string): { folder: string; relationships: string } {
-  const slash = part.lastIndexOf('/')
-  const folder = part.slice(0, slash + 1)
-  return { folder, relationships: `${folder}_rels/${part.slice(slash + 1)}.rels` }
 }
 
 /** The number formats of a workbook: those it defines by id, and the format id of each cell format, by index. */

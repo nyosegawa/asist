@@ -84,9 +84,10 @@ export const VIEWER_FILES = {
 
 /**
  * What the files are written from: the code in this folder and the demo's Office samples. Files kept for later
- * runs sit in a folder named after it, so that a change to a generator writes them again.
+ * runs sit in a folder named after it, so that a change to a generator writes them again; CI names its cache of
+ * them after it as well.
  */
-function generatorVersion() {
+export function generatorVersion() {
   const hash = createHash('sha256')
   const here = new URL('./', import.meta.url)
   for (const name of readdirSync(here).filter((entry) => entry.endsWith('.mjs')).sort()) hash.update(name).update(readFileSync(new URL(name, here)))

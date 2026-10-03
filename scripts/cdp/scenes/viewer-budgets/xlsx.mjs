@@ -2,7 +2,11 @@
  * The Excel viewer reads only the sheet it shows, in the preview iframe, and the focus view draws only the rows
  * within a screen of its grid, which scrolls on its own. The default check would take the sticky header row for
  * content and pass a screen whose rows have not arrived yet, so this one asks for every row of the table in view
- * to have arrived, and for one of them to show text.
+ * to have arrived, and for one of them to show text. At the end of the grid it also asks for row 40,001 of the sheet
+ * or a later one, which both workbooks' first sheets reach: the viewer before this one showed the first 500 rows in
+ * the focus view, so going back to it fails here whatever the runner's speed. Its times would fail only the five
+ * sheets: on the M5 it showed them after 5.3 s and held the page for 2.6 to 2.7 s, past the scene's limits, and
+ * showed the 50,000 rows after 1.4 s, held the page for 0.75 to 0.80 s and grew it by 540 MB, within them.
  *
  * In three runs on an M5 under a load average of 42 to 43 on 2026-10-02, both workbooks showed their first rows in
  * the card in 265 to 538 ms and in the focus view in 60 to 101 ms, held the page for at most 24 ms in the card and
@@ -28,7 +32,9 @@ function shown(root, mode) {
     const r = row.getBoundingClientRect()
     return Math.min(r.bottom, bottom) - Math.max(r.top, top) >= 1
   })
-  return rows.length > 0 && rows.every((row) => row.dataset.loading !== 'true') && rows.some((row) => row.textContent.trim() !== '')
+  if (rows.length === 0 || rows.some((row) => row.dataset.loading === 'true') || rows.every((row) => row.textContent.trim() === '')) return false
+  const atEnd = mode === 'focus' && box.scrollTop + box.clientHeight >= box.scrollHeight - 2
+  return !atEnd || rows.some((row) => Number(row.getAttribute('aria-rowindex')) >= 40_001)
 }
 
 const budget = { cardFirstMs: 1000, cardHeldMs: 150, cardPeakMb: 300, focusFirstMs: 1000, focusHeldMs: 150, slowestScreenMs: 300, peakMb: 500, finalMb: 350 }
