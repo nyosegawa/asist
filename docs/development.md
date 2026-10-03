@@ -86,7 +86,7 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test`、そのあとに `npm run demo:viewer-budgets -- --time-factor 3`。最後のものは、ファイルのカードの各ビューアーが大きなファイルを決めた時間とメモリの中で表示できることを確かめます。共有の runner は遅いので、時間だけを 3 倍まで許します。runner には MP3 を作る `lame` がないので、その前に Homebrew で入れます。macOS の runner をもう 1 台使わないように、この job の中で動かします |
 | `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
 | `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
-| `test-windows` | Windows で `npm run typecheck` と `npm test`。辞書は OS に依らないので、`test` だけで確かめます |
+| `test-windows` | Windows で `npm test`。型と辞書は OS に依らないので、`test` だけで確かめます |
 | `build-windows` | `npm run dist:win:dir` で Windows のアプリを作り、アプリの中の git、uv、`asist-agent-launcher.exe`、`asist-mic.exe` が動くこと、`ASIST.exe` が ASAR の検査を通って起動すること |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
 | `result` | ほかの job に、失敗したものも取り消されたものもないこと |

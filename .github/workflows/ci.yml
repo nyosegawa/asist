@@ -167,7 +167,7 @@ jobs:
           "$resources/llama.cpp/llama-server" --version
           "$resources/speech-worker/speech-worker" --devices
 
-  # The checks of test on Windows, except the dictionary's, which does not depend on the OS.
+  # The tests of test on Windows. The types and the dictionary do not depend on the OS, and test checks them.
   test-windows:
     needs: changes
     if: needs.changes.outputs.app == 'true'
@@ -187,7 +187,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install numpy==2.5.2
-      - run: npm run typecheck
       - run: npm test
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
