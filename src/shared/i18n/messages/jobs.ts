@@ -1059,7 +1059,7 @@ export const jobs = defineMessages({
       'ja-JP': 'Agent 画面でログを見る',
       'en-US': 'See the logs on the Agent screen',
       'fr-FR': "Voir les logs sur l'écran Agent",
-      'de-DE': 'Die Protokolle in der Agent-Ansicht ansehen',
+      'de-DE': 'Protokolle in der Agent-Ansicht ansehen',
       'hi-IN': 'Agent स्क्रीन पर लॉग देखें',
       'id-ID': 'Lihat lognya di layar Agent',
       'it-IT': 'Vedi i registri nella schermata «Agent»',

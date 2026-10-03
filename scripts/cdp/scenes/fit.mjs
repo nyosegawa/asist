@@ -10,10 +10,14 @@ import { startDemo } from '../demo-server.mjs'
  * The scene that tells whether the text still fits in every language of the interface (npm run demo:fit).
  *
  * Cards: every card sample at s, m, l and focus. It looks for a card taller than the height it was given,
- * text pushed past the edge of its card, and text cut short with an ellipsis or a hidden overflow. The
- * layout was tuned in Japanese and data such as a mail subject is cut short on purpose in every language,
- * so Japanese in the future theme is the baseline, and a language or theme reports only what that baseline
- * does not show at the same place.
+ * a button or link that reaches past the card's edge, text pushed past the edge of its card, and text cut
+ * short with an ellipsis or by a box that hides its overflow. A card taller than its height and a control
+ * past its edge are never meant, so they are reported in every theme and language, Japanese in the future
+ * theme too: judged against that baseline, a world weather card that Japanese also overflowed at m was
+ * reported nowhere, nor the header's buttons a long place pushed out (2026-10-03). Data such as a mail
+ * subject is cut short on purpose in every language, so for text, Japanese in the future theme is the
+ * baseline, and a language or theme reports only what that baseline does not show at the same place. Text
+ * marked data-fit="data", such as the place a weather card found, is not judged as cut short at all.
  *
  * Screens: every screen of the demo. The controls (buttons, links, chips, tabs,
  * selects) are judged without a baseline, in Japanese too: one that wraps onto a second line, is cut
@@ -68,7 +72,8 @@ const MEASURE_CARDS = `(() => {
   for (const card of document.querySelectorAll('.gallery-card')) {
     for (const dock of card.querySelectorAll('.dock[data-size], .gallery-column.is-focus')) {
       const size = dock.dataset.size ?? 'focus'
-      const edge = (dock.querySelector('.panel-card') ?? dock).getBoundingClientRect()
+      const frame = dock.querySelector('.panel-card, .panel-focus') ?? dock
+      const edge = frame.getBoundingClientRect()
       const at = (kind, element, text) => {
         const name = element.tagName.toLowerCase() + (element.classList[0] ? '.' + element.classList[0] : '')
         const index = [...dock.querySelectorAll(name)].indexOf(element)
@@ -76,12 +81,41 @@ const MEASURE_CARDS = `(() => {
       }
       const body = dock.querySelector('.panel-body[data-clipped="error"]')
       if (body) at('too tall', body, body.scrollHeight + 'px of content in ' + body.clientHeight + 'px')
+      // The part of an element left in view across, and the overflow of the first box inside the card that
+      // cuts it. A box that scrolls, as the hourly row does, shows the rest when scrolled; one that hides or
+      // clips its overflow, as the header's note does, cuts the text short.
+      const inView = (element) => {
+        const rect = element.getBoundingClientRect()
+        let [left, right, cutBy] = [rect.left, rect.right, null]
+        for (let box = element.parentElement; box && box !== frame; box = box.parentElement) {
+          const overflow = getComputedStyle(box).overflowX
+          if (overflow === 'visible') continue
+          const bounds = box.getBoundingClientRect()
+          if (!cutBy && (right > bounds.right + 1 || left < bounds.left - 1)) cutBy = overflow
+          left = Math.max(left, bounds.left)
+          right = Math.min(right, bounds.right)
+        }
+        return { left, right, cutBy }
+      }
+      const pastEdge = (view) => view.right > view.left && (view.right > edge.right + 1 || view.left < edge.left - 1)
+      // A button or link is never meant to reach past the card's edge, and one without text, such as the
+      // header's expand and close, is judged here too.
+      for (const control of dock.querySelectorAll('button, [role="button"], a, select, summary')) {
+        const rect = control.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) continue
+        if (pastEdge(inView(control))) at('control past the edge', control, control.getAttribute('aria-label') ?? control.textContent)
+      }
       for (const element of dock.querySelectorAll('*')) {
         if (element.children.length > 0 && ![...element.children].every((child) => child.tagName === 'svg')) continue
         if (!element.textContent.trim()) continue
         const rect = element.getBoundingClientRect()
         if (rect.width === 0) continue
-        if (rect.right > edge.right + 1 || rect.left < edge.left - 1) at('past the edge', element)
+        const view = inView(element)
+        // Data such as the place a weather card found is cut short on purpose when it does not fit.
+        const data = element.closest('[data-fit="data"]') !== null
+        if (pastEdge(view)) at('past the edge', element)
+        else if (data) continue
+        else if (view.cutBy === 'hidden' || view.cutBy === 'clip') at('cut short', element)
         else if (element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX !== 'visible') at('cut short', element)
       }
     }
@@ -255,18 +289,19 @@ async function screensOf(all, screenList = screens, wait = 0) {
 const demo = await startDemo()
 const BASELINE_PAIR = `${BASELINE_THEME}|${BASELINE}`
 const measuredPairs = pairs(themes, locales)
-const comparedCardPairs = measuredPairs.filter((one) => one !== BASELINE_PAIR)
 const unique = (list) => [...new Set(list)]
 const cardKey = (finding) => `${finding.where}|${finding.kind}|${finding.place}`
 const screenKey = (finding) => `${finding.where}|${finding.kind}|${finding.place}|${finding.text}`
 
-const cardFirst = only === '--screens' ? null : await cards([BASELINE_PAIR, ...comparedCardPairs])
+const cardFirst = only === '--screens' ? null : await cards(unique([BASELINE_PAIR, ...measuredPairs]))
 const screenFirst = only === '--cards' ? null : await screensOf(measuredPairs)
 const candidates = []
 if (cardFirst) {
   const baseline = new Set(cardFirst.get(BASELINE_PAIR).map(cardKey))
-  for (const pair of comparedCardPairs) {
-    for (const finding of cardFirst.get(pair)) if (!baseline.has(cardKey(finding))) candidates.push({ section: 'cards', pair, ...finding })
+  const withoutBaseline = new Set(['too tall', 'control past the edge'])
+  const reported = (pair, finding) => withoutBaseline.has(finding.kind) || (pair !== BASELINE_PAIR && !baseline.has(cardKey(finding)))
+  for (const pair of measuredPairs) {
+    for (const finding of cardFirst.get(pair)) if (reported(pair, finding)) candidates.push({ section: 'cards', pair, ...finding })
   }
 }
 if (screenFirst) {
@@ -343,15 +378,15 @@ const scope = [
   ...(only === '--cards' ? [] : [`${screens.length} screens`])
 ]
 lines.push(`demo:fit  ${scope.join(' · ')}`)
-for (const [section, compared] of [['cards', comparedCardPairs.length], ['screens', measuredPairs.length]]) {
+for (const section of ['cards', 'screens']) {
   if (section === 'cards' ? !cardFirst : !screenFirst) continue
   const entries = grouped.filter((entry) => entry.section === section)
   if (entries.length === 0) {
-    lines.push(`${section.padEnd(8)} everything fits in ${compared} combinations`)
+    lines.push(`${section.padEnd(8)} everything fits in ${measuredPairs.length} combinations`)
     continue
   }
   const affected = unique(entries.flatMap((entry) => entry.pairs)).length
-  lines.push(`${section.padEnd(8)} ${entries.length} to look at, in ${affected} of ${compared} combinations`)
+  lines.push(`${section.padEnd(8)} ${entries.length} to look at, in ${affected} of ${measuredPairs.length} combinations`)
   for (const entry of entries) {
     lines.push('', `  ${entry.where}  ${entry.kind}  ${entry.place}`, `    ${textOf(entry)}`, `    in ${whereIn(entry.pairs)}`, `    shot: ${onCi ? `fit-shots/${entry.shot}.png` : path.join(shotDir, `${entry.shot}.png`)}`)
   }

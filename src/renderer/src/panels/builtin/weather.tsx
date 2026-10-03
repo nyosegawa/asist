@@ -43,32 +43,22 @@ const number = (value: number | null): string => (value === null ? '—' : Strin
 const degree = (units: WeatherUnits): string => (units.temperature === '°C' ? '°' : units.temperature)
 const clock = (at: string, timeZone: string): ClockTime => zonedTime(Date.parse(at), timeZone)
 /**
- * The time a period ends at, as 24:00 when it ends with its day. That end is not always 0:00 on the clock:
- * where the next day's midnight is skipped (Santiago, 2025-09-07), the day ends at 1:00.
+ * Whether the hourly row writes its times with minutes. Most clocks need the hour alone, but where a step is
+ * off the hour, as Lord Howe Island's are while its clock is half an hour off the forecast's offset, every
+ * time of the row is written with minutes, so that the row never sets 「0時」 beside 「3:30」.
  */
-const endClock = (from: string, to: string, timeZone: string): ClockTime =>
-  zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone)
-    ? { hour: 24, minute: 0 }
-    : clock(to, timeZone)
+const offTheHour = (w: WeatherData): boolean => w.hourly.some((h) => clock(h.at, w.location.timeZone).minute !== 0)
+const timeLabel = ({ hour, minute }: ClockTime, minutes: boolean, t: Translate): string =>
+  minutes
+    ? t('cardsWeather.hourly.time', { hour, minute: String(minute).padStart(2, '0') })
+    : t('cardsWeather.hourly.hour', { hour })
 /**
- * Whether the hourly box writes its times with minutes. Most clocks need the hour alone, but where any time
- * is off the hour, as Lord Howe Island's are while its clock is half an hour off the forecast's offset,
- * every time of the box is written with minutes, so that a row never sets 「0時」 beside 「3:30」.
+ * A period longer than its column, which only the agency publishes: six hours of Japan's clock, on the hour,
+ * the last of them ending with its day, which the card writes as 24.
  */
-const offTheHour = (w: WeatherData): boolean =>
-  [...w.hourly.map((h) => h.at), ...w.precipitationPeriods.flatMap((p) => [p.from, p.to])].some(
-    (at) => clock(at, w.location.timeZone).minute !== 0
-  )
-const withMinutes = ({ hour, minute }: ClockTime, t: Translate): string =>
-  t('cardsWeather.hourly.time', { hour, minute: String(minute).padStart(2, '0') })
-const timeLabel = (at: ClockTime, minutes: boolean, t: Translate): string =>
-  minutes ? withMinutes(at, t) : t('cardsWeather.hourly.hour', { hour: at.hour })
-function rangeLabel(from: string, to: string, timeZone: string, minutes: boolean, t: Translate): string {
-  const start = clock(from, timeZone)
-  const end = endClock(from, to, timeZone)
-  return minutes
-    ? t('cardsWeather.hourly.timeRange', { from: withMinutes(start, t), to: withMinutes(end, t) })
-    : t('cardsWeather.hourly.range', { from: start.hour, to: end.hour })
+function rangeLabel(from: string, to: string, timeZone: string, t: Translate): string {
+  const endsWithDay = zonedDate(Date.parse(to), timeZone) !== zonedDate(Date.parse(from), timeZone)
+  return t('cardsWeather.hourly.range', { from: clock(from, timeZone).hour, to: endsWithDay ? 24 : clock(to, timeZone).hour })
 }
 const time = (at: string, locale: string, timeZone: string): string =>
   new Date(at).toLocaleTimeString(locale, { ...timeFields(locale), timeZone })
@@ -151,7 +141,11 @@ function Issued({ spec }: CardContext): React.JSX.Element {
   const w = weatherOf(spec)
   if (w.location.source === 'open-meteo') {
     const place = [w.location.name, w.location.admin, w.location.country].filter(Boolean)
-    return <span className="wx-issued">{place.join(' · ')}</span>
+    return (
+      <span className="wx-issued" title={place.join(' · ')} data-fit="data">
+        {place.join(' · ')}
+      </span>
+    )
   }
   const issued = w.sources.find((s) => s.product === 'forecast')?.issuedAt
   return (
@@ -253,13 +247,23 @@ function WeatherBody({ spec, size }: CardContext): React.JSX.Element {
                     : []
                 )
                 if (!indexes.length) return null
+                // A period that is the step of its one column, as every period of the worldwide source is,
+                // would repeat the time above it, and in a 43px column its range broke onto a second line
+                // that made a card of eight steps too tall at m (587px in 562px in English, 2026-10-03).
+                // Only a longer period names its range: the agency's six hours over two columns, or over
+                // the one column left of them today.
+                const column = hourly[indexes[0]]
+                const ownColumn =
+                  indexes.length === 1 &&
+                  Date.parse(column.at) === Date.parse(p.from) &&
+                  Date.parse(column.until) === Date.parse(p.to)
                 return (
                   <div
                     className="wx-pop"
                     key={p.from}
                     style={{ gridColumn: `${indexes[0] + 1} / span ${indexes.length}`, gridRow: 2 }}
                   >
-                    <span>{rangeLabel(p.from, p.to, zone, minutes, t)}</span>
+                    {!ownColumn && <span>{rangeLabel(p.from, p.to, zone, t)}</span>}
                     <b>{t('cardsWeather.hourly.rain', { percent: number(p.percent) })}</b>
                   </div>
                 )

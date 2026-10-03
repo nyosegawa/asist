@@ -54,7 +54,7 @@ The type in `src/renderer/src/panels/shell/card.ts`. It is registered in `regist
 | `Body` | `React.FC<{ spec: PanelSpec; size: CardSurfaceSize }>` | The body. It draws only inside the box and the size the shell gave it. Put `data-size={size}` on the root element |
 | `kicker` | `string` | The heading at the top left. In the focus view it becomes "<kicker> · FOCUS" |
 | `className` | `string?` | The class put on the card's frame (`.panel-card` and `.panel-focus`). Override the CSS variables here |
-| `meta` | `React.FC<{ spec, size }>` | The note shown at the right of the header, to the left of the expand and close buttons. Drawn only when the data is there (ready / stale) |
+| `meta` | `React.FC<{ spec, size }>` | The note shown at the right of the header, to the left of the expand and close buttons. Drawn only when the data is there (ready / stale). It renders one element, which the shell cuts short with an ellipsis when the header is crowded; data cut that way on purpose, such as the place a weather card found, carries `data-fit="data"` so that `demo:fit` does not report it |
 | `backdrop` | `React.FC<{ spec, size }>` | The background laid across the whole card. It extends under the header and is drawn behind the body. Drawn only for ready / stale |
 | `scroll` | `boolean?` | True for a card whose content has no fixed length. What does not fit scrolls inside, and the bottom edge is faded |
 

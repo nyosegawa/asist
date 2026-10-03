@@ -328,7 +328,7 @@ function zonedFormat(form: keyof typeof ZONED_FORMS, timeZone: string): Intl.Dat
 /** The calendar date a moment falls on in a zone, as `YYYY-MM-DD`. */
 export const zonedDate = (at: number, timeZone: string): string => zonedFormat('date', timeZone).format(at)
 
-/** A time of day as a clock reads it, the hour from 0 to 23, or 24:00 for the end of a day. */
+/** A time of day as a clock reads it, the hour from 0 to 23. */
 export interface ClockTime {
   hour: number
   minute: number

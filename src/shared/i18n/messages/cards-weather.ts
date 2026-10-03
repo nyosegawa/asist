@@ -244,25 +244,11 @@ export const cardsWeather = defineMessages({
       'es-419': '{from}:00–{to}:00',
       'es-ES': '{from}:00–{to}:00'
     },
-    /** A period between two times written as `time`, in a row whose times are written with minutes. */
-    timeRange: {
-      'ja-JP': '{from}–{to}',
-      'en-US': '{from}–{to}',
-      'fr-FR': '{from}–{to}',
-      'de-DE': '{from}–{to}',
-      'hi-IN': '{from}–{to}',
-      'id-ID': '{from}–{to}',
-      'it-IT': '{from}–{to}',
-      'ko-KR': '{from}–{to}',
-      'pt-BR': '{from}–{to}',
-      'es-419': '{from}–{to}',
-      'es-ES': '{from}–{to}'
-    },
     rain: {
       'ja-JP': '降水 {percent}%',
       'en-US': 'Rain {percent}%',
       'fr-FR': 'Pluie {percent} %',
-      'de-DE': 'Niederschlag {percent} %',
+      'de-DE': 'Regen {percent} %',
       'hi-IN': 'बारिश {percent}%',
       'id-ID': 'Hujan {percent}%',
       'it-IT': 'Pioggia {percent}%',
