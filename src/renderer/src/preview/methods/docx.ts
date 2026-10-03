@@ -1,5 +1,6 @@
 import '../set-immediate'
 import { errorKey } from '@shared/i18n/error-key'
+import { documentLeftOut } from '@shared/office-package'
 import { DOCX_ID_PREFIX } from '@/panels/viewers/docx-html'
 import type { PreviewDocument } from '../serve'
 import { openZip, type RangedZip } from '../zip-ranges'
@@ -19,16 +20,6 @@ import { openZip, type RangedZip } from '../zip-ranges'
  */
 
 type Bytes = Uint8Array<ArrayBuffer>
-
-/** The XML parts of a zip, and the relationships between them. */
-const XML_PART = /\.(?:xml|rels)$/i
-
-/**
- * The most XML the parts of a document may declare together before the viewer says it is too large to show here
- * rather than read any of it. A 300-page report holds 1.1 MB, so this stops only a file far beyond anything
- * written by hand.
- */
-const MAX_XML_BYTES = 128 * 1024 * 1024
 
 /** How many blocks of the body the head holds: paragraphs with something to show, and rows of tables. */
 const HEAD_BLOCKS = 40
@@ -305,11 +296,10 @@ async function picture(zip: RangedZip, { path, width }: { path: string; width: n
   return { bitmap, ...size }
 }
 
-/** Opens the Word file at url, refusing one whose XML parts declare more than MAX_XML_BYTES before any part is read. */
+/** Opens the Word file at url, refusing one whose XML parts declare more than DOCUMENT_XML_LIMIT before any part is read. */
 export default async function openDocx(url: string) {
   const zip = await openZip(url)
-  const xmlBytes = [...zip.entries.values()].reduce((sum, { name, size }) => (XML_PART.test(name) ? sum + size : sum), 0)
-  if (xmlBytes > MAX_XML_BYTES) throw new Error(errorKey('files.viewer.tooLarge'))
+  if (documentLeftOut(zip.entries) === 'file') throw new Error(errorKey('files.viewer.tooLarge'))
   const parts = once(() => readParts(zip))
   const convert = async (contents: ReadonlyMap<string, Bytes>): Promise<string> => {
     const mammoth = await loadMammoth()

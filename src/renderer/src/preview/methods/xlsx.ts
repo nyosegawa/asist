@@ -1,22 +1,8 @@
 import * as XLSX from 'xlsx/dist/xlsx.mini.min.js'
 import { errorKey } from '@shared/i18n/error-key'
+import { partTooLarge, readWorkbookParts, unescapeXml, workbookLeftOut } from '@shared/office-package'
 import type { OpenPreviewDocument } from '../serve'
-import {
-  indexRows,
-  indexStrings,
-  itemText,
-  parseCells,
-  parseRelationships,
-  parseStyles,
-  parseWorkbook,
-  relationshipsOf,
-  resolvePart,
-  rowsWithin,
-  unescapeXml,
-  type RawCell,
-  type RowIndex,
-  type StringIndex
-} from '../sheet-xml'
+import { indexRows, indexStrings, itemText, parseCells, parseStyles, rowsWithin, type RawCell, type RowIndex, type StringIndex } from '../sheet-xml'
 import { openZip, type RangedZip } from '../zip-ranges'
 
 /**
@@ -40,16 +26,9 @@ export interface SheetCell {
 /**
  * A sheet as the viewer lays it out: the first row with a value is the header, and the rows below it down to the
  * last with a value are counted, each from the first column with a value. A sheet whose XML or shared strings are
- * over PART_LIMIT is not read and is reported as too large.
+ * over SHEET_XML_LIMIT is not read and is reported as too large.
  */
 export type SheetSummary = { shows: 'rows'; header: string[]; rowCount: number; columnCount: number } | { shows: 'tooLarge' }
-
-/**
- * The largest part of a workbook that is read, by the size the zip's directory gives before any of it is read: far
- * beyond a real sheet, of which 50,000 rows of sales records are 18 MB of XML, and still within what the iframe can
- * hold while it indexes it.
- */
-export const PART_LIMIT = 256 * 1024 * 1024
 
 /**
  * The columns a row carries, from the first with a value. The focus view scrolls sideways as well as down, so
@@ -103,9 +82,6 @@ export function escapeDateDots(code: string): string {
   return sections.join(';')
 }
 
-/** The relationship types end in the same name in the transitional and the strict schema. */
-const isType = (type: string, name: string): boolean => type.endsWith(`/${name}`)
-
 interface LoadedSheet {
   xml: Bytes
   index: RowIndex
@@ -118,11 +94,8 @@ interface SharedStrings {
 
 const decoder = new TextDecoder()
 
-/** Whether a part is over PART_LIMIT. A part the zip does not have is not, and reading it says it is missing. */
-const tooLarge = (zip: RangedZip, part: string): boolean => (zip.entries.get(part)?.size ?? 0) > PART_LIMIT
-
 async function readText(zip: RangedZip, part: string): Promise<string> {
-  if (tooLarge(zip, part)) throw new Error(errorKey('files.viewer.tooLarge'))
+  if (partTooLarge(zip.entries, part)) throw new Error(errorKey('files.viewer.tooLarge'))
   return decoder.decode(await zip.read(part))
 }
 
@@ -141,30 +114,11 @@ function dateSerial(iso: string, date1904: boolean): number {
 
 const openXlsx = async (url: string) => {
   const zip = await openZip(url)
-  // Part names compare without case in a package, as SheetJS compares them, and a relationship can name
-  // worksheets/Sheet1.xml where the zip holds worksheets/sheet1.xml.
-  const names = new Map([...zip.entries.keys()].map((name) => [name.toLowerCase(), name]))
-  const partNamed = (name: string): string => names.get(name.toLowerCase()) ?? name
-  const packageRelationships = parseRelationships(await readText(zip, partNamed('_rels/.rels')))
-  const officeDocument = packageRelationships.find(({ type }) => isType(type, 'officeDocument'))
-  if (!officeDocument) throw damaged()
-  const workbookPart = partNamed(resolvePart('', officeDocument.target))
-  const { folder, relationships } = relationshipsOf(workbookPart)
-  const [workbook, workbookRelationships] = await Promise.all([
-    readText(zip, workbookPart).then(parseWorkbook),
-    readText(zip, partNamed(relationships)).then(parseRelationships)
-  ])
-  const partOf = (type: string): string | null => {
-    const found = workbookRelationships.find((relationship) => isType(relationship.type, type))
-    return found ? partNamed(resolvePart(folder, found.target)) : null
-  }
-  const sheetParts = workbook.sheets.map(({ id }) => {
-    const found = workbookRelationships.find((relationship) => relationship.id === id)
-    if (!found) throw damaged()
-    return partNamed(resolvePart(folder, found.target))
-  })
-  const stringsPart = partOf('sharedStrings')
-  const stylesPart = partOf('styles')
+  // The size net refuses the whole workbook, as main tells the model, when a part read for every sheet is over the limit.
+  if (workbookLeftOut(zip.entries) === 'file') throw new Error(errorKey('files.viewer.tooLarge'))
+  const workbook = await readWorkbookParts(zip.entries.keys(), (part) => readText(zip, part))
+  const stringsPart = workbook.strings
+  const stylesPart = workbook.styles
   const styles = stylesPart ? parseStyles(await readText(zip, stylesPart)) : { formats: {}, cellFormats: [] }
   // The format codes SSF looks an id up in: Excel's built-in ones and this workbook's own, kept per workbook
   // rather than loaded into SSF's table, which every workbook open in the iframe shares.
@@ -195,14 +149,14 @@ const openXlsx = async (url: string) => {
   function load(sheet: number): Promise<LoadedSheet | null> {
     if (shown?.sheet === sheet) return Promise.resolve(shown.loaded)
     if (loading?.sheet === sheet) return loading.promise
-    const part = sheetParts[sheet]
     // A viewer asks only for the sheets the workbook had when it listed them, so a sheet past the end means the
     // document was opened again, in a frame started after the last one stopped, from a file saved since.
-    if (part === undefined) throw new Error(errorKey('files.errors.changedWhileReading'))
-    const promise =
-      tooLarge(zip, part) || (stringsPart !== null && tooLarge(zip, stringsPart))
-        ? Promise.resolve(null)
-        : Promise.all([zip.read(part), sharedStrings()]).then(([xml]) => ({ xml, index: indexRows(xml) }))
+    if (sheet >= workbook.sheets.length) throw new Error(errorKey('files.errors.changedWhileReading'))
+    const part = workbook.sheets[sheet].part
+    // The shared strings may have another name than the net knows them by, and are refused here too.
+    const promise = partTooLarge(zip.entries, part) || (stringsPart !== null && partTooLarge(zip.entries, stringsPart))
+      ? Promise.resolve(null)
+      : Promise.all([zip.read(part), sharedStrings()]).then(([xml]) => ({ xml, index: indexRows(xml) }))
     const reading = { sheet, promise }
     loading = reading
     promise.then(

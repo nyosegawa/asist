@@ -6,6 +6,7 @@ import type { SheetCell, SheetSummary } from '@/preview/methods/xlsx'
 import { displayError } from '@/display-error'
 import { Frame } from './Frame'
 import { openPreviewDocument, type PreviewHandle } from './preview-client'
+import { TooLargeViewer } from './StubViewer'
 import type { Viewer, ViewerProps } from './types'
 import './XlsxViewer.css'
 import { useT } from '@/i18n'
@@ -35,7 +36,8 @@ type Loaded<T> = { status: 'loading' } | { status: 'error'; message: string } | 
 /** A workbook open in the preview iframe, and its sheets. */
 interface OpenWorkbook {
   workbook: Workbook | null
-  sheets: Loaded<string[]>
+  /** The sheets, or tooLarge for a workbook the size net refuses as a whole, before any part of it is read. */
+  sheets: Loaded<string[]> | { status: 'tooLarge' }
 }
 
 /**
@@ -75,7 +77,9 @@ function useWorkbook({ url, sizeBytes, modifiedAt }: FileItem): OpenWorkbook {
     })
     asking(() => workbook.call('sheets', undefined)).then(
       (sheets) => current && setState({ workbook, sheets: { status: 'ready', value: sheets } }),
-      (error: unknown) => current && setState({ workbook, sheets: { status: 'error', message: displayError(error) } })
+      (error: unknown) =>
+        current &&
+        setState({ workbook, sheets: errorKeyOf(error) === 'files.viewer.tooLarge' ? { status: 'tooLarge' } : { status: 'error', message: displayError(error) } })
     )
     return () => {
       current = false
@@ -318,7 +322,8 @@ function Sheet({ workbook, sheet, mode }: { workbook: Workbook; sheet: number; m
   )
 }
 
-export const XlsxViewer: Viewer = ({ item, mode, size }) => {
+export const XlsxViewer: Viewer = (props) => {
+  const { item, mode, size } = props
   const t = useT()
   const { workbook, sheets } = useWorkbook(item)
   /** The sheet chosen by its name, so that it stays chosen when the file is saved with a sheet added in front of it. */
@@ -332,6 +337,7 @@ export const XlsxViewer: Viewer = ({ item, mode, size }) => {
       </Frame>
     )
   }
+  if (sheets.status === 'tooLarge') return <TooLargeViewer {...props} />
   if (sheets.status === 'error') {
     return (
       <Frame mode={mode} size={size}>

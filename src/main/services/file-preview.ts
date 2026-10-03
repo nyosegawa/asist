@@ -227,7 +227,7 @@ export function readFileItem(filePath: string, toUrl: (filePath: string) => stri
 const failedItem = (filePath: string, error: string): FileItem => ({ path: filePath, name: path.basename(filePath), kind: 'binary', sizeBytes: 0, error })
 
 /** Why the OS could not resolve, open or list a path, as the text of an error written for the user. */
-function failure(error: unknown): string {
+export function failure(error: unknown): string {
   switch ((error as NodeJS.ErrnoException).code) {
     // A path that runs through a file, such as report.md/notes, names nothing either.
     case 'ENOENT':

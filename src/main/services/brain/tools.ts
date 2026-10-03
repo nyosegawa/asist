@@ -189,7 +189,7 @@ async function runPanelTool(
   }
   if (!entry.fetch) return { shown: true, panel: type, props }
   try {
-    const result = await fetchPanel(type, props, signal)
+    const result = await fetchPanel(type, props, signal, true)
     panelEvent({ op: 'patch', key, props: result.props, state: 'ready', source: result.source })
     return { shown: true, panel: type, data: result.data ?? result.props }
   } catch (err) {
