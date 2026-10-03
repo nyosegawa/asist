@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { connect, launchChrome } from '../cdp.mjs'
 import { writeM4a, writeMp3, writeWav } from './audio.mjs'
 import { OFFICE_TEMPLATES, writeDocx, writePptx, writeXlsx } from './office.mjs'
 import { writePdf } from './pdf.mjs'
+import { writePdf as writeDirectPdf } from './pdf-writer.mjs'
 import { PHOTO_SCRIPT } from './photos.mjs'
 import { writeArchive } from './zip.mjs'
 
@@ -12,7 +13,8 @@ import { writeArchive } from './zip.mjs'
  * The large files the viewers of the files card are measured with (npm run demo:viewer-budgets), each as large as
  * a real file of its kind gets: a case names one by its key. `chrome` marks the files whose photos or pages a
  * headless Chrome draws, and `scrolls: false` those whose focus view has nothing to scroll. The sizes are in MiB.
- * All ten were written in 74 s on an M5 on 2026-10-02, the 1,000-page PDF taking the longest at 22 s.
+ * All ten were written in 74 s on an M5 on 2026-10-02, the 1,000-page PDF taking the longest at 22 s; the flat PDF,
+ * written without Chrome, takes about a second.
  */
 export const VIEWER_FILES = {
   'pdf-200': {
@@ -26,6 +28,11 @@ export const VIEWER_FILES = {
     about: 'a 1,000-page manual printed from Chrome, a photo on every fifth page (95 MB)',
     chrome: true,
     make: (target, chrome) => writePdf(chrome, target, { pages: 1000, photoEvery: 5, title: '製品マニュアル' })
+  },
+  'pdf-flat': {
+    file: 'minutes-1000-pages-flat.pdf',
+    about: 'a 1,000-page PDF whose page tree holds every page under one node, as LibreOffice writes it, a picture on every fifth page (37 MB)',
+    make: (target) => writeFileSync(target, writeDirectPdf({ pages: 1000, textBytes: 8000, fanOut: 1000, pictureEvery: 5, picture: { width: 224, height: 224 } }))
   },
   'pptx-200': {
     file: 'deck-200-slides.pptx',

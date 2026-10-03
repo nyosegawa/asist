@@ -44,6 +44,12 @@ export interface PreviewHandle<Open extends OpenPreviewDocument> {
    * what stops the listening.
    */
   onChanged(listener: () => void): () => void
+  /**
+   * Tells the document something it needs no answer to, such as that the viewer let go of a drawing, and only where
+   * the document is open: a frame that has gone took the document with it, and starting a new frame for it would open
+   * the document again only to tell it of something it never held.
+   */
+  tell<Name extends keyof Methods<Open> & string>(method: Name, args: Parameters<Methods<Open>[Name]>[0]): void
   /** Lets go of the document, which the page closes once no viewer holds it. */
   release(): void
 }
@@ -52,6 +58,8 @@ interface Running {
   frame: PreviewFrame
   /** The requests the frame has not answered yet, by id, with the page's key of the document each one asked. */
   pending: Map<number, { key: string; sent: string; resolve(value: unknown): void; reject(error: Error): void }>
+  /** The page's keys of the documents the frame was asked of and has not been told to close. */
+  open: Set<string>
 }
 
 /** The file a document is opened from: its URL, and the size and time of change that tell one version from another. */
@@ -93,6 +101,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
     if (sent !== pageKey(key)) return
     outdated.set(key, (outdated.get(key) ?? 0) + 1)
     versions.delete(sent)
+    running?.open.delete(sent)
     frame.port.postMessage({ type: 'close', key: sent } satisfies PreviewRequest)
     for (const listener of [...(listeners.get(key) ?? [])]) listener()
   }
@@ -114,7 +123,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
   }
 
   function start(): Running {
-    const started: Running = { frame: startFrame(), pending: new Map() }
+    const started: Running = { frame: startFrame(), pending: new Map(), open: new Set() }
     const { port } = started.frame
     port.addEventListener('message', ({ data }: MessageEvent<PreviewReply>) => {
       if (data === CONNECTED) return
@@ -144,6 +153,7 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
   function settle(key: string): void {
     if (holders.has(key) || !running) return
     versions.delete(pageKey(key))
+    running.open.delete(pageKey(key))
     running.frame.port.postMessage({ type: 'close', key: pageKey(key) } satisfies PreviewRequest)
     if (holders.size === 0) end(running)
   }
@@ -169,10 +179,18 @@ export function createPreviewClient(startFrame: () => PreviewFrame): PreviewClie
           const { frame, pending } = running
           const id = nextId++
           const sent = pageKey(key)
+          running.open.add(sent)
           return new Promise((resolve, reject) => {
             pending.set(id, { key, sent, resolve: (value) => resolve(value as never), reject })
             frame.port.postMessage({ type: 'call', id, key: sent, kind, url, method, args } satisfies PreviewRequest)
           })
+        },
+        tell(method, args) {
+          if (!held) throw new Error(`the ${kind} document of ${url} was released`)
+          const sent = pageKey(key)
+          if (!running?.open.has(sent)) return
+          // No request waits for the answer, which the frame's listener then passes over.
+          running.frame.port.postMessage({ type: 'call', id: nextId++, key: sent, kind, url, method, args } satisfies PreviewRequest)
         },
         onChanged(listener) {
           const heard = (): void => listener()

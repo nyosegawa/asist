@@ -1151,6 +1151,19 @@ export const files = defineMessages({
       'es-419': 'Este archivo es demasiado grande para mostrarlo aquí',
       'es-ES': 'Este archivo es demasiado grande para mostrarlo aquí'
     },
+    pdfPictureLeftOut: {
+      'ja-JP': 'このページの大きすぎる画像は描いていません',
+      'en-US': 'A picture too large to show is left out of this page',
+      'fr-FR': 'Une image trop grande pour être affichée est omise sur cette page',
+      'de-DE': 'Ein Bild, das zu groß zum Anzeigen ist, fehlt auf dieser Seite',
+      'hi-IN': 'दिखाने के लिए बहुत बड़ी एक तस्वीर इस पेज से छोड़ दी गई है',
+      'id-ID': 'Gambar yang terlalu besar untuk ditampilkan tidak dimuat di halaman ini',
+      'it-IT': "Un'immagine troppo grande da mostrare è stata omessa da questa pagina",
+      'ko-KR': '너무 커서 보여 줄 수 없는 그림은 이 페이지에서 뺐습니다',
+      'pt-BR': 'Uma imagem grande demais para exibir foi deixada de fora desta página',
+      'es-419': 'Una imagen demasiado grande para mostrarse se omitió en esta página',
+      'es-ES': 'Una imagen demasiado grande para mostrarse se ha omitido en esta página'
+    },
     docxMore: {
       'ja-JP': '続きは拡大表示で',
       'en-US': 'The rest is in the focus view',
@@ -1243,19 +1256,6 @@ export const files = defineMessages({
       'pt-BR': 'Não foi possível carregar o arquivo (HTTP {status})',
       'es-419': 'No se pudo cargar el archivo (HTTP {status})',
       'es-ES': 'No se ha podido cargar el archivo (HTTP {status})'
-    },
-    pdfCanvasUnavailable: {
-      'ja-JP': 'PDF を描けませんでした。',
-      'en-US': "Couldn't draw the PDF.",
-      'fr-FR': 'Impossible de dessiner le PDF.',
-      'de-DE': 'Das PDF konnte nicht gezeichnet werden.',
-      'hi-IN': 'PDF दिखाया नहीं जा सका।',
-      'id-ID': 'Tidak bisa menggambar PDF-nya.',
-      'it-IT': 'Impossibile disegnare il PDF.',
-      'ko-KR': 'PDF를 그리지 못했습니다.',
-      'pt-BR': 'Não foi possível desenhar o PDF.',
-      'es-419': 'No se pudo dibujar el PDF.',
-      'es-ES': 'No se ha podido dibujar el PDF.'
     },
     xmlUnreadable: {
       'ja-JP': 'PowerPoint の XML を読めませんでした({detail})',
@@ -1386,6 +1386,19 @@ export const files = defineMessages({
       'pt-BR': 'O arquivo mudou enquanto era lido.',
       'es-419': 'El archivo cambió mientras se leía.',
       'es-ES': 'El archivo ha cambiado mientras se leía.'
+    },
+    pdfTooMuchToRead: {
+      'ja-JP': 'この PDF を描くには一度に {size} より多く読む必要があるので、ここでは描けません',
+      'en-US': "Drawing this PDF would mean reading more than {size} at once, so it isn't drawn here",
+      'fr-FR': "Afficher ce PDF demanderait de lire plus de {size} d'un coup ; il n'est donc pas affiché ici",
+      'de-DE': 'Um dieses PDF darzustellen, müssten mehr als {size} auf einmal gelesen werden, daher wird es hier nicht angezeigt',
+      'hi-IN': 'इस PDF को दिखाने के लिए एक बार में {size} से ज़्यादा पढ़ना पड़ेगा, इसलिए इसे यहाँ नहीं दिखाया जाता',
+      'id-ID': 'Menampilkan PDF ini berarti membaca lebih dari {size} sekaligus, jadi PDF ini tidak ditampilkan di sini',
+      'it-IT': 'Per mostrare questo PDF bisognerebbe leggere più di {size} in una volta, quindi non viene mostrato qui',
+      'ko-KR': '이 PDF를 그리려면 한 번에 {size}보다 많이 읽어야 하므로 여기에서는 그리지 않습니다',
+      'pt-BR': 'Para mostrar este PDF seria preciso ler mais de {size} de uma vez, então ele não é mostrado aqui',
+      'es-419': 'Mostrar este PDF implicaría leer más de {size} a la vez, así que no se muestra aquí',
+      'es-ES': 'Mostrar este PDF implicaría leer más de {size} de una vez, así que no se muestra aquí'
     }
   }
 })

@@ -49,6 +49,17 @@ describe('third-party notices', () => {
     expect(renderNotices('own license', sections, 'darwin')).toContain('notice text')
   })
 
+  it("adds the license files of a folder inside a package, which the build copied files from, to the package's section", () => {
+    const viewer = writePackage('node_modules/viewer', { name: 'viewer', version: '2.0.0', license: 'Apache-2.0' }, { LICENSE: 'apache text' })
+    const decoders = path.join(viewer, 'wasm')
+    fs.mkdirSync(decoders)
+    fs.writeFileSync(path.join(decoders, 'LICENSE_DECODER'), 'bsd text of the decoder')
+    fs.writeFileSync(path.join(decoders, 'decoder.js'), '')
+    const section = { id: 'viewer@2.0.0', license: 'Apache-2.0', files: ['apache text', 'bsd text of the decoder'] }
+    expect(packageSections([viewer, decoders])).toEqual([section])
+    expect(packageSections([decoders])).toEqual([section])
+  })
+
   it('points to git licenses that the git prepared on this machine carries', () => {
     const named = gitLicensePaths(renderNotices('own license', [], process.platform))
     expect(named.length).toBeGreaterThan(0)

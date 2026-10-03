@@ -116,24 +116,15 @@ export function carriesUrl(kind: FileKind, filePath: string): boolean {
  */
 export const MAX_TEXT_BYTES = 512 * 1024
 
-const MB = 1024 * 1024
-
 /**
- * The largest file, by its size on disk, that each viewer reads whole into the page and parses there. A larger one
- * is not read: the viewer says it is too large to show here, above the card's button that shows it in Finder or File
- * Explorer. The kinds not listed travel as text up to MAX_TEXT_BYTES, are loaded by the page's own image, media and
- * frame elements, or are read by ranges, as a recording's waveform is. A notebook travels as text too, but its
- * viewer parses the whole of it as JSON, which no beginning of it is, so its limit is MAX_TEXT_BYTES.
- *
- * Measured on 2026-10-02 in the demo under headless Chrome on an Apple M5 with 32 GB, opening generated files in a card
- * and in the focus view, the slower of the two given. Most limits sit where the costliest likely file of the kind took
- * about a second to show and grew the page by less than a gigabyte, so that a machine two or three times slower still
- * shows it within a few seconds.
- * - pdf, 256 MB: scanned pages took 0.7 s for 281 MB and grew the page by 0.6 GB, and 1.7 s for 1.1 GB by 2.3 GB.
- *   Little of it holds the thread, so the memory sets the limit.
+ * The largest file, by its size on disk, that a viewer reads whole into the page and parses there. A larger one is not
+ * read: the viewer says it is too large to show here, above the card's button that shows it in Finder or File Explorer.
+ * Only a notebook is read so: it travels as text, but its viewer parses the whole of it as JSON, which no beginning of
+ * it is, so its limit is MAX_TEXT_BYTES. The other kinds travel as text up to MAX_TEXT_BYTES, are loaded by the page's
+ * own image, media and frame elements, or are read by ranges in the preview page, as Office files, PDFs and a
+ * recording's waveform are.
  */
 export const WHOLE_READ_LIMIT: Partial<Record<FileKind, number>> = {
-  pdf: 256 * MB,
   notebook: MAX_TEXT_BYTES
 }
 

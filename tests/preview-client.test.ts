@@ -3,7 +3,7 @@ import { createTranslator } from '@shared/i18n'
 import { readErrorText } from '@shared/i18n/error-text'
 import { createPreviewClient, type PreviewFile, type PreviewFrame } from '../src/renderer/src/panels/viewers/preview-client'
 import { servePreview, type OpenPreviewDocument } from '../src/renderer/src/preview/serve'
-import openEcho, { closed, failOnce, kept, opened } from './fixtures/preview-methods/echo'
+import openEcho, { closed, failOnce, kept, opened, told } from './fixtures/preview-methods/echo'
 import openVersioned, { closings, openings, versions, waiting } from './fixtures/preview-methods/versioned'
 
 const ja = createTranslator('ja-JP')
@@ -61,6 +61,28 @@ describe('the preview frame', () => {
     expect(started).toHaveLength(2)
     // The new frame opened the document again, since the one that died took its documents with it.
     expect(opened.get(url)).toBe(2)
+    document.release()
+  })
+
+  it('tells a document only in the frame where it is open, and starts no frame to tell one a frame that died took with it', async () => {
+    const { started, client } = frames()
+    const file = newFile()
+    const { url } = file
+    const document = client.open<typeof openEcho>('echo', file)
+    // Not yet asked of anything, the document is open in no frame.
+    document.tell('note', { text: 'before' })
+    expect(started).toHaveLength(0)
+    await document.call('echo', { text: 'up' })
+    document.tell('note', { text: 'held' })
+    await vi.waitFor(() => expect(told).toContainEqual({ url, text: 'held' }))
+
+    started[0].page.close()
+    await settled()
+    document.tell('note', { text: 'after the frame died' })
+    await settled()
+    expect(started).toHaveLength(1)
+    expect(opened.get(url)).toBe(1)
+    expect(told.filter((note) => note.url === url).map((note) => note.text)).toEqual(['held'])
     document.release()
   })
 

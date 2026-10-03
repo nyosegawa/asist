@@ -15,6 +15,9 @@ const count = (counts: Map<string, number>, url: string): void => void counts.se
 /** The buffer the last bytes call handed over, as the kind still holds it. */
 export const kept: { buffer: ArrayBuffer | null } = { buffer: null }
 
+/** What the documents were told (PreviewHandle.tell), in order. */
+export const told: Array<{ url: string; text: string }> = []
+
 const failing = new Set<string>()
 
 /** Makes the next opening of the URL fail. */
@@ -31,7 +34,8 @@ const openEcho = async (url: string) => {
         return { pages: [{ bytes: new Uint8Array(kept.buffer) }] }
       },
       numbers: (args: { count: number }) => Array.from({ length: args.count }, (_, index) => index),
-      wait: () => new Promise<never>(() => undefined)
+      wait: () => new Promise<never>(() => undefined),
+      note: (args: { text: string }) => void told.push({ url, text: args.text })
     },
     close: () => count(closed, url)
   }
