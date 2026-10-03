@@ -2,11 +2,11 @@ import { errorKey } from './i18n/error-key'
 import type { ZipEntry } from './zip-directory'
 
 /**
- * What both the preview page's Office viewers and main read of an Office package: the attributes of its small XML
- * parts, the relationships between parts, which part holds each sheet of a workbook, and the last size net, which
- * keeps the files card from reading a part far beyond anything realistic. The net is decided from the sizes the
- * zip's directory declares, before any of the part is read, so that the viewers refuse and main tells the model the
- * same files.
+ * What the preview page's Office viewers read of an Office package: the attributes of its small XML parts, the
+ * relationships between parts and which part holds each sheet of a workbook. And the last size net, which keeps the
+ * files card from reading a part far beyond anything realistic, decided from the names and sizes the zip's directory
+ * declares alone, so that the viewers refuse, and main tells the model, the same files from the same directory
+ * without main reading any part of the user's file.
  */
 
 const MB = 1024 * 1024
@@ -51,9 +51,14 @@ export function attributes(tag: string): Map<string, string> {
   return found
 }
 
-/** Every start tag of an element of this local name, self-closing or not, as its attributes. */
+/**
+ * Every start tag of an element of this local name, self-closing or not, as its attributes. A tag never holds a <,
+ * which XML allows neither between attributes nor in a value, so each try stops at the next one and the search takes
+ * time in proportion to the text; letting a try run to the end of the text took 10.7 s on 256 KB of tags that never
+ * closed (2026-10-03).
+ */
 export function tags(xml: string, local: string): Array<Map<string, string>> {
-  const tag = new RegExp(`<(?:[\\w.-]+:)?${local}(?=[\\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>`, 'g')
+  const tag = new RegExp(`<(?:[\\w.-]+:)?${local}(?=[\\s/>])((?:[^<>"']|"[^<"]*"|'[^<']*')*)>`, 'g')
   return Array.from(xml.matchAll(tag), ([, inside]) => attributes(inside))
 }
 
@@ -141,13 +146,42 @@ export async function readWorkbookParts(names: Iterable<string>, readText: (part
 /** Whether a part declares more XML than SHEET_XML_LIMIT. A part the zip does not have does not, and reading it says it is missing. */
 export const partTooLarge = (entries: ReadonlyMap<string, ZipEntry>, part: string): boolean => (entries.get(part)?.size ?? 0) > SHEET_XML_LIMIT
 
-/** Whether the Excel viewer leaves a sheet unread: its XML, or the shared strings every sheet uses, are over SHEET_XML_LIMIT. */
-export const sheetTooLarge = (entries: ReadonlyMap<string, ZipEntry>, workbook: WorkbookParts, sheet: number): boolean =>
-  partTooLarge(entries, workbook.sheets[sheet].part) || (workbook.strings !== null && partTooLarge(entries, workbook.strings))
+/**
+ * What the size net leaves unread of a file the card shows: nothing, the whole file, or, of a workbook, the sheets
+ * that are over the limit, while the card shows the others.
+ */
+export type LeftOut = 'nothing' | 'file' | 'someSheets'
 
 /** The XML parts of a zip, and the relationships between them. */
 const XML_PART = /\.(?:xml|rels)$/i
 
-/** Whether the Word viewer leaves a document unread: its XML parts declare more than DOCUMENT_XML_LIMIT together. */
-export const documentTooLarge = (entries: Iterable<ZipEntry>): boolean =>
-  [...entries].reduce((sum, { name, size }) => (XML_PART.test(name) ? sum + size : sum), 0) > DOCUMENT_XML_LIMIT
+/** What the Word viewer leaves unread: the whole document when its XML parts declare more than DOCUMENT_XML_LIMIT together. */
+export function documentLeftOut(entries: ReadonlyMap<string, ZipEntry>): LeftOut {
+  let xml = 0
+  for (const { name, size } of entries.values()) if (XML_PART.test(name)) xml += size
+  return xml > DOCUMENT_XML_LIMIT ? 'file' : 'nothing'
+}
+
+/**
+ * The parts of a workbook the Excel viewer reads whole whichever sheet it shows, and those that hold a sheet, by the
+ * names Excel and every common writer (openpyxl, XlsxWriter, SheetJS, pandas) give them, compared without case as
+ * part names are. The viewer finds each sheet's part from the workbook's relationships, and still refuses one of
+ * another name that is over the limit when it comes to read it; the net decides here from the names alone, since main
+ * reads no part of the file.
+ */
+const WHOLE_WORKBOOK_PARTS = new Set(['_rels/.rels', 'xl/workbook.xml', 'xl/_rels/workbook.xml.rels', 'xl/sharedstrings.xml', 'xl/styles.xml'])
+const WORKSHEET_PART = /^xl\/worksheets\/[^/]+\.xml$/i
+
+/**
+ * What the Excel viewer leaves unread: the whole workbook when a part it reads for every sheet, such as the shared
+ * strings or the styles, is over SHEET_XML_LIMIT, and the sheets whose own XML is over it, while it shows the others.
+ */
+export function workbookLeftOut(entries: ReadonlyMap<string, ZipEntry>): LeftOut {
+  let someSheets = false
+  for (const { name, size } of entries.values()) {
+    if (size <= SHEET_XML_LIMIT) continue
+    if (WHOLE_WORKBOOK_PARTS.has(name.toLowerCase())) return 'file'
+    if (WORKSHEET_PART.test(name)) someSheets = true
+  }
+  return someSheets ? 'someSheets' : 'nothing'
+}

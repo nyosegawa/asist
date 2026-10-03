@@ -1,6 +1,6 @@
 import '../set-immediate'
 import { errorKey } from '@shared/i18n/error-key'
-import { documentTooLarge } from '@shared/office-package'
+import { documentLeftOut } from '@shared/office-package'
 import { DOCX_ID_PREFIX } from '@/panels/viewers/docx-html'
 import type { PreviewDocument } from '../serve'
 import { openZip, type RangedZip } from '../zip-ranges'
@@ -299,7 +299,7 @@ async function picture(zip: RangedZip, { path, width }: { path: string; width: n
 /** Opens the Word file at url, refusing one whose XML parts declare more than DOCUMENT_XML_LIMIT before any part is read. */
 export default async function openDocx(url: string) {
   const zip = await openZip(url)
-  if (documentTooLarge(zip.entries.values())) throw new Error(errorKey('files.viewer.tooLarge'))
+  if (documentLeftOut(zip.entries) === 'file') throw new Error(errorKey('files.viewer.tooLarge'))
   const parts = once(() => readParts(zip))
   const convert = async (contents: ReadonlyMap<string, Bytes>): Promise<string> => {
     const mammoth = await loadMammoth()

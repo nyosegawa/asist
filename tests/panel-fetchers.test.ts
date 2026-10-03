@@ -9,7 +9,7 @@ import { readErrorText } from '@shared/i18n/error-text'
 import JSZip from 'jszip'
 import { MAX_TEXT_BYTES } from '@shared/files'
 import { smallestLimitedFile } from './helpers/files'
-import { declareSize, workbookOf } from './helpers/workbook'
+import { declareSize, manyEntriesDeclared, workbookOf } from './helpers/workbook'
 import { DOCUMENT_XML_LIMIT, SHEET_XML_LIMIT } from '@shared/office-package'
 import munichGeocoding from './fixtures/weather/munich-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
@@ -42,9 +42,10 @@ function respond(body: unknown, urls: string[]): Fetch {
   return fetch
 }
 
-async function fetchPanel(type: string, props: Record<string, unknown>) {
+/** Fetches a card as a tool whose result goes back to the model does, unless `forModel` says otherwise. */
+async function fetchPanel(type: string, props: Record<string, unknown>, forModel = true) {
   const { fetchPanel: run } = await import('../src/main/services/panel-fetchers')
-  return run(type, props)
+  return run(type, props, undefined, forModel)
 }
 
 beforeEach(() => {
@@ -371,14 +372,14 @@ describe('the files card (show_files)', () => {
     }
   })
 
-  it('tells the model which Excel sheets and Word documents the viewers refuse for the sizes their zip directories declare', async () => {
+  it('tells the model which Excel workbooks and Word documents the viewers refuse, or show only some sheets of, for the sizes their zip directories declare', async () => {
     const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
     const write = (name: string, bytes: Uint8Array): string => {
       writeFileSync(path.join(root, name), bytes)
       return path.join(root, name)
     }
     const sheet = '<row r="1"><c r="A1"><v>1</v></c></row>'
-    const months = await workbookOf({ sheets: ['1月', '2月', '3月'].map((name) => ({ name, data: sheet })), strings: ['<t>x</t>'] })
+    const months = await workbookOf({ sheets: ['1月', '2月', '3月'].map((name) => ({ name, data: sheet })), strings: ['<t>x</t>'], styles: '<cellXfs count="1"><xf numFmtId="0"/></cellXfs>' })
     const document = async (parts: Record<string, string>): Promise<Uint8Array> => {
       const zip = new JSZip()
       zip.file('[Content_Types].xml', '<Types/>', { createFolders: false })
@@ -398,8 +399,10 @@ describe('the files card (show_files)', () => {
         paths: [
           write('sheets.xlsx', declareSize(months, 'xl/worksheets/sheet2.xml', SHEET_XML_LIMIT + 1)),
           write('strings.xlsx', declareSize(months, 'xl/sharedStrings.xml', SHEET_XML_LIMIT + 1)),
+          write('styles.xlsx', declareSize(months, 'xl/styles.xml', SHEET_XML_LIMIT + 1)),
           write('document.docx', declareSize(await document({ 'word/document.xml': '<w:document/>' }), 'word/document.xml', DOCUMENT_XML_LIMIT + 1)),
           write('parts.docx', parts),
+          write('entries.docx', manyEntriesDeclared(70_000)),
           write('broken.xlsx', new TextEncoder().encode('not a zip')),
           write('fine.docx', await document({ 'word/document.xml': '<w:document/>' })),
           write('fine.xlsx', months)
@@ -407,15 +410,27 @@ describe('the files card (show_files)', () => {
       })
       type Group = { files: string[]; why: string; button?: string }
       const told = data as { notShown?: Group[]; partlyShown?: Group[] }
-      expect(told.notShown?.map((group) => group.files)).toEqual([['sheets.xlsx'], ['strings.xlsx', 'document.docx', 'parts.docx'], ['broken.xlsx']])
-      // The reason names the sheet left out and none of those the card shows.
-      const [sheets, large, broken] = told.notShown!.map((group) => group.why)
-      expect(['"1月"', '"2月"', '"3月"'].filter((name) => sheets.includes(name))).toEqual(['"2月"'])
-      expect(large).not.toContain('"')
-      expect(broken).toBe(createTranslator('ja-JP')('files.errors.zipDamaged'))
-      expect(told.notShown?.map((group) => group.button !== undefined)).toEqual([true, true, false])
-      // A Word document the net lets through shows its beginning, as before.
-      expect(told.partlyShown?.map((group) => group.files)).toEqual([['fine.docx']])
+      expect(told.notShown?.map((group) => group.files)).toEqual([['strings.xlsx', 'styles.xlsx', 'document.docx', 'parts.docx', 'entries.docx'], ['broken.xlsx']])
+      expect(told.notShown?.[1].why).toBe(createTranslator('ja-JP')('files.errors.zipDamaged'))
+      // The card shows its reveal button under every one of them, the file its viewer cannot read included.
+      expect(told.notShown?.map((group) => group.button !== undefined)).toEqual([true, true])
+      // A workbook with a sheet too large shows its other sheets, and a Word document the net lets through its beginning.
+      expect(told.partlyShown?.map((group) => group.files)).toEqual([['sheets.xlsx'], ['fine.docx']])
+      expect(told.partlyShown?.map((group) => group.button !== undefined)).toEqual([true, false])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reads no file for what the model is told when the result does not go back to it', async () => {
+    const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
+    const target = path.join(root, 'broken.xlsx')
+    writeFileSync(target, 'not a zip')
+    mocks.roots = [root]
+    try {
+      const { props, data } = await fetchPanel('files', { paths: [target] }, false)
+      expect(data).toBeUndefined()
+      expect((props.items as Array<{ name: string }>).map((item) => item.name)).toEqual(['broken.xlsx'])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

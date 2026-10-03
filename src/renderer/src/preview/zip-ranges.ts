@@ -4,6 +4,7 @@ import {
   CENTRAL_SIGNATURE,
   dataOf,
   damaged,
+  entriesByName,
   DEFLATED,
   END_LENGTH,
   END_SIGNATURE,
@@ -177,7 +178,7 @@ export async function openZip(url: string): Promise<RangedZip> {
   const read = (start: number, end: number): Promise<Bytes> => readRange(url, start, end, tail)
   const bytes = (start: number, end: number): Promise<Bytes> => joined(tail.bytes, tailStart, start, end, read)
   const records = await readDirectory(tail.bytes, tailStart, read)
-  const byName = new Map(records.map((record) => [record.name, record]))
+  const byName = entriesByName(records)
 
   return {
     version: versionText(tail),

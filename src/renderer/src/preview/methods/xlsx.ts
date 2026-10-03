@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx/dist/xlsx.mini.min.js'
 import { errorKey } from '@shared/i18n/error-key'
-import { partTooLarge, readWorkbookParts, sheetTooLarge, unescapeXml } from '@shared/office-package'
+import { partTooLarge, readWorkbookParts, unescapeXml, workbookLeftOut } from '@shared/office-package'
 import type { OpenPreviewDocument } from '../serve'
 import { indexRows, indexStrings, itemText, parseCells, parseStyles, rowsWithin, type RawCell, type RowIndex, type StringIndex } from '../sheet-xml'
 import { openZip, type RangedZip } from '../zip-ranges'
@@ -114,6 +114,8 @@ function dateSerial(iso: string, date1904: boolean): number {
 
 const openXlsx = async (url: string) => {
   const zip = await openZip(url)
+  // The size net refuses the whole workbook, as main tells the model, when a part read for every sheet is over the limit.
+  if (workbookLeftOut(zip.entries) === 'file') throw new Error(errorKey('files.viewer.tooLarge'))
   const workbook = await readWorkbookParts(zip.entries.keys(), (part) => readText(zip, part))
   const stringsPart = workbook.strings
   const stylesPart = workbook.styles
@@ -150,9 +152,11 @@ const openXlsx = async (url: string) => {
     // A viewer asks only for the sheets the workbook had when it listed them, so a sheet past the end means the
     // document was opened again, in a frame started after the last one stopped, from a file saved since.
     if (sheet >= workbook.sheets.length) throw new Error(errorKey('files.errors.changedWhileReading'))
-    const promise = sheetTooLarge(zip.entries, workbook, sheet)
+    const part = workbook.sheets[sheet].part
+    // The shared strings may have another name than the net knows them by, and are refused here too.
+    const promise = partTooLarge(zip.entries, part) || (stringsPart !== null && partTooLarge(zip.entries, stringsPart))
       ? Promise.resolve(null)
-      : Promise.all([zip.read(workbook.sheets[sheet].part), sharedStrings()]).then(([xml]) => ({ xml, index: indexRows(xml) }))
+      : Promise.all([zip.read(part), sharedStrings()]).then(([xml]) => ({ xml, index: indexRows(xml) }))
     const reading = { sheet, promise }
     loading = reading
     promise.then(

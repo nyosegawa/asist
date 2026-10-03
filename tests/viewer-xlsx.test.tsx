@@ -233,6 +233,14 @@ describe('the Excel viewer', () => {
     expect(texts(frame.querySelectorAll('.fv-table th'))).toEqual(['伝票番号'])
   })
 
+  it('shows the placard that says a workbook is too large to show here when a part it reads for every sheet is over the limit', async () => {
+    const sheets = [{ name: '売上', data: '<row r="1"><c r="A1"><v>1</v></c></row>' }]
+    serveByRanges(declareSize(await workbookOf({ sheets, styles: '<cellXfs count="1"><xf numFmtId="0"/></cellXfs>' }), 'xl/styles.xml', SHEET_XML_LIMIT + 1))
+    const frame = await render(<FileViewer item={itemOf('売上.xlsx')} mode="card" size="l" />)
+    expect(frame.querySelector('.fv-stub')?.textContent).toContain(t('files.viewer.tooLarge'))
+    expect(frame.querySelector('.fv-note[data-tone="error"]')).toBeNull()
+  })
+
   it('shows why a file that is not a workbook could not be read', async () => {
     serveByRanges(new TextEncoder().encode('not a zip at all'))
     const frame = await render(<FileViewer item={itemOf('壊れた.xlsx')} mode="card" size="l" />)

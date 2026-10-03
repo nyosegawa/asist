@@ -61,7 +61,18 @@ export const FLAG_UTF8 = 0x800
 /** The end of central directory record with the longest comment, and the ZIP64 locator in front of it. */
 export const TAIL_LENGTH = END_LENGTH + U16_FULL + ZIP64_LOCATOR_LENGTH
 
+/**
+ * The largest central directory read. An Office file holds a few dozen entries, a deck with a picture on each of
+ * 200 slides about 1,000, whose directory takes about 100 KB; 65,535 entries is where a zip's own count runs out and
+ * ZIP64 takes over, which no Office file needs, and 8 MB holds that many with names of more than 80 bytes. A larger
+ * one is too large to show here and is not parsed, so that a file of hundreds of thousands of empty entries costs
+ * nothing.
+ */
+export const MOST_ENTRIES = U16_FULL
+export const DIRECTORY_LIMIT = 8 * 1024 * 1024
+
 export const damaged = (): Error => new Error(errorKey('files.errors.zipDamaged'))
+const tooLarge = (): Error => new Error(errorKey('files.viewer.tooLarge'))
 
 export const viewOf = (bytes: Bytes): DataView => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 
@@ -139,15 +150,28 @@ function parseCentral(directory: Bytes, count: number, directoryStart: number, s
   }
   const starts = [...new Set(parsed.map((record) => record.offset)), directoryStart].sort((a, b) => a - b)
   return parsed.map((record) => {
-    const end = starts.find((start) => start > record.offset)
+    const end = startAfter(starts, record.offset)
     if (end === undefined || end > directoryStart || end - record.offset < LOCAL_LENGTH + record.compressedSize) throw damaged()
     return { ...record, end }
   })
 }
 
+/** The first of the sorted starts past `offset`, by a binary search, or undefined when none is. */
+function startAfter(starts: number[], offset: number): number | undefined {
+  let low = 0
+  let high = starts.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (starts[middle] <= offset) low = middle + 1
+    else high = middle
+  }
+  return starts[low]
+}
+
 /**
  * The central directory of a zip, from the last TAIL_LENGTH bytes of the file, which start at `tailStart`, and
  * `read` for anything in front of them: the ZIP64 end record, when the tail does not hold it, and the directory.
+ * A directory of MOST_ENTRIES entries or more, or larger than DIRECTORY_LIMIT, is too large to show here.
  */
 export async function readDirectory(tail: Bytes, tailStart: number, read: ReadBytes): Promise<CentralRecord[]> {
   const bytes = (start: number, end: number): Promise<Bytes> => joined(tail, tailStart, start, end, read)
@@ -179,8 +203,15 @@ export async function readDirectory(tail: Bytes, tailStart: number, read: ReadBy
   const directoryStart = directoryEnd - directoryLength
   const shift = directoryStart - directoryOffset
   if (shift < 0) throw damaged()
+  if (count >= MOST_ENTRIES || directoryLength > DIRECTORY_LIMIT) throw tooLarge()
   return parseCentral(await bytes(directoryStart, directoryEnd), count, directoryStart, shift)
 }
+
+/**
+ * The entries by name, as the viewers and main both decide from them. Of two entries of one name the last is kept,
+ * which is the one a reader that runs through the directory in order ends with.
+ */
+export const entriesByName = <Entry extends ZipEntry>(records: readonly Entry[]): Map<string, Entry> => new Map(records.map((record) => [record.name, record]))
 
 /** The bytes from start up to end: those in the tail taken from it, and those in front of it read. */
 export async function joined(tail: Bytes, tailStart: number, start: number, end: number, read: ReadBytes): Promise<Bytes> {

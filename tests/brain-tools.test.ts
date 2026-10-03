@@ -211,7 +211,7 @@ describe('brain tools registry', () => {
     const topic = 'bilingual: 請求書'
     const result = await executeClientTool('show_news', { topic }, makeCtx().ctx)
     expect(result.isError).toBe(false)
-    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('news', { topic }, expect.any(AbortSignal))
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('news', { topic }, expect.any(AbortSignal), true)
   })
 
   it('quotes show_fx against the currency of the region when none is named, on the card of that pair', async () => {
@@ -223,7 +223,7 @@ describe('brain tools registry', () => {
         mocks.fetchPanel.mockResolvedValueOnce({ props: {}, source: 'open.er-api.com' })
         const { ctx, events } = makeCtx()
         await executeClientTool('show_fx', input, ctx)
-        expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD', quote: 'BRL' }, expect.any(AbortSignal))
+        expect(mocks.fetchPanel).toHaveBeenLastCalledWith('fx', { base: 'USD', quote: 'BRL' }, expect.any(AbortSignal), true)
         const created = events.find((e) => e.type === 'panel' && e.event.op === 'create')
         keys.push(created?.type === 'panel' ? created.event.key : '')
       }
@@ -931,12 +931,12 @@ describe('the tool list in the language of the conversation', () => {
     mocks.settings.conversationLocale = 'ja-JP'
     const ja = await load()
     await ja.executeClientTool('show_clock', {}, makeCtx().ctx)
-    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('clock', { city: '東京' }, expect.any(AbortSignal))
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('clock', { city: '東京' }, expect.any(AbortSignal), true)
     vi.resetModules()
     mocks.settings.conversationLocale = 'en-US'
     const en = await load()
     await en.executeClientTool('show_clock', {}, makeCtx().ctx)
-    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('clock', { city: 'Tokyo' }, expect.any(AbortSignal))
+    expect(mocks.fetchPanel).toHaveBeenLastCalledWith('clock', { city: 'Tokyo' }, expect.any(AbortSignal), true)
   })
 
   /**

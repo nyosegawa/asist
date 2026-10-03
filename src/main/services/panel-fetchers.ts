@@ -13,7 +13,8 @@ import { getMailService } from './mail'
 import { cardView, type FileItem } from '@shared/files'
 import { osMessageKey } from '@shared/i18n/os-message'
 import { failure, fileItem } from './file-preview'
-import { officeLeftOut, type LeftOut } from './office-size-net'
+import { officeLeftOut } from './office-size-net'
+import type { LeftOut } from '@shared/office-package'
 import { fileUrl } from '../file-protocol'
 import { allowedFileRoots } from './agent'
 import { platformCapabilities } from './platform'
@@ -30,7 +31,8 @@ import { errorMessage, t } from './i18n'
 type Props = Record<string, unknown>
 /** props is what the card renders. data is what goes back to the LLM, and props is sent as it is when data is omitted. */
 type Fetched = { props: Props; source?: string; data?: unknown }
-type Fetcher = (props: Props, signal: AbortSignal) => Promise<Fetched>
+/** `forModel` says the result goes back to the model, so that data that costs more than the card is built only then. */
+type Fetcher = (props: Props, signal: AbortSignal, forModel: boolean) => Promise<Fetched>
 
 const request = async (url: string, signal: AbortSignal): Promise<Response> => {
   const res = await fetch(url, { signal, headers: { 'user-agent': userAgent() } }).catch((error: unknown) => {
@@ -238,9 +240,9 @@ const CARD_TOLD = {
     ja: '大きすぎるので、カードには中身を出さず、名前と大きさだけを出している。',
     en: 'Too large for the card to show, so it shows only the name and the size.'
   },
-  sheetsTooLarge: {
-    ja: 'シート {sheets} は大きすぎるので、カードには中身を出していない。ほかのシートはカードのタブで開ける。',
-    en: 'The sheets {sheets} are too large for the card to show; the other sheets open from its tabs.'
+  someSheets: {
+    ja: 'いくつかのシートは大きすぎるので、カードには出せない。ほかのシートはカードで開ける。',
+    en: 'Some sheets are too large to show here; the others open in the card.'
   },
   noViewer: {
     ja: 'カードはこの種類のファイルの中身を出せないので、名前と大きさだけを出している。',
@@ -263,15 +265,16 @@ const CARD_TOLD = {
 type ToldGroup = { files: string[]; why: string; button?: string }
 
 /**
- * What the size net of the Word and Excel viewers leaves out of an item the card shows otherwise, or, for a file
- * whose zip main cannot read, why: the card's viewer cannot read it either, and says so in place of its content.
+ * What the size net of the Word and Excel viewers leaves unread of an item the card shows otherwise, null when that is
+ * not known, as for a file that is not on this computer, or, for a file whose zip main cannot read, why: the card's
+ * viewer cannot read it either, and says so in place of its content.
  */
-async function leftOutForSize(item: FileItem): Promise<LeftOut | { leaves: 'unreadable'; error: string }> {
-  if (item.kind !== 'docx' && item.kind !== 'xlsx') return { leaves: 'nothing' }
-  return officeLeftOut(item.path, item.kind).catch((error: unknown) => ({
-    leaves: 'unreadable' as const,
-    error: errorMessage(errorKeyOf(error) ? error : failure(error))
-  }))
+async function leftOutForSize(item: FileItem, signal: AbortSignal): Promise<LeftOut | { unreadable: string } | null> {
+  if (item.kind !== 'docx' && item.kind !== 'xlsx') return 'nothing'
+  return officeLeftOut(item.path, item.kind, signal).catch((error: unknown) => {
+    signal.throwIfAborted()
+    return { unreadable: errorMessage(errorKeyOf(error) ? error : failure(error)) }
+  })
 }
 
 /**
@@ -281,7 +284,7 @@ async function leftOutForSize(item: FileItem): Promise<LeftOut | { leaves: 'unre
  * cut keeps them. The paths and the title the model wrote are not repeated, and an item's asist-file URL, which the
  * model has no use for, is left out, so that less of the rest is cut.
  */
-async function filesForModel(items: FileItem[]): Promise<Props> {
+async function filesForModel(items: FileItem[], signal: AbortSignal): Promise<Props> {
   const say = (text: PromptText, values: Record<string, string> = {}): string =>
     fillPrompt(promptText(conversationLocale(), text), { button: t(osMessageKey('files.reveal', platformCapabilities().os)), ...values })
   const notShown = new Map<string, ToldGroup>()
@@ -290,20 +293,18 @@ async function filesForModel(items: FileItem[]): Promise<Props> {
     void groups.set(told.why, { files: [...(groups.get(told.why)?.files ?? []), name], ...told })
   const button = say(CARD_TOLD.button)
   const views = items.map(cardView)
-  const sizes = await Promise.all(items.map((item, i) => (views[i].shows === 'nothing' ? null : leftOutForSize(item))))
+  const sizes = await Promise.all(items.map((item, i) => (views[i].shows === 'nothing' ? null : leftOutForSize(item, signal))))
   for (const [i, item] of items.entries()) {
     const view = views[i]
     const size = sizes[i]
-    // A file that could not be read gets no button on the card.
-    if (size?.leaves === 'unreadable') group(notShown, item.name, { why: size.error })
-    else if (size?.leaves === 'file') group(notShown, item.name, { why: say(CARD_TOLD.tooLarge), button })
+    // The card shows its reveal button for every file it read, a file whose content its viewer could not read
+    // included, and none for a file it could not read at all.
+    if (size !== null && typeof size === 'object') group(notShown, item.name, { why: size.unreadable, button })
+    else if (size === 'file') group(notShown, item.name, { why: say(CARD_TOLD.tooLarge), button })
     else if (view.shows === 'nothing') group(notShown, item.name, view.why === 'unreadable' ? { why: view.error } : { why: say(CARD_TOLD[view.why]), button })
-    else {
-      const sheets = size?.leaves === 'sheets' ? size.sheets.map((name) => JSON.stringify(name)).join(', ') : null
-      if (sheets !== null) group(notShown, item.name, { why: say(CARD_TOLD.sheetsTooLarge, { sheets }), button })
-      if (view.shows === 'firstPart') group(partlyShown, item.name, { why: say(CARD_TOLD.firstPart), button })
-      if (view.shows === 'beginning') group(partlyShown, item.name, { why: say(CARD_TOLD.beginning) })
-    }
+    else if (size === 'someSheets') group(partlyShown, item.name, { why: say(CARD_TOLD.someSheets), button })
+    else if (view.shows === 'firstPart') group(partlyShown, item.name, { why: say(CARD_TOLD.firstPart), button })
+    else if (view.shows === 'beginning') group(partlyShown, item.name, { why: say(CARD_TOLD.beginning) })
   }
   return {
     ...(notShown.size > 0 ? { notShown: [...notShown.values()] } : {}),
@@ -312,7 +313,7 @@ async function filesForModel(items: FileItem[]): Promise<Props> {
   }
 }
 
-const files: Fetcher = async (props) => {
+const files: Fetcher = async (props, signal, forModel) => {
   const paths = Array.isArray(props.paths) ? props.paths.map(String) : []
   if (paths.length === 0) throw new Error(errorText('panels.errors.noPaths'))
   const roots = allowedFileRoots()
@@ -322,7 +323,7 @@ const files: Fetcher = async (props) => {
   }
   return {
     props: { ...props, paths, items },
-    data: await filesForModel(items),
+    ...(forModel ? { data: await filesForModel(items, signal) } : {}),
     source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length })
   }
 }
@@ -338,13 +339,12 @@ const FETCHERS: Record<string, Fetcher> = {
   news
 }
 
-/** Fetches a panel's data. A panel type with no fetcher passes its props straight through. */
-export async function fetchPanel(
-  type: string,
-  props: Props,
-  signal?: AbortSignal
-): Promise<Fetched> {
+/**
+ * Fetches a panel's data. A panel type with no fetcher passes its props straight through. `forModel` says the result
+ * goes back to the model, which some fetchers build their data for only then.
+ */
+export async function fetchPanel(type: string, props: Props, signal?: AbortSignal, forModel = false): Promise<Fetched> {
   const fetcher = FETCHERS[type]
   if (!fetcher) return { props }
-  return fetcher(completePanelProps(type, props), withTimeoutSignal(signal, 12_000))
+  return fetcher(completePanelProps(type, props), withTimeoutSignal(signal, 12_000), forModel)
 }

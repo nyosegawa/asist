@@ -209,12 +209,11 @@ describe('what the preview iframe reads of a workbook', () => {
     expect(covered(served.ranges, huge)).toBe(false)
   })
 
-  it('says every sheet is too large when the shared strings are over the limit, without reading them', async () => {
+  it('refuses the whole workbook as too large when its shared strings are over the limit, without reading them', async () => {
     const file = await workbookOf({ sheets: [{ name: '売上', data: '<row r="1"><c r="A1" t="s"><v>0</v></c></row>' }], strings: [`<t>STRINGS-${'y'.repeat(300_000)}</t>`], store: true })
     const strings = offsetOf(file, 'STRINGS')
     const served = serveByRanges(declareSize(file, 'xl/sharedStrings.xml', SHEET_XML_LIMIT + 1))
-    const { methods } = await openXlsx(URL)
-    expect(await methods.sheet(0)).toEqual({ shows: 'tooLarge' })
+    await expect(openXlsx(URL)).rejects.toThrow(errorKey('files.viewer.tooLarge'))
     expect(covered(served.ranges, strings)).toBe(false)
   })
 
