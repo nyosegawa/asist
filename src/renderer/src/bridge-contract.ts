@@ -55,6 +55,7 @@ export const rendererApiMethods = [
   'memoryDocuments',
   'memoryDocumentRead',
   'memoryDocumentWrite',
+  'memoryPageDraft',
   'memoryDocumentCreate',
   'memoryDocumentDelete',
   'memoryOverview',

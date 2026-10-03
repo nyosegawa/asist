@@ -3,9 +3,10 @@ import path from 'node:path'
 import { app } from 'electron'
 import { fillPrompt, promptText, type PromptText } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
-import type { MemoryDocument, MemoryUnit } from '@shared/ipc'
+import type { MemoryDocument, MemoryPageDraft, MemoryUnit } from '@shared/ipc'
 import { localDateKey } from '@shared/local-date'
 import { foldInstruction } from '@shared/instruction-fold'
+import { withoutExampleText } from '@shared/page-example-text'
 import { MEMORY_GITIGNORE } from '@shared/memory-curation'
 import { isJournalName } from '@shared/memory-format'
 import {
@@ -14,7 +15,10 @@ import {
   classifyFile,
   documentKindOf,
   documentOf,
+  newPageMarkdown,
+  pageFile,
   parseMemoryPageInput,
+  parsePageName,
   parsePage,
   promptBody,
   unitsOfJournal,
@@ -51,7 +55,8 @@ const WRITES = {
   edited: { ja: 'asist: 手直し {file}', en: 'asist: edit {file}' },
   pageCreated: { ja: 'asist: ページを作る {name}', en: 'asist: create the page {name}' },
   deleted: { ja: 'asist: 消す {file}', en: 'asist: delete {file}' },
-  instructionFolded: { ja: 'asist: instruction.md の中身を me.md と user.md に移す', en: 'asist: move what instruction.md held into me.md and user.md' }
+  instructionFolded: { ja: 'asist: instruction.md の中身を me.md と user.md に移す', en: 'asist: move what instruction.md held into me.md and user.md' },
+  exampleTextRemoved: { ja: 'asist: ページに残った雛形の例文を消す', en: 'asist: remove the template example text left on pages' }
 } as const satisfies Record<string, PromptText>
 
 const written = (of: keyof typeof WRITES, values: Record<string, string> = {}): string =>
@@ -79,7 +84,8 @@ export function memoryDir(): string {
 
 /**
  * Prepares the directory and its repository, creating .gitignore and placing the first commit on the first run,
- * and moves what an instruction.md held into me.md and user.md.
+ * moves what an instruction.md held into me.md and user.md, and removes the example text of the page template
+ * that pages made on the memory screen kept.
  */
 export function ensureRepo(dir = memoryDir()): void {
   fs.mkdirSync(dir, { recursive: true })
@@ -93,6 +99,23 @@ export function ensureRepo(dir = memoryDir()): void {
   if (!fs.existsSync(path.join(dir, '.git'))) git.init(dir)
   git.commitAll(dir, written(git.hasHead(dir) ? 'prepared' : 'created'))
   foldInstructionIntoPromptDocuments(dir)
+  removeExampleText(dir)
+}
+
+/**
+ * Removes from every page the sections that still hold the page template's example text, and a page left with no
+ * section the user wrote (withoutExampleText), in one commit. Once they are gone it finds nothing and commits
+ * nothing.
+ */
+function removeExampleText(dir: string): void {
+  const changes: Record<string, string | null> = {}
+  for (const file of listMarkdown(dir, PAGES_DIR)) {
+    const markdown = readFileOf(dir, file)
+    if (markdown === null) continue
+    const kept = withoutExampleText(markdown)
+    if (kept !== markdown) changes[file] = kept
+  }
+  if (Object.keys(changes).length > 0) commitFiles(dir, changes, written('exampleTextRemoved'))
 }
 
 /**
@@ -260,19 +283,32 @@ export function writeDocument(file: string, markdown: string, base: string, dir 
   return documentOf(file, text)
 }
 
-/** Creates a page from the template and commits it. A name that already exists is refused rather than overwritten. */
-export function createPage(name: string, template: string, dir = memoryDir()): MemoryDocument {
-  const input = parseMemoryPageInput({ name })
-  const file = `${PAGES_DIR}/${input.name}.md`
-  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name: input.name }))
-  // The name goes in through a function, because a replacement string reads `$&` or `$$` in it as a pattern.
-  const markdown = template
-    .replace(/^updated: .*$/m, `updated: ${localDateKey(new Date())}`)
-    .replace(/^# .*$/m, () => `# ${input.name}`)
+/**
+ * The new page a name opens in the memory screen's editor, written nowhere yet, under the summary heading of the
+ * conversation's language. A name that names a page the memory holds is refused as the file system finds it, so
+ * that on macOS and Windows 「tanaka」 is refused beside Tanaka.md, and a page a curation took in after the screen
+ * listed the pages is refused as well.
+ */
+export function pageDraft(name: unknown, dir = memoryDir()): MemoryPageDraft {
+  const page = parsePageName(name)
+  const file = pageFile(page)
+  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+  return { file, markdown: newPageMarkdown(page, conversationLocale(), localDateKey(new Date())) }
+}
+
+/**
+ * Writes a page the user made on the memory screen, at its first save, and commits it. A name that already exists
+ * is refused rather than overwritten, and a page that breaks the rules is not written, with the reason thrown.
+ */
+export function createPage(input: unknown, dir = memoryDir()): MemoryDocument {
+  const { name, markdown } = parseMemoryPageInput(input)
+  const file = pageFile(name)
+  if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name }))
   const errors = validateDocument(file, markdown, t)
-  if (errors.length > 0) throw new Error(errorText('memory.errors.templateInvalid', { errors: errors.join(' / ') }))
-  commitFiles(dir, { [file]: markdown }, written('pageCreated', { name: input.name }))
-  return documentOf(file, markdown)
+  if (errors.length > 0) throw new Error(errors.join(' / '))
+  const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
+  commitFiles(dir, { [file]: text }, written('pageCreated', { name }))
+  return documentOf(file, text)
 }
 
 /**

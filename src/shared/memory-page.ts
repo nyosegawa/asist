@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { PromptText } from './conversation-locale'
+import { promptText, type ConversationLocale, type PromptText } from './conversation-locale'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { MemoryDocument, MemoryDocumentKind, MemoryPageInput, MemoryUnit, MemoryUnitKind } from './ipc'
@@ -193,18 +193,39 @@ export function pageNameError(name: string): string | null {
   return issue ? errorText(PAGE_NAME_ERRORS[issue]) : null
 }
 
-/** The input for a new page. The name becomes the file name. */
-export const memoryPageInputSchema = z.strictObject({
-  name: z
-    .string()
-    .trim()
-    .min(1, errorText('memory.errors.nameEmpty'))
-    .max(MAX_PAGE_NAME_LENGTH, errorText('memory.errors.nameTooLong', { limit: MAX_PAGE_NAME_LENGTH }))
-    .superRefine((name, context) => {
-      const message = pageNameError(name)
-      if (message) context.addIssue({ code: 'custom', message })
-    })
-})
+/** A page's name as the memory screen takes it, which becomes its file name. */
+const pageNameSchema = z
+  .string()
+  .trim()
+  .min(1, errorText('memory.errors.nameEmpty'))
+  .max(MAX_PAGE_NAME_LENGTH, errorText('memory.errors.nameTooLong', { limit: MAX_PAGE_NAME_LENGTH }))
+  .superRefine((name, context) => {
+    const message = pageNameError(name)
+    if (message) context.addIssue({ code: 'custom', message })
+  })
+
+/** A page the user made on the memory screen, at its first save: its name and the markdown they wrote. */
+export const memoryPageInputSchema = z.strictObject({ name: pageNameSchema, markdown: z.string() })
+
+/** The name, trimmed, for a new page, or the reason it cannot be one thrown. */
+export function parsePageName(value: unknown): string {
+  const result = pageNameSchema.safeParse(value)
+  if (!result.success) throw new Error(result.error.issues[0].message)
+  return result.data
+}
+
+/** Where a page of this name lives in the memory directory. */
+export const pageFile = (name: string): string => `pages/${name}.md`
+
+/**
+ * What a page made on the memory screen holds until the user writes it: its name and an empty summary. The file
+ * is written at its first save, from what the user wrote. A page made from the curation's template held that
+ * template's example sentences, which were searched as memory: 「見出しの付け方がわからない」 put a page nobody
+ * had written beside the utterance.
+ */
+export function newPageMarkdown(name: string, locale: ConversationLocale, today: string): string {
+  return `---\naliases: []\nupdated: ${today}\n---\n# ${name}\n\n## ${promptText(locale, FIXED.summary)}\n\n`
+}
 
 export function documentKindOf(file: string): MemoryDocumentKind | null {
   if (!DOCUMENT_FILE.test(file)) return null
