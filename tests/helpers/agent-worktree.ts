@@ -6,16 +6,14 @@ import { testGitEnv } from './git'
 import { longTempFolder } from './temp'
 
 /**
- * What an agent worktree test file hoists for its mocks: the folder ASIST's data and the repository go in, the
- * launch of the agent CLI, the confirmation, git's switch for another owner's repository, and the commands a test
- * collects. Each file declares it with vi.hoisted and its own vi.mock calls, which Vitest takes only from the file.
+ * What an agent worktree test file hoists for the mocks this helper resets: the folder ASIST's data and the
+ * repository go in, the launch of the agent CLI and the confirmation. Each file declares it with vi.hoisted and its
+ * own vi.mock calls, which Vitest takes only from the file.
  */
 export interface AgentWorktreeMocks {
   root: string
   launch: ReturnType<typeof vi.fn>
   requestConfirm: ReturnType<typeof vi.fn>
-  differentOwner: boolean
-  commands: string[] | null
 }
 
 /**

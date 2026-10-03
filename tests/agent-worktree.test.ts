@@ -3,13 +3,13 @@ import path from 'node:path'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
-import { git, makeTemplate, mergeThroughTool, startTest, type AgentWorktreeMocks } from './helpers/agent-worktree'
+import { git, makeTemplate, mergeThroughTool, startTest } from './helpers/agent-worktree'
 import { shellPath } from './helpers/git'
 
 const ja = createTranslator('ja-JP')
 
-const mocks = vi.hoisted((): AgentWorktreeMocks => ({
-  root: '', launch: vi.fn(), requestConfirm: vi.fn(), differentOwner: false, commands: null
+const mocks = vi.hoisted(() => ({
+  root: '', launch: vi.fn(), requestConfirm: vi.fn(), differentOwner: false, commands: null as string[] | null
 }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
 vi.mock('../src/main/services/agent-process', () => ({ launchAgentProcess: mocks.launch }))
@@ -55,7 +55,6 @@ afterAll(() => { fs.rmSync(template, { recursive: true, force: true }) })
 beforeEach(() => { repo = startTest(mocks, template) })
 
 afterEach(() => { fs.rmSync(mocks.root, { recursive: true, force: true }) })
-
 
 it('commits uncommitted tracked and untracked output on restart and merges the diff that was shown', async () => {
   const agent = await import('../src/main/services/agent')
