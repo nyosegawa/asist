@@ -11,7 +11,7 @@ import type { FileItem } from '@shared/files'
 import { DEMO_OFFICE_ITEMS } from '@/demo/fixtures/files-office'
 import { FileViewer } from '@/panels/viewers'
 import { createPreviewClient, type PreviewFile, type PreviewHandle } from '@/panels/viewers/preview-client'
-import { PART_LIMIT } from '@/preview/methods/xlsx'
+import { SHEET_XML_LIMIT } from '@shared/office-package'
 import { servePreview, type OpenPreviewDocument } from '@/preview/serve'
 import { declareSize, serveByRanges, workbookOf } from './helpers/workbook'
 
@@ -224,7 +224,7 @@ describe('the Excel viewer', () => {
       { name: '大きい', data: '<row r="1"><c r="A1"><v>1</v></c></row>' },
       { name: '小さい', data: '<row r="1"><c r="A1" t="inlineStr"><is><t>伝票番号</t></is></c></row><row r="2"><c r="A2"><v>2</v></c></row>' }
     ]
-    serveByRanges(declareSize(await workbookOf({ sheets }), 'xl/worksheets/sheet1.xml', PART_LIMIT + 1))
+    serveByRanges(declareSize(await workbookOf({ sheets }), 'xl/worksheets/sheet1.xml', SHEET_XML_LIMIT + 1))
     const frame = await render(<FileViewer item={itemOf('売上.xlsx')} mode="card" size="l" />)
     expect(frame.querySelector('.fv-note')?.textContent).toBe(t('files.viewer.tooLarge'))
     expect(frame.querySelector('.fv-table')).toBeNull()

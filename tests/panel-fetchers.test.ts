@@ -9,6 +9,8 @@ import { readErrorText } from '@shared/i18n/error-text'
 import JSZip from 'jszip'
 import { MAX_TEXT_BYTES } from '@shared/files'
 import { smallestLimitedFile } from './helpers/files'
+import { declareSize, workbookOf } from './helpers/workbook'
+import { DOCUMENT_XML_LIMIT, SHEET_XML_LIMIT } from '@shared/office-package'
 import munichGeocoding from './fixtures/weather/munich-geocoding.json'
 import namesakeAnswers from './fixtures/weather/namesakes-geocoding.json'
 
@@ -364,6 +366,56 @@ describe('the files card (show_files)', () => {
       // A Word document shows its beginning on the card and the rest in the focus view, which needs no button.
       expect(told.partlyShown?.map((group) => group.files)).toEqual([['server.log', 'many'], ['report.docx']])
       expect(told.partlyShown?.map((group) => group.button !== undefined)).toEqual([true, false])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('tells the model which Excel sheets and Word documents the viewers refuse for the sizes their zip directories declare', async () => {
+    const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'asist-show-files-')))
+    const write = (name: string, bytes: Uint8Array): string => {
+      writeFileSync(path.join(root, name), bytes)
+      return path.join(root, name)
+    }
+    const sheet = '<row r="1"><c r="A1"><v>1</v></c></row>'
+    const months = await workbookOf({ sheets: ['1月', '2月', '3月'].map((name) => ({ name, data: sheet })), strings: ['<t>x</t>'] })
+    const document = async (parts: Record<string, string>): Promise<Uint8Array> => {
+      const zip = new JSZip()
+      zip.file('[Content_Types].xml', '<Types/>', { createFolders: false })
+      for (const [name, content] of Object.entries(parts)) zip.file(name, content, { createFolders: false })
+      return zip.generateAsync({ type: 'uint8array' })
+    }
+    // Each part of this document is under the limit, and all of them together are over it.
+    const third = Math.ceil(DOCUMENT_XML_LIMIT / 3) + 1
+    const parts = declareSize(
+      declareSize(declareSize(await document({ 'word/document.xml': '<w:document/>', 'word/styles.xml': '<w:styles/>', 'word/numbering.xml': '<w:numbering/>' }), 'word/document.xml', third), 'word/styles.xml', third),
+      'word/numbering.xml',
+      third
+    )
+    mocks.roots = [root]
+    try {
+      const { data } = await fetchPanel('files', {
+        paths: [
+          write('sheets.xlsx', declareSize(months, 'xl/worksheets/sheet2.xml', SHEET_XML_LIMIT + 1)),
+          write('strings.xlsx', declareSize(months, 'xl/sharedStrings.xml', SHEET_XML_LIMIT + 1)),
+          write('document.docx', declareSize(await document({ 'word/document.xml': '<w:document/>' }), 'word/document.xml', DOCUMENT_XML_LIMIT + 1)),
+          write('parts.docx', parts),
+          write('broken.xlsx', new TextEncoder().encode('not a zip')),
+          write('fine.docx', await document({ 'word/document.xml': '<w:document/>' })),
+          write('fine.xlsx', months)
+        ]
+      })
+      type Group = { files: string[]; why: string; button?: string }
+      const told = data as { notShown?: Group[]; partlyShown?: Group[] }
+      expect(told.notShown?.map((group) => group.files)).toEqual([['sheets.xlsx'], ['strings.xlsx', 'document.docx', 'parts.docx'], ['broken.xlsx']])
+      // The reason names the sheet left out and none of those the card shows.
+      const [sheets, large, broken] = told.notShown!.map((group) => group.why)
+      expect(['"1月"', '"2月"', '"3月"'].filter((name) => sheets.includes(name))).toEqual(['"2月"'])
+      expect(large).not.toContain('"')
+      expect(broken).toBe(createTranslator('ja-JP')('files.errors.zipDamaged'))
+      expect(told.notShown?.map((group) => group.button !== undefined)).toEqual([true, true, false])
+      // A Word document the net lets through shows its beginning, as before.
+      expect(told.partlyShown?.map((group) => group.files)).toEqual([['fine.docx']])
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

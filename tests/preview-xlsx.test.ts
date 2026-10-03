@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { errorKey } from '@shared/i18n/error-key'
-import openXlsx, { PART_LIMIT, type SheetCell } from '@/preview/methods/xlsx'
+import { SHEET_XML_LIMIT } from '@shared/office-package'
+import openXlsx, { type SheetCell } from '@/preview/methods/xlsx'
 import { indexRows, rowsWithin, type RowIndex } from '@/preview/sheet-xml'
 import { declareSize, offsetOf, serveByRanges, workbookOf, worksheet } from './helpers/workbook'
 
@@ -200,7 +201,7 @@ describe('what the preview iframe reads of a workbook', () => {
   it('says a sheet whose XML is over the limit is too large without reading it, and still shows the others', async () => {
     const file = await workbookOf({ sheets: [{ name: '大きい', data: filler('HUGE') }, { name: '小さい', data: filler('SMALL') }] })
     const huge = offsetOf(file, 'HUGE')
-    const served = serveByRanges(declareSize(file, 'xl/worksheets/sheet1.xml', PART_LIMIT + 1))
+    const served = serveByRanges(declareSize(file, 'xl/worksheets/sheet1.xml', SHEET_XML_LIMIT + 1))
     const { methods } = await openXlsx(URL)
     expect(await methods.sheet(0)).toEqual({ shows: 'tooLarge' })
     expect(await methods.rows({ sheet: 0, from: 0, count: 20 })).toEqual([])
@@ -211,7 +212,7 @@ describe('what the preview iframe reads of a workbook', () => {
   it('says every sheet is too large when the shared strings are over the limit, without reading them', async () => {
     const file = await workbookOf({ sheets: [{ name: '売上', data: '<row r="1"><c r="A1" t="s"><v>0</v></c></row>' }], strings: [`<t>STRINGS-${'y'.repeat(300_000)}</t>`], store: true })
     const strings = offsetOf(file, 'STRINGS')
-    const served = serveByRanges(declareSize(file, 'xl/sharedStrings.xml', PART_LIMIT + 1))
+    const served = serveByRanges(declareSize(file, 'xl/sharedStrings.xml', SHEET_XML_LIMIT + 1))
     const { methods } = await openXlsx(URL)
     expect(await methods.sheet(0)).toEqual({ shows: 'tooLarge' })
     expect(covered(served.ranges, strings)).toBe(false)

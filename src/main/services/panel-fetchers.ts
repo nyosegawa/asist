@@ -1,3 +1,4 @@
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { errorText } from '@shared/i18n/error-text'
 import { fillPrompt, languageOf, promptText, regionCurrency, type PromptText } from '@shared/conversation-locale'
 import { conversationLocale, region } from './conversation-locale'
@@ -11,13 +12,14 @@ import { searchCalendar } from './calendar'
 import { getMailService } from './mail'
 import { cardView, type FileItem } from '@shared/files'
 import { osMessageKey } from '@shared/i18n/os-message'
-import { fileItem } from './file-preview'
+import { failure, fileItem } from './file-preview'
+import { officeLeftOut, type LeftOut } from './office-size-net'
 import { fileUrl } from '../file-protocol'
 import { allowedFileRoots } from './agent'
 import { platformCapabilities } from './platform'
 import { userAgent } from './user-agent'
 import { fetchFailure } from './fetch-failure'
-import { t } from './i18n'
+import { errorMessage, t } from './i18n'
 
 /**
  * The data fetchers of the built-in panels, which run in the main process and build, from external APIs
@@ -236,6 +238,10 @@ const CARD_TOLD = {
     ja: '大きすぎるので、カードには中身を出さず、名前と大きさだけを出している。',
     en: 'Too large for the card to show, so it shows only the name and the size.'
   },
+  sheetsTooLarge: {
+    ja: 'シート {sheets} は大きすぎるので、カードには中身を出していない。ほかのシートはカードのタブで開ける。',
+    en: 'The sheets {sheets} are too large for the card to show; the other sheets open from its tabs.'
+  },
   noViewer: {
     ja: 'カードはこの種類のファイルの中身を出せないので、名前と大きさだけを出している。',
     en: 'The card cannot show files of this kind, so it shows only the name and the size.'
@@ -257,26 +263,47 @@ const CARD_TOLD = {
 type ToldGroup = { files: string[]; why: string; button?: string }
 
 /**
+ * What the size net of the Word and Excel viewers leaves out of an item the card shows otherwise, or, for a file
+ * whose zip main cannot read, why: the card's viewer cannot read it either, and says so in place of its content.
+ */
+async function leftOutForSize(item: FileItem): Promise<LeftOut | { leaves: 'unreadable'; error: string }> {
+  if (item.kind !== 'docx' && item.kind !== 'xlsx') return { leaves: 'nothing' }
+  return officeLeftOut(item.path, item.kind).catch((error: unknown) => ({
+    leaves: 'unreadable' as const,
+    error: errorMessage(errorKeyOf(error) ? error : failure(error))
+  }))
+}
+
+/**
  * The result show_files gives the model: the items, led by the names of the files the card did not show and of those
  * it showed only the first part of, grouped by reason. A result longer than the tool may return keeps only the first
  * items of each list (formatToolResult), so these files are named apart from the items that carry them, where the
  * cut keeps them. The paths and the title the model wrote are not repeated, and an item's asist-file URL, which the
  * model has no use for, is left out, so that less of the rest is cut.
  */
-function filesForModel(items: FileItem[]): Props {
-  const say = (text: PromptText): string =>
-    fillPrompt(promptText(conversationLocale(), text), { button: t(osMessageKey('files.reveal', platformCapabilities().os)) })
+async function filesForModel(items: FileItem[]): Promise<Props> {
+  const say = (text: PromptText, values: Record<string, string> = {}): string =>
+    fillPrompt(promptText(conversationLocale(), text), { button: t(osMessageKey('files.reveal', platformCapabilities().os)), ...values })
   const notShown = new Map<string, ToldGroup>()
   const partlyShown = new Map<string, ToldGroup>()
   const group = (groups: Map<string, ToldGroup>, name: string, told: Omit<ToldGroup, 'files'>): void =>
     void groups.set(told.why, { files: [...(groups.get(told.why)?.files ?? []), name], ...told })
-  for (const item of items) {
-    const view = cardView(item)
-    if (view.shows === 'firstPart') group(partlyShown, item.name, { why: say(CARD_TOLD.firstPart), button: say(CARD_TOLD.button) })
-    if (view.shows === 'beginning') group(partlyShown, item.name, { why: say(CARD_TOLD.beginning) })
-    if (view.shows !== 'nothing') continue
+  const button = say(CARD_TOLD.button)
+  const views = items.map(cardView)
+  const sizes = await Promise.all(items.map((item, i) => (views[i].shows === 'nothing' ? null : leftOutForSize(item))))
+  for (const [i, item] of items.entries()) {
+    const view = views[i]
+    const size = sizes[i]
     // A file that could not be read gets no button on the card.
-    group(notShown, item.name, view.why === 'unreadable' ? { why: view.error } : { why: say(CARD_TOLD[view.why]), button: say(CARD_TOLD.button) })
+    if (size?.leaves === 'unreadable') group(notShown, item.name, { why: size.error })
+    else if (size?.leaves === 'file') group(notShown, item.name, { why: say(CARD_TOLD.tooLarge), button })
+    else if (view.shows === 'nothing') group(notShown, item.name, view.why === 'unreadable' ? { why: view.error } : { why: say(CARD_TOLD[view.why]), button })
+    else {
+      const sheets = size?.leaves === 'sheets' ? size.sheets.map((name) => JSON.stringify(name)).join(', ') : null
+      if (sheets !== null) group(notShown, item.name, { why: say(CARD_TOLD.sheetsTooLarge, { sheets }), button })
+      if (view.shows === 'firstPart') group(partlyShown, item.name, { why: say(CARD_TOLD.firstPart), button })
+      if (view.shows === 'beginning') group(partlyShown, item.name, { why: say(CARD_TOLD.beginning) })
+    }
   }
   return {
     ...(notShown.size > 0 ? { notShown: [...notShown.values()] } : {}),
@@ -295,7 +322,7 @@ const files: Fetcher = async (props) => {
   }
   return {
     props: { ...props, paths, items },
-    data: filesForModel(items),
+    data: await filesForModel(items),
     source: items.length === 1 ? items[0].kind : t('files.source', { count: items.length })
   }
 }
