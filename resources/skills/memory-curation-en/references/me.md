@@ -3,7 +3,7 @@
 `me.md` is the document about the assistant itself. Where the pages of the memory describe this person's
 world, this one says who I am, what I care about, how the two of us have got on, and what is on my mind
 now. Write it in the first person, in my own words, in the language of the conversation, with the
-`# About me` line and no other fixed heading.
+template's `# ` line (`# About me` in English) and no other fixed heading.
 
 me.md goes whole into the system prompt of every conversation, and I read it before I say anything. That
 is why it has a limit of 3000 tokens, roughly 1,800 words in English. Keep here what should be true of me in
@@ -15,8 +15,9 @@ they have grown instead of forcing them back.
 
 ## Example headings
 
-The headings in the template (`assets/templates/me.md`) are examples. Delete the ones that do not fit and
-add what is missing. Write them in the language of the conversation.
+The headings in the template (`assets/templates/me.md`) are examples, in the language of the conversation.
+Delete the ones that do not fit and add what is missing; one you keep stays worded as the template words it.
+They are shown here as the English template writes them.
 
 ```
 ---

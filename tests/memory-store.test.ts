@@ -72,7 +72,7 @@ function mergeErrors({ file, kind, ...rest }: DirectoryProblem): string[] {
     case 'pageName':
       return []
     default:
-      return [documentIssueText(file, { kind, ...rest } as DocumentIssue, ja)]
+      return [documentIssueText(file, { kind, ...rest } as DocumentIssue, ja, 'ja-JP')]
   }
 }
 
@@ -166,7 +166,7 @@ describe('the memory store', () => {
 
   it('removes the page template example text that pages made on the memory screen kept, in one commit as it prepares the memory, and touches nothing the user wrote', () => {
     const dir = store.memoryDir()
-    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-curation', 'assets', 'templates', 'page.md'), 'utf8')
+    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-templates', 'ja-JP', 'page.md'), 'utf8')
     const madeOnTheScreen = (name: string): string => template.replace(/^updated: .*$/m, 'updated: 2026-09-20').replace(/^# .*$/m, `# ${name}`)
     const summaryOnly = madeOnTheScreen('田中さん').replace('これが何(誰、どこ)で、本人とどう関わるか。一〜三文。', '本人の上司。')
     const exampleEdited = madeOnTheScreen('佐藤さん')
@@ -531,7 +531,7 @@ describe('the memory store', () => {
     const page = '---\nupdated: 2026-09-09\n---\n# Matsubaken\n\n## Summary\nThe ramen shop.\n'
     fs.writeFileSync(path.join(dir, 'pages', 'Matsubaken.md'), page)
     store.writeDocument('pages/Matsubaken.md', page.replace('The ramen shop.', 'The ramen shop they keep going back to.'), page)
-    store.createPage({ name: 'Tanaka', markdown: newPageMarkdown('Tanaka', 'de-DE', '2026-10-03').replace('## Summary\n', '## Summary\nTheir boss.\n') })
+    store.createPage({ name: 'Tanaka', markdown: newPageMarkdown('Tanaka', 'de-DE', '2026-10-03').replace('## Zusammenfassung\n', '## Zusammenfassung\nIhr Chef.\n') })
     store.deleteDocument('pages/Tanaka.md')
     expect(subjects(dir).slice(0, 4)).toEqual([
       'asist: delete pages/Tanaka.md',

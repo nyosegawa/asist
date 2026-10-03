@@ -9,8 +9,8 @@ const TODAY = '2026-10-02'
 
 /** What validateDocument finds in each document the fold wrote. */
 const findings = (folded: PromptDocuments): Record<string, string[]> => ({
-  'me.md': folded.me === null ? [] : validateDocument('me.md', folded.me, ja),
-  'user.md': folded.user === null ? [] : validateDocument('user.md', folded.user, ja)
+  'me.md': folded.me === null ? [] : validateDocument('me.md', folded.me, ja, 'ja-JP'),
+  'user.md': folded.user === null ? [] : validateDocument('user.md', folded.user, ja, 'ja-JP')
 })
 
 describe('folding instruction.md into me.md and user.md', () => {

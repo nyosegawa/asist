@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { ConversationLocale } from '@shared/conversation-locale'
-import { CURATION_SKILL, FORMAT_FILES, SKILL_DIRS, curationSkillSource, worktreeAgentsMd } from '@shared/memory-curation'
+import { CURATION_SKILL, FORMAT_FILES, MEMORY_TEMPLATES, SKILL_DIRS, curationSkillSource, worktreeAgentsMd } from '@shared/memory-curation'
 import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from './conversation-locale'
@@ -25,30 +25,32 @@ export async function prepareCurationScripts(signal: AbortSignal): Promise<void>
 /** The environment a curation's Agent runs with, in which `uv run` of the skill's scripts needs nothing of the user's. */
 export const curationScriptEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => uvRunEnv(env)
 
-/** The skill written in the prompt language of the conversation, read on every call so a change applies at once. */
-export function skillSourceDir(locale: ConversationLocale = conversationLocale()): string {
-  return resourcePath(path.join('skills', curationSkillSource(locale)))
-}
-
 /**
- * Installs the skill into every directory an agent looks in, one for claude and one for codex, with the
- * rules its scripts import beside it and a copy of the bundled uv in it, which the Agent runs its checks with
- * (curationScriptCommand), and writes AGENTS.md. Both locations are listed in .gitignore, so the worktree
- * stays clean.
+ * Installs the skill into every directory an agent looks in, one for claude and one for codex: the skill written
+ * in the prompt language of the conversation, with the templates of the conversation's own language as its
+ * assets/templates, the rules its scripts import beside it and a copy of the bundled uv in it, which the Agent
+ * runs its checks with (curationScriptCommand). It writes AGENTS.md as well. Both locations are listed in
+ * .gitignore, so the worktree stays clean. The language is read on every call, so a change applies at once.
  */
-export function installSkill(worktreeDir: string, source = skillSourceDir()): void {
-  if (!fs.existsSync(path.join(source, 'SKILL.md'))) throw new Error(`the memory curation skill is missing: ${source}`)
+export function installSkill(worktreeDir: string, locale: ConversationLocale = conversationLocale()): void {
+  const skills = resourcePath('skills')
+  const source = path.join(skills, curationSkillSource(locale))
+  const templates = path.join(skills, MEMORY_TEMPLATES, locale)
+  for (const required of [path.join(source, 'SKILL.md'), templates]) {
+    if (!fs.existsSync(required)) throw new Error(errorText('memory.errors.skillMissing', { path: required }))
+  }
   for (const dir of SKILL_DIRS) {
     const target = path.join(worktreeDir, dir, CURATION_SKILL)
     fs.rmSync(target, { recursive: true, force: true })
     copyFolder(source, target)
+    copyFolder(templates, path.join(target, 'assets', 'templates'))
     // A copy rather than a link: a link on Windows is a junction, which leaves git's removal of the worktree to
     // decide whether it deletes through it into the app. On APFS the copy is a clone that takes no space (uv
     // 0.12.18 is 37 MB on macOS); elsewhere the whole of uv is written once per curation.
     fs.copyFileSync(uvPath(), path.join(target, path.basename(uvPath())), fs.constants.COPYFILE_FICLONE)
-    for (const file of FORMAT_FILES) fs.copyFileSync(path.join(path.dirname(source), file), path.join(worktreeDir, dir, file))
+    for (const file of FORMAT_FILES) fs.copyFileSync(path.join(skills, file), path.join(worktreeDir, dir, file))
   }
-  fs.writeFileSync(path.join(worktreeDir, 'AGENTS.md'), worktreeAgentsMd(conversationLocale()), { mode: 0o600 })
+  fs.writeFileSync(path.join(worktreeDir, 'AGENTS.md'), worktreeAgentsMd(locale), { mode: 0o600 })
 }
 
 /**

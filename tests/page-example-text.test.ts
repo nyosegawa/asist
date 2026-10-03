@@ -8,13 +8,13 @@ import { withoutExampleText } from '@shared/page-example-text'
 const ja = createTranslator('ja-JP')
 
 /** A page as the memory screen made it from the template of the skill before it opened new pages empty. */
-const madeFrom = (skill: string, name: string): string =>
+const madeFrom = (locale: string, name: string): string =>
   fs
-    .readFileSync(path.join(process.cwd(), 'resources', 'skills', skill, 'assets', 'templates', 'page.md'), 'utf8')
+    .readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-templates', locale, 'page.md'), 'utf8')
     .replace(/^updated: .*$/m, 'updated: 2026-09-20')
     .replace(/^# .*$/m, `# ${name}`)
-const JA = madeFrom('memory-curation', '田中さん')
-const EN = madeFrom('memory-curation-en', 'Tanaka')
+const JA = madeFrom('ja-JP', '田中さん')
+const EN = madeFrom('en-US', 'Tanaka')
 const JA_SUMMARY = 'これが何(誰、どこ)で、本人とどう関わるか。一〜三文。'
 const EN_SUMMARY = 'What (who, where) this is and how it touches the user. One to three sentences.'
 
@@ -24,7 +24,7 @@ describe('removing the page template example text', () => {
     expect(withoutExampleText(page)).toBe('---\naliases: []\nupdated: 2026-09-20\n---\n# 田中さん\n\n## 要約\n本人の上司。毎週木曜に打ち合わせをする。\n')
     const english = EN.replace(EN_SUMMARY, 'Their manager at work.')
     expect(withoutExampleText(english)).toBe('---\naliases: []\nupdated: 2026-09-20\n---\n# Tanaka\n\n## Summary\nTheir manager at work.\n')
-    expect(validateDocument('pages/田中さん.md', withoutExampleText(page)!, ja)).toEqual([])
+    expect(validateDocument('pages/田中さん.md', withoutExampleText(page)!, ja, 'ja-JP')).toEqual([])
   })
 
   it('keeps a section whose example the user edited, or whose heading they renamed, word for word', () => {
