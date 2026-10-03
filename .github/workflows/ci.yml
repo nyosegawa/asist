@@ -226,12 +226,20 @@ jobs:
           "$resources/llama.cpp/llama-server" --version
           "$resources/speech-worker/speech-worker" --devices
 
-  # The tests of test on Windows. The types and the dictionary do not depend on the OS, and test checks them.
+  # The tests of test on Windows. The types and the dictionary do not depend on the OS, and test checks them. The
+  # tests are shared out between two runners: Windows runners did not wait for one on 2026-10-02 and 03, while the
+  # run on one took 268 to 277 s of Vitest and was the longest job of a pull request. Vitest shares the files out by
+  # a hash of their paths, not by their time, so the second half holds the two agent-worktree files and the memory
+  # curation's, 408 of the 613 s the tests summed on 2026-10-03.
   test-windows:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The bundled git and uv, as in test; on Windows the pretest step fetches MinGit when this cache misses.
@@ -252,7 +260,7 @@ jobs:
       # against 283 to 334 s on C:, in five runs each on windows-latest (2026-10-03). The test of a memory folder
       # written with a short name makes its folder on C: itself, and ASIST_REQUIRE_SHORT_NAMES fails it rather than
       # skipping it when the folder gets none.
-      - run: npm test
+      - run: npm test -- --shard ${{ matrix.shard }}
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
           TEMP: ${{ runner.temp }}
@@ -323,8 +331,8 @@ jobs:
       - run: npm --prefix website test
       - run: npm run website:build
 
-  # The one job the main ruleset requires, so that it names neither each shard of fit nor the jobs a
-  # change to the website skips. A skipped job is not a failure.
+  # The one job the main ruleset requires, so that it names neither each shard of fit and test-windows nor the jobs
+  # a change to the website skips. A skipped job is not a failure.
   result:
     if: always() && github.event_name != 'schedule'
     needs: [changes, test, viewer-budgets, fit, build, website, test-windows, build-windows]

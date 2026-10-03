@@ -87,7 +87,7 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `viewer-budgets` | `npm run demo:viewer-budgets -- --time-factor 3`。ファイルのカードの各ビューアーが、大きなファイルを丸ごと読んだり描いたりするやり方に戻っていないこと。失敗にするのは、表示まで 5 秒、メイン スレッドが 2 秒止まる、メモリが 1.5 GB 増えるなど、ふだんの値から大きく離れたときだけです。各 case の予算(もっと厳しい値)は報告するだけで、時間は共有の runner に合わせて 3 倍にして比べます。作ったサンプルのファイルは、それを作るスクリプトの版を名前にしてキャッシュに残し、次からは作り直しません。ただし WAV と zip は圧縮できず大きいので残さず、毎回 3 秒ほどで作り直します。キャッシュがないときは、MP3 を作る `lame` を Homebrew で入れます |
 | `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
 | `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
-| `test-windows` | Windows で `npm test`。型と辞書は OS に依らないので、`test` だけで確かめます |
+| `test-windows` | Windows で `npm test`。テストのファイルを 2 台に分けて(`--shard 1/2` と `2/2`)同時に動かします。型と辞書は OS に依らないので、`test` だけで確かめます |
 | `build-windows` | `npm run dist:win:dir` で Windows のアプリを作り、アプリの中の git、uv、`asist-agent-launcher.exe`、`asist-mic.exe` が動くこと、`ASIST.exe` が ASAR の検査を通って起動すること |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
 | `result` | ほかの job に、失敗したものも取り消されたものもないこと |
