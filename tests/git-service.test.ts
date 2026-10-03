@@ -5,13 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
 import { shellPath, testGitEnv } from './helpers/git'
 import { longTempFolder } from './helpers/temp'
-const mocks = vi.hoisted(() => ({ windows: false, differentOwner: false }))
+const mocks = vi.hoisted(() => ({ windows: false, differentOwner: false, commands: [] as string[][] }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd() } }))
-// git's own switch for taking every repository for another user's, which a git that reads no safe.directory refuses to open.
+// git's own switch for taking every repository for another user's, which a git that reads no safe.directory refuses to
+// open, and the commands run, which a test reads.
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
-  const execFileSync = ((file: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) =>
-    actual.execFileSync(file, args, mocks.differentOwner ? { ...options, env: { ...options.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1' } } : options)) as typeof actual.execFileSync
+  const execFileSync = ((file: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
+    mocks.commands.push([...args])
+    return actual.execFileSync(file, args, mocks.differentOwner ? { ...options, env: { ...options.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1' } } : options)
+  }) as typeof actual.execFileSync
   return { ...actual, default: { ...actual, execFileSync }, execFileSync }
 })
 // The git of the machine the tests run on, unless a test asks for what ASIST does on Windows.
@@ -34,12 +37,6 @@ let repo = ''
 
 const run = (cwd: string, args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
-
-/** The commit at the tip of a branch with its merge base with HEAD, as a merge is given them from the review. */
-const reviewed = (branch: string): { commit: string; base: string } => {
-  const commit = git.headCommit(repo, branch)
-  return { commit, base: git.mergeBase(repo, commit)! }
-}
 
 beforeEach(() => {
   root = longTempFolder('asist-git-')
@@ -127,7 +124,7 @@ describe('git service with an isolated worktree', () => {
     git.commitAll(wt, 'job')
     fs.writeFileSync(path.join(repo, '.env'), 'THE_USERS_KEY=1\n')
     const head = git.headCommit(repo)
-    expect(git.mergeNoFf(repo, reviewed('asist/env'), 'asist: job')).toMatchObject({ ok: false, conflict: false })
+    expect(git.mergeNoFf(repo, git.headCommit(repo, 'asist/env'), 'asist: job')).toMatchObject({ ok: false, conflict: false })
     expect(fs.readFileSync(path.join(repo, '.env'), 'utf8')).toBe('THE_USERS_KEY=1\n')
     expect(git.headCommit(repo)).toBe(head)
     git.worktreeRemove(repo, wt, 'asist/env')
@@ -191,7 +188,7 @@ describe('git service with an isolated worktree', () => {
     expect(stat).toContain('b.txt')
     expect(git.diffPatch(repo, base, 'asist/20260908-job')).toContain('+world')
     expect(git.isClean(repo)).toBe(true)
-    expect(git.mergeNoFf(repo, reviewed('asist/20260908-job'), 'asist: job')).toEqual({ ok: true })
+    expect(git.mergeNoFf(repo, git.headCommit(repo, 'asist/20260908-job'), 'asist: job')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('new\n')
     git.worktreeRemove(repo, wt, 'asist/20260908-job')
     expect(fs.existsSync(wt)).toBe(false)
@@ -205,7 +202,7 @@ describe('git service with an isolated worktree', () => {
     git.commitAll(wt, 'job')
     fs.writeFileSync(path.join(repo, 'a.txt'), 'from user\n')
     run(repo, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-am', 'user'])
-    const outcome = git.mergeNoFf(repo, reviewed('asist/conflict'), 'merge')
+    const outcome = git.mergeNoFf(repo, git.headCommit(repo, 'asist/conflict'), 'merge')
     expect(outcome).toMatchObject({ ok: false, conflict: true })
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('from user\n')
     expect(git.isClean(repo)).toBe(true)
@@ -223,7 +220,7 @@ describe('git service with an isolated worktree', () => {
     for (const hook of ['pre-merge-commit', 'prepare-commit-msg', 'commit-msg']) {
       fs.writeFileSync(path.join(repo, '.git', 'hooks', hook), '#!/bin/sh\necho rejected >&2\nexit 1\n', { mode: 0o755 })
     }
-    expect(git.mergeNoFf(repo, reviewed('asist/hooked'), 'asist: job (1)')).toEqual({ ok: true })
+    expect(git.mergeNoFf(repo, git.headCommit(repo, 'asist/hooked'), 'asist: job (1)')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('from job\n')
     expect(git.isClean(repo)).toBe(true)
     expect(fs.existsSync(path.join(repo, '.git', 'MERGE_HEAD'))).toBe(false)
@@ -553,6 +550,13 @@ describe('git service with an isolated worktree', () => {
     fs.renameSync(`${wt}-moved`, wt)
     expect(() => git.worktreeRemove(repo, wt, 'asist/unlisted')).toThrow()
     expect(fs.existsSync(wt)).toBe(true)
+  })
+
+  it('reads the merge base of a commit with one git process while HEAD has a commit', () => {
+    const head = git.headCommit(repo)
+    mocks.commands = []
+    expect(git.mergeBase(repo, head)).toBe(head)
+    expect(mocks.commands).toHaveLength(1)
   })
 
   it('reports a dirty working tree before a merge', () => {

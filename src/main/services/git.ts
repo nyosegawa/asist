@@ -77,6 +77,13 @@ export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   }
 }
 
+/**
+ * What comes before the revisions of a command that are given from outside, such as the base of a merge the
+ * renderer or merge_agent_job hands over: without it, a revision spelled as an option, such as --output=<path>,
+ * would be read as one, and git diff would create or empty that file.
+ */
+const END_OF_OPTIONS = '--end-of-options'
+
 interface GitOptions {
   maxBuffer?: number
   env?: NodeJS.ProcessEnv
@@ -119,7 +126,7 @@ export function toplevel(dir: string): string | null {
 }
 
 export function headCommit(repo: string, ref = 'HEAD'): string {
-  return git(repo, ['rev-parse', '--verify', ref]).trim()
+  return git(repo, ['rev-parse', '--verify', END_OF_OPTIONS, ref]).trim()
 }
 
 /** Makes dir a repository, and does nothing when it already is one. */
@@ -270,8 +277,8 @@ const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
  * configuration turns it off, writes `議事録.md` as "\350\255\260\344\272\213\351\214\262.md" in the stat and the
  * patch that the user approves a merge by and the model reads.
  */
-function exactDiff(repo: string, args: string[], options: GitOptions = {}): string {
-  return git(repo, ['-c', 'core.quotePath=false', 'diff', ...EXACT_DIFF, ...args], options)
+function exactDiff(repo: string, args: string[], base: string, commit: string, options: GitOptions = {}): string {
+  return git(repo, ['-c', 'core.quotePath=false', 'diff', ...EXACT_DIFF, ...args, END_OF_OPTIONS, base, commit], options)
 }
 
 /**
@@ -645,7 +652,7 @@ export function isSettled(dir: string): boolean {
  */
 export function mergeBase(repo: string, commit: string): string | null {
   try {
-    return git(repo, ['merge-base', 'HEAD', commit]).trim()
+    return git(repo, ['merge-base', END_OF_OPTIONS, 'HEAD', commit]).trim()
   } catch (error) {
     // merge-base exits with 1 and prints nothing when the two have no common ancestor. A HEAD without a commit
     // fails it as a name it cannot read would, so whether HEAD has one is asked only after a failure.
@@ -676,7 +683,7 @@ export function checkedOut(repo: string): string | null {
  * An empty string means nothing changed.
  */
 export function diffStat(repo: string, base: string, commit: string): string {
-  return exactDiff(repo, ['--stat', '--stat-count=500', base, commit]).trim()
+  return exactDiff(repo, ['--stat', '--stat-count=500'], base, commit).trim()
 }
 
 export interface DiffEntry {
@@ -697,7 +704,7 @@ export interface DiffEntry {
  * addition, and nothing changed when there is no entry.
  */
 export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
-  return rawEntries(exactDiff(repo, ['--raw', '-z', '--no-renames', base, commit], WHOLE)).map((entry) => ({
+  return rawEntries(exactDiff(repo, ['--raw', '-z', '--no-renames'], base, commit, WHOLE)).map((entry) => ({
     path: entry.path,
     mode: entry.newMode,
     added: entry.oldMode === '000000',
@@ -708,7 +715,8 @@ export function diffEntries(repo: string, base: string, commit: string): DiffEnt
 /** Those of files, paths from the top of the worktree dir written as git names them, that commit holds. */
 export function heldIn(dir: string, commit: string, files: string[]): Set<string> {
   if (files.length === 0) return new Set()
-  return new Set(git(dir, ['ls-tree', '-z', '--name-only', commit, '--', ...files.map(literal)], WHOLE).split('\0').filter(Boolean))
+  const listed = git(dir, ['ls-tree', '-z', '--name-only', END_OF_OPTIONS, commit, '--', ...files.map(literal)], WHOLE)
+  return new Set(listed.split('\0').filter(Boolean))
 }
 
 /**
@@ -720,7 +728,7 @@ export function heldIn(dir: string, commit: string, files: string[]): Set<string
 export function diffPatch(repo: string, base: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = exactDiff(repo, [base, commit], { maxBuffer: maxChars * 4 })
+    patch = exactDiff(repo, [], base, commit, { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }
@@ -747,7 +755,7 @@ export type MergedTree = { tree: string } | { conflict: string }
  */
 export function mergedTree(repo: string, head: string, incoming: string): MergedTree {
   try {
-    return { tree: git(repo, ['merge-tree', '--write-tree', '--name-only', head, incoming]).split('\n')[0] }
+    return { tree: git(repo, ['merge-tree', '--write-tree', '--name-only', END_OF_OPTIONS, head, incoming]).split('\n')[0] }
   } catch (error) {
     // Status 1 with a tree is a conflict. The lines after the blank one are git's messages about it.
     const failure = error as { status?: number; stdout?: unknown }
@@ -772,22 +780,36 @@ export function checkoutTree(repo: string, tree: string, dir: string): void {
   }
 }
 
+/** Whether head holds commit in its history, itself included. */
+function holds(repo: string, head: string, commit: string): boolean {
+  try {
+    git(repo, ['merge-base', '--is-ancestor', END_OF_OPTIONS, commit, head])
+    return true
+  } catch (error) {
+    // --is-ancestor exits with 1 when the first is not an ancestor of the second.
+    if ((error as { status?: number }).status === 1) return false
+    throw error
+  }
+}
+
 /**
- * Merges the commit into the user's repository as a merge commit, given its merge base with HEAD as the caller
- * has just read it. The commit is made by merge-tree and commit-tree, which touch neither the working tree nor
- * the index, and the working tree then moves to it only by a fast-forward. git merge would stop half done in
- * them on a conflict or when a hook of the user's, such as a commit-msg hook that rejects the message, fails,
- * and a later git commit of the user's would then commit changes nobody reviewed. Without --no-overwrite-ignore
- * the fast-forward replaces a file git ignores, such as the user's .env, with the one the job committed at that
- * path. A commit that HEAD already holds, being its own merge base, is up to date, as git merge says of it, and
- * nothing is committed.
+ * Merges the commit into the user's repository as a merge commit. The commit is made by merge-tree and
+ * commit-tree, which touch neither the working tree nor the index, and the working tree then moves to it only by
+ * a fast-forward. git merge would stop half done in them on a conflict or when a hook of the user's, such as a
+ * commit-msg hook that rejects the message, fails, and a later git commit of the user's would then commit
+ * changes nobody reviewed. Without --no-overwrite-ignore the fast-forward replaces a file git ignores, such as the
+ * user's .env, with the one the job committed at that path. A commit that HEAD already holds is up to date, as
+ * git merge says of it, and nothing is committed.
  */
-export function mergeNoFf(repo: string, merging: { commit: string; base: string }, message: string): MergeOutcome {
-  const { commit: incoming, base } = merging
-  if (base === incoming) return { ok: true }
-  const head = headCommit(repo)
+export function mergeNoFf(repo: string, incoming: string, message: string): MergeOutcome {
+  // HEAD and its tree are read in one call, so that the merge commit's first parent is the HEAD whose tree was
+  // merged.
+  const [head, headTree] = git(repo, ['rev-list', '--no-walk', '--no-commit-header', '--format=%H %T', 'HEAD']).trim().split(' ')
   const merged = mergedTree(repo, head, incoming)
   if ('conflict' in merged) return { ok: false, conflict: true, message: merged.conflict }
+  // A merge leaves HEAD's tree as it is when HEAD holds the commit, and also when HEAD has the same changes by
+  // other commits, which still get the merge commit; whether HEAD holds it is asked only then.
+  if (merged.tree === headTree && holds(repo, head, incoming)) return { ok: true }
   const commit = git(repo, [
     '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', merged.tree, '-p', head, '-p', incoming, '-m', message
   ]).trim()
