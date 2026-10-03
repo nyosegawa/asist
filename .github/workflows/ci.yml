@@ -122,7 +122,11 @@ jobs:
       - run: python -m pip install numpy==2.5.2
       - run: npm run typecheck
       - run: npm run i18n -- check
-      - run: npm test
+      # Vitest runs one worker fewer than the runner's three CPUs, and most of the git tests' time is spent waiting for
+      # git: with three workers it took 94 to 106 s against 142 to 201 s with two, in three runs each on macos-latest
+      # (2026-10-03). On windows-latest, with four vCPUs, four workers took 176 to 285 s against 162 to 270 s with
+      # Vitest's three, so test-windows keeps them.
+      - run: npm test -- --maxWorkers=3
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
 
