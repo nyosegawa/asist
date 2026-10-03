@@ -13,6 +13,9 @@ export const cases = [
       const placard = root.querySelector('.fv-stub')
       return placard !== null && !placard.textContent.includes(window.demoText('files.viewer.tooLarge'))
     },
-    budget: { cardFirstMs: 500, cardHeldMs: 100, focusFirstMs: 500, focusHeldMs: 100, peakMb: 80, finalMb: 60 }
+    budget: { cardFirstMs: 500, cardHeldMs: 100, focusFirstMs: 500, focusHeldMs: 100, peakMb: 80, finalMb: 60 },
+    // Reading the file would grow the renderer by more than its 200 MB; on GitHub's macOS runner it grew by 55 MB at
+    // most in 87 runs on 2026-10-02 and 03.
+    limit: { peakMb: 200 }
   }
 ]
