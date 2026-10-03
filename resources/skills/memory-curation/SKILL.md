@@ -40,7 +40,8 @@ description: 音声アシスタント ASIST の記憶(このディレクトリ�
 ## 手順
 
 書き方の決まりは `references/format.md` にあります。各手順で、そこに挙げた節だけを読めば足ります。
-雛形は `assets/templates/` にあります(page.md、user.md、me.md、journal.md)。
+雛形は `assets/templates/` にあります(page.md、user.md、me.md、journal.md)。雛形から取った見出しは、
+一字一句そのまま写します。言い換えた見出しは整理のたびに違う形になり、ASIST が名前で読めなくなるからです。
 
 1. **読む。** prompt にある今日の日付と、まだ整理していない日の会話の書き起こし(「[HH:MM #ターン番号] 話者: 内容」)
    を読みます。それから `user.md` と `me.md` を読み、`ls pages journal` でページと日記の一覧を見ます。

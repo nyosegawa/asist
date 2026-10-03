@@ -501,7 +501,7 @@ export const mockApi: RendererApi = {
   memoryDocumentWrite: async (file, markdown, base) => {
     if (demoMemory[file] === undefined) throw new Error(errorText('memory.errors.removedSinceOpened'))
     if (demoMemory[file] !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
-    const errors = validateDocument(file, markdown, translate)
+    const errors = validateDocument(file, markdown, translate, settings.conversationLocale)
     if (errors.length > 0) throw new Error(errors.join(' / '))
     demoMemory[file] = markdown
     return documentOf(file, markdown)
@@ -516,7 +516,7 @@ export const mockApi: RendererApi = {
     const { name, markdown } = parseMemoryPageInput(input)
     const file = pageFile(name)
     if (demoMemory[file]) throw new Error(errorText('memory.errors.pageExists', { name }))
-    const errors = validateDocument(file, markdown, translate)
+    const errors = validateDocument(file, markdown, translate, settings.conversationLocale)
     if (errors.length > 0) throw new Error(errors.join(' / '))
     demoMemory[file] = markdown
     return documentOf(file, markdown)

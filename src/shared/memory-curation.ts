@@ -6,7 +6,6 @@ import {
   type PromptText
 } from './conversation-locale'
 import { errorText } from './i18n/error-text'
-import { FIXED } from './memory-page'
 
 /**
  * The material for the curation job, which is an Agent: it turns the conversation log into a
@@ -14,8 +13,8 @@ import { FIXED } from './memory-page'
  * rules for how to write memories are not pasted into the prompt; they go into the worktree as an
  * Agent Skill, resources/skills/memory-curation for a Japanese conversation and
  * resources/skills/memory-curation-en for every other language, each holding SKILL.md, the format
- * specification, the templates and the validation script. Running the job, meaning the worktree, the
- * CLI and taking the result back in, is main's memory-curation.ts.
+ * specification and the scripts, with the templates of the conversation's language. Running the job,
+ * meaning the worktree, the CLI and taking the result back in, is main's memory-curation.ts.
  */
 
 export interface TranscriptRecord {
@@ -111,10 +110,20 @@ export const CURATION_SKILL = 'memory-curation'
 /**
  * Which of the two skills under resources/skills is copied into the worktree. They hold the same
  * workflow written in the two prompt languages, and both land in the worktree under CURATION_SKILL, so
- * the Agent is told about one skill by one name whatever language it writes in.
+ * the Agent is told about one skill by one name whatever language it writes in. The memory itself is written
+ * in the language of the conversation, from the templates of that language (MEMORY_TEMPLATES).
  */
 export const curationSkillSource = (locale: ConversationLocale): string =>
   promptLanguage(locale) === 'ja' ? CURATION_SKILL : `${CURATION_SKILL}-en`
+
+/**
+ * The folder under resources/skills that holds the templates of the memory, one folder for each conversation
+ * language. installSkill gives the skill those of the conversation's language as its assets/templates, and the
+ * Agent copies their headings as they stand. A heading the Agent translated from another language's template
+ * would be worded differently from one curation to the next, and ASIST could not tell it from one the Agent
+ * chose for what a section holds (headingFromTemplate).
+ */
+export const MEMORY_TEMPLATES = 'memory-templates'
 
 /** Where the skill goes inside the worktree: claude reads .claude/skills and codex reads .agents/skills. */
 export const SKILL_DIRS = ['.claude/skills', '.agents/skills'] as const
@@ -187,7 +196,7 @@ export interface CurationPromptInput {
 const PROMPT = {
   instruction: {
     ja: `今日は {today}。\`${CURATION_SKILL}\` スキル(.claude/skills と .agents/skills にある。まず SKILL.md を読む)に従い、次の会話をこのディレクトリの記憶に反映せよ。`,
-    en: `Today is {today}. Follow the \`${CURATION_SKILL}\` skill (it lies in .claude/skills and .agents/skills; read its SKILL.md first) and fold the conversations below into the memory in this directory. The conversation is held in {language}: write the body of every file in {language}, and write the fixed headings the skill names, such as "${FIXED.summary.en}", in English.`
+    en: `Today is {today}. Follow the \`${CURATION_SKILL}\` skill (it lies in .claude/skills and .agents/skills; read its SKILL.md first) and fold the conversations below into the memory in this directory. The conversation is held in {language}, and so is the memory: write every file in {language}, and copy each heading you take from the skill's templates, which are in {language} too, exactly as it stands.`
   },
   persona: { ja: '# キャラクター設定(me.md、アシスタント自身の出発点)', en: '# Character settings (me.md, where the assistant starts from)' },
   conversationOf: { ja: '# {date} の会話', en: '# The conversation of {date}' },

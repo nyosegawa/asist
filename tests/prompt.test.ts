@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { journalHeading, marker } from '@shared/conversation-markers'
-import { FIXED, embeddingTextOf } from '@shared/memory-page'
+import { FIXED_HEADINGS, embeddingTextOf } from '@shared/memory-page'
 import { baseSystem, buildLiveSystemInstruction, buildSystemLayers, stampUserMessage } from '../src/main/services/brain/prompt'
 
 const BASE_SYSTEM = baseSystem('ja-JP', 'self')
@@ -159,9 +159,10 @@ describe('the prompt of a conversation that is not held in Japanese', () => {
     expect(prompt).toContain(`"${marker('en-US', 'jobStatus')}"`)
     expect(baseSystem('ja-JP', 'self')).toContain(`「${marker('ja-JP', 'jobStatus')}」`)
     expect(prompt).toContain(`"${journalHeading('en-US', '2026-09-07')}"`)
-    // The heading is named for the model out of the same table the curation writes it from.
-    expect(prompt).toContain(`"## ${FIXED.impression.en}"`)
-    expect(baseSystem('ja-JP', 'self')).toContain(`「## ${FIXED.impression.ja}」`)
+    // The heading is named for the model in the language the curation writes the memory in.
+    expect(prompt).toContain(`"## ${FIXED_HEADINGS.impression['en-US']}"`)
+    expect(baseSystem('ja-JP', 'self')).toContain(`「## ${FIXED_HEADINGS.impression['ja-JP']}」`)
+    expect(baseSystem('de-DE', 'self')).toContain(`"## ${FIXED_HEADINGS.impression['de-DE']}"`)
     // The stamp in the prompt is the one stampUserMessage writes, so the example cannot go stale.
     expect(prompt).toContain(`"${stampUserMessage('en-US', '', new Date(2025, 6, 29, 14, 32)).trim()}"`)
   })

@@ -91,7 +91,7 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
 | `result` | ほかの job に、失敗したものも取り消されたものもないこと |
 
-main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
+main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。`fit` は、デモが読むファイルを変えたときだけ動きます。デモが読むのは renderer、`src/shared`、デモの設定、fit のスクリプト、依存関係などで、main プロセスやテストや文書だけを変えても、デモの表示は変わりません。一覧は `ci.yml` の `changes` の job にあります。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
 
 プルリクエストに新しいコミットを push すると、前のコミットでまだ動いている実行は取り消します。main への push は取り消さず、続けてマージしてもコミットごとに最後まで確かめます。失敗したときに、どのコミットで壊れたかがわかるようにするためです。
 
@@ -258,7 +258,7 @@ Windows では、インストーラーで入れたアプリで、上の項目を
 | [src/preload/](../src/preload/) | main と画面の間の API。契約は [src/shared/ipc.ts](../src/shared/ipc.ts) にあります。 |
 | [src/renderer/](../src/renderer/) | React の画面、マイクの入力、音声の再生、カード |
 | [src/shared/](../src/shared/) | プロセスの間で共有する型とロジック。画面の文言の辞書は [i18n/messages/](../src/shared/i18n/messages/) にあります。 |
-| [resources/](../resources/) | 音声と検索の worker、[記憶を整理する Agent の手順](../resources/skills/memory-curation/SKILL.md)(日本語以外の会話では[英語の手順](../resources/skills/memory-curation-en/SKILL.md)) |
+| [resources/](../resources/) | 音声と検索の worker、[記憶を整理する Agent の手順](../resources/skills/memory-curation/SKILL.md)(日本語以外の会話では[英語の手順](../resources/skills/memory-curation-en/SKILL.md))と、会話の言語ごとの[記憶の雛形](../resources/skills/memory-templates/) |
 | [tests/](../tests/) | Vitest のテスト |
 
 カードを足すときは、[カタログ](../src/shared/panel-catalog.ts)にスキーマを定義し、[builtin/](../src/renderer/src/panels/builtin/) に表示を実装して、[registry.tsx](../src/renderer/src/panels/registry.tsx) に登録します。会話のモデルに渡すカード用のツールは、スキーマから作られます。

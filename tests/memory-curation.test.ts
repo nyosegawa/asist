@@ -130,7 +130,7 @@ describe('buildCurationPrompt', () => {
     expect(bare).not.toContain('キャラクター設定')
   })
 
-  it('names the language of the conversation and the English headings, in English and with the same parts, for another language', () => {
+  it('names the language of the conversation as the language of the memory, in English and with the same parts, for another language', () => {
     const prompt = buildCurationPrompt({
       days: [
         { date: '2026-09-07', transcript: '[10:00 #1] User: Guten Morgen' },
@@ -141,8 +141,8 @@ describe('buildCurationPrompt', () => {
       persona: ' like a butler '
     })
     expect(prompt.startsWith(`Today is 2026-09-09. Follow the \`${CURATION_SKILL}\` skill`)).toBe(true)
-    expect(prompt).toContain('write the body of every file in German')
-    expect(prompt).toContain('"Summary"')
+    expect(prompt).toContain('German')
+    expect(prompt).not.toContain('{language}')
     expect(prompt).toContain('# Character settings (me.md, where the assistant starts from)\nlike a butler')
     expect(prompt).toContain('# The conversation of 2026-09-07\n[10:00 #1] User: Guten Morgen')
     expect(prompt.endsWith('# The conversation of 2026-09-08\n(no conversation)')).toBe(true)

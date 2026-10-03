@@ -118,7 +118,7 @@ describe('memory service', () => {
   })
 
   it('searches a page made on the memory screen before it opened new pages empty only for what the user wrote in it, once the memory is prepared', async () => {
-    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-curation', 'assets', 'templates', 'page.md'), 'utf8')
+    const template = fs.readFileSync(path.join(process.cwd(), 'resources', 'skills', 'memory-templates', 'ja-JP', 'page.md'), 'utf8')
     const page = template
       .replace(/^updated: .*$/m, 'updated: 2026-09-20')
       .replace(/^# .*$/m, '# 田中さん')

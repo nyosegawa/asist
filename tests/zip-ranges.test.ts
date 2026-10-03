@@ -10,6 +10,7 @@ import { errorKey } from '@shared/i18n/error-key'
 import { openZip } from '@/preview/zip-ranges'
 import { fileUrl, handleFileScheme } from '../src/main/file-protocol'
 import { longTempFolder } from './helpers/temp'
+import { entryRanges } from './helpers/zip'
 
 /**
  * The zip reader of the preview iframe. Most tests serve the file as asist-file answers a Range request: a 206
@@ -26,9 +27,12 @@ const URL = 'asist-file:///tmp/a.docx'
 const PICTURE = 256 * 1024
 
 let sent = 0
+/** The bytes of the file each answer held, from the first to past the last. */
+let answered: Array<{ start: number; end: number }> = []
 
 function serve(file: Uint8Array): void {
   sent = 0
+  answered = []
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     const range = /^bytes=(\d*)-(\d*)$/.exec(new Headers(init?.headers).get('range') ?? '')
     const suffix = range?.[1] === ''
@@ -36,10 +40,12 @@ function serve(file: Uint8Array): void {
     const end = !range || suffix || range[2] === '' ? file.length - 1 : Math.min(Number(range[2]), file.length - 1)
     if (!range || start > end) {
       sent += file.length
+      answered.push({ start: 0, end: file.length })
       return new Response(file.slice(), { status: 200 })
     }
     const body = file.slice(start, end + 1)
     sent += body.length
+    answered.push({ start, end: end + 1 })
     return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
   })
 }
@@ -465,6 +471,24 @@ describe('the slimmed zip', () => {
       if (isPicture(name)) expect(text(content)).toBe(name)
       else expect(content).toEqual(await original.file(name)!.async('uint8array'))
     }
+  })
+
+  it('writes an entry it is given with that content, stored, and reads neither the entries it is given nor those it stubs', async () => {
+    const { file, original } = await docxWithPictures()
+    serve(file)
+    const zip = await openZip(URL)
+    const document = new TextEncoder().encode('<w:document>先頭だけ</w:document>')
+    answered = []
+    const slim = await JSZip.loadAsync(await zip.slimmed(isPicture, new Map([['word/document.xml', document]])), { checkCRC32: true })
+    // No answer holds a byte of the entry given or of those stubbed.
+    const unread = [...entryRanges(file)].filter(([name]) => name === 'word/document.xml' || isPicture(name)).map(([, range]) => range)
+    expect(unread).toHaveLength(3)
+    const overlapping = answered.filter((range) => unread.some((entry) => range.start < entry.end && entry.start < range.end))
+    expect(overlapping).toEqual([])
+    expect(Object.keys(slim.files)).toEqual(Object.keys(original.files))
+    expect(await slim.file('word/document.xml')!.async('string')).toBe('<w:document>先頭だけ</w:document>')
+    expect(await slim.file('word/media/photo.jpeg')!.async('string')).toBe('word/media/photo.jpeg')
+    expect(await slim.file('docProps/core.xml')!.async('string')).toBe(await original.file('docProps/core.xml')!.async('string'))
   })
 
   it('is read by mammoth, which writes each picture as a reference to its path', async () => {

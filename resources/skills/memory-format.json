@@ -5,7 +5,19 @@
   ],
   "promptDocumentMaxTokens": 3000,
   "sectionMaxChars": 800,
-  "summaryHeading": { "ja": "要約", "en": "Summary" },
+  "summaryHeading": {
+    "ja-JP": "要約",
+    "en-US": "Summary",
+    "fr-FR": "Résumé",
+    "de-DE": "Zusammenfassung",
+    "hi-IN": "सारांश",
+    "id-ID": "Ringkasan",
+    "it-IT": "In breve",
+    "ko-KR": "요약",
+    "pt-BR": "Resumo",
+    "es-419": "Resumen",
+    "es-ES": "Resumen"
+  },
   "whitespace": [[9, 13], [32, 32], [160, 160], [5760, 5760], [8192, 8202], [8232, 8233], [8239, 8239], [8287, 8287], [12288, 12288], [65279, 65279]],
   "tokenWeights": [
     { "name": "whitespace", "weight": 0.1 },

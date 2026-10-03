@@ -221,7 +221,7 @@ export function readAll(dir = memoryDir()): ReadResult {
   for (const file of listMarkdown(dir, PAGES_DIR)) {
     const markdown = read(file) ?? ''
     const page = parsePage(markdown, classifyFile(file).title)
-    errors.push(...validateDocument(file, markdown, t))
+    errors.push(...validateDocument(file, markdown, t, conversationLocale()))
     units.push(...unitsOfPage(file, page, page.title))
     pages++
   }
@@ -229,14 +229,14 @@ export function readAll(dir = memoryDir()): ReadResult {
     const date = classifyFile(file).title
     const markdown = read(file) ?? ''
     if (!isJournalName(date)) errors.push(t('memory.check.fileName', { file }))
-    else errors.push(...validateDocument(file, markdown, t))
+    else errors.push(...validateDocument(file, markdown, t, conversationLocale()))
     const page = parsePage(markdown, date)
     units.push(...unitsOfJournal(file, page, date))
     pages++
   }
   for (const { file } of PROMPT_DOCUMENTS) {
     const markdown = read(file)
-    if (markdown !== null) errors.push(...validateDocument(file, markdown, t))
+    if (markdown !== null) errors.push(...validateDocument(file, markdown, t, conversationLocale()))
   }
   for (const file of OBSOLETE_FILES) if (fs.existsSync(path.join(dir, file))) errors.push(t('memory.check.obsoleteFile', { file }))
   return { units, pages, errors }
@@ -276,7 +276,7 @@ export function writeDocument(file: string, markdown: string, base: string, dir 
   const current = readFileOf(dir, documentFile(file))
   if (current === null) throw new Error(errorText('memory.errors.removedSinceOpened'))
   if (current !== base) throw new Error(errorText('memory.errors.changedSinceOpened'))
-  const errors = validateDocument(file, markdown, t)
+  const errors = validateDocument(file, markdown, t, conversationLocale())
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
   commitFiles(dir, { [file]: text }, written('edited', { file }))
@@ -304,7 +304,7 @@ export function createPage(input: unknown, dir = memoryDir()): MemoryDocument {
   const { name, markdown } = parseMemoryPageInput(input)
   const file = pageFile(name)
   if (fs.existsSync(documentPath(dir, file))) throw new Error(errorText('memory.errors.pageExists', { name }))
-  const errors = validateDocument(file, markdown, t)
+  const errors = validateDocument(file, markdown, t, conversationLocale())
   if (errors.length > 0) throw new Error(errors.join(' / '))
   const text = markdown.endsWith('\n') ? markdown : `${markdown}\n`
   commitFiles(dir, { [file]: text }, written('pageCreated', { name }))
