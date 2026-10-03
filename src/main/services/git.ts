@@ -77,6 +77,13 @@ export function gitEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
   }
 }
 
+/**
+ * What comes before the revisions of a command that are given from outside, such as the base of a merge the
+ * renderer or merge_agent_job hands over: without it, a revision spelled as an option, such as --output=<path>,
+ * would be read as one, and git diff would create or empty that file.
+ */
+const END_OF_OPTIONS = '--end-of-options'
+
 interface GitOptions {
   maxBuffer?: number
   env?: NodeJS.ProcessEnv
@@ -119,7 +126,7 @@ export function toplevel(dir: string): string | null {
 }
 
 export function headCommit(repo: string, ref = 'HEAD'): string {
-  return git(repo, ['rev-parse', '--verify', ref]).trim()
+  return git(repo, ['rev-parse', '--verify', END_OF_OPTIONS, ref]).trim()
 }
 
 /** Makes dir a repository, and does nothing when it already is one. */
@@ -127,14 +134,20 @@ export function init(dir: string): void {
   git(dir, ['init', '-q', '-b', 'main'])
 }
 
+/** The commit HEAD points to, or null while it has none, as in a new repository or on a branch made by `checkout --orphan`. */
+function headOrNull(repo: string): string | null {
+  try {
+    return git(repo, ['rev-parse', '--verify', '--quiet', 'HEAD']).trim()
+  } catch (error) {
+    // With --quiet, rev-parse exits with 1 and prints nothing when HEAD names no commit.
+    if ((error as { status?: number }).status === 1) return null
+    throw error
+  }
+}
+
 /** Whether a first commit exists. A worktree is cut from HEAD, so without one it cannot be created. */
 export function hasHead(repo: string): boolean {
-  try {
-    git(repo, ['rev-parse', '--verify', 'HEAD'])
-    return true
-  } catch {
-    return false
-  }
+  return headOrNull(repo) !== null
 }
 
 /** The folder of dir within its repository, such as `packages/web`, or an empty string at the top. */
@@ -264,8 +277,8 @@ const EXACT_STATUS = ['--untracked-files=normal', '--ignore-submodules=none']
  * configuration turns it off, writes `議事録.md` as "\350\255\260\344\272\213\351\214\262.md" in the stat and the
  * patch that the user approves a merge by and the model reads.
  */
-function exactDiff(repo: string, args: string[], options: GitOptions = {}): string {
-  return git(repo, ['-c', 'core.quotePath=false', 'diff', ...EXACT_DIFF, ...args], options)
+function exactDiff(repo: string, args: string[], base: string, commit: string, options: GitOptions = {}): string {
+  return git(repo, ['-c', 'core.quotePath=false', 'diff', ...EXACT_DIFF, ...args, END_OF_OPTIONS, base, commit], options)
 }
 
 /**
@@ -458,7 +471,7 @@ export function commitAll(dir: string, message: string): boolean {
   return withIndexCopy(dir, (env) => {
     const revealed = revealFiles(dir, env)
     if (onDisk(dir, ['status', '--porcelain', ...EXACT_STATUS], { ...WHOLE, env }).trim() === '') return false
-    const head = hasHead(dir) ? headCommit(dir) : null
+    const head = headOrNull(dir)
     onDisk(dir, ADD_ALL, { env })
     const tree = onDisk(dir, ['write-tree'], { env }).trim()
     if (head && revealed.leftOut.length > 0) {
@@ -510,14 +523,9 @@ function rawEntries(raw: string): RawEntry[] {
   return entries
 }
 
-/**
- * The submodules the changes from base to commit touch, with .gitmodules when it changed: a submodule moved
- * to another commit, added or removed, or a path turned into a submodule or out of one.
- */
-export function submoduleEntryChanges(repo: string, base: string, commit: string): string[] {
-  return rawEntries(exactDiff(repo, ['--raw', '-z', '--no-renames', base, commit], WHOLE))
-    .filter((entry) => entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES)
-    .map((entry) => entry.path)
+/** The paths of the changes that touch a submodule, .gitmodules included. */
+export function submoduleChanges(changes: DiffEntry[]): string[] {
+  return changes.filter((change) => change.submodule).map((change) => change.path)
 }
 
 /**
@@ -643,12 +651,12 @@ export function isSettled(dir: string): boolean {
  * as with a branch made by `checkout --orphan`, or when HEAD has no commit yet.
  */
 export function mergeBase(repo: string, commit: string): string | null {
-  if (!hasHead(repo)) return null
   try {
-    return git(repo, ['merge-base', 'HEAD', commit]).trim()
+    return git(repo, ['merge-base', END_OF_OPTIONS, 'HEAD', commit]).trim()
   } catch (error) {
-    // merge-base exits with 1 and prints nothing when the two have no common ancestor.
-    if ((error as { status?: number }).status === 1) return null
+    // merge-base exits with 1 and prints nothing when the two have no common ancestor. A HEAD without a commit
+    // fails it as a name it cannot read would, so whether HEAD has one is asked only after a failure.
+    if ((error as { status?: number }).status === 1 || !hasHead(repo)) return null
     throw error
   }
 }
@@ -670,23 +678,12 @@ export function checkedOut(repo: string): string | null {
   return ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null
 }
 
-/** Whether anything changed from base to commit. */
-export function hasChanges(repo: string, base: string, commit: string): boolean {
-  try {
-    exactDiff(repo, ['--quiet', base, commit])
-    return false
-  } catch (error) {
-    if ((error as { status?: number }).status === 1) return true
-    throw error
-  }
-}
-
 /**
  * A summary of the changes from base to commit, listing at most the first 500 files before its total line.
  * An empty string means nothing changed.
  */
 export function diffStat(repo: string, base: string, commit: string): string {
-  return exactDiff(repo, ['--stat', '--stat-count=500', base, commit]).trim()
+  return exactDiff(repo, ['--stat', '--stat-count=500'], base, commit).trim()
 }
 
 export interface DiffEntry {
@@ -695,18 +692,31 @@ export interface DiffEntry {
   mode: string
   /** Whether the path did not exist at base. */
   added: boolean
+  /**
+   * Whether the change touches a submodule: .gitmodules changed, or a submodule moved to another commit, was added
+   * or removed, or a path turned into a submodule or out of one.
+   */
+  submodule: boolean
 }
 
-/** Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an addition. */
+/**
+ * Every path the changes from base to commit touch, with its mode afterwards. Renames count as a deletion and an
+ * addition, and nothing changed when there is no entry.
+ */
 export function diffEntries(repo: string, base: string, commit: string): DiffEntry[] {
-  return rawEntries(exactDiff(repo, ['--raw', '-z', '--no-renames', base, commit], WHOLE))
-    .map((entry) => ({ path: entry.path, mode: entry.newMode, added: entry.oldMode === '000000' }))
+  return rawEntries(exactDiff(repo, ['--raw', '-z', '--no-renames'], base, commit, WHOLE)).map((entry) => ({
+    path: entry.path,
+    mode: entry.newMode,
+    added: entry.oldMode === '000000',
+    submodule: entry.oldMode === SUBMODULE_MODE || entry.newMode === SUBMODULE_MODE || entry.path === GITMODULES
+  }))
 }
 
 /** Those of files, paths from the top of the worktree dir written as git names them, that commit holds. */
 export function heldIn(dir: string, commit: string, files: string[]): Set<string> {
   if (files.length === 0) return new Set()
-  return new Set(git(dir, ['ls-tree', '-z', '--name-only', commit, '--', ...files.map(literal)], WHOLE).split('\0').filter(Boolean))
+  const listed = git(dir, ['ls-tree', '-z', '--name-only', END_OF_OPTIONS, commit, '--', ...files.map(literal)], WHOLE)
+  return new Set(listed.split('\0').filter(Boolean))
 }
 
 /**
@@ -718,7 +728,7 @@ export function heldIn(dir: string, commit: string, files: string[]): Set<string
 export function diffPatch(repo: string, base: string, commit: string, maxChars = 60_000): string {
   let patch: string
   try {
-    patch = exactDiff(repo, [base, commit], { maxBuffer: maxChars * 4 })
+    patch = exactDiff(repo, [], base, commit, { maxBuffer: maxChars * 4 })
   } catch (error) {
     // Node ends git with ENOBUFS at the buffer's size and hands over the output read until then.
     const cut = error as NodeJS.ErrnoException & { stdout?: unknown }
@@ -745,7 +755,7 @@ export type MergedTree = { tree: string } | { conflict: string }
  */
 export function mergedTree(repo: string, head: string, incoming: string): MergedTree {
   try {
-    return { tree: git(repo, ['merge-tree', '--write-tree', '--name-only', head, incoming]).split('\n')[0] }
+    return { tree: git(repo, ['merge-tree', '--write-tree', '--name-only', END_OF_OPTIONS, head, incoming]).split('\n')[0] }
   } catch (error) {
     // Status 1 with a tree is a conflict. The lines after the blank one are git's messages about it.
     const failure = error as { status?: number; stdout?: unknown }
@@ -770,21 +780,36 @@ export function checkoutTree(repo: string, tree: string, dir: string): void {
   }
 }
 
+/** Whether head holds commit in its history, itself included. */
+function holds(repo: string, head: string, commit: string): boolean {
+  try {
+    git(repo, ['merge-base', '--is-ancestor', END_OF_OPTIONS, commit, head])
+    return true
+  } catch (error) {
+    // --is-ancestor exits with 1 when the first is not an ancestor of the second.
+    if ((error as { status?: number }).status === 1) return false
+    throw error
+  }
+}
+
 /**
- * Merges the branch into the user's repository as a merge commit. The commit is made by merge-tree and
- * commit-tree, which touch neither the working tree nor the index, and the working tree then moves to it
- * only by a fast-forward. git merge would stop half done in them on a conflict or when a hook of the
- * user's, such as a commit-msg hook that rejects the message, fails, and a later git commit of the user's
- * would then commit changes nobody reviewed. Without --no-overwrite-ignore the fast-forward replaces a file
- * git ignores, such as the user's .env, with the one the job committed at that path. A branch that HEAD
- * already holds is up to date, as git merge says of it, and nothing is committed.
+ * Merges the commit into the user's repository as a merge commit. The commit is made by merge-tree and
+ * commit-tree, which touch neither the working tree nor the index, and the working tree then moves to it only by
+ * a fast-forward. git merge would stop half done in them on a conflict or when a hook of the user's, such as a
+ * commit-msg hook that rejects the message, fails, and a later git commit of the user's would then commit
+ * changes nobody reviewed. Without --no-overwrite-ignore the fast-forward replaces a file git ignores, such as the
+ * user's .env, with the one the job committed at that path. A commit that HEAD already holds is up to date, as
+ * git merge says of it, and nothing is committed.
  */
-export function mergeNoFf(repo: string, branch: string, message: string): MergeOutcome {
-  const head = headCommit(repo)
-  const incoming = headCommit(repo, branch)
-  if (mergeBase(repo, incoming) === incoming) return { ok: true }
+export function mergeNoFf(repo: string, incoming: string, message: string): MergeOutcome {
+  // HEAD and its tree are read in one call, so that the merge commit's first parent is the HEAD whose tree was
+  // merged.
+  const [head, headTree] = git(repo, ['rev-list', '--no-walk', '--no-commit-header', '--format=%H %T', 'HEAD']).trim().split(' ')
   const merged = mergedTree(repo, head, incoming)
   if ('conflict' in merged) return { ok: false, conflict: true, message: merged.conflict }
+  // A merge leaves HEAD's tree as it is when HEAD holds the commit, and also when HEAD has the same changes by
+  // other commits, which still get the merge commit; whether HEAD holds it is asked only then.
+  if (merged.tree === headTree && holds(repo, head, incoming)) return { ok: true }
   const commit = git(repo, [
     '-c', 'user.name=ASIST', '-c', 'user.email=asist@localhost', 'commit-tree', merged.tree, '-p', head, '-p', incoming, '-m', message
   ]).trim()
@@ -816,24 +841,24 @@ export function lstatOrNull(file: string): fs.Stats | null {
 }
 
 /**
- * The paths in repo's working tree that git does not track and that a merge of the changes from base to
- * commit would write over, as `merge --no-overwrite-ignore` refuses them: whatever is at a path the changes
- * leave a file at, a file where a folder of one of them goes, and a tracked folder the changes turn into a
- * file while it also holds files git does not track. In a clean working tree they can only be files git
- * ignores, such as a .env, which the merge would replace with one the job committed at that path.
+ * The paths in repo's working tree that git does not track and that a merge of the changes would write over, as
+ * `merge --no-overwrite-ignore` refuses them: whatever is at a path the changes leave a file at, a file where a
+ * folder of one of them goes, and a tracked folder the changes turn into a file while it also holds files git
+ * does not track. In a clean working tree they can only be files git ignores, such as a .env, which the merge
+ * would replace with one the job committed at that path.
  *
  * Names are compared as git compares them in repo: without regard to the letter case of ASCII letters when
  * core.ignorecase is set, as on the disks of macOS and Windows, where a job that renames tracked.txt to
  * TRACKED.txt finds the tracked file at the new name.
  */
-export function untrackedInTheWay(repo: string, base: string, commit: string): string[] {
+export function untrackedInTheWay(repo: string, changes: DiffEntry[]): string[] {
   const found = new Map<string, fs.Stats | null>()
   const at = (name: string): fs.Stats | null => {
     if (!found.has(name)) found.set(name, lstatOrNull(path.join(repo, name)))
     return found.get(name)!
   }
   const occupied = new Set<string>()
-  for (const entry of diffEntries(repo, base, commit)) {
+  for (const entry of changes) {
     if (entry.mode === '000000') continue
     if (at(entry.path)) occupied.add(entry.path)
     for (let folder = path.posix.dirname(entry.path); folder !== '.'; folder = path.posix.dirname(folder)) {
