@@ -10,12 +10,14 @@ import { startDemo } from '../demo-server.mjs'
  * The scene that tells whether the text still fits in every language of the interface (npm run demo:fit).
  *
  * Cards: every card sample at s, m, l and focus. It looks for a card taller than the height it was given,
- * text pushed past the edge of its card, and text cut short with an ellipsis or a hidden overflow. A card
- * taller than its height is never meant, so it is reported in every theme and language, Japanese in the
- * future theme too: judged against that baseline, a world weather card that Japanese also overflowed at m
- * was reported nowhere (2026-10-03). Data such as a mail subject is cut short on purpose in every language,
- * so for text past the edge or cut short, Japanese in the future theme is the baseline, and a language or
- * theme reports only what that baseline does not show at the same place.
+ * a button or link that reaches past the card's edge, text pushed past the edge of its card, and text cut
+ * short with an ellipsis or by a box that hides its overflow. A card taller than its height and a control
+ * past its edge are never meant, so they are reported in every theme and language, Japanese in the future
+ * theme too: judged against that baseline, a world weather card that Japanese also overflowed at m was
+ * reported nowhere, nor the header's buttons a long place pushed out (2026-10-03). Data such as a mail
+ * subject is cut short on purpose in every language, so for text, Japanese in the future theme is the
+ * baseline, and a language or theme reports only what that baseline does not show at the same place. Text
+ * marked data-fit="data", such as the place a weather card found, is not judged as cut short at all.
  *
  * Screens: every screen of the demo. The controls (buttons, links, chips, tabs,
  * selects) are judged without a baseline, in Japanese too: one that wraps onto a second line, is cut
@@ -79,19 +81,41 @@ const MEASURE_CARDS = `(() => {
       }
       const body = dock.querySelector('.panel-body[data-clipped="error"]')
       if (body) at('too tall', body, body.scrollHeight + 'px of content in ' + body.clientHeight + 'px')
+      // The part of an element left in view across, and the overflow of the first box inside the card that
+      // cuts it. A box that scrolls, as the hourly row does, shows the rest when scrolled; one that hides or
+      // clips its overflow, as the header's note does, cuts the text short.
+      const inView = (element) => {
+        const rect = element.getBoundingClientRect()
+        let [left, right, cutBy] = [rect.left, rect.right, null]
+        for (let box = element.parentElement; box && box !== frame; box = box.parentElement) {
+          const overflow = getComputedStyle(box).overflowX
+          if (overflow === 'visible') continue
+          const bounds = box.getBoundingClientRect()
+          if (!cutBy && (right > bounds.right + 1 || left < bounds.left - 1)) cutBy = overflow
+          left = Math.max(left, bounds.left)
+          right = Math.min(right, bounds.right)
+        }
+        return { left, right, cutBy }
+      }
+      const pastEdge = (view) => view.right > view.left && (view.right > edge.right + 1 || view.left < edge.left - 1)
+      // A button or link is never meant to reach past the card's edge, and one without text, such as the
+      // header's expand and close, is judged here too.
+      for (const control of dock.querySelectorAll('button, [role="button"], a, select, summary')) {
+        const rect = control.getBoundingClientRect()
+        if (rect.width === 0 || rect.height === 0) continue
+        if (pastEdge(inView(control))) at('control past the edge', control, control.getAttribute('aria-label') ?? control.textContent)
+      }
       for (const element of dock.querySelectorAll('*')) {
         if (element.children.length > 0 && ![...element.children].every((child) => child.tagName === 'svg')) continue
         if (!element.textContent.trim()) continue
         const rect = element.getBoundingClientRect()
         if (rect.width === 0) continue
-        // Text that reaches past a box inside the card that hides its overflow is cut short by that box, as a
-        // long note in the header is, and shows nothing past the card's edge. A box that scrolls, as the
-        // hourly row does, shows the rest when scrolled.
-        let clip = element.parentElement
-        while (clip && clip !== frame && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement
-        const box = clip && clip !== frame && getComputedStyle(clip).overflowX === 'hidden' ? clip.getBoundingClientRect() : null
-        if (box && (rect.right > box.right + 1 || rect.left < box.left - 1)) at('cut short', element)
-        else if (rect.right > edge.right + 1 || rect.left < edge.left - 1) at('past the edge', element)
+        const view = inView(element)
+        // Data such as the place a weather card found is cut short on purpose when it does not fit.
+        const data = element.closest('[data-fit="data"]') !== null
+        if (pastEdge(view)) at('past the edge', element)
+        else if (data) continue
+        else if (view.cutBy === 'hidden' || view.cutBy === 'clip') at('cut short', element)
         else if (element.scrollWidth > element.clientWidth + 1 && getComputedStyle(element).overflowX !== 'visible') at('cut short', element)
       }
     }
@@ -274,7 +298,8 @@ const screenFirst = only === '--cards' ? null : await screensOf(measuredPairs)
 const candidates = []
 if (cardFirst) {
   const baseline = new Set(cardFirst.get(BASELINE_PAIR).map(cardKey))
-  const reported = (pair, finding) => finding.kind === 'too tall' || (pair !== BASELINE_PAIR && !baseline.has(cardKey(finding)))
+  const withoutBaseline = new Set(['too tall', 'control past the edge'])
+  const reported = (pair, finding) => withoutBaseline.has(finding.kind) || (pair !== BASELINE_PAIR && !baseline.has(cardKey(finding)))
   for (const pair of measuredPairs) {
     for (const finding of cardFirst.get(pair)) if (reported(pair, finding)) candidates.push({ section: 'cards', pair, ...finding })
   }

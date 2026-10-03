@@ -752,15 +752,22 @@ body {
 }
 /* The note is the part of the header that gives way: a long one, such as the place a worldwide weather card
    found (「Lord Howe Island · New South Wales · Australia」), is cut short before it pushes the frame's
-   buttons or itself past the card's edge. */
+   buttons or itself past the card's edge. The card's own element is cut, so the ellipsis takes its colour
+   and glow, which in pop and simple were 1.2 to 1.6:1 on the night sky in the slot's colour; it clips with
+   a margin, because a glow clipped at the line's height drew a dark box behind the note. */
 .panel-meta {
+  display: flex;
   min-width: 0;
   margin-right: 6px;
-  overflow: hidden;
   font-size: 9px;
-  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-holo-muted);
+}
+.panel-meta > * {
+  min-width: 0;
+  overflow: clip;
+  overflow-clip-margin: 8px;
+  text-overflow: ellipsis;
 }
 .panel-body {
   position: relative;

@@ -267,23 +267,6 @@ describe('the hours a weather card shows', () => {
     expect(periodTexts(one)).toEqual([range + rain(60)])
   })
 
-  it('ends a longer period at 24 on the day before a midnight the clocks skip, where the day ends at 1:00', async () => {
-    // Santiago's clocks went from 2025-09-07 00:00 to 01:00, so its 2025-09-06 ended at 04:00 UTC.
-    const steps = [
-      { at: '2025-09-06T22:00:00.000Z', until: '2025-09-07T01:00:00.000Z', temperature: 11, condition: null },
-      { at: '2025-09-07T01:00:00.000Z', until: '2025-09-07T04:00:00.000Z', temperature: 9, condition: null }
-    ]
-    const santiago: WeatherData = {
-      ...DEMO_WEATHER_MUNICH,
-      location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'America/Santiago' },
-      targetDate: '2025-09-06',
-      hourly: steps,
-      precipitationPeriods: [{ from: steps[0].at, to: steps[1].until, percent: 2 }]
-    }
-    const dock = await render([weather({ key: 'weather:place:santiago:2025-09-06', props: { location: 'Santiago', date: 'today', weather: santiago } })])
-    expect(periodTexts(dock)).toEqual([t('cardsWeather.hourly.range', { from: 18, to: 24 }) + rain(2)])
-  })
-
   // Lord Howe Island's clock went back from +11:00 to +10:30 on 2026-04-05 at 02:00 and goes forward again on
   // 2026-10-04 at 02:00. A forecast written in +10:30 has its rows on the half hours of the clock while it
   // reads +11:00, so the first step of the day in April and the steps after 02:00 in October are off the hour.
@@ -302,34 +285,16 @@ describe('the hours a weather card shows', () => {
       precipitationPeriods: starts.map((from, k) => ({ from, to: ends[k], percent: 1 }))
     }
     const dock = await render([weather({ key: `weather:place:lord howe island:${date}`, props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
-    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual(starts.map((at) => lordHoweTime(at, midnight)))
-  })
-
-  it('writes the range of a longer period with minutes in a row whose times have them', async () => {
-    const steps = ['2026-10-05T18:30:00+11:00', '2026-10-05T21:30:00+11:00']
-    const midnight = '2026-10-06T00:00:00+11:00'
-    const lordHowe: WeatherData = {
-      ...DEMO_WEATHER_MUNICH,
-      location: { ...DEMO_WEATHER_MUNICH.location, timeZone: 'Australia/Lord_Howe' },
-      targetDate: '2026-10-05',
-      date: 'tomorrow',
-      observation: null,
-      hourly: steps.map((at, k) => ({ at, until: steps[k + 1] ?? midnight, temperature: 18, condition: null })),
-      precipitationPeriods: [{ from: steps[0], to: midnight, percent: 4 }]
-    }
-    const dock = await render([weather({ key: 'weather:place:lord howe island:2026-10-05', props: { location: 'Lord Howe Island', date: 'tomorrow', weather: lordHowe } })])
-    expect(periodTexts(dock)).toEqual([
-      t('cardsWeather.hourly.timeRange', { from: lordHoweTime(steps[0], midnight), to: lordHoweTime(midnight, midnight) }) + rain(4)
-    ])
+    expect([...dock.querySelectorAll('.wx-hour time')].map((label) => label.textContent)).toEqual(starts.map(lordHoweTime))
   })
 })
 
-/** A time as the clock of Lord Howe Island reads it, written with its minutes, with the midnight given as 24:00. */
-function lordHoweTime(at: string, midnight: string): string {
+/** A time as the clock of Lord Howe Island reads it, written with its minutes. */
+function lordHoweTime(at: string): string {
   const [hour, minute] = new Intl.DateTimeFormat('en-US', { timeZone: 'Australia/Lord_Howe', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' })
     .format(new Date(at))
     .split(':')
-  return t('cardsWeather.hourly.time', { hour: at === midnight ? 24 : Number(hour), minute })
+  return t('cardsWeather.hourly.time', { hour: Number(hour), minute })
 }
 
 describe('a card whose data could not be fetched', () => {

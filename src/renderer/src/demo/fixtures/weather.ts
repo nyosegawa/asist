@@ -190,6 +190,42 @@ export const DEMO_WEATHER_TOKYO: WeatherData = {
   sources: sources(at('2026-09-15', 17), null)
 }
 
+const NAGANO_DAY = hours('2026-09-15', [
+  [0, 18, RAIN],
+  [3, 17, RAIN],
+  [6, 18, RAIN],
+  [9, 20, RAIN],
+  [12, 22, RAIN],
+  [15, 21, RAIN],
+  [18, 24, RAIN],
+  [21, 23, CLOUDY]
+])
+const NAGANO_PERIODS: WeatherData['precipitationPeriods'] = [
+  { from: at('2026-09-15', 0), to: at('2026-09-15', 6), percent: 80 },
+  { from: at('2026-09-15', 6), to: at('2026-09-15', 12), percent: 80 },
+  { from: at('2026-09-15', 12), to: at('2026-09-15', 18), percent: 80 },
+  { from: at('2026-09-15', 18), to: at('2026-09-16', 0), percent: 60 }
+]
+/**
+ * Nagano's day as a card for today asked for 20 minutes after an hour, from the step still running to the
+ * end of the day, with the six-hour chances of rain that are left. Asked in the small hours it has all eight
+ * steps, the widest the agency's hourly row grows, beside the missing high and low of the morning.
+ */
+function naganoTodayFrom(hour: number, issued: string): WeatherData {
+  const asked = `2026-09-15T${String(hour).padStart(2, '0')}:20:00${JAPAN}`
+  return {
+    ...DEMO_WEATHER_NAGANO,
+    fetchedAt: asked,
+    observation: { ...DEMO_WEATHER_NAGANO.observation!, at: at('2026-09-15', hour) },
+    hourly: NAGANO_DAY.filter((step) => Date.parse(step.until) > Date.parse(asked)),
+    precipitationPeriods: NAGANO_PERIODS.filter((period) => Date.parse(period.to) > Date.parse(asked)),
+    sources: sources(issued, at('2026-09-15', hour))
+  }
+}
+export const DEMO_WEATHER_NAGANO_MIDNIGHT = naganoTodayFrom(0, at('2026-09-14', 17))
+export const DEMO_WEATHER_NAGANO_MORNING = naganoTodayFrom(6, at('2026-09-15', 5))
+export const DEMO_WEATHER_NAGANO_NOON = naganoTodayFrom(12, at('2026-09-15', 11))
+
 /** A clear day, the sample used to judge how bright the sky and the landscape look. */
 export const DEMO_WEATHER_MIYAGI: WeatherData = {
   location: {

@@ -11,7 +11,17 @@ import { DEMO_DOCX_PATH, DEMO_LARGE_XLSX_PATH, DEMO_PPTX_PATH, DEMO_XLSX_PATH } 
 import { DEMO_MAIL_CARD, DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGE_CARD } from './mail'
 import { DEMO_NEWS, DEMO_SEARCH, DEMO_SEARCH_GOOGLE } from './reading'
 import { DEMO_TIMER, demoClock } from './time'
-import { DEMO_WEATHER_LORD_HOWE, DEMO_WEATHER_MIAMI, DEMO_WEATHER_MUNICH, DEMO_WEATHER_MUNICH_TOMORROW, DEMO_WEATHER_NAGANO, onDemoDay } from './weather'
+import {
+  DEMO_WEATHER_LORD_HOWE,
+  DEMO_WEATHER_MIAMI,
+  DEMO_WEATHER_MUNICH,
+  DEMO_WEATHER_MUNICH_TOMORROW,
+  DEMO_WEATHER_NAGANO,
+  DEMO_WEATHER_NAGANO_MIDNIGHT,
+  DEMO_WEATHER_NAGANO_MORNING,
+  DEMO_WEATHER_NAGANO_NOON,
+  onDemoDay
+} from './weather'
 import { translate } from '@/i18n'
 
 /**
@@ -40,6 +50,9 @@ export const CARD_GROUPS: Array<{ command: string; label: string; cards: CardFix
     label: '天気・金融・時間',
     cards: [
       { type: 'weather', props: { location: '長野県', date: 'today', weather: onDemoDay(DEMO_WEATHER_NAGANO) } },
+      { type: 'weather', variant: 'midnight', props: { location: '長野県', date: 'today', weather: onDemoDay(DEMO_WEATHER_NAGANO_MIDNIGHT) } },
+      { type: 'weather', variant: 'morning', props: { location: '長野県', date: 'today', weather: onDemoDay(DEMO_WEATHER_NAGANO_MORNING) } },
+      { type: 'weather', variant: 'noon', props: { location: '長野県', date: 'today', weather: onDemoDay(DEMO_WEATHER_NAGANO_NOON) } },
       { type: 'weather', variant: 'world', props: { location: 'Munich', date: 'today', weather: onDemoDay(DEMO_WEATHER_MUNICH) } },
       { type: 'weather', variant: 'world-tomorrow', props: { location: 'Munich', date: 'tomorrow', weather: onDemoDay(DEMO_WEATHER_MUNICH_TOMORROW) } },
       { type: 'weather', variant: 'world-early', props: { location: 'Miami', date: 'today', weather: onDemoDay(DEMO_WEATHER_MIAMI) } },
