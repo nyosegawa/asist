@@ -103,3 +103,27 @@ export function offsetOf(file: Uint8Array, text: string): number {
   if (at === -1) throw new Error(`${text} is not in the file`)
   return at
 }
+
+/**
+ * The end records alone of a zip whose ZIP64 end record declares `count` entries in a directory of `length` bytes
+ * that ends where the records start, as a file of that many entries would: what a reader takes the count and the
+ * directory's size from before it reads any of the directory, in 98 bytes. With a length, the bytes stand for the
+ * end of a file whose directory lies in front of them, and they start `length` bytes into it.
+ */
+export function manyEntriesDeclared(count: number, length = 0): Uint8Array {
+  const out = new Uint8Array(56 + 20 + 22)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, 0x06064b50, true)
+  view.setBigUint64(4, 44n, true)
+  view.setBigUint64(24, BigInt(count), true)
+  view.setBigUint64(32, BigInt(count), true)
+  view.setBigUint64(40, BigInt(length), true)
+  view.setUint32(56, 0x07064b50, true)
+  view.setUint32(72, 1, true)
+  view.setUint32(76, 0x06054b50, true)
+  view.setUint16(84, 0xffff, true)
+  view.setUint16(86, 0xffff, true)
+  view.setUint32(88, 0xffffffff, true)
+  view.setUint32(92, 0xffffffff, true)
+  return out
+}
