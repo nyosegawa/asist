@@ -51,10 +51,13 @@ jobs:
       # change to it skips fit.
       # viewers lists the files that can move what the viewer budgets measure, traced on 2026-10-03: what the files
       # card, the card's frame (PanelCard, PanelContent, FocusOverlay) and the preview page import in Vite's module
-      # graph, without following the other cards (registry.tsx), the store (stores.ts) or the dictionary into what
-      # they import; the pages that hold them and the demo's hooks the scene calls; the scene with its generators and
-      # their Office samples; the demo's config and what it imports; the dependencies and the job itself. A change
-      # elsewhere can still move a budget, since the page measured is the whole app, so the budgets also run weekly.
+      # graph; the pages that hold them and the demo's hooks the scene calls; the scene with its generators and
+      # their Office samples; the demo's config and what it imports; the dependencies and the job itself. The walk
+      # lists registry.tsx, stores.ts and the dictionary's index but does not follow them into the other cards, the
+      # store's other modules and the dictionary's text: they load with the app, but other cards, other data and
+      # words do not change the time or the memory a viewer takes, and following them would have run the budgets on
+      # 28 of the last 40 pull requests instead of 18. The page measured is the whole app (/app), so a change off the
+      # list can still move a budget; the weekly run shows it.
       - id: diff
         run: |
           git diff --name-only --no-renames -z HEAD^ HEAD > "$RUNNER_TEMP/changed"
