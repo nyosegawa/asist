@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 # UTF-8 and \n whatever the code page and the line ending of the system, as the Agent and the tests read them.
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 
-from memory_format import SECTION_MAX_CHARS, directory_problems  # noqa: E402
+from memory_format import SECTION_MAX_CHARS, SUMMARY_HEADING, directory_problems  # noqa: E402
 
 MESSAGES = {
     'frontmatterMissing': lambda p: 'frontmatter がありません',
@@ -28,7 +28,7 @@ MESSAGES = {
     'duplicateHeading': lambda p: f"見出し「{p['heading']}」が {p['first']} 行目にもあります。同じ見出しは一つにまとめてください",
     'headingWithoutText': lambda p: f"見出し「{p['heading']}」の下に本文がありません(書くことが無い見出しは消してください)",
     'sectionTooLong': lambda p: f"見出し「{p['heading']}」の本文が {p['length']} 字あります({SECTION_MAX_CHARS} 字までにしてください)",
-    'firstHeading': lambda p: f"最初の見出しは「{p['heading']}」にしてください(名前が会話に出たとき、ここが読まれます)",
+    'firstHeading': lambda p: f"最初の見出しは「{SUMMARY_HEADING['ja-JP']}」にしてください(名前が会話に出たとき、ここが読まれます)",
     'tooManyTokens': lambda p: f"{p['tokens']} トークンあります({p['limit']} までにしてください。約 {p['cut']['characters']} 字を削り、count.py で確かめます)",
     'pageName': lambda p: (
         'ページの名前に使えない文字があります(/ \\ : * ? " < > | は使えません)。名前を変えてください'

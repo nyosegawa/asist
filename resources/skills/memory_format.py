@@ -18,6 +18,7 @@ import re
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'memory-format.json'), encoding='utf-8') as _file:
     FORMAT = json.load(_file)
 
+# The heading every page opens with, by conversation language. A page may open with any of them.
 SUMMARY_HEADING = FORMAT['summaryHeading']
 PROMPT_DOCUMENTS = [(document['kind'], document['file']) for document in FORMAT['promptDocuments']]
 PROMPT_DOCUMENT_MAX_TOKENS = FORMAT['promptDocumentMaxTokens']
@@ -131,13 +132,30 @@ def _parse_frontmatter(lines):
     return frontmatter, len(lines), True
 
 
-def _summary_for(markdown):
-    return SUMMARY_HEADING['ja' if written_in_japanese(markdown) else 'en']
+# The conversation languages whose letters tell a text apart: kana for Japanese, hangul for Korean and Devanagari
+# for Hindi, in the ranges memory-format.json weighs them by. The eight written in Latin letters cannot be told apart.
+_LETTERS = (
+    (re.compile('[ぁ-ヿ]'), 'ja-JP'),
+    (re.compile('[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]'), 'ko-KR'),
+    (re.compile('[\u0900-\u097f\ua8e0-\ua8ff]'), 'hi-IN'),
+)
+
+
+def _summary_for(markdown, headings):
+    """The summary heading text above the first heading is read under: the document's own, else its letters' language's."""
+    for heading in headings:
+        if heading in SUMMARY_HEADING.values():
+            return heading
+    for letters, locale in _LETTERS:
+        if letters.search(markdown):
+            return SUMMARY_HEADING[locale]
+    return SUMMARY_HEADING['en-US']
 
 
 def _read_body(markdown):
     lines = _split_lines(markdown)
     frontmatter, body_start, unclosed = _parse_frontmatter(lines)
+    summary = _summary_for(markdown, [_trim(line[3:]) for line in lines[body_start:] if line.startswith('## ')])
     title = None
     headed = False
     sections = []
@@ -155,7 +173,7 @@ def _read_body(markdown):
         if not _trim(raw):
             continue
         if current is None:
-            current = {'line': i + 1, 'heading': _summary_for(markdown), 'text': ''}
+            current = {'line': i + 1, 'heading': summary, 'text': ''}
             sections.append(current)
         current['text'] = current['text'] + '\n' + _trim_end(raw) if current['text'] else _trim_end(raw)
     return frontmatter, unclosed, title, headed, sections
@@ -228,8 +246,8 @@ def document_issues(kind, markdown):
         elif length > SECTION_MAX_CHARS and not _in_prompt(kind):
             issues.append({'kind': 'sectionTooLong', 'line': line, 'heading': heading, 'length': length})
     opening = sections[0]['heading'] if sections else None
-    if kind == 'page' and opening is not None and opening not in (SUMMARY_HEADING['ja'], SUMMARY_HEADING['en']):
-        issues.append({'kind': 'firstHeading', 'heading': _summary_for(markdown)})
+    if kind == 'page' and opening is not None and opening not in SUMMARY_HEADING.values():
+        issues.append({'kind': 'firstHeading'})
     if _in_prompt(kind):
         size = prompt_size(markdown)
         over = size['tokens'] - PROMPT_DOCUMENT_MAX_TOKENS

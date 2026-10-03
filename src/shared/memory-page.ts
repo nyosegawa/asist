@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { promptText, type ConversationLocale, type PromptText } from './conversation-locale'
+import type { ConversationLocale, PromptText } from './conversation-locale'
 import type { Translate } from './i18n'
 import { errorText } from './i18n/error-text'
 import type { MemoryDocument, MemoryDocumentKind, MemoryPageInput, MemoryUnit, MemoryUnitKind } from './ipc'
@@ -17,10 +17,7 @@ import {
   type ParsedPage,
   type PromptDocumentKind
 } from './memory-format'
-import journalTemplateJa from '../../resources/skills/memory-curation/assets/templates/journal.md?raw'
-import pageTemplateJa from '../../resources/skills/memory-curation/assets/templates/page.md?raw'
-import journalTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/journal.md?raw'
-import pageTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/page.md?raw'
+import { SEARCHED_TEMPLATES } from './memory-templates'
 
 export { PROMPT_DOCUMENTS, parsePage, promptBody, type PromptDocumentKind }
 
@@ -33,22 +30,35 @@ export { PROMPT_DOCUMENTS, parsePage, promptBody, type PromptDocumentKind }
  * derived from the file path and the heading, so rewriting the body leaves the unit identical.
  */
 
+const templateHeadingsOf = (template: string): string[] => parsePage(template, '').sections.map((section) => section.heading)
+
+const inEveryLanguage = (pick: (templates: (typeof SEARCHED_TEMPLATES)[ConversationLocale]) => string): Readonly<Record<ConversationLocale, string>> =>
+  Object.fromEntries(Object.entries(SEARCHED_TEMPLATES).map(([locale, templates]) => [locale, pick(templates)])) as Record<ConversationLocale, string>
+
 /**
- * The headings and the page names this code depends on, in the two forms a memory directory can hold.
- * The body of a memory is written in the language of the conversation, but these are fixed: Japanese in
- * a memory written in Japanese, English in every other language, so that reading a page needs no table
- * of headings per language. Both forms are read whatever the language currently is, because the user can
- * change it and the directory then holds pages written under each. The skills in resources/skills write
- * them, one skill per form.
+ * The headings of the pages and the journal that ASIST reads by name, in every conversation language. The memory
+ * is written in the language of the conversation, and the curation copies them from the templates of that language
+ * as they stand; the two that only the templates hold are read from there. Every language's are read whatever the
+ * language currently is, because the user can change it and the memory then holds pages written under each.
+ */
+export const FIXED_HEADINGS = {
+  /** The heading every page opens with. */
+  summary: SUMMARY_HEADING,
+  /** The heading every journal entry closes with, the curation's look back on the day. */
+  journalSelf: inEveryLanguage(({ journal }) => templateHeadingsOf(journal).at(-1)!),
+  /** The heading every page closes with, the curation's own view of the person, the place or the topic. */
+  impression: inEveryLanguage(({ page }) => templateHeadingsOf(page).at(-1)!)
+} as const
+
+/**
+ * The texts ASIST writes itself in the two forms a memory can be told apart by, Japanese and every other
+ * language, which kana tell.
  */
 export const FIXED = {
-  /** The heading every page opens with, and the one the text above a document's first `## ` line is read as. */
-  summary: SUMMARY_HEADING,
-  /** The heading the curation closes every journal entry with. */
-  journalSelf: { ja: '今日の私', en: 'Myself today' },
-  /** The heading the curation keeps on every page about a person, a place or a topic for its own view of them. */
-  impression: { ja: '私の印象', en: 'My impression' },
-  /** The `# name` line of the two documents whose name comes from their role rather than from a person. */
+  /**
+   * The `# name` of user.md and me.md, which a moved instruction.md starts them with when they are missing, and which
+   * names its section about the assistant. A missing `# name` line reads as the Japanese one.
+   */
   user: { ja: 'ユーザー', en: 'The user' },
   me: { ja: '私について', en: 'About me' },
   /** The word that stands before a journal entry in the text that gets embedded. */
@@ -56,10 +66,10 @@ export const FIXED = {
 } as const satisfies Record<string, PromptText>
 
 /**
- * Because it stands in every entry, the memory screen leaves this heading out of the entry's preview
- * line, in both the form a Japanese curation writes and the form the other languages write.
+ * Because it stands in every entry, the memory screen leaves this heading out of the entry's preview line, in
+ * every language a curation writes it in.
  */
-export const JOURNAL_SELF_HEADINGS: readonly string[] = [FIXED.journalSelf.ja, FIXED.journalSelf.en]
+export const JOURNAL_SELF_HEADINGS: readonly string[] = Object.values(FIXED_HEADINGS.journalSelf)
 
 /**
  * The form of a fixed text that fits the memory it is written into, told by its kana, so that the prefix of
@@ -98,21 +108,18 @@ export function classifyFile(file: string): { kind: FileKind; title: string } {
   return { kind: null, title: name }
 }
 
-const templateHeadings = (fixed: readonly PromptText[], ...templates: string[]): ReadonlySet<string> =>
+/**
+ * The headings the templates write into one of the two kinds of document that are searched, in every conversation
+ * language, with the summary in every language, which the text above a journal entry's first heading is read under
+ * too.
+ */
+const templateHeadings = (kind: 'page' | 'journal'): ReadonlySet<string> =>
   new Set([
-    ...[FIXED.summary, ...fixed].flatMap((text) => [text.ja, text.en]),
-    ...templates.flatMap((template) => parsePage(template, '').sections.map((section) => section.heading))
+    ...Object.values(FIXED_HEADINGS.summary),
+    ...Object.values(SEARCHED_TEMPLATES).flatMap((templates) => templateHeadingsOf(templates[kind]))
   ])
 
-/**
- * The headings the templates of the curation skills write into the two kinds of document that are searched, in
- * the two forms the templates exist in, with the fixed headings ASIST reads: the summary, which the text above a
- * document's first heading is read under, the impression of a page and the close of a journal day.
- */
-const TEMPLATE_HEADINGS: Record<'page' | 'journal', ReadonlySet<string>> = {
-  page: templateHeadings([FIXED.impression], pageTemplateJa, pageTemplateEn),
-  journal: templateHeadings([FIXED.journalSelf], journalTemplateJa, journalTemplateEn)
-}
+const TEMPLATE_HEADINGS: Record<'page' | 'journal', ReadonlySet<string>> = { page: templateHeadings('page'), journal: templateHeadings('journal') }
 
 /**
  * Whether the heading of a section of a page or a journal entry is one its template writes, rather than one the
@@ -224,7 +231,7 @@ export const pageFile = (name: string): string => `pages/${name}.md`
  * had written beside the utterance.
  */
 export function newPageMarkdown(name: string, locale: ConversationLocale, today: string): string {
-  return `---\naliases: []\nupdated: ${today}\n---\n# ${name}\n\n## ${promptText(locale, FIXED.summary)}\n\n`
+  return `---\naliases: []\nupdated: ${today}\n---\n# ${name}\n\n## ${FIXED_HEADINGS.summary[locale]}\n\n`
 }
 
 export function documentKindOf(file: string): MemoryDocumentKind | null {
@@ -260,8 +267,11 @@ export function documentOf(file: string, markdown: string): MemoryDocument {
   }
 }
 
-/** A finding of documentIssues as a sentence in the language of the interface. */
-export function documentIssueText(file: string, issue: DocumentIssue, t: Translate): string {
+/**
+ * A finding of documentIssues as a sentence in the language of the interface. A page without its summary is told
+ * the summary heading of the conversation's language, the language the memory is written in.
+ */
+export function documentIssueText(file: string, issue: DocumentIssue, t: Translate, locale: ConversationLocale): string {
   switch (issue.kind) {
     case 'duplicateHeading':
       return t('memory.check.duplicateHeading', { file, line: issue.line, heading: issue.heading, first: issue.first })
@@ -272,7 +282,7 @@ export function documentIssueText(file: string, issue: DocumentIssue, t: Transla
     case 'tooManyTokens':
       return t('memory.check.tooManyTokens', { file, tokens: issue.tokens, limit: issue.limit, characters: issue.cut.characters })
     case 'firstHeading':
-      return t('memory.check.firstHeading', { file, heading: issue.heading })
+      return t('memory.check.firstHeading', { file, heading: SUMMARY_HEADING[locale] })
     case 'obsoleteKey':
       return t('memory.check.obsoleteKey', { file, key: issue.key })
     default:
@@ -285,10 +295,10 @@ export function documentIssueText(file: string, issue: DocumentIssue, t: Transla
  * language of the interface, or nothing when it is valid. Reading the whole directory and saving from
  * the screen apply the same rules.
  */
-export function validateDocument(file: string, markdown: string, t: Translate): string[] {
+export function validateDocument(file: string, markdown: string, t: Translate, locale: ConversationLocale): string[] {
   const kind = documentKindOf(file)
   if (!kind) return [t('memory.check.wrongPlace', { file })]
-  return documentIssues(kind, markdown).map((issue) => documentIssueText(file, issue, t))
+  return documentIssues(kind, markdown).map((issue) => documentIssueText(file, issue, t, locale))
 }
 
 export function parseMemoryPageInput(value: unknown): MemoryPageInput {

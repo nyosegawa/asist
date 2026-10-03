@@ -1,4 +1,5 @@
 import FORMAT from '../../resources/skills/memory-format.json'
+import type { ConversationLocale } from './conversation-locale'
 
 /**
  * The rules of the memory's markdown: how a document is read into its frontmatter, its `# name` line and
@@ -62,13 +63,19 @@ export type DocumentIssue =
   | { kind: 'duplicateHeading'; line: number; heading: string; first: number }
   | { kind: 'headingWithoutText'; line: number; heading: string }
   | { kind: 'sectionTooLong'; line: number; heading: string; length: number }
-  | { kind: 'firstHeading'; heading: string }
+  | { kind: 'firstHeading' }
   | { kind: 'tooManyTokens'; tokens: number; limit: number; cut: TextAmount }
 
 export type PageNameIssue = 'characters' | 'reserved'
 
-/** The heading every page opens with, and the one the text above a document's first `## ` heading is read as. */
-export const SUMMARY_HEADING = FORMAT.summaryHeading as { readonly ja: string; readonly en: string }
+/**
+ * The heading every page opens with, in each conversation language, as the curation copies it from the page
+ * template of the language the memory is written in. A page may open with any of them, since the memory keeps
+ * the pages written before the user changed the language.
+ */
+export const SUMMARY_HEADING: Readonly<Record<ConversationLocale, string>> = FORMAT.summaryHeading
+
+const SUMMARY_HEADINGS: readonly string[] = Object.values(SUMMARY_HEADING)
 
 /**
  * The documents that go whole into the system prompt of every turn, by kind, in the order they go there.
@@ -190,13 +197,16 @@ interface Body {
 
 /**
  * Splits a document into its frontmatter, its `# ` line and its sections, empty ones included. A section is
- * a `## ` heading and the text under it. The text above the first heading is a section too, under the
- * summary heading in the form the document is written in, which is how a short page or a me.md written as
- * prose is read.
+ * a `## ` heading and the text under it. The text above the first heading is a section too, under a summary
+ * heading (summaryFor), which is how a short page or a me.md written as prose is read.
  */
 function readBody(markdown: string): Body {
   const lines = markdown.split(/\r?\n/)
   const { frontmatter, bodyStart, unclosed } = parseFrontmatter(lines)
+  const summary = summaryFor(
+    markdown,
+    lines.slice(bodyStart).filter((line) => /^## /.test(line)).map((line) => line.slice(3).trim())
+  )
   let title: string | null = null
   let headed = false
   const sections: PageSection[] = []
@@ -215,7 +225,7 @@ function readBody(markdown: string): Body {
     }
     if (!raw.trim()) continue
     if (!current) {
-      current = { line: i + 1, heading: summaryFor(markdown), text: '' }
+      current = { line: i + 1, heading: summary, text: '' }
       sections.push(current)
     }
     current.text = current.text ? `${current.text}\n${raw.trimEnd()}` : raw.trimEnd()
@@ -223,7 +233,26 @@ function readBody(markdown: string): Body {
   return { frontmatter, unclosed, title, headed, sections }
 }
 
-const summaryFor = (markdown: string): string => SUMMARY_HEADING[writtenInJapanese(markdown) ? 'ja' : 'en']
+/**
+ * The conversation languages whose letters tell a text apart: of the eleven, only Japanese writes kana, only
+ * Korean hangul and only Hindi Devanagari, in the ranges memory-format.json weighs them by. The eight written in
+ * Latin letters cannot be told apart without guessing.
+ */
+const LETTERS: ReadonlyArray<readonly [RegExp, ConversationLocale]> = [
+  [/[ぁ-ヿ]/, 'ja-JP'],
+  [/[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]/, 'ko-KR'],
+  [/[\u0900-\u097f\ua8e0-\ua8ff]/, 'hi-IN']
+]
+
+/**
+ * The summary heading the text above a document's first `## ` heading is read under: the summary heading the
+ * document has, in whichever language, so that the text and that heading are the same heading twice in every
+ * language; otherwise the one of the language its letters show (LETTERS), and the English one for Latin letters.
+ */
+function summaryFor(markdown: string, headings: readonly string[]): string {
+  const own = headings.find((heading) => SUMMARY_HEADINGS.includes(heading))
+  return own ?? SUMMARY_HEADING[LETTERS.find(([letters]) => letters.test(markdown))?.[1] ?? 'en-US']
+}
 
 /**
  * Reads user.md, me.md, a page or a journal entry into the sections that carry text. A document without
@@ -306,8 +335,8 @@ export function documentIssues(kind: DocumentKind, markdown: string): DocumentIs
     else if (length > SECTION_MAX_CHARS && !inPrompt(kind)) issues.push({ kind: 'sectionTooLong', line, heading, length })
   }
   const opening = sections[0]?.heading
-  if (kind === 'page' && opening !== undefined && opening !== SUMMARY_HEADING.ja && opening !== SUMMARY_HEADING.en) {
-    issues.push({ kind: 'firstHeading', heading: summaryFor(markdown) })
+  if (kind === 'page' && opening !== undefined && !SUMMARY_HEADINGS.includes(opening)) {
+    issues.push({ kind: 'firstHeading' })
   }
   if (inPrompt(kind)) {
     const size = promptSize(markdown)

@@ -9,7 +9,7 @@ import {
   type PromptText
 } from '@shared/conversation-locale'
 import { journalHeading, marker } from '@shared/conversation-markers'
-import { FIXED } from '@shared/memory-page'
+import { FIXED_HEADINGS } from '@shared/memory-page'
 
 /**
  * Builds the system prompt. The blocks are ordered in three layers by how fast they change, with a
@@ -243,7 +243,7 @@ function promptValues(locale: ConversationLocale): Record<string, string> {
     jobStatus: marker(locale, 'jobStatus'),
     stamp: stampUserMessage(locale, '', STAMP_EXAMPLE_AT).trim(),
     journal: journalHeading(locale, JOURNAL_EXAMPLE_DATE),
-    impression: promptText(locale, FIXED.impression)
+    impression: FIXED_HEADINGS.impression[locale]
   }
 }
 
