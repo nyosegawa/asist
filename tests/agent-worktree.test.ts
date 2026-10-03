@@ -9,18 +9,23 @@ import { longTempFolder } from './helpers/temp'
 
 const ja = createTranslator('ja-JP')
 
-const mocks = vi.hoisted(() => ({ root: '', launch: vi.fn(), requestConfirm: vi.fn(), differentOwner: false }))
+const mocks = vi.hoisted(() => ({
+  root: '', launch: vi.fn(), requestConfirm: vi.fn(), differentOwner: false, commands: null as string[] | null
+}))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
 vi.mock('../src/main/services/agent-process', () => ({ launchAgentProcess: mocks.launch }))
 vi.mock('../src/main/services/agent-process/cli-locator', () => ({ requireCli: () => '/test/agent' }))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: mocks.root, fileRoots: [], uiLocale: 'ja-JP', conversationLocale: 'ja-JP' })
 }))
-// git's own switch for taking every repository for another user's, which a git that reads no safe.directory refuses to open.
+// git's own switch for taking every repository for another user's, which a git that reads no safe.directory refuses to
+// open, and the commands a test collects, each with its folder and the index it reads.
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
-  const execFileSync = ((file: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) =>
-    actual.execFileSync(file, args, mocks.differentOwner ? { ...options, env: { ...options.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1' } } : options)) as typeof actual.execFileSync
+  const execFileSync = ((file: string, args: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
+    mocks.commands?.push([options.cwd, ...args, options.env?.GIT_INDEX_FILE ?? ''].join(' '))
+    return actual.execFileSync(file, args, mocks.differentOwner ? { ...options, env: { ...options.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1' } } : options)
+  }) as typeof actual.execFileSync
   return { ...actual, default: { ...actual, execFileSync }, execFileSync }
 })
 vi.mock('../src/main/services/project-index', () => ({ noteUsed: vi.fn(), recent: () => [] }))
@@ -178,6 +183,31 @@ it('does not merge when the commit was replaced after the review', async () => {
   expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.worktree.commitChanged'))
   expect(fs.existsSync(path.join(repo, 'new.txt'))).toBe(false)
   expect(fs.readFileSync(path.join(job.cwd, 'new.txt'), 'utf8')).toBe('changed after review\n')
+})
+
+it('settles, reviews and merges a job asking git each value once in each step', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  const written = path.join(job.cwd, 'new.txt')
+  fs.writeFileSync(written, 'new\n')
+  const handlers = mocks.launch.mock.calls[0][2]
+  handlers.onEvent({ kind: 'file-change', paths: [written] })
+  // The git commands a step runs more than once in the same folder with the same arguments and index.
+  const repeatedIn = (step: () => void): string[] => {
+    mocks.commands = []
+    try {
+      step()
+      return [...new Set(mocks.commands.filter((command, i) => mocks.commands!.indexOf(command) !== i))]
+    } finally {
+      mocks.commands = null
+    }
+  }
+  expect(repeatedIn(() => handlers.onExit(0))).toEqual([])
+  let review!: ReturnType<Agent['diff']>
+  expect(repeatedIn(() => { review = agent.diff(job.id) })).toEqual([])
+  expect(repeatedIn(() => agent.merge(job.id, review))).toEqual([])
+  expect(agent.get(job.id)?.mergeState).toBe('merged')
+  expect(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8')).toBe('new\n')
 })
 
 it('rewrites artifact paths inside the worktree to the repository on merge and leaves paths outside it alone', async () => {
@@ -503,6 +533,57 @@ it('records a job whose commit the branch already holds as merged while the repo
   expect(agent.get(job.id)?.mergeState).toBe('merged')
   expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
   expect(fs.readFileSync(path.join(repo, 'tracked.txt'), 'utf8')).toBe('the user is editing\n')
+})
+
+it('refuses a merge whose review showed the job as merged after the user took that merge back, and keeps the branch and the worktree', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'new\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const { branch } = agent.get(job.id)!.worktree!
+  git(repo, 'merge', '--no-ff', '-q', '-m', 'merged by hand', branch)
+  const review = agent.diff(job.id)
+  expect(review).toMatchObject({ blocked: null, alreadyMerged: true })
+  git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+  const head = git(repo, 'rev-parse', 'HEAD')
+  expect(() => agent.merge(job.id, review)).toThrow(errorText('jobs.merging.baseChanged'))
+  expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
+  expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+  expect(fs.existsSync(job.cwd)).toBe(true)
+})
+
+it('commits nothing when the user merged the job\'s branch by hand after ASIST checked the merge and before it merged', async () => {
+  const agent = await import('../src/main/services/agent')
+  const operations = await import('../src/main/services/git')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'new\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const { branch } = agent.get(job.id)!.worktree!
+  const review = agent.diff(job.id)
+  const mergeNoFf = operations.mergeNoFf
+  vi.spyOn(operations, 'mergeNoFf').mockImplementationOnce((into, commit, message) => {
+    git(repo, 'merge', '--no-ff', '-q', '-m', 'merged by hand', branch)
+    return mergeNoFf(into, commit, message)
+  })
+  agent.merge(job.id, review)
+  expect(git(repo, 'log', '-1', '--format=%s')).toBe('merged by hand')
+  expect(agent.get(job.id)?.mergeState).toBe('merged')
+  expect(fs.readFileSync(path.join(repo, 'new.txt'), 'utf8')).toBe('new\n')
+  expect(fs.existsSync(job.cwd)).toBe(false)
+})
+
+it('hands git a base the merge is given as a revision, never as an option, while HEAD is detached and the base goes unchecked', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'new\n')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  const review = agent.diff(job.id)
+  git(repo, 'switch', '-q', '--detach')
+  const planted = path.join(mocks.root, 'planted.txt')
+  expect(() => agent.merge(job.id, { ...review, base: `--output=${planted}` })).toThrow()
+  expect(fs.existsSync(planted)).toBe(false)
+  expect(fs.existsSync(job.cwd)).toBe(true)
 })
 
 it('refuses as having nothing to merge a job that committed nothing while the user moved the branch back and forth, and keeps it waiting', async () => {
@@ -850,6 +931,17 @@ it('settles a job while the repository has a branch with no history in common ch
   expect(agent.discardPreview(job.id).stat).toContain('new.txt')
   agent.discard(job.id)
   expect(fs.existsSync(job.cwd)).toBe(false)
+})
+
+it('settles a job while the repository has a branch with no commit yet checked out, and says why it cannot be merged there', async () => {
+  const agent = await import('../src/main/services/agent')
+  const job = agent.startIsolated('修正する', { cwd: repo })
+  fs.writeFileSync(path.join(job.cwd, 'new.txt'), 'from job\n')
+  git(repo, 'checkout', '-q', '--orphan', 'fresh')
+  mocks.launch.mock.calls[0][2].onExit(0)
+  expect(agent.get(job.id)?.mergeState).toBe('pending')
+  expect(() => agent.diff(job.id)).toThrow(errorText('jobs.merging.noCommonHistory'))
+  expect(agent.discardPreview(job.id).stat).toContain('new.txt')
 })
 
 it('keeps and offers a job that only added a new file although status.showUntrackedFiles=no hides new files', async () => {
