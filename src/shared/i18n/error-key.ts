@@ -20,3 +20,9 @@ export function errorKey<Key extends MessageKey>(key: Key, ...values: ErrorArgum
   const given = values[0] as Record<string, string | number> | undefined
   return `[asist:${key}${given ? ` ${JSON.stringify(given)}` : ''}]`
 }
+
+/** The key of the message an error carries (errorKey, errorText), the first one where it carries several, or null. */
+export function errorKeyOf(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error)
+  return new RegExp(ERROR_MARKER).exec(message)?.[1] ?? null
+}

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { rmSync, writeFileSync } from 'node:fs'
+import { rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { crc32, deflateRawSync } from 'node:zlib'
 import JSZip from 'jszip'
@@ -85,6 +85,49 @@ async function contentsByRanges(file: Uint8Array): Promise<Record<string, string
   serve(file)
   const zip = await openZip(URL)
   return Object.fromEntries(await Promise.all([...zip.entries.keys()].map(async (name) => [name, text(await zip.read(name))])))
+}
+
+/**
+ * A zip of stored entries, written here rather than by JSZip, which passes each entry through a stream of workers: a
+ * zip of 1,500 entries took JSZip 4 to 9 s to write at a load average of 85, and takes this milliseconds (Apple M5,
+ * 2026-10-02).
+ */
+function storedZipOf(files: Record<string, string>): Uint8Array {
+  const parts: Uint8Array[] = []
+  const central: Uint8Array[] = []
+  let offset = 0
+  for (const [name, content] of Object.entries(files)) {
+    const rawName = new TextEncoder().encode(name)
+    const data = new TextEncoder().encode(content)
+    const local = new DataView(new ArrayBuffer(30 + rawName.length))
+    local.setUint32(0, 0x04034b50, true)
+    local.setUint16(4, 20, true)
+    local.setUint32(14, crc32(data), true)
+    local.setUint32(18, data.length, true)
+    local.setUint32(22, data.length, true)
+    local.setUint16(26, rawName.length, true)
+    new Uint8Array(local.buffer).set(rawName, 30)
+    const record = new DataView(new ArrayBuffer(46 + rawName.length))
+    record.setUint32(0, 0x02014b50, true)
+    record.setUint16(4, 20, true)
+    record.setUint16(6, 20, true)
+    record.setUint32(16, crc32(data), true)
+    record.setUint32(20, data.length, true)
+    record.setUint32(24, data.length, true)
+    record.setUint16(28, rawName.length, true)
+    record.setUint32(42, offset, true)
+    new Uint8Array(record.buffer).set(rawName, 46)
+    parts.push(new Uint8Array(local.buffer), data)
+    central.push(new Uint8Array(record.buffer))
+    offset += local.byteLength + data.length
+  }
+  const end = new DataView(new ArrayBuffer(22))
+  end.setUint32(0, 0x06054b50, true)
+  end.setUint16(8, central.length, true)
+  end.setUint16(10, central.length, true)
+  end.setUint32(12, central.reduce((sum, record) => sum + record.length, 0), true)
+  end.setUint32(16, offset, true)
+  return Buffer.concat([...parts, ...central, new Uint8Array(end.buffer)])
 }
 
 /**
@@ -181,7 +224,7 @@ describe('reading a zip by ranges', () => {
   it('reads a central directory that the end of the file it reads first does not hold', async () => {
     // 1,500 entries take about 105 KB of central directory.
     const files = Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`ppt/slides/slide${i}.xml`, `<p:sld>${i}</p:sld>`]))
-    const file = await zipOf(files)
+    const file = storedZipOf(files)
     serve(file)
     const zip = await openZip(URL)
     expect(zip.entries.size).toBe(1500)
@@ -272,6 +315,32 @@ describe('reading a zip by ranges', () => {
       await expect(first.read('word/document.xml')).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
       const again = await openZip(fileUrl(target))
       expect(text(await again.read('word/document.xml'))).toBe('<w:document>保存し直した版</w:document>')
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
+    }
+  })
+
+  it('says the file changed when asist-file serves it saved again at the same length, which only its ETag shows', async () => {
+    const folder = longTempFolder('asist-zip-')
+    try {
+      handleFileScheme({ handle: electron.handle } as unknown as Protocol, () => [folder])
+      const handler = electron.handle.mock.calls.at(-1)![1] as (request: { url: string; headers: Headers }) => Response
+      vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => handler({ url, headers: new Headers(init?.headers) }))
+      const target = path.join(folder, 'report.docx')
+      const picture = randomBytes(100_000)
+      const version = (body: string): Promise<Uint8Array> =>
+        zipOf({ 'word/document.xml': body, 'word/media/image1.png': picture }, { store: ['word/document.xml', 'word/media/image1.png'] })
+      writeFileSync(target, await version('<w:document>初版</w:document>'))
+      const first = await openZip(fileUrl(target))
+      const length = statSync(target).size
+
+      writeFileSync(target, await version('<w:document>改版</w:document>'))
+      utimesSync(target, new Date(), new Date(Date.now() + 60_000))
+      expect(statSync(target).size).toBe(length)
+      await expect(first.read('word/document.xml')).rejects.toThrow(errorKey('files.errors.changedWhileReading'))
+      const again = await openZip(fileUrl(target))
+      expect(again.version).not.toBe(first.version)
+      expect(text(await again.read('word/document.xml'))).toBe('<w:document>改版</w:document>')
     } finally {
       rmSync(folder, { recursive: true, force: true })
     }

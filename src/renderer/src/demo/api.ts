@@ -23,7 +23,7 @@ import {
   type Task
 } from '@shared/tasks'
 import { describeCalendarEvent, type CalendarChange, type CalendarChangeResult, type CalendarEvent, type CalendarEventInput } from '@shared/calendar'
-import { overlaps } from '@shared/calendar-layout'
+import { addDays, overlaps, parseDayKey } from '@shared/calendar-layout'
 import { demoUsageDays } from './fixtures/usage'
 import { DEFAULT_DOCK_ORDER } from '@shared/dock'
 import {
@@ -50,8 +50,9 @@ import { DEMO_NOTES, demoNoteSummary, type DemoNote } from './fixtures/notes'
 import { DEMO_TASKS } from './fixtures/tasks'
 import { DEMO_MAIL_ACCOUNTS, DEMO_MAIL_BODIES, DEMO_MAIL_MESSAGES, DEMO_UID_VALIDITY, demoMailStatus, demoReplyOf } from './fixtures/mail'
 import { commitDrafts, createDemoDraft, demoDraft, demoDrafts, emitMail, mailListeners } from './mail-state'
-import { DEMO_MEMORY, demoDocuments, demoPageTemplate } from './fixtures/memory'
-import { parseMemoryPageInput, validateDocument, documentOf } from '@shared/memory-page'
+import { DEMO_MEMORY, demoDocuments } from './fixtures/memory'
+import { newPageMarkdown, pageFile, parseMemoryPageInput, parsePageName, validateDocument, documentOf } from '@shared/memory-page'
+import { localDateKey } from '@shared/local-date'
 import { errorText } from '@shared/i18n/error-text'
 import { formatLocale, translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
@@ -176,10 +177,14 @@ function demoConfirm(title: string, message: string, detail: string, confirmLabe
 }
 
 async function demoCalendarChange(change: CalendarChange): Promise<CalendarChangeResult> {
-  const fieldsOf = (event: CalendarEventInput) => ({ ...event, start: Date.parse(event.start), end: Date.parse(event.end) })
+  // An all-day event runs, as main reads one from Google, from the beginning of its first day to the beginning of the day after its last.
+  const fieldsOf = (event: CalendarEventInput) =>
+    event.allDay
+      ? { ...event, start: parseDayKey(event.start).getTime(), end: addDays(parseDayKey(event.end), 1).getTime() }
+      : { ...event, start: Date.parse(event.start), end: Date.parse(event.end) }
   const detail = [
     translate(`calendar.confirm.${change.operation}`, { calendar: '仕事' }),
-    change.operation === 'delete' ? '' : `${translate('calendar.confirm.after')}\n${describeCalendarEvent(translate, formatLocale(), fieldsOf(change.event))}`
+    change.operation === 'delete' ? '' : `${translate('calendar.confirm.after')}\n${describeCalendarEvent(translate, formatLocale(), change.event)}`
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -501,12 +506,20 @@ export const mockApi: RendererApi = {
     demoMemory[file] = markdown
     return documentOf(file, markdown)
   },
+  memoryPageDraft: async (name) => {
+    const page = parsePageName(name)
+    const file = pageFile(page)
+    if (demoMemory[file]) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+    return { file, markdown: newPageMarkdown(page, settings.conversationLocale, localDateKey(new Date())) }
+  },
   memoryDocumentCreate: async (input) => {
-    const { name } = parseMemoryPageInput(input)
-    const file = `pages/${name}.md`
+    const { name, markdown } = parseMemoryPageInput(input)
+    const file = pageFile(name)
     if (demoMemory[file]) throw new Error(errorText('memory.errors.pageExists', { name }))
-    demoMemory[file] = demoPageTemplate(name)
-    return documentOf(file, demoMemory[file])
+    const errors = validateDocument(file, markdown, translate)
+    if (errors.length > 0) throw new Error(errors.join(' / '))
+    demoMemory[file] = markdown
+    return documentOf(file, markdown)
   },
   memoryDocumentDelete: async (file) => {
     delete demoMemory[file]

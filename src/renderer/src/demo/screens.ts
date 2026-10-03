@@ -48,6 +48,8 @@ export const SCREENS = {
   boot: { label: '起動中', group: '起動と確認' },
   'boot/error': { label: '起動の失敗', group: '起動と確認' },
   confirm: { label: '承認の確認', group: '起動と確認' },
+  'confirm/calendar': { label: '承認の確認(ほかのタイムゾーンの予定の変更)', group: '起動と確認' },
+  'confirm/calendar-all-day': { label: '承認の確認(数日にわたる終日の予定)', group: '起動と確認' },
   toasts: { label: '通知', group: '起動と確認' }
 } as const satisfies Record<string, { label: string; group: ScreenGroup }>
 
