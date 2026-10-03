@@ -25,15 +25,25 @@ const reader =
   }
 
 /**
- * What the size net leaves unread of the file, or null when the file is not on this computer: an online-only file of
- * iCloud Drive or OneDrive has no blocks of its own until it is read, and reading its directory would wait for the
- * download, which the card's viewer starts when it opens the file.
+ * The largest file a file system can keep without allocating blocks for it: NTFS keeps a file of up to about 700
+ * bytes inside its MFT record, and up to about 3.5 KB where the records are 4 KB, while an online-only file of
+ * iCloud Drive or OneDrive of any size has no blocks until it is downloaded.
+ */
+export const KEPT_WITHOUT_BLOCKS = 4096
+
+/** Whether the file's bytes are on this computer, so that reading them does not wait for a download. */
+export const onThisComputer = ({ size, blocks }: { size: number; blocks: number }): boolean => size <= KEPT_WITHOUT_BLOCKS || blocks > 0
+
+/**
+ * What the size net leaves unread of the file, or null when the file is not on this computer: reading the directory
+ * of an online-only file would wait for its download, which the card's viewer starts when it opens the file.
  */
 export async function officeLeftOut(filePath: string, kind: 'docx' | 'xlsx', signal: AbortSignal): Promise<LeftOut | null> {
   const file = await fs.open(filePath, 'r')
   try {
-    const { size, blocks } = await file.stat()
-    if (size > 0 && blocks === 0) return null
+    const stat = await file.stat()
+    if (!onThisComputer(stat)) return null
+    const { size } = stat
     const read = reader(file, signal)
     const tailStart = Math.max(0, size - TAIL_LENGTH)
     const records = await readDirectory(await read(tailStart, size), tailStart, read).catch((error: unknown) => {

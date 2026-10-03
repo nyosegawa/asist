@@ -477,3 +477,13 @@ describe('the calendar card', () => {
     )
   })
 })
+
+describe('the bytes of a file on this computer', () => {
+  it('takes a file larger than a file system keeps without blocks, and with none, for one whose bytes are online only', async () => {
+    const { KEPT_WITHOUT_BLOCKS, onThisComputer } = await import('../src/main/services/office-size-net')
+    expect(onThisComputer({ size: KEPT_WITHOUT_BLOCKS + 1, blocks: 0 })).toBe(false)
+    expect(onThisComputer({ size: KEPT_WITHOUT_BLOCKS + 1, blocks: 8 })).toBe(true)
+    // A small file NTFS keeps inside its MFT record has no blocks and is on this computer.
+    expect(onThisComputer({ size: 600, blocks: 0 })).toBe(true)
+  })
+})
