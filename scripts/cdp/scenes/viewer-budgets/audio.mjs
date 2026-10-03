@@ -3,9 +3,14 @@
  * draws as the bars come. The content counts as shown once the first bars are drawn, rather than when the flat line
  * the card draws before them is. The card is complete once the whole waveform is drawn: all 400 bars, covering as
  * long a recording as <audio> plays, with bars of sound in every eighth of the width rather than a flat line; a
- * waveform that ends otherwise never completes, and the case fails when its time runs out. A two-hour recording has
- * 20 s to complete and a one-hour one 10 s. The memory includes the preview page's frame, which in headless Chrome
- * holds about 160 MB with a five-second WAV open, and stays while the card shows the recording.
+ * waveform that ends otherwise never completes, and the case fails when its time runs out. The budget gives a
+ * two-hour recording 20 s to complete and a one-hour one 10 s. The limits are 90 s for the MP3, 45 s for the m4a
+ * and 10 s for the WAV, two and a half to three times the slowest of 32 or 33 runs on GitHub's macOS runner on
+ * 2026-10-02 and 03 (18.5 to 38.6 s, 6.4 to 17.7 s and 1.5 to 3.6 s), so that a reader several times slower fails.
+ * The viewer before this one decoded the whole file at once and drew everything after 15.6 s for the MP3 and 4.6 s
+ * for the WAV on the M5, which its first content and its memory fail rather than these. The memory includes the
+ * preview page's frame, which in headless Chrome holds about 160 MB with a five-second WAV open, and stays while
+ * the card shows the recording.
  *
  * In one run each on an M5 under a load average of 42 to 63 on 2026-10-03, the card drew its first bars in 295 to
  * 395 ms and its whole waveform in 11.0 s for the two-hour MP3, 3.8 s for the one-hour m4a and 5.8 s for the one-hour
@@ -15,10 +20,10 @@
 const budget = { cardFirstMs: 1000, cardHeldMs: 150, focusFirstMs: 1000, focusHeldMs: 150, peakMb: 400, finalMb: 300, gpuPeakMb: 100 }
 
 export const cases = [
-  ['mp3-2h', 20_000],
-  ['m4a-1h', 10_000],
-  ['wav-1h', 10_000]
-].map(([file, completeMs]) => ({
+  ['mp3-2h', 20_000, 90_000],
+  ['m4a-1h', 10_000, 45_000],
+  ['wav-1h', 10_000, 10_000]
+].map(([file, completeMs, limitMs]) => ({
   name: file,
   file,
   shown: (root) => ['drawing', 'ready'].includes(root.querySelector('.fv-media-wave')?.getAttribute('data-state')),
@@ -42,5 +47,6 @@ export const cases = [
     }
     return true
   },
-  budget: { ...budget, completeMs }
+  budget: { ...budget, completeMs },
+  limit: { completeMs: limitMs }
 }))
