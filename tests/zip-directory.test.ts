@@ -57,11 +57,11 @@ describe('the directory of a zip', () => {
     const file = emptyEntries(65_000)
     let fastest = Infinity
     for (let run = 0; run < 3; run++) {
-      const before = process.cpuUsage()
+      const before = process.threadCpuUsage()
       const records = await readDirectory(file, 0, async () => {
         throw new Error('the whole file is the tail')
       })
-      const { user, system } = process.cpuUsage(before)
+      const { user, system } = process.threadCpuUsage(before)
       fastest = Math.min(fastest, (user + system) / 1000)
       expect(records).toHaveLength(65_000)
       expect(records.slice(0, 2).map(({ offset, end }) => [offset, end])).toEqual([
@@ -69,11 +69,12 @@ describe('the directory of a zip', () => {
         [31, 62]
       ])
     }
-    // The processor time of the test's own process, which the other test files running beside it do not lengthen as
-    // they lengthened the time on the clock past a bound of 400 ms. On an M5 under a load average of 26, a search
-    // through every start for each entry took 1,097 to 1,241 ms of it and the binary search 55 to 88 ms (2026-10-03).
-    // Ten times fewer entries do not tell the two apart: the binary search's time grew 15 to 60 times from 6,500
-    // entries to 65,000 as the collector began to run, against about 90 times for the search through every start.
+    // The processor time of the test's own thread, which neither the other test files running beside it nor the
+    // collector's helper threads lengthen, as they lengthened the time on the clock past a bound of 400 ms. On an M5
+    // under a load average of 33, a search through every start for each entry took 1,055 to 1,094 ms of it and the
+    // binary search 20 to 29 ms (2026-10-03). Ten times fewer entries do not tell the two apart: the binary search's
+    // time on the clock grew 49 to 121 times from 6,500 entries to 65,000 as the collector began to run, against
+    // about 90 times for the search through every start.
     expect(fastest).toBeLessThan(400)
   })
 })

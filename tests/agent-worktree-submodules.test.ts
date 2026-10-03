@@ -8,25 +8,13 @@ import { longTempFolder } from './helpers/temp'
 
 const ja = createTranslator('ja-JP')
 
-const mocks = vi.hoisted((): AgentWorktreeMocks => ({
-  root: '', launch: vi.fn(), requestConfirm: vi.fn(), differentOwner: false, commands: null
-}))
+const mocks = vi.hoisted((): AgentWorktreeMocks => ({ root: '', launch: vi.fn(), requestConfirm: vi.fn() }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => path.join(mocks.root, 'data') } }))
 vi.mock('../src/main/services/agent-process', () => ({ launchAgentProcess: mocks.launch }))
 vi.mock('../src/main/services/agent-process/cli-locator', () => ({ requireCli: () => '/test/agent' }))
 vi.mock('../src/main/services/settings', () => ({
   getSettings: () => ({ agentEngine: 'codex', agentMode: 'readonly', agentCwd: mocks.root, fileRoots: [], uiLocale: 'ja-JP', conversationLocale: 'ja-JP' })
 }))
-// git's own switch for taking every repository for another user's, which a git that reads no safe.directory refuses to
-// open, and the commands a test collects, each with its folder and the index it reads.
-vi.mock('node:child_process', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:child_process')>()
-  const execFileSync = ((file: string, args: readonly string[], options: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
-    mocks.commands?.push([options.cwd, ...args, options.env?.GIT_INDEX_FILE ?? ''].join(' '))
-    return actual.execFileSync(file, args, mocks.differentOwner ? { ...options, env: { ...options.env, GIT_TEST_ASSUME_DIFFERENT_OWNER: '1' } } : options)
-  }) as typeof actual.execFileSync
-  return { ...actual, default: { ...actual, execFileSync }, execFileSync }
-})
 vi.mock('../src/main/services/project-index', () => ({ noteUsed: vi.fn(), recent: () => [] }))
 vi.mock('../src/main/services/confirm', () => ({ requestConfirm: mocks.requestConfirm }))
 vi.mock('../src/main/services/memory', () => ({ search: vi.fn() }))
