@@ -14,6 +14,8 @@ npm run build
 
 `tests/vap-worker.test.ts` は MaAI のワーカー(`resources/vap_worker.py`)を実際に動かすので、numpy の入った Python を使います。環境変数 `ASIST_VAP_PYTHON` があればその Python を、なければ PATH の `python3` か `python` を使います。手元で見つからないときはこのテストを飛ばし、CI で見つからないときは失敗にします。CI の `test` と `test-windows` は、アプリの環境と同じ Python 3.12 と numpy 2.5.2 を入れてから `npm test` を実行します。
 
+Windows では、`tests/memory-curation-service.test.ts` が、記憶のフォルダを 8.3 形式の短い名前(`C:\Users\RUNNER~1\…` のような名前)で書いたときにも整理を取り込めることを確かめます。テストはシステム ドライブの `%LOCALAPPDATA%\Temp` にフォルダを作り、Windows にその短い名前を聞きます。ボリュームが短い名前を作らない設定のときは、理由を出してこのテストを飛ばします。環境変数 `ASIST_REQUIRE_SHORT_NAMES=1` があるとき(CI の `test-windows`)は、飛ばさずに失敗にします。
+
 ## Windows で clone する
 
 Windows 11(x64)で作業するときは、clone の前に、次のことを済ませます。
@@ -83,11 +85,11 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 
 | job | 確かめること |
 | --- | --- |
-| `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test` |
+| `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test`。テストは CPU 3 個の runner で 3 つの worker に分けて動かします(`--maxWorkers=3`) |
 | `viewer-budgets` | `npm run demo:viewer-budgets -- --time-factor 3`。ファイルのカードの各ビューアーが、大きなファイルを丸ごと読んだり描いたりするやり方に戻っていないこと。失敗にするのは、表示まで 5 秒、メイン スレッドが 2 秒止まる、メモリが 1.5 GB 増えるなど、ふだんの値から大きく離れたときだけです。各 case の予算(もっと厳しい値)は報告するだけで、時間は共有の runner に合わせて 3 倍にして比べます。作ったサンプルのファイルは、それを作るスクリプトの版を名前にしてキャッシュに残し、次からは作り直しません。ただし WAV と zip は圧縮できず大きいので残さず、毎回 3 秒ほどで作り直します。キャッシュがないときは、MP3 を作る `lame` を Homebrew で入れます |
 | `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
 | `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
-| `test-windows` | Windows で `npm run typecheck` と `npm test`。辞書は OS に依らないので、`test` だけで確かめます |
+| `test-windows` | Windows で `npm test`。一時フォルダ(`TEMP` と `TMP`)は、8.3 形式の名前を作らない runner の D: ドライブに置きます。型と辞書は OS に依らないので、`test` だけで確かめます |
 | `build-windows` | `npm run dist:win:dir` で Windows のアプリを作り、アプリの中の git、uv、`asist-agent-launcher.exe`、`asist-mic.exe` が動くこと、`ASIST.exe` が ASAR の検査を通って起動すること |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
 | `result` | ほかの job に、失敗したものも取り消されたものもないこと |

@@ -125,7 +125,10 @@ jobs:
       - run: python -m pip install numpy==2.5.2
       - run: npm run typecheck
       - run: npm run i18n -- check
-      - run: npm test
+      # Vitest runs one worker fewer than the runner's three CPUs, and most of the git tests' time is spent waiting for
+      # git: with three workers it took 94 to 106 s against 142 to 201 s with two, in three runs each on macos-latest
+      # (2026-10-03).
+      - run: npm test -- --maxWorkers=3
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
 
@@ -222,7 +225,7 @@ jobs:
           "$resources/llama.cpp/llama-server" --version
           "$resources/speech-worker/speech-worker" --devices
 
-  # The checks of test on Windows, except the dictionary's, which does not depend on the OS.
+  # The tests of test on Windows. The types and the dictionary do not depend on the OS, and test checks them.
   test-windows:
     needs: changes
     if: needs.changes.outputs.app == 'true'
@@ -243,10 +246,18 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install numpy==2.5.2
-      - run: npm run typecheck
+      # %TEMP% is on C:, which makes an 8.3 short name for every file, and D:, the runner's work disk, makes none.
+      # The tests make thousands of repositories and files there, and Vitest took 162 to 270 s with TEMP on D:
+      # against 283 to 334 s on C:, in five runs each on windows-latest (2026-10-03). The test of a memory folder
+      # written with a short name makes its folder on C: itself, and ASIST_REQUIRE_SHORT_NAMES fails it rather than
+      # skipping it when the folder gets none. Four workers on the runner's four vCPUs took 176 to 285 s with TEMP on
+      # D:, no less than Vitest's three, so the tests keep three.
       - run: npm test
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+          ASIST_REQUIRE_SHORT_NAMES: '1'
 
   # Builds the agent launcher and the microphone helper with the MSVC of the runner's Visual Studio, the bundle and the unpacked app.
   build-windows:

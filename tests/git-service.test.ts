@@ -350,10 +350,15 @@ describe('git service with an isolated worktree', () => {
     const wt = path.join(root, 'wt')
     git.worktreeAdd(repo, wt, 'asist/vendored')
     const base = git.headCommit(repo)
-    const folder = path.join(wt, 'vendor', 'package')
-    fs.mkdirSync(folder, { recursive: true })
     // 14,000 names of 200 characters make the raw diff about 4.4 MB, past the 4 MB git's output is otherwise read into.
-    for (let i = 0; i < 14_000; i++) fs.writeFileSync(path.join(folder, `${String(i).padStart(5, '0')}-${'x'.repeat(195)}.js`), '')
+    // The folder's name makes every path longer than Windows's MAX_PATH of 260 characters wherever the temporary folder
+    // is, which ASIST's git reads and writes only through core.longpaths.
+    const name = (i: number): string => `${String(i).padStart(5, '0')}-${'x'.repeat(195)}.js`
+    const shortest = path.join(wt, 'vendor', 'package-', name(0)).length
+    const folder = path.join(wt, 'vendor', `package-${'p'.repeat(Math.max(0, 270 - shortest))}`)
+    expect(path.join(folder, name(0)).length).toBeGreaterThan(260)
+    fs.mkdirSync(folder, { recursive: true })
+    for (let i = 0; i < 14_000; i++) fs.writeFileSync(path.join(folder, name(i)), '')
     expect(git.commitAll(wt, 'asist: job')).toBe(true)
     const changes = git.diffEntries(repo, base, git.headCommit(wt))
     expect(changes.length > 0).toBe(true)
