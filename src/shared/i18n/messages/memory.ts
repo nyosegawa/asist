@@ -926,19 +926,6 @@ export const memory = defineMessages({
       'es-419': 'Ya existe una página con este nombre: {name}',
       'es-ES': 'Ya hay una página con este nombre: {name}'
     },
-    templateInvalid: {
-      'ja-JP': 'ページの雛形が決まりに合いません: {errors}',
-      'en-US': 'The page template does not follow the rules: {errors}',
-      'fr-FR': 'Le modèle de page ne respecte pas les règles : {errors}',
-      'de-DE': 'Die Vorlage der Seite folgt nicht den Regeln: {errors}',
-      'hi-IN': 'पेज का टेम्पलेट नियमों पर खरा नहीं उतरता: {errors}',
-      'id-ID': 'Templat halamannya tidak mengikuti aturan: {errors}',
-      'it-IT': 'Il modello della pagina non segue le regole: {errors}',
-      'ko-KR': '페이지 서식이 규칙에 맞지 않습니다: {errors}',
-      'pt-BR': 'O modelo da página não segue as regras: {errors}',
-      'es-419': 'La plantilla de la página no sigue las reglas: {errors}',
-      'es-ES': 'La plantilla de la página no sigue las reglas: {errors}'
-    },
     deleteKind: {
       'ja-JP': '消せるのはページと日記だけです。',
       'en-US': 'Only a page or a diary entry can be deleted.',

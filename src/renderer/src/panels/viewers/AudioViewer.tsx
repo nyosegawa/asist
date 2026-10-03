@@ -1,63 +1,107 @@
 import { useEffect, useRef, useState } from 'react'
-import { formatBytes, tooLargeToRead } from '@shared/files'
+import type { FileItem } from '@shared/files'
+import { baseName } from '@shared/file-path'
+import { errorKeyOf } from '@shared/i18n/error-key'
 import { Frame } from './Frame'
-import { downsampleWaveform, formatTime } from './media'
+import { formatTime } from './media'
 import { MediaControls, useMediaState } from './MediaControls'
+import { openPreviewDocument } from './preview-client'
 import type { Viewer } from './types'
 import './MediaViewer.css'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
+import type openAudio from '@/preview/methods/audio'
 
 /**
- * Audio. The <audio> element stays hidden and the waveform together with MediaControls drives it. The
- * waveform is built by fetching the bytes, decoding them with Web Audio and drawing each bucket's peak
- * amplitude on a canvas. Decoding costs memory, so a file larger than the audio limit of WHOLE_READ_LIMIT gets a
- * flat bar and a note instead. Playback itself belongs to <audio src>, so a large file can still be listened to.
+ * Audio. The <audio> element stays hidden and the waveform together with MediaControls drives it; it plays the file
+ * by ranges, at any size. The waveform is built in the preview page (preview/methods/audio.ts), which reads the
+ * file from its start a piece at a time and sends the bars of what it has read, which are drawn as they come, the
+ * part not read yet as a flat line. A file saved again while it is shown is read anew and drawn as it is now.
  * Pressing the waveform seeks to that position.
  */
-const BUCKETS = 400
+const BARS = 400
+const NO_BARS = new Float32Array(0)
 
-type Waveform = { state: 'loading' } | { state: 'ready'; peaks: number[] } | { state: 'skipped' } | { state: 'failed'; message: string }
+/** The recordings that get a waveform. FLAC and OGG play without one. */
+const WITH_WAVEFORM = new Set(['.mp3', '.m4a', '.aac', '.wav'])
 
-function useWaveform(url: string | undefined, tooLarge: boolean): Waveform {
+function drawsWaveform(path: string): boolean {
+  const name = baseName(path).toLowerCase()
+  const dot = name.lastIndexOf('.')
+  return dot >= 0 && WITH_WAVEFORM.has(name.slice(dot))
+}
+
+type Waveform =
+  | { state: 'loading' | 'unsupported' }
+  | { state: 'drawing' | 'ready'; bars: Float32Array; seconds: number }
+  | { state: 'failed'; message: string }
+
+const STOPPED = 'files.errors.previewStopped'
+
+function useWaveform({ path, url, sizeBytes, modifiedAt }: FileItem): Waveform {
   const [waveform, setWaveform] = useState<Waveform>({ state: 'loading' })
+  /** How many times the file was found saved again while it was shown, each of which builds the waveform anew. */
+  const [saves, setSaves] = useState(0)
   useEffect(() => {
     if (!url) return
-    if (tooLarge) {
-      setWaveform({ state: 'skipped' })
+    if (!drawsWaveform(path)) {
+      setWaveform({ state: 'unsupported' })
       return
     }
-    let cancelled = false
     setWaveform({ state: 'loading' })
+    const preview = openPreviewDocument<typeof openAudio>('audio', { url, sizeBytes, modifiedAt })
+    let current = true
+    const stopListening = preview.onChanged(() => {
+      if (!current) return
+      current = false
+      setSaves((count) => count + 1)
+    })
     void (async () => {
-      try {
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const bytes = await response.arrayBuffer()
-        const context = new AudioContext()
+      let after = 0
+      let stopped = false
+      for (;;) {
+        let answer
         try {
-          const buffer = await context.decodeAudioData(bytes)
-          const channels = Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i))
-          if (!cancelled) setWaveform({ state: 'ready', peaks: downsampleWaveform(channels, BUCKETS) })
-        } finally {
-          void context.close()
+          answer = await preview.call('waveform', { bars: BARS, after })
+        } catch (error) {
+          if (!current) return
+          // A frame that stopped before it answered, as another viewer's file can make it, is started anew and
+          // reads the file from its start, so the waveform is asked for from its start once more. A second stop in
+          // a row is shown, so that a file that stops the frame itself is not read again and again.
+          if (errorKeyOf(error) === STOPPED && !stopped) {
+            stopped = true
+            after = 0
+            continue
+          }
+          setWaveform({ state: 'failed', message: displayError(error) })
+          return
         }
-      } catch (error) {
-        if (!cancelled) setWaveform({ state: 'failed', message: displayError(error) })
+        if (!current) return
+        stopped = false
+        if (!answer.supported) {
+          setWaveform({ state: 'unsupported' })
+          return
+        }
+        after = answer.version
+        setWaveform({ state: answer.done ? 'ready' : 'drawing', bars: answer.bars, seconds: answer.seconds })
+        if (answer.done) return
       }
     })()
     return () => {
-      cancelled = true
+      current = false
+      stopListening()
+      preview.release()
     }
-  }, [url, tooLarge])
+  }, [path, url, sizeBytes, modifiedAt, saves])
   return waveform
 }
 
 /**
- * Draws the waveform on the canvas. What has been played is brighter, and without peaks a flat line sits in the
- * middle. A canvas takes no CSS, so the colors are read from the theme's tokens on the canvas at each draw.
+ * Draws the waveform on the canvas: the bars read so far, then a flat line in the middle for the rest. What has
+ * been played is brighter. A canvas takes no CSS, so the colors are read from the theme's tokens on the canvas at
+ * each draw.
  */
-function drawWaveform(canvas: HTMLCanvasElement, peaks: number[] | null, progress: number): void {
+function drawWaveform(canvas: HTMLCanvasElement, bars: Float32Array, progress: number): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   const dpr = window.devicePixelRatio || 1
@@ -72,21 +116,22 @@ function drawWaveform(canvas: HTMLCanvasElement, peaks: number[] | null, progres
   const unplayed = style.getPropertyValue('--viewer-wave').trim()
   const played = style.getPropertyValue('--color-holo-cyan').trim()
   const mid = height / 2
-  if (!peaks || peaks.length === 0) {
-    ctx.fillStyle = unplayed
-    ctx.fillRect(0, mid - 1, width, 2)
-    ctx.fillStyle = played
-    ctx.fillRect(0, mid - 1, width * progress, 2)
-    return
-  }
-  const step = width / peaks.length
+  const step = width / BARS
   const bar = Math.max(1, step * 0.7)
   const playedUntil = width * progress
-  for (let i = 0; i < peaks.length; i++) {
+  for (let i = 0; i < bars.length; i++) {
     const x = i * step
-    const h = Math.max(1, peaks[i] * (height - 4))
+    const h = Math.max(1, bars[i] * (height - 4))
     ctx.fillStyle = x < playedUntil ? played : unplayed
     ctx.fillRect(x, mid - h / 2, bar, h)
+  }
+  const restFrom = bars.length * step
+  if (restFrom >= width) return
+  ctx.fillStyle = unplayed
+  ctx.fillRect(restFrom, mid - 1, width - restFrom, 2)
+  if (playedUntil > restFrom) {
+    ctx.fillStyle = played
+    ctx.fillRect(restFrom, mid - 1, playedUntil - restFrom, 2)
   }
 }
 
@@ -95,15 +140,15 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
   const ref = useRef<HTMLAudioElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const state = useMediaState(ref)
-  const waveform = useWaveform(item.url, tooLargeToRead(item))
+  const waveform = useWaveform(item)
   const [error, setError] = useState<string | null>(null)
   const progress = state.duration > 0 ? state.current / state.duration : 0
-  const peaks = waveform.state === 'ready' ? waveform.peaks : null
+  const bars = waveform.state === 'drawing' || waveform.state === 'ready' ? waveform.bars : NO_BARS
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const draw = (): void => drawWaveform(canvas, peaks, progress)
+    const draw = (): void => drawWaveform(canvas, bars, progress)
     draw()
     const resize = new ResizeObserver(draw)
     resize.observe(canvas)
@@ -113,7 +158,7 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
       resize.disconnect()
       theme.disconnect()
     }
-  }, [peaks, progress])
+  }, [bars, progress])
 
   if (!item.url || error) {
     return (
@@ -125,8 +170,8 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
     )
   }
   const reason =
-    waveform.state === 'skipped'
-      ? t('files.viewer.waveformTooLarge', { size: formatBytes(item.sizeBytes) })
+    waveform.state === 'unsupported'
+      ? t('files.viewer.waveformUnsupported')
       : waveform.state === 'failed'
         ? t('files.viewer.waveformFailed', { message: waveform.message })
         : null
@@ -139,6 +184,8 @@ export const AudioViewer: Viewer = ({ item, mode, size }) => {
         role="img"
         aria-label={t('files.viewer.waveform')}
         data-state={waveform.state}
+        data-bars={bars.length}
+        data-seconds={waveform.state === 'drawing' || waveform.state === 'ready' ? waveform.seconds : undefined}
         onClick={(event) => {
           const el = ref.current
           if (!el || !state.duration) return
