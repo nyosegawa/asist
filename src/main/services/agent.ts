@@ -554,7 +554,8 @@ export function merge(id: string, reviewed: ReviewedMerge): AgentJob {
   assertWorktreeReview(entry.job, reviewed.commit)
   const wt = entry.job.worktree
   assertMergeable(entry.job, reviewed)
-  const outcome = git.mergeNoFf(wt.repo, reviewed.commit, `asist: ${entry.job.title} (${id})`)
+  // assertMergeable has just found the reviewed base to be the merge base of the commit and HEAD.
+  const outcome = git.mergeNoFf(wt.repo, reviewed, `asist: ${entry.job.title} (${id})`)
   if (outcome.ok) {
     pushLog(id, 'system', t('jobs.merging.done', { repo: wt.repo }))
     // The worktree is about to be removed, so artifact paths inside it are moved to the merge target

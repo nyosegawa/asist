@@ -118,11 +118,11 @@ export function captureWorktree(job: AgentJob, reported: readonly string[]): Cap
   }
   git.commitAll(worktree.dir, `asist: ${job.title}`)
   const commit = git.headCommit(worktree.dir)
-  const base = jobBase(worktree, commit)
-  const submodules = sortedUnique([...git.submoduleEntryChanges(worktree.repo, base, commit), ...git.submodulesWithWork(worktree.dir)])
+  const changes = git.diffEntries(worktree.repo, jobBase(worktree, commit), commit)
+  const submodules = sortedUnique([...git.submoduleChanges(changes), ...git.submodulesWithWork(worktree.dir)])
   const leftOut = leftOutOf(worktree, commit, reported)
   const settled = { ...worktree, commit, ...(submodules.length > 0 ? { submodules } : {}) }
-  if (submodules.length > 0 || git.hasChanges(worktree.repo, base, commit)) {
+  if (submodules.length > 0 || changes.length > 0) {
     return { settled: { worktree: settled, mergeState: 'pending' }, leftOut }
   }
   if (leftOut.length > 0 && !isBackgroundJob(job)) {
@@ -209,9 +209,10 @@ function mergeVerdict(
   job: AgentJob, into: string | null, base: string, commit: string
 ): MergeVerdict & { submodules: string[]; alreadyMerged: boolean } {
   const worktree = job.worktree!
+  const changes = git.diffEntries(worktree.repo, base, commit)
   const submodules = sortedUnique([
     ...(worktree.submodules ?? []),
-    ...git.submoduleEntryChanges(worktree.repo, base, commit),
+    ...git.submoduleChanges(changes),
     ...git.submodulesWithWork(worktree.dir)
   ])
   const alreadyMerged = base === commit && commit !== worktree.base && !worktree.keptFor
@@ -224,9 +225,9 @@ function mergeVerdict(
     return { ...found, into, blocked }
   }
   if (alreadyMerged) return { ...found, into, blocked: null }
-  if (!git.hasChanges(worktree.repo, base, commit)) return { ...found, into, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
+  if (changes.length === 0) return { ...found, into, blocked: errorText('jobs.merging.noChanges', { id: job.id }) }
   if (!git.isClean(worktree.repo)) return { ...found, into, blocked: errorText('jobs.merging.dirtyRepo') }
-  const inTheWay = git.untrackedInTheWay(worktree.repo, base, commit)
+  const inTheWay = git.untrackedInTheWay(worktree.repo, changes)
   if (inTheWay.length > 0) return { ...found, into, blocked: errorText('jobs.merging.untrackedInTheWay', { paths: git.named(inTheWay) }) }
   return { ...found, into, blocked: null }
 }

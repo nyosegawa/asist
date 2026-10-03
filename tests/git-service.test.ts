@@ -35,6 +35,12 @@ let repo = ''
 const run = (cwd: string, args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
 
+/** The commit at the tip of a branch with its merge base with HEAD, as a merge is given them from the review. */
+const reviewed = (branch: string): { commit: string; base: string } => {
+  const commit = git.headCommit(repo, branch)
+  return { commit, base: git.mergeBase(repo, commit)! }
+}
+
 beforeEach(() => {
   root = longTempFolder('asist-git-')
   repo = path.join(root, 'repo')
@@ -121,7 +127,7 @@ describe('git service with an isolated worktree', () => {
     git.commitAll(wt, 'job')
     fs.writeFileSync(path.join(repo, '.env'), 'THE_USERS_KEY=1\n')
     const head = git.headCommit(repo)
-    expect(git.mergeNoFf(repo, 'asist/env', 'asist: job')).toMatchObject({ ok: false, conflict: false })
+    expect(git.mergeNoFf(repo, reviewed('asist/env'), 'asist: job')).toMatchObject({ ok: false, conflict: false })
     expect(fs.readFileSync(path.join(repo, '.env'), 'utf8')).toBe('THE_USERS_KEY=1\n')
     expect(git.headCommit(repo)).toBe(head)
     git.worktreeRemove(repo, wt, 'asist/env')
@@ -156,7 +162,7 @@ describe('git service with an isolated worktree', () => {
     fs.mkdirSync(path.join(repo, 'cache'))
     fs.writeFileSync(path.join(repo, 'cache', 'entry'), 'cached\n')
     fs.writeFileSync(path.join(repo, 'conf', 'local.json'), '{"key":1}\n')
-    expect(git.untrackedInTheWay(repo, base, 'asist/in-the-way')).toEqual(['.env', 'build', 'cache', 'conf'])
+    expect(git.untrackedInTheWay(repo, git.diffEntries(repo, base, 'asist/in-the-way'))).toEqual(['.env', 'build', 'cache', 'conf'])
     git.worktreeRemove(repo, wt, 'asist/in-the-way')
   })
 
@@ -185,7 +191,7 @@ describe('git service with an isolated worktree', () => {
     expect(stat).toContain('b.txt')
     expect(git.diffPatch(repo, base, 'asist/20260908-job')).toContain('+world')
     expect(git.isClean(repo)).toBe(true)
-    expect(git.mergeNoFf(repo, 'asist/20260908-job', 'asist: job')).toEqual({ ok: true })
+    expect(git.mergeNoFf(repo, reviewed('asist/20260908-job'), 'asist: job')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('new\n')
     git.worktreeRemove(repo, wt, 'asist/20260908-job')
     expect(fs.existsSync(wt)).toBe(false)
@@ -199,7 +205,7 @@ describe('git service with an isolated worktree', () => {
     git.commitAll(wt, 'job')
     fs.writeFileSync(path.join(repo, 'a.txt'), 'from user\n')
     run(repo, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-am', 'user'])
-    const outcome = git.mergeNoFf(repo, 'asist/conflict', 'merge')
+    const outcome = git.mergeNoFf(repo, reviewed('asist/conflict'), 'merge')
     expect(outcome).toMatchObject({ ok: false, conflict: true })
     expect(fs.readFileSync(path.join(repo, 'a.txt'), 'utf8')).toBe('from user\n')
     expect(git.isClean(repo)).toBe(true)
@@ -217,7 +223,7 @@ describe('git service with an isolated worktree', () => {
     for (const hook of ['pre-merge-commit', 'prepare-commit-msg', 'commit-msg']) {
       fs.writeFileSync(path.join(repo, '.git', 'hooks', hook), '#!/bin/sh\necho rejected >&2\nexit 1\n', { mode: 0o755 })
     }
-    expect(git.mergeNoFf(repo, 'asist/hooked', 'asist: job (1)')).toEqual({ ok: true })
+    expect(git.mergeNoFf(repo, reviewed('asist/hooked'), 'asist: job (1)')).toEqual({ ok: true })
     expect(fs.readFileSync(path.join(repo, 'b.txt'), 'utf8')).toBe('from job\n')
     expect(git.isClean(repo)).toBe(true)
     expect(fs.existsSync(path.join(repo, '.git', 'MERGE_HEAD'))).toBe(false)
@@ -352,8 +358,9 @@ describe('git service with an isolated worktree', () => {
     // 14,000 names of 200 characters make the raw diff about 4.4 MB, past the 4 MB git's output is otherwise read into.
     for (let i = 0; i < 14_000; i++) fs.writeFileSync(path.join(folder, `${String(i).padStart(5, '0')}-${'x'.repeat(195)}.js`), '')
     expect(git.commitAll(wt, 'asist: job')).toBe(true)
-    expect(git.hasChanges(repo, base, git.headCommit(wt))).toBe(true)
-    expect(git.submoduleEntryChanges(repo, base, git.headCommit(wt))).toEqual([])
+    const changes = git.diffEntries(repo, base, git.headCommit(wt))
+    expect(changes.length > 0).toBe(true)
+    expect(git.submoduleChanges(changes)).toEqual([])
     expect(git.diffStat(repo, base, git.headCommit(wt))).toContain('14000 files changed')
     expect(git.isSettled(wt)).toBe(true)
   }, 120_000)
@@ -401,7 +408,7 @@ describe('git service with an isolated worktree', () => {
       fs.appendFileSync(path.join(wt, '.gitmodules'), '\tbranch = main\n')
       fs.writeFileSync(path.join(wt, 'b.txt'), 'from job\n')
       expect(git.commitAll(wt, 'asist: job')).toBe(true)
-      expect(git.submoduleEntryChanges(repo, base, git.headCommit(wt))).toEqual(['.gitmodules', 'vendor/sub'])
+      expect(git.submoduleChanges(git.diffEntries(repo, base, git.headCommit(wt)))).toEqual(['.gitmodules', 'vendor/sub'])
       expect(git.isSettled(wt)).toBe(true)
     })
 
@@ -417,7 +424,7 @@ describe('git service with an isolated worktree', () => {
       run(wt, [...FILE, 'submodule', 'add', '-q', path.join(root, 'sub'), 'lib'])
       run(wt, [...FILE, 'submodule', 'add', '-q', path.join(root, 'sub'), 'vendor/other'])
       expect(git.commitAll(wt, 'asist: job')).toBe(true)
-      expect(git.submoduleEntryChanges(repo, base, git.headCommit(wt))).toEqual(['.gitmodules', 'lib', 'vendor/other', 'vendor/sub'])
+      expect(git.submoduleChanges(git.diffEntries(repo, base, git.headCommit(wt)))).toEqual(['.gitmodules', 'lib', 'vendor/other', 'vendor/sub'])
       expect(git.isSettled(wt)).toBe(true)
     })
 
