@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { currentSpeechRoute } from '../src/main/services/brain/session'
 
 const mocks = vi.hoisted(() => ({ settings: { ttsEngine: 'voicevox' }, synthesize: vi.fn() }))
 
@@ -10,7 +11,6 @@ vi.mock('../src/main/services/tts', () => ({
 vi.mock('../src/main/services/store', () => ({ dataPath: (name: string) => `/tmp/asist-test/${name}` }))
 
 beforeEach(() => {
-  vi.resetModules()
   vi.clearAllMocks()
   mocks.settings.ttsEngine = 'voicevox'
 })
@@ -18,7 +18,6 @@ beforeEach(() => {
 describe('speech route selection', () => {
   it('neither synthesizes the sentence nor emits a segment when reading aloud is off, so the reply arrives as text only', async () => {
     mocks.settings.ttsEngine = 'none'
-    const { currentSpeechRoute } = await import('../src/main/services/brain/session')
     const emit = vi.fn()
     const sink = currentSpeechRoute().open({ turnId: 1, signal: new AbortController().signal, emit, locale: 'ja-JP' })
     sink.push('こんにちは。')
@@ -29,7 +28,6 @@ describe('speech route selection', () => {
 
   it('synthesizes the sentence and emits a segment when TTS is in use', async () => {
     mocks.synthesize.mockResolvedValue({ kind: 'whole', audio: 'AAAA', phonemes: null })
-    const { currentSpeechRoute } = await import('../src/main/services/brain/session')
     const emit = vi.fn()
     const sink = currentSpeechRoute().open({ turnId: 1, signal: new AbortController().signal, emit, locale: 'ja-JP' })
     sink.push('こんにちは。')

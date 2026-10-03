@@ -4,17 +4,28 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { formatBytes, type FileItem } from '@shared/files'
 import { createTranslator } from '@shared/i18n'
+import { errorKey } from '@shared/i18n/error-key'
 import { FileViewer } from '@/panels/viewers'
 import { AudioViewer } from '@/panels/viewers/AudioViewer'
-import { downsampleWaveform, formatTime } from '@/panels/viewers/media'
+import { formatTime } from '@/panels/viewers/media'
 import { VideoViewer } from '@/panels/viewers/VideoViewer'
 import type { ViewerProps } from '@/panels/viewers/types'
+import type { WaveformAnswer } from '@/preview/methods/audio'
 
 /**
- * The video and audio viewers, the pure logic (time formatting, waveform downsampling) and the DOM behavior of the
+ * The video and audio viewers, the pure logic (time formatting) and the DOM behavior of the
  * controls, and the placard a zip gets. happy-dom does not play media, so play and pause on the media element are
- * replaced and the events are dispatched by hand.
+ * replaced and the events are dispatched by hand. The audio viewer's waveform comes from the preview page, which
+ * happy-dom cannot run, so the document it opens there is one whose answers each test gives by hand.
  */
+
+const preview = vi.hoisted(() => ({
+  open: vi.fn(),
+  calls: [] as Array<{ args: { bars: number; after: number }; answer: (value: unknown) => void; fail: (error: Error) => void }>,
+  release: vi.fn(),
+  stopListening: vi.fn()
+}))
+vi.mock('@/panels/viewers/preview-client', () => ({ openPreviewDocument: preview.open }))
 
 describe('time formatting', () => {
   it('formats minutes and seconds, adds hours past an hour, and shows 0:00 while the duration is unknown', () => {
@@ -23,20 +34,6 @@ describe('time formatting', () => {
     expect(formatTime(3723)).toBe('1:02:03')
     expect(formatTime(NaN)).toBe('0:00')
     expect(formatTime(Infinity)).toBe('0:00')
-  })
-})
-
-describe('waveform downsampling', () => {
-  it('takes the peak amplitude of each bucket across all channels and normalizes the largest to 1', () => {
-    const left = new Float32Array([0.1, -0.4, 0.2, 0.0, 0.1, 0.1])
-    const right = new Float32Array([0.0, 0.0, 0.0, -0.8, 0.0, 0.0])
-    expect(downsampleWaveform([left, right], 3)).toEqual([0.5, 1, 0.125])
-  })
-
-  it('returns one value per bucket even with fewer samples than buckets and leaves silence at 0', () => {
-    expect(downsampleWaveform([new Float32Array([0, 0])], 4)).toEqual([0, 0, 0, 0])
-    expect(downsampleWaveform([new Float32Array([0.5])], 2)).toHaveLength(2)
-    expect(downsampleWaveform([], 3)).toEqual([])
   })
 })
 
@@ -57,6 +54,16 @@ describe('viewer rendering', () => {
     )
     play.mockClear()
     pause.mockClear()
+    preview.calls.length = 0
+    preview.release.mockClear()
+    preview.stopListening.mockClear()
+    preview.open.mockReset()
+    preview.open.mockImplementation(() => ({
+      call: (_method: string, args: { bars: number; after: number }) =>
+        new Promise((resolve, reject) => preview.calls.push({ args, answer: resolve, fail: reject })),
+      onChanged: () => preview.stopListening,
+      release: preview.release
+    }))
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(play)
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(pause)
     container = document.createElement('div')
@@ -147,40 +154,75 @@ describe('viewer rendering', () => {
     expect(card.querySelector('[aria-label="消音を解く"]')?.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('decodes the audio bytes to build the waveform and declines with a note instead of decoding a file that is too large', async () => {
-    const decodeAudioData = vi.fn(async () => ({ numberOfChannels: 1, getChannelData: () => new Float32Array([0.2, 0.9, 0.1, 0.4]) }))
-    vi.stubGlobal(
-      'AudioContext',
-      class {
-        decodeAudioData = decodeAudioData
-        close = async (): Promise<void> => {}
-      }
-    )
-    const fetch = vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }))
-    vi.stubGlobal('fetch', fetch)
-
-    const card = await render(AudioViewer, audio)
+  /** Answers the viewer's last request for the peaks. */
+  async function answer(value: WaveformAnswer | Error): Promise<void> {
+    const call = preview.calls.at(-1)!
     await act(async () => {
-      await Promise.resolve()
+      if (value instanceof Error) call.fail(value)
+      else call.answer(value)
     })
-    expect(fetch).toHaveBeenCalledWith(audio.url)
-    expect(decodeAudioData).toHaveBeenCalledTimes(1)
-    expect(card.querySelector('.fv-media-wave')?.getAttribute('data-state')).toBe('ready')
-    await loadMetadata(card.querySelector('audio')!, 2.5)
-    expect(card.querySelector('.fv-note')?.textContent).toBe('0:02')
+  }
+  let versions = 0
+  const bars = (values: number[], done: boolean): WaveformAnswer => ({ supported: true, bars: Float32Array.from(values), seconds: 8, version: ++versions * 10, done })
+  const t = createTranslator('ja-JP')
 
-    fetch.mockClear()
-    decodeAudioData.mockClear()
-    const big = await render(AudioViewer, { ...audio, sizeBytes: 21 * 1024 * 1024 })
-    expect(fetch).not.toHaveBeenCalled()
-    expect(decodeAudioData).not.toHaveBeenCalled()
-    expect(big.querySelector('.fv-media-wave')?.getAttribute('data-state')).toBe('skipped')
-    await loadMetadata(big.querySelector('audio')!, 600)
-    expect(big.querySelector('.fv-note')?.textContent).toBe(`10:00 · ${createTranslator('ja-JP')('files.viewer.waveformTooLarge', { size: '21.0MB' })}`)
+  it('draws the waveform of a recording of any size as its bars come from the preview page, asking each time for what is newer', async () => {
+    const huge = { ...audio, sizeBytes: 2 ** 40, modifiedAt: 1_790_000_000_000 }
+    const card = await render(AudioViewer, huge)
+    expect(preview.open).toHaveBeenCalledWith('audio', { url: huge.url, sizeBytes: huge.sizeBytes, modifiedAt: huge.modifiedAt })
+    const wave = card.querySelector('.fv-media-wave')!
+    expect(wave.getAttribute('data-state')).toBe('loading')
+    expect(preview.calls.map((call) => call.args)).toEqual([{ bars: 400, after: 0 }])
+
+    await answer(bars([0.2, 0.9, 0.4], false))
+    expect(wave.getAttribute('data-state')).toBe('drawing')
+    expect(wave.getAttribute('data-bars')).toBe('3')
+    await answer(bars(Array.from({ length: 400 }, () => 0.5), true))
+    expect(wave.getAttribute('data-state')).toBe('ready')
+    expect(wave.getAttribute('data-bars')).toBe('400')
+    expect(wave.getAttribute('data-seconds')).toBe('8')
+    expect(preview.calls.map((call) => call.args.after)).toEqual([0, versions * 10 - 10])
+    await loadMetadata(card.querySelector('audio')!, 8)
+    expect(card.querySelector('.fv-note')?.textContent).toBe('0:08')
+    expect(preview.release).not.toHaveBeenCalled()
+  })
+
+  it.each(['memo.flac', 'memo.ogg'])('draws no waveform for %s and says so, without opening the preview page', async (name) => {
+    const card = await render(AudioViewer, { ...audio, path: `/v/${name}`, name })
+    expect(preview.open).not.toHaveBeenCalled()
+    expect(card.querySelector('.fv-media-wave')?.getAttribute('data-state')).toBe('unsupported')
+    await loadMetadata(card.querySelector('audio')!, 65)
+    expect(card.querySelector('.fv-note')?.textContent).toBe(`1:05 · ${t('files.viewer.waveformUnsupported')}`)
+  })
+
+  it('says a recording the preview page draws no waveform of gets none', async () => {
+    const card = await render(AudioViewer, audio)
+    await answer({ supported: false })
+    await loadMetadata(card.querySelector('audio')!, 2)
+    expect(card.querySelector('.fv-media-wave')?.getAttribute('data-state')).toBe('unsupported')
+    expect(card.querySelector('.fv-note')?.textContent).toBe(`0:02 · ${t('files.viewer.waveformUnsupported')}`)
+  })
+
+  it('says why the waveform failed, in the language of the screen, when the preview page fails it', async () => {
+    const card = await render(AudioViewer, audio)
+    await answer(bars([0.5], false))
+    await answer(new Error(errorKey('files.errors.audioDamaged')))
+    await loadMetadata(card.querySelector('audio')!, 2)
+    const note = card.querySelector('.fv-note')!
+    expect(note.getAttribute('data-tone')).toBe('error')
+    expect(note.textContent).toBe(`0:02 · ${t('files.viewer.waveformFailed', { message: t('files.errors.audioDamaged') })}`)
+  })
+
+  it('lets go of the document in the preview page when it is closed, and asks for nothing after', async () => {
+    await render(AudioViewer, audio)
+    await act(async () => root.render(null))
+    expect(preview.release).toHaveBeenCalledTimes(1)
+    expect(preview.stopListening).toHaveBeenCalledTimes(1)
+    await answer(bars([0.5], false))
+    expect(preview.calls).toHaveLength(1)
   })
 
   it('seeks to the matching fraction of the track when the waveform is clicked', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) })))
     const card = await render(AudioViewer, audio)
     const el = card.querySelector('audio')!
     await loadMetadata(el, 8)
