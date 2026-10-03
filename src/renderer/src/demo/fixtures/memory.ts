@@ -143,8 +143,3 @@ export function demoDocuments(files: Record<string, string>): MemoryDocument[] {
     .map(([file, text]) => documentOf(file, text))
     .sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || (a.kind === 'journal' ? b.title.localeCompare(a.title) : a.title.localeCompare(b.title, 'ja')))
 }
-
-/** The template for a new page, with the same headings as page.md in the bundled skill. */
-export function demoPageTemplate(name: string): string {
-  return `---\naliases: []\nupdated: ${today}\n---\n# ${name}\n\n## 要約\nこれが何(誰、どこ)で、本人とどう関わるか。一〜三文。\n\n## 見出しは中身に合わせて付ける\nその物事に合った見出しを付けて文章で書く。\n\n## 私の印象\n私から見てこれがどういう存在か。一人称で、そう思った日を添える。\n`
-}

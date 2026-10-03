@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   documentOf,
   parseMemoryPageInput,
+  parsePageName,
   validateDocument,
   classifyFile,
   embeddingTextOf,
@@ -350,19 +351,22 @@ describe('documents', () => {
   })
 
   it('accepts only a name that works in a path when a page is created', () => {
-    expect(parseMemoryPageInput({ name: ' 田中さん ' })).toEqual({ name: '田中さん' })
-    expect(() => parseMemoryPageInput({ name: 'a/b' })).toThrow(errorText('memory.errors.nameCharacters'))
-    expect(() => parseMemoryPageInput({ name: '' })).toThrow(errorText('memory.errors.nameEmpty'))
-    expect(() => parseMemoryPageInput({ kind: 'person', name: 'x' })).toThrow()
+    expect(parsePageName(' 田中さん ')).toBe('田中さん')
+    expect(() => parsePageName('a/b')).toThrow(errorText('memory.errors.nameCharacters'))
+    expect(() => parsePageName('')).toThrow(errorText('memory.errors.nameEmpty'))
+    expect(parseMemoryPageInput({ name: ' 田中さん ', markdown: '# 田中さん\n' })).toEqual({ name: '田中さん', markdown: '# 田中さん\n' })
+    expect(() => parseMemoryPageInput({ name: 'a/b', markdown: '' })).toThrow(errorText('memory.errors.nameCharacters'))
+    expect(() => parseMemoryPageInput({ name: 'x' })).toThrow()
+    expect(() => parseMemoryPageInput({ kind: 'person', name: 'x', markdown: '' })).toThrow()
   })
 
   it('refuses on every OS a name Windows cannot give a file, so that the memory folder opens on either', () => {
     for (const name of ['CON', 'con', 'Nul', 'aux.txt', 'PRN.tar.gz', 'COM1', 'lpt9', 'COM¹', 'CONIN$', 'conout$.md']) {
-      expect(() => parseMemoryPageInput({ name }), name).toThrow(errorText('memory.errors.nameReserved'))
+      expect(() => parsePageName(name), name).toThrow(errorText('memory.errors.nameReserved'))
     }
-    expect(parseMemoryPageInput({ name: 'Dr. Tanaka' })).toEqual({ name: 'Dr. Tanaka' })
+    expect(parsePageName('Dr. Tanaka')).toBe('Dr. Tanaka')
     for (const name of ['CONSOLE', 'COM0', 'LPT10', 'nul-results', 'con 1', 'Auxiliary']) {
-      expect(parseMemoryPageInput({ name })).toEqual({ name })
+      expect(parsePageName(name)).toBe(name)
     }
   })
 })
