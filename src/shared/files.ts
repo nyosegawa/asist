@@ -128,16 +128,12 @@ const MB = 1024 * 1024
  * Measured on 2026-10-02 in the demo under headless Chrome on an Apple M5 with 32 GB, opening generated files in a card
  * and in the focus view, the slower of the two given. Most limits sit where the costliest likely file of the kind took
  * about a second to show and grew the page by less than a gigabyte, so that a machine two or three times slower still
- * shows it within a few seconds. docx is set higher, for the files it most often is.
+ * shows it within a few seconds.
  * - xlsx, 8 MB: sales records took 1.2 s for 9.3 MB and 4.9 s for 37 MB, and a grid of small numbers 1.1 s for 5.8 MB
  *   and 2.0 s for 11.6 MB, all of it holding the page's thread.
- * - docx, 16 MB: a Word file this large is most often one with a few photos, which cost 0.03 s per MB. Prose costs ten
- *   times as much for its size (5.5 MB took 1.8 s, holding the thread, and grew the page by 1.1 GB), but a file of
- *   that much prose is rare.
  */
 export const WHOLE_READ_LIMIT: Partial<Record<FileKind, number>> = {
   xlsx: 8 * MB,
-  docx: 16 * MB,
   notebook: MAX_TEXT_BYTES
 }
 
@@ -162,13 +158,14 @@ const hasNoViewer = (kind: FileKind): kind is KindWithoutViewer => (KINDS_WITHOU
 
 /**
  * What the files card shows of an item: all of it; only its first part (the text carried up to MAX_TEXT_BYTES, or the
- * first entries of a large folder) with a note that says so; or, in its place, why it could not be read, or a placard
- * saying that it is too large to show here or that its kind cannot be shown. The card's viewers and the result
- * show_files gives the model both read it, so that the model is told what the card did. An HTML page is shown whole,
- * since its frame loads the page itself and only its source is cut short.
+ * first entries of a large folder) with a note that says so; its beginning, with the rest in the focus view, as for a
+ * Word document; or, in its place, why it could not be read, or a placard saying that it is too large to show here or
+ * that its kind cannot be shown. The card's viewers and the result show_files gives the model both read it, so that
+ * the model is told what the card did. An HTML page is shown whole, since its frame loads the page itself and only its
+ * source is cut short.
  */
 export type CardView =
-  | { shows: 'all' | 'firstPart'; kind: ViewedKind }
+  | { shows: 'all' | 'firstPart' | 'beginning'; kind: ViewedKind }
   | { shows: 'nothing'; why: 'unreadable'; error: string }
   | { shows: 'nothing'; why: 'tooLarge' | 'noViewer' }
 
@@ -177,6 +174,7 @@ export function cardView(item: FileItem): CardView {
   const kind = item.kind
   if (hasNoViewer(kind)) return { shows: 'nothing', why: 'noViewer' }
   if (tooLargeToRead(item)) return { shows: 'nothing', why: 'tooLarge' }
+  if (kind === 'docx') return { shows: 'beginning', kind }
   const textCut = item.truncated === true && !(kind === 'code' && isHtmlPage(item.path))
   const listCut = (item.entryCount ?? 0) > (item.entries?.length ?? 0)
   return { shows: textCut || listCut ? 'firstPart' : 'all', kind }

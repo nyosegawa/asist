@@ -9,17 +9,18 @@ You see files on file cards. Markdown appears as a document, CSV as a table, ima
 
 A folder with many entries lists its first 200 and gives the total in its heading. To see the rest, use "Show in Finder" on a Mac, or "Show in File Explorer" on Windows.
 
-Word and Excel files and Jupyter notebooks are read whole before they are drawn. Reading a large one would stop the app, so a file over the limit below isn't read, and the card says "This file is too large to show here". To see its contents, use "Show in Finder" ("Show in File Explorer" on Windows) and open it in its usual app.
+Excel files and Jupyter notebooks are read whole before they are drawn. Reading a large one would stop the app, so a file over the limit below isn't read, and the card says "This file is too large to show here". To see its contents, use "Show in Finder" ("Show in File Explorer" on Windows) and open it in its usual app.
 
 | Type | Limit |
 | --- | ---: |
-| Word | 16 MB |
 | Excel | 8 MB |
 | Jupyter notebook | 512 KB |
 
 Audio plays at any size. For MP3, AAC (.m4a, .aac) and WAV, the waveform is drawn as the file is read from its start, so for a long recording it grows from the left. FLAC and OGG play without a waveform.
 
 A PowerPoint file opens at any size, because only the slides on the screen and those just before and after them are read and drawn.
+
+A Word document shows its beginning on the card, ending with "The rest is in the focus view". The enlarged view shows the beginning at once and then the whole document. Photos and figures are read when you scroll near them. A Word document opens at any size, except one whose text and other XML exceed 128 MB together, far more than any document people write: it isn't read, and the card says "This file is too large to show here".
 
 A PDF is shown at any size. The card reads only what its first page needs from the file, and the enlarged view only what the pages around the one you're looking at need, so a PDF of hundreds of pages opens at once. A PDF exported from LibreOffice and similar apps needs much of the file read to check its page count, so a large one takes a moment longer to open. Pictures in scanned PDFs (CCITT, JBIG2, JPEG 2000) are drawn too; a color scan saved as JPEG 2000 can take a few seconds per page. A picture of more than 100 megapixels isn't drawn, and a note under its page says so.
 

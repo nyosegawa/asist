@@ -1163,6 +1163,19 @@ export const files = defineMessages({
       'pt-BR': 'Uma imagem grande demais para exibir foi deixada de fora desta página',
       'es-419': 'Una imagen demasiado grande para mostrarse se omitió en esta página',
       'es-ES': 'Una imagen demasiado grande para mostrarse se ha omitido en esta página'
+    },
+    docxMore: {
+      'ja-JP': '続きは拡大表示で',
+      'en-US': 'The rest is in the focus view',
+      'fr-FR': 'La suite est dans la vue agrandie',
+      'de-DE': 'Der Rest ist in der Großansicht',
+      'hi-IN': 'बाकी बड़े व्यू में है',
+      'id-ID': 'Sisanya ada di tampilan besar',
+      'it-IT': 'Il resto è nella scheda ingrandita',
+      'ko-KR': '나머지는 확대 보기에서',
+      'pt-BR': 'O resto está no cartão ampliado',
+      'es-419': 'El resto está en la vista ampliada',
+      'es-ES': 'El resto está en la tarjeta ampliada'
     }
   },
   source: {
