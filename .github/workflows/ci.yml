@@ -123,11 +123,11 @@ jobs:
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
 
-  # Whether the files card's viewers still show large files within the budgets their cases set
-  # (scripts/cdp/scenes/viewer-budgets/), in Chrome on the demo. A shared runner is slower than a developer's Mac,
-  # so the times are held to three times their budgets and the memory to the budgets as written; the runner has
-  # 7 GB, and the scene never runs two Chromes at once. It runs when a file on the viewers list changed, and in the
-  # weekly run, when changes does not run.
+  # Whether the files card's viewers still show large files without going back to reading or drawing the whole
+  # file, in Chrome on the demo: a case fails past limits far from what the viewers reach on this runner, and its
+  # tighter budgets (scripts/cdp/scenes/viewer-budgets/), with the times three times as long for the shared runner,
+  # are only reported. The runner has 7 GB, and the scene never runs two Chromes at once. It runs when a file on the
+  # viewers list changed, and in the weekly run, when changes does not run.
   viewer-budgets:
     needs: changes
     if: ${{ !cancelled() && (github.event_name == 'schedule' || needs.changes.outputs.viewers == 'true') }}

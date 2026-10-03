@@ -33,7 +33,12 @@ function shown(root, mode) {
 
 const budget = { cardFirstMs: 1000, cardHeldMs: 150, cardPeakMb: 300, focusFirstMs: 1000, focusHeldMs: 150, slowestScreenMs: 300, peakMb: 500, finalMb: 350 }
 
+// The viewer that parsed the whole workbook grew the renderers by 540 and 896 MB on the M5, which the runner's 1.7 to
+// 1.9 times makes 0.9 to 1.7 GB there, under the scene's limit of 1.5 GB; this one grew them by 437 MB at most in 21
+// runs on GitHub's macOS runner on 2026-10-02 and 03.
+const limit = { peakMb: 800 }
+
 export const cases = [
-  { name: 'xlsx-50k', file: 'xlsx-50k', shown, budget },
-  { name: 'xlsx-sheets', file: 'xlsx-sheets', shown, budget }
+  { name: 'xlsx-50k', file: 'xlsx-50k', shown, budget, limit },
+  { name: 'xlsx-sheets', file: 'xlsx-sheets', shown, budget, limit }
 ]
