@@ -43,7 +43,21 @@ vi.mock('@/panels/viewers/preview-client', async (importOriginal) => {
     frames.onStart?.(port2)
     return { port: port1, gone: new Promise((resolve) => port1.addEventListener('close', () => resolve())), remove: () => undefined }
   })
-  return { ...actual, openPreviewDocument: (kind: string, file: Parameters<typeof client.open>[1]) => client.open(kind, file) }
+  return {
+    ...actual,
+    openPreviewDocument: (kind: string, file: Parameters<typeof client.open>[1]) => {
+      const handle = client.open(kind, file)
+      return {
+        ...handle,
+        // A bitmap crosses the channel here as a copy of its size, which lacks the close() an ImageBitmap has and the
+        // viewer calls on one that arrives after its page left.
+        call: async (method: never, args: never) => {
+          const value = (await handle.call(method, args)) as { bitmap?: object } | null
+          return method === 'draw' && value ? { ...value, bitmap: { ...value.bitmap, close: () => undefined } } : value
+        }
+      }
+    }
+  }
 })
 
 const t = createTranslator('ja-JP')
@@ -73,7 +87,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', class { observe(): void {} disconnect(): void {} })
   vi.stubGlobal('IntersectionObserver', LayoutIntersectionObserver)
-  // A bitmap crosses the channel by cloning here, so it holds only its size.
+  // A bitmap crosses the channel by cloning here, so it holds only its size (see the client above).
   vi.stubGlobal('createImageBitmap', async ({ width, height }: { width: number; height: number }) => ({ width, height }))
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 600 })
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ transferFromImageBitmap: () => undefined }) as never)
