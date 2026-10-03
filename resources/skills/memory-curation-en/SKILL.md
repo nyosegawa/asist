@@ -35,12 +35,14 @@ pages and the journal; the two keep what matters in almost every conversation.
 
 ## The language you write in
 
-The prompt names the language of the conversation. Write every body (sentences, the names of the headings
-you choose, the journal) in that language, the way someone who grew up with it writes. The fixed headings
-stay in English whatever the language: `## Summary` and `## My impression` on pages, `## Myself today` in
-the journal, the headings of `user.md`, and the `# ` name line of `user.md` and `me.md`, as the templates
-give them. ASIST reads those headings, and keeping them in one language means it does not need a table of
-headings per language.
+The prompt names the language of the conversation, and the memory is written in it: the sentences, the
+headings you choose and the journal, the way someone who grew up with the language writes. The templates in
+`assets/templates/` are in that language too. This skill names their headings as the English templates
+write them; in another language, the template holds the same heading in the same place, in that language.
+
+Copy a heading you take from a template exactly as it stands there. ASIST reads the first and the last
+heading of a page and the last heading of a journal entry by name, and a heading copied as it stands reads
+the same in every curation, where one you translate or reword yourself does not.
 
 The directory may already hold pages written in another language, from before the user changed it. Leave
 them in the language they are in, including their headings, unless you are rewriting a section anyway.
@@ -49,14 +51,15 @@ them in the language they are in, including their headings, unless you are rewri
 
 One side is facts: this person's nearest station, the name of their cat, the restaurant they keep going
 back to. The other is what I (ASIST) did that day, what I was asked, and what I thought about it. The
-second goes into the journal and into a "My impression" heading on the pages, in the first person. Write
-facts only where you can point at what was said, write the subjective side as my own, and grow both without
-mixing them.
+second goes into the journal and into the "My impression" heading that closes every page, in the first
+person. Write facts only where you can point at what was said, write the subjective side as my own, and grow
+both without mixing them.
 
 ## The steps
 
 How to write each file is in `references/format.md`; each step names the section of it to read. The
-templates are in `assets/templates/` (page.md, user.md, me.md, journal.md).
+templates are in `assets/templates/` (page.md, user.md, me.md, journal.md), in the language of the
+conversation.
 
 1. **Read.** In the prompt: today's date and the transcripts of the days not curated yet ("[HH:MM #turn]
    speaker: what was said"). Then read `user.md` and `me.md`, and list the pages and the journal with
@@ -77,7 +80,7 @@ templates are in `assets/templates/` (page.md, user.md, me.md, journal.md).
    date in the sentence, never the turn number).
 5. **Write the pages.** Follow format.md, "The frontmatter" and "The body of a page". Build a new page from
    `assets/templates/page.md`. The first heading is `## Summary` and the last `## My impression`; ASIST
-   reads both by name, so do not reword them.
+   reads both by name, so copy them from the template as they stand.
 6. **Write the journal.** Write `journal/YYYY-MM-DD.md` for the day in the first person, as format.md's
    journal section says. Separate the subjects with `## ` headings and close with `## Myself today`.
    Invent nothing that is not in the conversation.

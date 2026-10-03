@@ -1,6 +1,5 @@
 import { bodyStart, parsePage } from './memory-format'
-import pageTemplateJa from '../../resources/skills/memory-curation/assets/templates/page.md?raw'
-import pageTemplateEn from '../../resources/skills/memory-curation-en/assets/templates/page.md?raw'
+import { SEARCHED_TEMPLATES } from './memory-templates'
 
 /**
  * A page the memory screen made before it opened new pages empty started as the curation's page template, the
@@ -15,7 +14,7 @@ const sectionKey = (heading: string, text: string): string => `${heading}\n${tex
 
 /** Each section of the two templates, by its heading and its example text, as a page made from one reads it. */
 const EXAMPLE_SECTIONS: ReadonlySet<string> = new Set(
-  [pageTemplateJa, pageTemplateEn].flatMap((template) => parsePage(template, '').sections.map(({ heading, text }) => sectionKey(heading, text)))
+  [SEARCHED_TEMPLATES['ja-JP'].page, SEARCHED_TEMPLATES['en-US'].page].flatMap((template) => parsePage(template, '').sections.map(({ heading, text }) => sectionKey(heading, text)))
 )
 
 /**

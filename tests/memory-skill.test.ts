@@ -4,9 +4,11 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { CURATION_SKILL, SKILL_DIRS, curationScriptCommand, curationSkillSource } from '@shared/memory-curation'
-import { FIXED, validateDocument } from '@shared/memory-page'
+import { CONVERSATION_LOCALES, type ConversationLocale } from '@shared/conversation-locale'
+import { CURATION_SKILL, MEMORY_TEMPLATES, SKILL_DIRS, curationScriptCommand, curationSkillSource } from '@shared/memory-curation'
+import { FIXED_HEADINGS, parsePage, validateDocument } from '@shared/memory-page'
 import { createTranslator } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { PROMPT_DOCUMENTS, PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/memory-format'
 import { runPython, sectionsOverTheLimit } from './helpers/memory'
 
@@ -19,9 +21,13 @@ import { installSkill } from '../src/main/services/memory-curation-skill'
 
 const ja = createTranslator('ja-JP')
 
+/** A locale of each of the two skills, whose instructions exist in the two prompt languages. */
 const LOCALES = ['ja-JP', 'en-US'] as const
 const TEMPLATES = ['page', 'user', 'me', 'journal']
-const skillDir = (locale: 'ja-JP' | 'en-US'): string => path.join(process.cwd(), 'resources', 'skills', curationSkillSource(locale))
+const skillDir = (locale: ConversationLocale): string => path.join(process.cwd(), 'resources', 'skills', curationSkillSource(locale))
+const templatesDir = (locale: ConversationLocale): string => path.join(process.cwd(), 'resources', 'skills', MEMORY_TEMPLATES, locale)
+const template = (locale: ConversationLocale, name: string): string => fs.readFileSync(path.join(templatesDir(locale), `${name}.md`), 'utf8')
+const headingsOf = (locale: ConversationLocale, name: string): string[] => parsePage(template(locale, name), '').sections.map((section) => section.heading)
 /** The skill's checks, run through the bundled uv as the curation Agent runs them. */
 const validate = (skill: string, dir: string): { ok: boolean; output: string } => runPython(path.join(skill, 'scripts', 'validate.py'), [dir])
 const count = (skill: string, dir: string): { ok: boolean; output: string } => runPython(path.join(skill, 'scripts', 'count.py'), [dir])
@@ -89,58 +95,59 @@ function problemsIn(dir: string): string[] {
 }
 
 describe('the memory-curation skill', () => {
-  it('names the skill after the directory it is installed into, ships every reference, template and script it points at, and asks for a first-person journal', () => {
+  it('names the skill after the directory it is installed into, ships every reference and script it points at, and asks for a first-person journal', () => {
     const skill = fs.readFileSync(path.join(skillDir('ja-JP'), 'SKILL.md'), 'utf8')
     expect(skill).toContain('一人称')
-    expect(skill).toContain(`## ${FIXED.journalSelf.ja}`)
-    expect(skill).toContain(FIXED.impression.ja)
+    expect(skill).toContain(`## ${FIXED_HEADINGS.journalSelf['ja-JP']}`)
+    expect(skill).toContain(FIXED_HEADINGS.impression['ja-JP'])
     expect(skill.startsWith(`---\nname: ${CURATION_SKILL}\ndescription: `)).toBe(true)
     for (const file of ['references/format.md', 'references/me.md', 'scripts/validate.py', 'scripts/count.py']) {
       expect(fs.existsSync(path.join(skillDir('ja-JP'), file))).toBe(true)
       expect(skill).toContain(file.split('/').pop()!)
     }
-    for (const template of TEMPLATES) {
-      expect(fs.existsSync(path.join(skillDir('ja-JP'), 'assets', 'templates', `${template}.md`))).toBe(true)
-    }
     expect(skill.split('\n').length).toBeLessThan(500)
   })
 
-  it('ships the same skill in English, telling the Agent to write the body in the conversation language under the English fixed headings', () => {
+  it('ships the same skill in English, with no Japanese in it, telling the Agent to write in the language of the conversation', () => {
     const skill = fs.readFileSync(path.join(skillDir('en-US'), 'SKILL.md'), 'utf8')
     expect(skill.startsWith(`---\nname: ${CURATION_SKILL}\ndescription: `)).toBe(true)
     expect(skill).toContain('the language of the conversation')
-    expect(skill).toContain(`## ${FIXED.summary.en}`)
-    expect(skill).toContain(`## ${FIXED.journalSelf.en}`)
+    // The skill names the fixed headings as the English templates write them.
+    expect(skill).toContain(`## ${FIXED_HEADINGS.summary['en-US']}`)
+    expect(skill).toContain(`## ${FIXED_HEADINGS.journalSelf['en-US']}`)
     expect(skill).toContain('first person')
     expect(skill.split('\n').length).toBeLessThan(500)
     for (const file of ['references/format.md', 'references/me.md', 'scripts/validate.py', 'scripts/count.py']) {
       expect(fs.existsSync(path.join(skillDir('en-US'), file))).toBe(true)
       expect(skill).toContain(file.split('/').pop()!)
     }
-    // The templates carry the headings the app reads, so the two sets must line up file by file.
-    for (const template of TEMPLATES) {
-      expect(fs.existsSync(path.join(skillDir('en-US'), 'assets', 'templates', `${template}.md`))).toBe(true)
-    }
-    const template = (skill: string, name: string): string => fs.readFileSync(path.join(skill, 'assets', 'templates', `${name}.md`), 'utf8')
-    const firstHeading = (skill: string, name: string): string => template(skill, name).split('\n').find((line) => line.startsWith('## ')) ?? ''
-    expect(firstHeading(skillDir('en-US'), 'page')).toBe(`## ${FIXED.summary.en}`)
-    expect(firstHeading(skillDir('ja-JP'), 'page')).toBe(`## ${FIXED.summary.ja}`)
-    expect(template(skillDir('en-US'), 'journal')).toContain(`## ${FIXED.journalSelf.en}`)
-    expect(template(skillDir('en-US'), 'user')).toContain(`# ${FIXED.user.en}`)
-    expect(template(skillDir('en-US'), 'me')).toContain(`# ${FIXED.me.en}`)
     for (const file of ['SKILL.md', 'references/format.md', 'references/me.md']) {
       const text = fs.readFileSync(path.join(skillDir('en-US'), file), 'utf8')
       expect([file, /[぀-ヿ]/.test(text.replace(/^\|.*\|$/gm, ''))]).toEqual([file, false])
     }
   })
 
-  it('builds every template into a directory that both validators accept', () => {
-    for (const locale of LOCALES) {
-      const templates = path.join(skillDir(locale), 'assets', 'templates')
+  it('ships the four templates in every conversation language, opening a page with the summary heading both rule sets accept and with no heading left in English', () => {
+    const english = new Set(TEMPLATES.flatMap((name) => headingsOf('en-US', name)))
+    for (const locale of CONVERSATION_LOCALES) {
+      expect([locale, headingsOf(locale, 'page')[0]]).toEqual([locale, FIXED_HEADINGS.summary[locale]])
+      for (const name of TEMPLATES) expect([locale, name, /^# \S/m.test(template(locale, name))]).toEqual([locale, name, true])
+      // A heading left in English would be copied into a memory written in another language.
+      if (locale !== 'en-US') {
+        expect([locale, TEMPLATES.flatMap((name) => headingsOf(locale, name)).filter((heading) => english.has(heading))]).toEqual([locale, []])
+      }
+    }
+    // The memories written so far close their pages and journal entries with these, and ASIST reads them by name.
+    expect([FIXED_HEADINGS.impression['ja-JP'], FIXED_HEADINGS.journalSelf['ja-JP']]).toEqual(['私の印象', '今日の私'])
+    expect([FIXED_HEADINGS.impression['en-US'], FIXED_HEADINGS.journalSelf['en-US']]).toEqual(['My impression', 'Myself today'])
+  })
+
+  it('builds the templates of every language into a directory that both validators accept', () => {
+    for (const locale of CONVERSATION_LOCALES) {
       const dir = mkdtempSync(path.join(tmpdir(), 'asist-memory-skill-templates-'))
       fs.mkdirSync(path.join(dir, 'pages'))
       fs.mkdirSync(path.join(dir, 'journal'))
-      const fill = (name: string): string => fs.readFileSync(path.join(templates, `${name}.md`), 'utf8').replaceAll('YYYY-MM-DD', '2026-09-22')
+      const fill = (name: string): string => template(locale, name).replaceAll('YYYY-MM-DD', '2026-09-22')
       fs.writeFileSync(path.join(dir, 'user.md'), fill('user'))
       fs.writeFileSync(path.join(dir, 'me.md'), fill('me'))
       fs.writeFileSync(path.join(dir, 'pages', 'Page.md'), fill('page'))
@@ -238,17 +245,24 @@ describe('the memory-curation skill', () => {
     for (const [file, markdown] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), markdown)
     const reported = problemsIn(dir)
     for (const [file, markdown] of Object.entries(files)) {
-      const app = validateDocument(file, markdown, ja)
+      const app = validateDocument(file, markdown, ja, 'ja-JP')
       expect([file, app.length]).not.toEqual([file, 0])
       expect([file, reported.filter((place) => place === file || place.startsWith(`${file}:`)).length]).toEqual([file, app.length])
     }
   })
 
-  it('runs its validate.py once installed into a worktree, where the rules it imports are copied beside it', () => {
-    for (const locale of LOCALES) {
+  it('installs the skill of the prompt language with the templates of the conversation language, and runs its validate.py there, where the rules it imports are copied beside it', () => {
+    for (const locale of ['ja-JP', 'de-DE', 'hi-IN'] as const) {
       // A curation's worktree is named after the job's title, which holds Japanese characters.
       const worktree = mkdtempSync(path.join(tmpdir(), '記憶の整理-'))
-      installSkill(worktree, skillDir(locale))
+      installSkill(worktree, locale)
+      for (const skills of SKILL_DIRS) {
+        const installed = path.join(worktree, skills, CURATION_SKILL)
+        expect(fs.readFileSync(path.join(installed, 'SKILL.md'), 'utf8')).toBe(fs.readFileSync(path.join(skillDir(locale), 'SKILL.md'), 'utf8'))
+        for (const name of TEMPLATES) {
+          expect([skills, name, fs.readFileSync(path.join(installed, 'assets', 'templates', `${name}.md`), 'utf8')]).toEqual([skills, name, template(locale, name)])
+        }
+      }
       const dir = wellFormed()
       for (const skills of SKILL_DIRS) expect(validate(path.join(worktree, skills, CURATION_SKILL), dir)).toEqual({ ok: true, output: 'OK\n' })
       fs.writeFileSync(path.join(dir, 'pages', '壊れ.md'), '---\n---\n# 壊れ\n\n## 要約\n\n')
@@ -256,10 +270,16 @@ describe('the memory-curation skill', () => {
     }
   })
 
+  it('stops the curation with a reason the screen shows in its own language when the templates of the conversation language are missing', () => {
+    const worktree = mkdtempSync(path.join(tmpdir(), 'asist-memory-skill-missing-'))
+    const missing = path.join(process.cwd(), 'resources', 'skills', MEMORY_TEMPLATES, 'xx-XX')
+    expect(() => installSkill(worktree, 'xx-XX' as ConversationLocale)).toThrow(errorText('memory.errors.skillMissing', { path: missing }))
+  })
+
   it('runs its checks with the command it gives, through the uv ASIST copies into its folder, whatever uv comes first on PATH', () => {
     // A curation's worktree is the memory itself, with the skill installed into it.
     const worktree = wellFormed()
-    installSkill(worktree, skillDir('ja-JP'))
+    installSkill(worktree, 'ja-JP')
     const pathKey = Object.keys(process.env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH'
     for (const { shell, args, standIn } of agentShells()) {
       const env = {
@@ -291,10 +311,14 @@ describe('the memory-curation skill', () => {
     expect(problemsIn(dir).sort()).toEqual(['pages/CON.md', 'pages/CONOUT$.md'])
   })
 
-  it('takes a directory that holds pages written under each of the two fixed headings, in both skills', () => {
+  it('takes a directory that holds pages written in several languages under their fixed headings, in both skills', () => {
     const dir = wellFormed()
     fs.writeFileSync(path.join(dir, 'pages', 'Matsubaken.md'), '---\nupdated: 2026-09-22\n---\n# Matsubaken\n\n## Summary\nThe ramen shop.\n')
+    fs.writeFileSync(path.join(dir, 'pages', 'Bäckerei.md'), '---\nupdated: 2026-09-22\n---\n# Bäckerei\n\n## Zusammenfassung\nDie Bäckerei am Bahnhof.\n\n## Mein Eindruck\nEin ruhiger Ort.\n')
+    fs.writeFileSync(path.join(dir, 'pages', 'चायवाला.md'), '---\nupdated: 2026-09-22\n---\n# चायवाला\n\n## सारांश\nस्टेशन के पास की चाय की दुकान।\n')
     fs.writeFileSync(path.join(dir, 'journal', '2026-09-09.md'), '# 2026-09-09\n\n## Dinner\nWe talked about noodles.\n\n## Myself today\nA quiet day.\n')
     for (const locale of LOCALES) expect(validate(skillDir(locale), dir)).toEqual({ ok: true, output: 'OK\n' })
+    fs.writeFileSync(path.join(dir, 'pages', 'Bäckerei.md'), '---\nupdated: 2026-09-22\n---\n# Bäckerei\n\n## Brot\nRoggenbrot.\n')
+    expect(problemsIn(dir)).toEqual(['pages/Bäckerei.md'])
   })
 })

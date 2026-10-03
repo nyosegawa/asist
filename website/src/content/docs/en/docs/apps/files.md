@@ -9,14 +9,15 @@ You see files on file cards. Markdown appears as a document, CSV as a table, ima
 
 A folder with many entries lists its first 200 and gives the total in its heading. To see the rest, use "Show in Finder" on a Mac, or "Show in File Explorer" on Windows.
 
-Excel files and Jupyter notebooks are read whole before they are drawn. Reading a large one would stop the app, so a file over the limit below isn't read, and the card says "This file is too large to show here". To see its contents, use "Show in Finder" ("Show in File Explorer" on Windows) and open it in its usual app.
+Jupyter notebooks are read whole before they are drawn. Reading a large one would stop the app, so a notebook over the limit below isn't read, and the card says "This file is too large to show here". To see its contents, use "Show in Finder" ("Show in File Explorer" on Windows) and open it in its usual app.
 
 | Type | Limit |
 | --- | ---: |
-| Excel | 8 MB |
 | Jupyter notebook | 512 KB |
 
 Audio plays at any size. For MP3, AAC (.m4a, .aac) and WAV, the waveform is drawn as the file is read from its start, so for a long recording it grows from the left. FLAC and OGG play without a waveform.
+
+An Excel workbook is read one sheet at a time, the sheet you have selected. The card shows its first 20 rows, and the enlarged view shows every row, reading only the rows you scroll to. A sheet whose XML is over 256 MB (about 700,000 rows of sales records with 11 columns) isn't read, and the card says "This file is too large to show here". If the part that holds the text of all the sheets of a workbook (its shared strings) is over 256 MB, no sheet is read, and the card says the same.
 
 A PowerPoint file opens at any size, because only the slides on the screen and those just before and after them are read and drawn.
 

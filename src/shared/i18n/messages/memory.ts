@@ -1159,6 +1159,19 @@ export const memory = defineMessages({
       'pt-BR': 'Não foi possível preparar o Python com que a organização da memória confere o trabalho. A primeira organização precisa da rede: {message}',
       'es-419': 'No se pudo preparar el Python con el que la organización de la memoria revisa su trabajo. La primera organización necesita la red: {message}',
       'es-ES': 'No se ha podido preparar el Python con el que la organización de la memoria revisa su trabajo. La primera organización necesita la red: {message}'
+    },
+    skillMissing: {
+      'ja-JP': '記憶の整理に使う手順がアプリの中にありません。アプリを入れ直してください: {path}',
+      'en-US': 'The instructions the memory curation follows are missing from the app. Reinstall the app: {path}',
+      'fr-FR': "Les instructions que suit l'organisation de la mémoire manquent dans l'app. Réinstallez l'app : {path}",
+      'de-DE': 'Die Anleitung, der die Gedächtnispflege folgt, fehlt in der App. Installieren Sie die App neu: {path}',
+      'hi-IN': 'याद की सफ़ाई जिन निर्देशों पर चलती है, वे ऐप में नहीं हैं। ऐप दोबारा इंस्टॉल करें: {path}',
+      'id-ID': 'Petunjuk yang diikuti penataan ingatan tidak ada di aplikasi. Pasang ulang aplikasinya: {path}',
+      'it-IT': "Nell'app mancano le istruzioni che il riordino della memoria segue. Reinstalla l'app: {path}",
+      'ko-KR': '기억 정리가 따르는 지침이 앱에 없습니다. 앱을 다시 설치하십시오: {path}',
+      'pt-BR': 'As instruções que a organização da memória segue não estão no app. Reinstale o app: {path}',
+      'es-419': 'En la app faltan las instrucciones que sigue la organización de la memoria. Reinstala la app: {path}',
+      'es-ES': 'En la app faltan las instrucciones que sigue la organización de la memoria. Vuelve a instalarla: {path}'
     }
   }
 })
