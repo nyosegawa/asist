@@ -280,20 +280,20 @@ function writeZip(written: Written[]): Bytes {
  * Opens the zip at url. It reads the last 64 KB by a suffix range, whose answer gives the file's length as it is
  * now, so a file saved again since it was listed is read as it is. Those bytes hold the end of central directory
  * record whatever its comment, and they are kept, so the part of the central directory or an entry inside them is
- * not read again. Every later answer has to come from a file of the same length.
+ * not read again. Every later answer has to come from the same version of the file.
  */
 export async function openZip(url: string): Promise<RangedZip> {
   const tail = await fetchRange(url, `bytes=-${TAIL_LENGTH}`)
   // A suffix range holds no byte of an empty file alone.
   if (!tail) throw damaged()
-  const { size, start: tailStart, etag } = tail
+  const { size, start: tailStart } = tail
   // A server that does not take a suffix range, such as Vite's for a file over 64 KB, sends other bytes.
   if (tailStart !== Math.max(0, size - TAIL_LENGTH) || tail.bytes.length !== size - tailStart) throw loadFailed(206)
   const bytes = async (start: number, end: number): Promise<Bytes> => {
     if (start >= tailStart) return tail.bytes.subarray(start - tailStart, end - tailStart)
-    if (end <= tailStart) return readRange(url, start, end, { size, etag })
+    if (end <= tailStart) return readRange(url, start, end, tail)
     const joined = new Uint8Array(end - start)
-    joined.set(await readRange(url, start, tailStart, { size, etag }))
+    joined.set(await readRange(url, start, tailStart, tail))
     joined.set(tail.bytes.subarray(0, end - tailStart), tailStart - start)
     return joined
   }
@@ -330,7 +330,7 @@ export async function openZip(url: string): Promise<RangedZip> {
   const byName = new Map(records.map((record) => [record.name, record]))
 
   return {
-    version: versionText({ size, etag }),
+    version: versionText(tail),
     entries: byName,
 
     async read(name) {

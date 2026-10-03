@@ -2,9 +2,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/memory-format'
+import { gitPath } from '../src/main/services/git'
 import { sectionsOverTheLimit } from './helpers/memory'
 
 const ja = createTranslator('ja-JP')
@@ -38,24 +39,42 @@ vi.mock('../src/main/services/brain/session', () => ({ conversationLog: { readDa
 const now = new Date(2026, 8, 12, 12).getTime()
 const DAY = 24 * 60 * 60_000
 const MINUTE = 60_000
-const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, {
+/**
+ * The test's own git is the one ASIST ships, with which ASIST makes the memory repository. /usr/bin/git on a Mac finds
+ * the real git through xcrun on every call: a call took 23 ms against 9 ms at a load average of 29 (Apple M5, 2026-10-02).
+ */
+const git = (cwd: string, ...args: string[]): string => execFileSync(gitPath(), args, {
   cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
 }).trim()
 const stateFile = (): string => path.join(mocks.root, 'data', 'memory-curation.json')
+
+/** The memory repository each test starts from, made once and copied into the test's own folder. */
+let template: string
+
+// Making the repository took six git processes per test, and a copy starts none. The first import of the services
+// transforms their whole module graph, and the imports after vi.resetModules reuse that work: the first test took
+// 4.4 s against a median of 2.3 s with the other test files beside it at a load average above 70 (Apple M5,
+// 2026-10-02). Importing once here moves that cost into a hook with a timeout of its own.
+beforeAll(async () => {
+  template = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'asist-curation-template-')))
+  git(template, 'init', '-qb', 'main')
+  git(template, 'config', 'user.name', 'ASIST test')
+  git(template, 'config', 'user.email', 'test@localhost')
+  git(template, 'config', 'commit.gpgsign', 'false')
+  fs.writeFileSync(path.join(template, '.gitignore'), '.claude/\n.agents/\nAGENTS.md\n')
+  git(template, 'add', '.')
+  git(template, 'commit', '-qm', 'initial')
+  await import('../src/main/services/memory-curation')
+  await import('../src/main/services/agent')
+}, 30_000)
+
+afterAll(() => { fs.rmSync(template, { recursive: true, force: true }) })
 
 beforeEach(() => {
   vi.resetModules()
   vi.restoreAllMocks()
   mocks.root = fs.realpathSync(fs.mkdtempSync(path.join(tmpdir(), 'asist-curation-')))
-  const repo = path.join(mocks.root, 'repo')
-  fs.mkdirSync(repo)
-  git(repo, 'init', '-qb', 'main')
-  git(repo, 'config', 'user.name', 'ASIST test')
-  git(repo, 'config', 'user.email', 'test@localhost')
-  git(repo, 'config', 'commit.gpgsign', 'false')
-  fs.writeFileSync(path.join(repo, '.gitignore'), '.claude/\n.agents/\nAGENTS.md\n')
-  git(repo, 'add', '.')
-  git(repo, 'commit', '-qm', 'initial')
+  fs.cpSync(template, path.join(mocks.root, 'repo'), { recursive: true })
   mocks.conversationLocale = 'ja-JP'
   mocks.day = [{ t: 1000, kind: 'user', text: '猫が好きです' }]
   mocks.readAll.mockReset().mockReturnValue({ errors: [] })

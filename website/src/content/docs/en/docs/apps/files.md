@@ -16,9 +16,8 @@ Word and Excel files and Jupyter notebooks are read whole before they are drawn.
 | Word | 16 MB |
 | Excel | 8 MB |
 | Jupyter notebook | 512 KB |
-| Audio waveform | 8 MB |
 
-Audio plays at any size. Over the limit, only its waveform is left out.
+Audio plays at any size. For MP3, AAC (.m4a, .aac) and WAV, the waveform is drawn as the file is read from its start, so for a long recording it grows from the left. FLAC and OGG play without a waveform.
 
 A PowerPoint file opens at any size, because only the slides on the screen and those just before and after them are read and drawn.
 
