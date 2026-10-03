@@ -8,6 +8,7 @@ import { PROMPT_DOCUMENT_MAX_TOKENS, promptSize, textForTokens } from '@shared/m
 import { FIXED_HEADINGS } from '@shared/memory-page'
 import { gitPath } from '../src/main/services/git'
 import { sectionsOverTheLimit } from './helpers/memory'
+import { shortNamedFolder } from './helpers/temp'
 
 const ja = createTranslator('ja-JP')
 
@@ -810,5 +811,34 @@ describe.runIf(process.platform !== 'win32')('a page name that macOS or Windows 
     lastLaunch().onExit(0)
     expect(agent.get(job.id)?.mergeState).toBe('merged')
     expect(fs.readFileSync(path.join(repo, 'pages', 'CON.md'), 'utf8')).toContain('書き足した本文。')
+  })
+})
+
+// A memory folder written with its 8.3 short name, as C:\Users\RUNNER~1\… is when a user name is longer than eight
+// letters, while git names the repository by its long name: comparing the two as written discarded every curation as
+// reaching outside the memory folder. A volume without short names skips these tests, except where
+// ASIST_REQUIRE_SHORT_NAMES=1 (CI), which fails them.
+describe.runIf(process.platform === 'win32')('a memory folder written with its 8.3 short name', () => {
+  beforeEach((context) => {
+    const { long, short } = shortNamedFolder('asist-curation-short-')
+    if (short === null) {
+      fs.rmSync(long, { recursive: true, force: true })
+      const why = `${long} has no 8.3 short name, since its volume makes none`
+      if (process.env.ASIST_REQUIRE_SHORT_NAMES === '1') throw new Error(why)
+      context.skip(why)
+    }
+    fs.rmSync(mocks.root, { recursive: true, force: true })
+    mocks.root = short!
+    fs.cpSync(template, path.join(mocks.root, 'repo'), { recursive: true })
+  })
+
+  it('merges a curation into the memory folder named by its short name', async () => {
+    const { curation, agent } = await setup()
+    const job = curation.pendingJob()!
+    fs.writeFileSync(path.join(job.cwd, 'memory.md'), 'valid\n')
+    lastLaunch().onExit(0)
+    expect(curation.lastFailure()).toBeNull()
+    expect(agent.get(job.id)?.mergeState).toBe('merged')
+    expect(fs.readFileSync(path.join(mocks.root, 'repo', 'memory.md'), 'utf8')).toBe('valid\n')
   })
 })
