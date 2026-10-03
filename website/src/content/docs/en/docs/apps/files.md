@@ -16,9 +16,8 @@ Word and PDF files and Jupyter notebooks are read whole before they are drawn. R
 | Word | 16 MB |
 | PDF | 256 MB |
 | Jupyter notebook | 512 KB |
-| Audio waveform | 8 MB |
 
-Audio plays at any size. Over the limit, only its waveform is left out.
+Audio plays at any size. For MP3, AAC (.m4a, .aac) and WAV, the waveform is drawn as the file is read from its start, so for a long recording it grows from the left. FLAC and OGG play without a waveform.
 
 An Excel workbook is read one sheet at a time, the sheet you have selected. The card shows its first 20 rows, and the enlarged view shows every row, reading only the rows you scroll to. A sheet whose XML is over 256 MB (about 700,000 rows of sales records with 11 columns) isn't read, and the card says "This file is too large to show here". If the part that holds the text of all the sheets of a workbook (its shared strings) is over 256 MB, no sheet is read, and the card says the same.
 
