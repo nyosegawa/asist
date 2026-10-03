@@ -10,6 +10,7 @@ import { errorKey } from '@shared/i18n/error-key'
 import { openZip } from '@/preview/zip-ranges'
 import { fileUrl, handleFileScheme } from '../src/main/file-protocol'
 import { longTempFolder } from './helpers/temp'
+import { entryRanges } from './helpers/zip'
 
 /**
  * The zip reader of the preview iframe. Most tests serve the file as asist-file answers a Range request: a 206
@@ -26,9 +27,12 @@ const URL = 'asist-file:///tmp/a.docx'
 const PICTURE = 256 * 1024
 
 let sent = 0
+/** The bytes of the file each answer held, from the first to past the last. */
+let answered: Array<{ start: number; end: number }> = []
 
 function serve(file: Uint8Array): void {
   sent = 0
+  answered = []
   vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
     const range = /^bytes=(\d*)-(\d*)$/.exec(new Headers(init?.headers).get('range') ?? '')
     const suffix = range?.[1] === ''
@@ -36,10 +40,12 @@ function serve(file: Uint8Array): void {
     const end = !range || suffix || range[2] === '' ? file.length - 1 : Math.min(Number(range[2]), file.length - 1)
     if (!range || start > end) {
       sent += file.length
+      answered.push({ start: 0, end: file.length })
       return new Response(file.slice(), { status: 200 })
     }
     const body = file.slice(start, end + 1)
     sent += body.length
+    answered.push({ start, end: end + 1 })
     return new Response(body, { status: 206, headers: { 'Content-Range': `bytes ${start}-${end}/${file.length}` } })
   })
 }
@@ -85,6 +91,49 @@ async function contentsByRanges(file: Uint8Array): Promise<Record<string, string
   serve(file)
   const zip = await openZip(URL)
   return Object.fromEntries(await Promise.all([...zip.entries.keys()].map(async (name) => [name, text(await zip.read(name))])))
+}
+
+/**
+ * A zip of stored entries, written here rather than by JSZip, which passes each entry through a stream of workers: a
+ * zip of 1,500 entries took JSZip 4 to 9 s to write at a load average of 85, and takes this milliseconds (Apple M5,
+ * 2026-10-02).
+ */
+function storedZipOf(files: Record<string, string>): Uint8Array {
+  const parts: Uint8Array[] = []
+  const central: Uint8Array[] = []
+  let offset = 0
+  for (const [name, content] of Object.entries(files)) {
+    const rawName = new TextEncoder().encode(name)
+    const data = new TextEncoder().encode(content)
+    const local = new DataView(new ArrayBuffer(30 + rawName.length))
+    local.setUint32(0, 0x04034b50, true)
+    local.setUint16(4, 20, true)
+    local.setUint32(14, crc32(data), true)
+    local.setUint32(18, data.length, true)
+    local.setUint32(22, data.length, true)
+    local.setUint16(26, rawName.length, true)
+    new Uint8Array(local.buffer).set(rawName, 30)
+    const record = new DataView(new ArrayBuffer(46 + rawName.length))
+    record.setUint32(0, 0x02014b50, true)
+    record.setUint16(4, 20, true)
+    record.setUint16(6, 20, true)
+    record.setUint32(16, crc32(data), true)
+    record.setUint32(20, data.length, true)
+    record.setUint32(24, data.length, true)
+    record.setUint16(28, rawName.length, true)
+    record.setUint32(42, offset, true)
+    new Uint8Array(record.buffer).set(rawName, 46)
+    parts.push(new Uint8Array(local.buffer), data)
+    central.push(new Uint8Array(record.buffer))
+    offset += local.byteLength + data.length
+  }
+  const end = new DataView(new ArrayBuffer(22))
+  end.setUint32(0, 0x06054b50, true)
+  end.setUint16(8, central.length, true)
+  end.setUint16(10, central.length, true)
+  end.setUint32(12, central.reduce((sum, record) => sum + record.length, 0), true)
+  end.setUint32(16, offset, true)
+  return Buffer.concat([...parts, ...central, new Uint8Array(end.buffer)])
 }
 
 /**
@@ -181,7 +230,7 @@ describe('reading a zip by ranges', () => {
   it('reads a central directory that the end of the file it reads first does not hold', async () => {
     // 1,500 entries take about 105 KB of central directory.
     const files = Object.fromEntries(Array.from({ length: 1500 }, (_, i) => [`ppt/slides/slide${i}.xml`, `<p:sld>${i}</p:sld>`]))
-    const file = await zipOf(files)
+    const file = storedZipOf(files)
     serve(file)
     const zip = await openZip(URL)
     expect(zip.entries.size).toBe(1500)
@@ -422,6 +471,24 @@ describe('the slimmed zip', () => {
       if (isPicture(name)) expect(text(content)).toBe(name)
       else expect(content).toEqual(await original.file(name)!.async('uint8array'))
     }
+  })
+
+  it('writes an entry it is given with that content, stored, and reads neither the entries it is given nor those it stubs', async () => {
+    const { file, original } = await docxWithPictures()
+    serve(file)
+    const zip = await openZip(URL)
+    const document = new TextEncoder().encode('<w:document>先頭だけ</w:document>')
+    answered = []
+    const slim = await JSZip.loadAsync(await zip.slimmed(isPicture, new Map([['word/document.xml', document]])), { checkCRC32: true })
+    // No answer holds a byte of the entry given or of those stubbed.
+    const unread = [...entryRanges(file)].filter(([name]) => name === 'word/document.xml' || isPicture(name)).map(([, range]) => range)
+    expect(unread).toHaveLength(3)
+    const overlapping = answered.filter((range) => unread.some((entry) => range.start < entry.end && entry.start < range.end))
+    expect(overlapping).toEqual([])
+    expect(Object.keys(slim.files)).toEqual(Object.keys(original.files))
+    expect(await slim.file('word/document.xml')!.async('string')).toBe('<w:document>先頭だけ</w:document>')
+    expect(await slim.file('word/media/photo.jpeg')!.async('string')).toBe('word/media/photo.jpeg')
+    expect(await slim.file('docProps/core.xml')!.async('string')).toBe(await original.file('docProps/core.xml')!.async('string'))
   })
 
   it('is read by mammoth, which writes each picture as a reference to its path', async () => {

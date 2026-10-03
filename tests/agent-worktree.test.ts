@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTranslator } from '@shared/i18n'
 import { errorText } from '@shared/i18n/error-text'
 import { shellPath, testGitEnv } from './helpers/git'
@@ -60,8 +60,36 @@ const expectRefused = (agent: Agent, id: string, submodules: string[], head: str
   expect(git(repo, 'rev-parse', 'HEAD')).toBe(head)
   expect(fs.existsSync(job.worktree!.dir)).toBe(true)
 }
+
+/**
+ * The user's git, which makes the repositories that ASIST's own git then reads, as in use. /usr/bin/git on a Mac is a
+ * shim that looks the real git up through xcrun on every call: a call took 23 ms against 8 ms for the git it finds at
+ * a load average of 30 (Apple M5, 2026-10-02), so the path is looked up once.
+ */
+const userGit = process.platform === 'darwin' ? execFileSync('xcrun', ['--find', 'git'], { encoding: 'utf8' }).trim() : 'git'
 const git = (cwd: string, ...args: string[]): string =>
-  execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
+  execFileSync(userGit, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: testGitEnv() }).trim()
+
+/** The repository each test starts from, made once and copied into the test's own folder. */
+let template: string
+
+// Making the repository took six git processes, 200 ms of every test at a load average of 24, and a copy starts
+// none. The first import of the service transforms its whole module graph, and the imports after vi.resetModules
+// reuse that work: the first test took 5.5 s against a median of 3.1 s with the other test files beside it at a load
+// average above 70 (Apple M5, 2026-10-02). Importing once here moves that cost into a hook with a timeout of its own.
+beforeAll(async () => {
+  template = longTempFolder('asist-worktree-template-')
+  git(template, 'init', '-q', '-b', 'main')
+  git(template, 'config', 'user.name', 'ASIST test')
+  git(template, 'config', 'user.email', 'test@localhost')
+  git(template, 'config', 'commit.gpgsign', 'false')
+  fs.writeFileSync(path.join(template, 'tracked.txt'), 'base\n')
+  git(template, 'add', '.')
+  git(template, 'commit', '-qm', 'initial')
+  await import('../src/main/services/agent')
+}, 30_000)
+
+afterAll(() => { fs.rmSync(template, { recursive: true, force: true }) })
 
 beforeEach(() => {
   vi.restoreAllMocks()
@@ -77,14 +105,7 @@ beforeEach(() => {
   })
   mocks.root = longTempFolder('asist-worktree-test-')
   repo = path.join(mocks.root, 'repo')
-  fs.mkdirSync(repo)
-  git(repo, 'init', '-q', '-b', 'main')
-  git(repo, 'config', 'user.name', 'ASIST test')
-  git(repo, 'config', 'user.email', 'test@localhost')
-  git(repo, 'config', 'commit.gpgsign', 'false')
-  fs.writeFileSync(path.join(repo, 'tracked.txt'), 'base\n')
-  git(repo, 'add', '.')
-  git(repo, 'commit', '-qm', 'initial')
+  fs.cpSync(template, repo, { recursive: true })
 })
 
 afterEach(() => { fs.rmSync(mocks.root, { recursive: true, force: true }) })
@@ -957,13 +978,33 @@ describe('a repository with a sparse checkout of src/', () => {
 })
 
 describe('a repository with a submodule', () => {
-  beforeEach(() => {
-    const sub = path.join(mocks.root, 'sub')
+  /** The repository with the submodule added, and the submodule's repository beside it, made once and copied for each test. */
+  let withSubmodule: string
+
+  // Adding the submodule clones it: the four git processes took 455 ms of every test at a load average of 24
+  // (Apple M5, 2026-10-02).
+  beforeAll(() => {
+    withSubmodule = longTempFolder('asist-worktree-submodule-')
+    const sub = path.join(withSubmodule, 'sub')
     fs.mkdirSync(sub)
     git(sub, 'init', '-q', '-b', 'main')
     git(sub, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 's')
-    git(repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', sub, 'vendor/sub')
-    git(repo, 'commit', '-qm', 'submodule')
+    const prepared = path.join(withSubmodule, 'repo')
+    fs.cpSync(template, prepared, { recursive: true })
+    git(prepared, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', '../sub', 'vendor/sub')
+    git(prepared, 'commit', '-qm', 'submodule')
+  })
+
+  afterAll(() => { fs.rmSync(withSubmodule, { recursive: true, force: true }) })
+
+  beforeEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true })
+    fs.cpSync(withSubmodule, mocks.root, { recursive: true })
+    // The configuration of the repository and of the submodule's clone hold ../sub resolved to an absolute path,
+    // which names the folder the copy was made in.
+    const sub = path.join(mocks.root, 'sub')
+    git(repo, 'config', 'submodule.vendor/sub.url', sub)
+    git(path.join(repo, 'vendor', 'sub'), 'config', 'remote.origin.url', sub)
   })
 
   it('keeps the worktree of a job whose agent only initialized the submodule, since the commits of its repository may exist nowhere else', async () => {

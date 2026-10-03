@@ -2,11 +2,12 @@
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { documentOf } from '@shared/memory-page'
+import { documentOf, newPageMarkdown, parsePage } from '@shared/memory-page'
 import { errorText } from '@shared/i18n/error-text'
+import type { AppSettings } from '@shared/ipc'
 import { Markdown } from '../src/renderer/src/ui/memory/Markdown'
 import { MemoryView } from '../src/renderer/src/ui/memory/MemoryView'
-import { useToastStore } from '../src/renderer/src/state/stores'
+import { useSettingsStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { useConfirmStore } from '../src/renderer/src/state/confirm'
 import { answerConfirm } from './helpers/confirm'
@@ -42,10 +43,18 @@ const api = {
     files[file] = markdown
     return documentOf(file, markdown)
   }),
-  memoryDocumentCreate: vi.fn(async ({ name }: { name: string }) => {
+  // Main finds a name taken as the file system of macOS and Windows does, whatever its case.
+  memoryPageDraft: vi.fn(async (name: string) => {
+    const page = name.trim()
+    const file = `pages/${page}.md`
+    if (Object.keys(files).some((known) => known.toLowerCase() === file.toLowerCase())) throw new Error(errorText('memory.errors.pageExists', { name: page }))
+    return { file, markdown: newPageMarkdown(page, useSettingsStore.getState().settings?.conversationLocale ?? 'ja-JP', '2026-10-03') }
+  }),
+  memoryDocumentCreate: vi.fn(async ({ name, markdown }: { name: string; markdown: string }) => {
     const file = `pages/${name}.md`
-    files[file] = `---\naliases: []\nupdated: 2026-09-16\n---\n# ${name}\n\n## 要約\n何者か。\n`
-    return documentOf(file, files[file])
+    if (files[file] !== undefined) throw new Error(errorText('memory.errors.pageExists', { name }))
+    files[file] = markdown
+    return documentOf(file, markdown)
   }),
   memoryDocumentDelete: vi.fn(async (file: string) => {
     delete files[file]
@@ -63,6 +72,7 @@ beforeEach(() => {
   files = { ...FILES }
   for (const fn of Object.values(api)) fn.mockClear()
   useToastStore.setState({ toasts: [] })
+  useSettingsStore.setState({ settings: null })
   useViewStore.getState().closeApp()
   useViewStore.getState().openApp({ app: 'memory' })
   container = document.createElement('div')
@@ -200,24 +210,86 @@ describe('the memory screen', () => {
     expect(useToastStore.getState().toasts.at(-1)?.title).toBe(t('memory.saved'))
   })
 
-  it('creates a new page from its name, opens the editor on it, and deletes a page only after the confirmation', async () => {
-    const view = await render()
-    await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
-    const form = view.querySelector<HTMLFormElement>(`form[aria-label="${t('memory.newPage')}"]`)!
-    await act(async () => setValue(form.querySelector<HTMLInputElement>(`input[aria-label="${t('memory.create.name')}"]`)!, '田中さん'))
-    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-    await settle()
-    expect(api.memoryDocumentCreate).toHaveBeenCalledWith({ name: '田中さん' })
-    expect(heading(view)).toBe('田中さん')
-    expect(view.querySelector<HTMLTextAreaElement>('textarea')?.value).toContain('# 田中さん')
-    expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介', '松葉軒', '田中さん'])
+  it.each([
+    { conversation: 'ja-JP', name: '田中さん', summary: '## 要約', text: '本人の上司。毎週木曜に打ち合わせをする。' },
+    { conversation: 'en-US', name: 'Tanaka', summary: '## Summary', text: 'Their boss, met every Thursday.' }
+  ] as const)(
+    'opens a new page held in $conversation with its name and an empty summary, writes nothing until its first save, and saves what the user wrote',
+    async ({ conversation, name, summary, text }) => {
+      useSettingsStore.setState({ settings: { uiLocale: 'ja-JP', region: 'JP', conversationLocale: conversation } as AppSettings })
+      const view = await render()
+      await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
+      const form = view.querySelector<HTMLFormElement>(`form[aria-label="${t('memory.newPage')}"]`)!
+      await act(async () => setValue(form.querySelector<HTMLInputElement>(`input[aria-label="${t('memory.create.name')}"]`)!, ` ${name} `))
+      await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+      await settle()
+      expect(api.memoryDocumentCreate).not.toHaveBeenCalled()
+      expect(heading(view)).toBe(name)
+      const draft = view.querySelector<HTMLTextAreaElement>('textarea')!.value
+      expect(draft).toContain(`\n# ${name}\n\n${summary}\n`)
+      // Nothing stands under a heading until the user writes it, so there is nothing to search.
+      expect(parsePage(draft, '').sections).toEqual([])
+      expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介', '松葉軒'])
 
+      const written = draft.replace(`${summary}\n`, `${summary}\n${text}\n`)
+      await act(async () => setValue(view.querySelector<HTMLTextAreaElement>('textarea')!, written))
+      await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent?.startsWith(t('common.save')))!.click())
+      await settle()
+      expect(api.memoryDocumentCreate).toHaveBeenCalledWith({ name, markdown: written })
+      expect(api.memoryDocumentWrite).not.toHaveBeenCalled()
+      expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ title: t('memory.created'), body: name })
+      expect(view.querySelector('textarea')).toBeNull()
+      expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介', '松葉軒', name])
+      expect(view.textContent).toContain(text)
+    }
+  )
+
+  it('leaves a new page that was never saved out of the memory, and opens none under a name main finds taken, though the list the screen holds does not show it', async () => {
+    const view = await render()
+    const create = async (name: string): Promise<void> => {
+      await act(async () => view.querySelector<HTMLButtonElement>('.my-side-action')!.click())
+      const form = view.querySelector<HTMLFormElement>(`form[aria-label="${t('memory.newPage')}"]`)!
+      await act(async () => setValue(form.querySelector<HTMLInputElement>(`input[aria-label="${t('memory.create.name')}"]`)!, name))
+      await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+      await settle()
+    }
+    await create('田中さん')
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('common.cancel'))!.click())
+    await settle()
+    expect(view.querySelector('textarea')).toBeNull()
+    expect(api.memoryDocumentCreate).not.toHaveBeenCalled()
+    expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介', '松葉軒'])
+
+    await create('松葉軒')
+    expect(view.querySelector('textarea')).toBeNull()
+    expect(useToastStore.getState().toasts.at(-1)).toMatchObject({
+      title: t('memory.createFailed'),
+      body: t('memory.errors.pageExists', { name: '松葉軒' })
+    })
+
+    // A curation took in a page after the screen listed the pages.
+    files['pages/Tanaka.md'] = '---\naliases: []\nupdated: 2026-10-03\n---\n# Tanaka\n\n## Summary\nTheir boss.\n'
+    for (const name of ['Tanaka', 'tanaka']) {
+      await create(name)
+      expect([name, view.querySelector('textarea')]).toEqual([name, null])
+      expect(useToastStore.getState().toasts.at(-1)?.body).toBe(t('memory.errors.pageExists', { name }))
+    }
+    expect(api.memoryPageDraft.mock.calls.map(([name]) => name)).toEqual(['田中さん', '松葉軒', 'Tanaka', 'tanaka'])
+    expect(api.memoryDocumentCreate).not.toHaveBeenCalled()
+  })
+
+  it('deletes a page only after the confirmation', async () => {
+    const view = await render()
+    await act(async () => itemByTitle(view, '松葉軒').click())
+    await settle()
+    await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('common.delete'))!.click())
+    await answerConfirm(false)
+    expect(api.memoryDocumentDelete).not.toHaveBeenCalled()
     await act(async () => [...view.querySelectorAll<HTMLButtonElement>('.my-btn')].find((b) => b.textContent === t('common.delete'))!.click())
     await answerConfirm(true)
     await settle()
-    expect(api.memoryDocumentDelete).toHaveBeenCalledWith('pages/田中さん.md')
-    expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介', '松葉軒'])
+    expect(api.memoryDocumentDelete).toHaveBeenCalledWith('pages/松葉軒.md')
+    expect(itemTitles(view, t('memory.pages'))).toEqual(['大川俊介'])
   })
 
   it('closes the screen on Escape while reading, and leaves the editor only after the confirmation when there are unsaved changes', async () => {

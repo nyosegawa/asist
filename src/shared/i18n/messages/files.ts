@@ -941,18 +941,18 @@ export const files = defineMessages({
       'es-419': 'Forma de onda',
       'es-ES': 'Forma de onda'
     },
-    waveformTooLarge: {
-      'ja-JP': '{size} と大きいので波形は出しません',
-      'en-US': 'At {size} it is too large to draw a waveform',
-      'fr-FR': "Trop volumineux pour tracer la forme d'onde ({size})",
-      'de-DE': 'Mit {size} ist es zu groß für eine Wellenform',
-      'hi-IN': '{size} बहुत बड़ा है, इसलिए वेवफ़ॉर्म नहीं बनाया',
-      'id-ID': 'Ukurannya {size}, terlalu besar untuk menggambar bentuk gelombang',
-      'it-IT': "Con {size} è troppo grande per disegnare la forma d'onda",
-      'ko-KR': '크기가 커서 파형은 그리지 않습니다({size})',
-      'pt-BR': 'Com {size}, é grande demais para desenhar a forma de onda',
-      'es-419': 'Con {size} es demasiado grande para dibujar la forma de onda',
-      'es-ES': 'Con {size} es demasiado grande para dibujar la forma de onda'
+    waveformUnsupported: {
+      'ja-JP': 'この形式では波形を出しません',
+      'en-US': 'No waveform for this format',
+      'fr-FR': "Pas de forme d'onde pour ce format",
+      'de-DE': 'Für dieses Format gibt es keine Wellenform',
+      'hi-IN': 'इस फ़ॉर्मैट का वेवफ़ॉर्म नहीं बनता',
+      'id-ID': 'Format ini tidak menampilkan bentuk gelombang',
+      'it-IT': "Nessuna forma d'onda per questo formato",
+      'ko-KR': '이 형식은 파형을 표시하지 않습니다',
+      'pt-BR': 'Este formato não mostra a forma de onda',
+      'es-419': 'Este formato no muestra la forma de onda',
+      'es-ES': 'Este formato no muestra la forma de onda'
     },
     waveformFailed: {
       'ja-JP': '波形を作れません: {message}',
@@ -1150,6 +1150,19 @@ export const files = defineMessages({
       'pt-BR': 'Este arquivo é grande demais para ser exibido aqui',
       'es-419': 'Este archivo es demasiado grande para mostrarlo aquí',
       'es-ES': 'Este archivo es demasiado grande para mostrarlo aquí'
+    },
+    docxMore: {
+      'ja-JP': '続きは拡大表示で',
+      'en-US': 'The rest is in the focus view',
+      'fr-FR': 'La suite est dans la vue agrandie',
+      'de-DE': 'Der Rest ist in der Großansicht',
+      'hi-IN': 'बाकी बड़े व्यू में है',
+      'id-ID': 'Sisanya ada di tampilan besar',
+      'it-IT': 'Il resto è nella scheda ingrandita',
+      'ko-KR': '나머지는 확대 보기에서',
+      'pt-BR': 'O resto está no cartão ampliado',
+      'es-419': 'El resto está en la vista ampliada',
+      'es-ES': 'El resto está en la tarjeta ampliada'
     }
   },
   source: {
@@ -1295,6 +1308,19 @@ export const files = defineMessages({
       'pt-BR': 'O ASIST não tem permissão para abrir este local',
       'es-419': 'ASIST no tiene permiso para abrir esta ubicación',
       'es-ES': 'ASIST no tiene permiso para abrir esta ubicación'
+    },
+    audioDamaged: {
+      'ja-JP': '音声のデータが壊れているか、形式が違います。',
+      'en-US': 'The audio data is damaged or in a different format.',
+      'fr-FR': 'Les données audio sont endommagées ou ne sont pas au bon format.',
+      'de-DE': 'Die Audiodaten sind beschädigt oder haben ein anderes Format.',
+      'hi-IN': 'ऑडियो डेटा खराब है या उसका फ़ॉर्मैट अलग है।',
+      'id-ID': 'Data audionya rusak atau formatnya berbeda.',
+      'it-IT': 'I dati audio sono danneggiati o hanno un altro formato.',
+      'ko-KR': '오디오 데이터가 손상되었거나 형식이 다릅니다.',
+      'pt-BR': 'Os dados de áudio estão corrompidos ou em outro formato.',
+      'es-419': 'Los datos de audio están dañados o tienen otro formato.',
+      'es-ES': 'Los datos de audio están dañados o tienen otro formato.'
     },
     previewStopped: {
       'ja-JP': '読み込みが途中で止まりました',
