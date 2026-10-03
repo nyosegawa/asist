@@ -32,6 +32,7 @@ jobs:
     outputs:
       app: ${{ steps.diff.outputs.app }}
       layout: ${{ steps.diff.outputs.layout }}
+      viewers: ${{ steps.diff.outputs.viewers }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +49,12 @@ jobs:
       # and an ignore file decides which of the renderer's files Tailwind scans for class names. The job's own
       # workflow and setup complete it. A file the demo comes to read from elsewhere has to join the list, or a
       # change to it skips fit.
+      # viewers lists the files that can move what the viewer budgets measure, traced on 2026-10-03: what the files
+      # card, the card's frame (PanelCard, PanelContent, FocusOverlay) and the preview page import in Vite's module
+      # graph, without following the other cards (registry.tsx), the store (stores.ts) or the dictionary into what
+      # they import; the pages that hold them and the demo's hooks the scene calls; the scene with its generators and
+      # their Office samples; the demo's config and what it imports; the dependencies and the job itself. A change
+      # elsewhere can still move a budget, since the page measured is the whole app, so the budgets also run weekly.
       - id: diff
         run: |
           git diff --name-only --no-renames -z HEAD^ HEAD > "$RUNNER_TEMP/changed"
@@ -66,6 +73,22 @@ jobs:
             -e '^\.github/actions/setup-app/' \
             "$RUNNER_TEMP/changed"; then
             echo layout=true >> "$GITHUB_OUTPUT"
+          fi
+          if grep -qzE \
+            -e '^src/renderer/(index|preview)\.html$' \
+            -e '^src/renderer/src/(preview|panels/(viewers|shell|primitives))/' \
+            -e '^src/renderer/src/panels/(builtin/files\.(tsx|css)|open-files\.ts|registry\.tsx)$' \
+            -e '^src/renderer/src/(ui/(FocusOverlay|key-for-app)|state/stores|display-error|i18n|open-link|platform)\.tsx?$' \
+            -e '^src/renderer/src/demo/(index\.tsx|PageView\.tsx|routes\.ts)$' \
+            -e '^src/renderer/demo-public/demo-files/office/(slides\.pptx|report\.docx)$' \
+            -e '^src/shared/(byte-range|external-link|file-path|files|preview-page|i18n/(index|error-key|error-text|os-message))\.ts$' \
+            -e '^scripts/(vite\.demo\.config\.mts|demo-page-view\.mts|aizuchi-clips/review-api\.mjs|cdp/(cdp|demo-server|viewer-measure)\.mjs)$' \
+            -e '^scripts/cdp/(scenes/viewer-budgets\.mjs$|scenes/viewer-budgets/|viewer-files/)' \
+            -e '^(package|package-lock|tsconfig[^/]*)\.json$' \
+            -e '^\.github/workflows/ci\.yml$' \
+            -e '^\.github/actions/setup-app/' \
+            "$RUNNER_TEMP/changed"; then
+            echo viewers=true >> "$GITHUB_OUTPUT"
           fi
 
   # The app is built for macOS on Apple Silicon, which macos-latest is, and for Windows x64, which
@@ -96,18 +119,40 @@ jobs:
       - run: npm test
         env:
           ASIST_VAP_PYTHON: ${{ steps.python.outputs.python-path }}
-      # The budget scene below writes its two-hour MP3 with lame, which the runner does not have. Homebrew installed
-      # it with mpg123 in 3.5 s on macos-latest (2026-10-02).
-      - run: brew install lame
+
+  # Whether the files card's viewers still show large files within the budgets their cases set
+  # (scripts/cdp/scenes/viewer-budgets/), in Chrome on the demo. A shared runner is slower than a developer's Mac,
+  # so the times are held to three times their budgets and the memory to the budgets as written; the runner has
+  # 7 GB, and the scene never runs two Chromes at once. It runs when a file on the viewers list changed, and in the
+  # weekly run, when changes does not run.
+  viewer-budgets:
+    needs: changes
+    if: ${{ !cancelled() && (github.event_name == 'schedule' || needs.changes.outputs.viewers == 'true') }}
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-app
+      # Writing the samples took 2.75 min on macos-latest (2026-10-03). The scene keeps them in a folder named after
+      # the generators' version, and the cache takes the same name. The WAV and the zip, 806 MB that does not
+      # compress, are written again in 3 s rather than kept.
+      - id: generators
+        run: node --input-type=module -e "import { generatorVersion } from './scripts/cdp/viewer-files/index.mjs'; console.log('version=' + generatorVersion())" >> "$GITHUB_OUTPUT"
+      - id: samples
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/viewer-files
+            !${{ runner.temp }}/viewer-files/**/*.wav
+            !${{ runner.temp }}/viewer-files/**/*.zip
+          key: viewer-files-${{ runner.os }}-${{ runner.arch }}-${{ steps.generators.outputs.version }}
+      # The two-hour MP3 is written with lame, which the runner does not have. Homebrew installed it with mpg123 in
+      # 3.5 s on macos-latest (2026-10-02).
+      - if: steps.samples.outputs.cache-hit != 'true'
+        run: brew install lame
         env:
           HOMEBREW_NO_AUTO_UPDATE: '1'
-      # Whether the files card's viewers still show large files within the budgets their cases set
-      # (scripts/cdp/scenes/viewer-budgets/), in Chrome on the demo. A shared runner is slower than a developer's
-      # Mac, so the times are held to three times their budgets and the memory to the budgets as written; the
-      # runner has 7 GB, and the scene never runs two Chromes at once. It runs here after the tests rather than in
-      # a job of its own, which would be a fifth macOS runner on every push and keep other pull requests waiting
-      # for one. Here it holds no runner of its own, so it runs whenever the tests do rather than only on layout.
-      - run: npm run demo:viewer-budgets -- --time-factor 3
+      - run: npm run demo:viewer-budgets -- --time-factor 3 --files "$RUNNER_TEMP/viewer-files"
 
   # Whether the text of every card and screen still fits in each of the eleven languages and every theme,
   # in Chrome. The layout depends on the fonts of macOS, so it runs there, with the themes shared out.
@@ -260,7 +305,7 @@ jobs:
   # change to the website skips. A skipped job is not a failure.
   result:
     if: always() && github.event_name != 'schedule'
-    needs: [changes, test, fit, build, website, test-windows, build-windows]
+    needs: [changes, test, viewer-budgets, fit, build, website, test-windows, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

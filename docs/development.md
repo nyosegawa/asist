@@ -83,7 +83,8 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 
 | job | 確かめること |
 | --- | --- |
-| `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test`、そのあとに `npm run demo:viewer-budgets -- --time-factor 3`。最後のものは、ファイルのカードの各ビューアーが大きなファイルを決めた時間とメモリの中で表示できることを確かめます。共有の runner は遅いので、時間だけを 3 倍まで許します。runner には MP3 を作る `lame` がないので、その前に Homebrew で入れます。macOS の runner をもう 1 台使わないように、この job の中で動かします |
+| `test` | `npm run typecheck`、`npm run i18n -- check`、`npm test` |
+| `viewer-budgets` | `npm run demo:viewer-budgets -- --time-factor 3`。ファイルのカードの各ビューアーが、大きなファイルを決めた時間とメモリの中で表示できること。共有の runner は遅いので、時間だけを 3 倍まで許します。作ったサンプルのファイルは、それを作るスクリプトの版を名前にしてキャッシュに残し、次からは作り直しません。キャッシュがないときは、MP3 を作る `lame` を Homebrew で入れます |
 | `fit` | `npm run demo:fit`。11 の言語とすべてのテーマで、カードと画面の文字が収まっていること。テーマを 2 台に分けて(`--shard 1/2` と `2/2`)同時に調べます |
 | `build` | `npm run dist:mac:unsigned` でネイティブのヘルパー、git、uv を含めて署名なしのアプリまで作り、アプリの中の git と uv が動くこと |
 | `test-windows` | Windows で `npm run typecheck` と `npm test`。辞書は OS に依らないので、`test` だけで確かめます |
@@ -91,7 +92,7 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
 | `result` | ほかの job に、失敗したものも取り消されたものもないこと |
 
-main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。`fit` は、デモが読むファイルを変えたときだけ動きます。デモが読むのは renderer、`src/shared`、デモの設定、fit のスクリプト、依存関係などで、main プロセスやテストや文書だけを変えても、デモの表示は変わりません。一覧は `ci.yml` の `changes` の job にあります。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
+main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。`fit` は、デモが読むファイルを変えたときだけ動きます。デモが読むのは renderer、`src/shared`、デモの設定、fit のスクリプト、依存関係などで、main プロセスやテストや文書だけを変えても、デモの表示は変わりません。`viewer-budgets` は、ファイルのカード、カードの枠、ビューアー、プレビューのページとそれらが import するファイル、計測のスクリプト、依存関係などを変えたときと、毎週火曜の朝 6 時(日本時間)に動きます。計測するページはアプリ全体なので、一覧の外の変更が数字を動かしたときは、週に 1 度の実行でわかります。一覧は `ci.yml` の `changes` の job にあります。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
 
 プルリクエストに新しいコミットを push すると、前のコミットでまだ動いている実行は取り消します。main への push は取り消さず、続けてマージしてもコミットごとに最後まで確かめます。失敗したときに、どのコミットで壊れたかがわかるようにするためです。
 
