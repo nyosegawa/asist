@@ -26,8 +26,8 @@ import { prepareFiles, VIEWER_FILES } from '../viewer-files/index.mjs'
  * +494 and +374 MB for the deck's peak. Before the viewers were made light, on an M5 with the limits on file sizes
  * lifted, the Word report showed after 24 s and grew the page by 2.5 GB, the deck after 8.5 s and by 1.9 GB, the
  * two-hour MP3 after 15.6 s and by 9.6 GB, the one-hour WAV after 4.6 s and by 10.5 GB, the 200-page PDF grew it by
- * 5.1 GB and the GPU process by 1.4 GB, and the workbooks by 0.54 and 0.90 GB, which the runner's 1.7 to 1.9 times
- * the M5's memory for the same viewer makes 0.9 to 1.7 GB there.
+ * 5.1 GB and the GPU process by 1.4 GB, and the workbooks showed after 1.4 and 5.3 s, held the page for 0.8 and
+ * 2.7 s, and grew it by 0.54 and 0.90 GB.
  *
  * The cases live one file per viewer in viewer-budgets/, each exporting `cases`, so that a change to one viewer
  * adds or edits only its own file:
@@ -37,7 +37,7 @@ import { prepareFiles, VIEWER_FILES } from '../viewer-files/index.mjs'
  *     file: 'pdf-1000',            // a key of VIEWER_FILES
  *     budget: { cardFirstMs, cardHeldMs, completeMs, cardPeakMb, focusFirstMs, focusHeldMs, slowestScreenMs,
  *               peakMb, finalMb, gpuPeakMb }, // any of them, reported
- *     limit: { peakMb },           // optional: limits of its own in place of LIMITS', where a regression is smaller
+ *     limit: { peakMb },           // optional: limits of its own over LIMITS', any key of a budget
  *     shown: (root, mode) => …,    // optional: when the content in view is drawn
  *     complete: (root) => …        // optional: when the card has finished, such as a whole waveform
  *   }]
@@ -77,12 +77,13 @@ const BUDGETS = {
 
 /**
  * What fails a case: content first shown after 5 s, against 2.0 s at most now and 4.6 to 24 s before for the
- * report, the deck and the recordings; the main thread held for 2 s, against 0.78 s at most now (the old viewers
- * held it for 0.13 to 0.81 s on the M5, and their time or memory catches them); a screen after 3 s, against 0.82 s;
- * the renderers grown by 1.5 GB at the peak, against 0.70 GB now and 1.9 to 10.5 GB before, and by 1 GB at the end,
- * against 0.42 GB now and up to 4.2 GB before; and the GPU process by 1 GB, against 0.22 GB now and 1.4 GB before.
- * A case lowers a limit where going back costs less, as the workbooks and the zip do. The time to complete a
- * waveform has no limit: a waveform that never completes fails when its wait runs out.
+ * report, the deck, the recordings and the five sheets; the main thread held for 2 s, against 0.78 s at most now and
+ * 0.13 to 2.7 s before; a screen after 3 s, against 0.82 s; the renderers grown by 1.5 GB at the peak, against
+ * 0.70 GB now and 1.9 to 10.5 GB before for all but the workbooks, and by 1 GB at the end, against 0.42 GB now and up
+ * to 4.2 GB before; and the GPU process by 1 GB, against 0.22 GB now and 1.4 GB before. A case adds checks of its
+ * own: the zip lowers the peak, since reading it at all would grow the page by its size; the workbooks ask for the
+ * end of the sheet, since the old viewer of the 50,000 rows passes the limits above; and the recordings limit the
+ * time to complete the waveform.
  */
 const LIMITS = { cardFirstMs: 5000, focusFirstMs: 5000, cardHeldMs: 2000, focusHeldMs: 2000, slowestScreenMs: 3000, peakMb: 1500, finalMb: 1000, gpuPeakMb: 1000 }
 
@@ -100,7 +101,7 @@ async function loadCases() {
       if (!VIEWER_FILES[one.file]) throw new Error(`${where}: file は ${Object.keys(VIEWER_FILES).join(', ')} のどれかです: ${one.file}`)
       const unknown = Object.keys(one.budget ?? {}).filter((key) => !BUDGETS[key])
       if (unknown.length || Object.keys(one.budget ?? {}).length === 0) throw new Error(`${where}: budget には ${Object.keys(BUDGETS).join(', ')} を書きます`)
-      if (one.budget.completeMs !== undefined && !one.complete) throw new Error(`${where}: completeMs を測るには complete が要ります`)
+      if ((one.budget.completeMs ?? one.limit?.completeMs) !== undefined && !one.complete) throw new Error(`${where}: completeMs を測るには complete が要ります`)
       const unknownLimits = Object.keys(one.limit ?? {}).filter((key) => !BUDGETS[key])
       if (unknownLimits.length) throw new Error(`${where}: limit には ${Object.keys(BUDGETS).join(', ')} を書きます`)
       cases.push(one)
