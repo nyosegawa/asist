@@ -112,7 +112,7 @@ export async function checkHealth(force = false): Promise<void> {
     }
     if (asrUp) asrRestarts.answered()
     const ttsWanted = demand.ttsWanted(settings)
-    if (!ttsWanted && ttsUp) {
+    if (!demand.ttsKept(settings) && ttsUp) {
       tts.releaseLocal()
       ttsUp = false
     }

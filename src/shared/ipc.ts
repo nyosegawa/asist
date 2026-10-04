@@ -936,6 +936,7 @@ export const IpcChannel = {
   NotesChanged: 'notes-changed',
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
+  WindowAway: 'window-away',
   ToggleMic: 'toggle-mic',
   GetSetupStatus: 'get-setup-status',
   RecheckAgentCli: 'recheck-agent-cli',
@@ -956,6 +957,7 @@ export const IpcChannel = {
   AppVersion: 'app-version',
   GetPlatformCapabilities: 'get-platform-capabilities',
   IsLaunchPage: 'is-launch-page',
+  IsWindowAway: 'is-window-away',
   HotkeyStatus: 'hotkey-status',
   PaintWindowControls: 'paint-window-controls',
   LicensesOpen: 'licenses-open',
@@ -1161,6 +1163,8 @@ export interface RendererApi {
   reportMiniAppView(view: MiniAppView | null): Promise<void>
   /** The global hotkey called the window up, and a microphone that is off is to be turned on. */
   onHotkeyMic(callback: () => void): () => void
+  /** The window went to the tray or the menu bar, or was minimized, and the microphone is to be turned off. */
+  onWindowAway(callback: () => void): () => void
   /** The tray's item that turns the microphone on when it is off and off when it is on. */
   onToggleMic(callback: () => void): () => void
 
@@ -1286,6 +1290,8 @@ export interface RendererApi {
    * A page loaded again after a reload or a crash is not a launch.
    */
   isLaunchPage(): Promise<boolean>
+  /** Whether the window is closed to the tray or the menu bar, or minimized, as main last saw it. */
+  isWindowAway(): Promise<boolean>
   /** Whether the global hotkey is off in the settings, registered, or refused by the OS. */
   hotkeyStatus(): Promise<HotkeyStatus>
   /** Colours the window's minimize, maximize and close buttons where the OS draws them over the page. */

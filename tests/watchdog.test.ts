@@ -474,6 +474,23 @@ describe('the watchdog with the microphone off', () => {
     expect(vap.running()).toBe(true)
   })
 
+  it('does not load a local speech synthesis model it let go while the window was away again when the window comes back', async () => {
+    const presence = await import('../src/main/services/window-presence')
+    const onChange = vi.fn()
+    watchdog.start(onChange)
+    await vi.advanceTimersByTimeAsync(10)
+    presence.setWindowAway(true)
+    watchdog.microphoneChanged(false)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mocks.releaseLocal).toHaveBeenCalledOnce()
+    mocks.ensureEngine.mockClear()
+
+    presence.setWindowAway(false)
+    await vi.advanceTimersByTimeAsync(2 * 60_000)
+    expect(mocks.ensureEngine).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tts: 'idle' }))
+  })
+
   it('starts what the microphone needs at once when it turns on, and stops what served it alone as it turns off', async () => {
     mocks.settings.aizuchi = true
     demand.setMicrophone(false)

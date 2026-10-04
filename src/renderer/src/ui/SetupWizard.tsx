@@ -337,7 +337,7 @@ export function SetupWizard(): React.JSX.Element | null {
         systemTtsVerified
       })
       useSettingsStore.setState({ settings: completed })
-      startMicAtLaunch()
+      void startMicAtLaunch()
     } catch (err) {
       setError(displayError(err))
       await refresh().catch(() => null)

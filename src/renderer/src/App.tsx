@@ -284,7 +284,7 @@ export default function App(): React.JSX.Element {
           <FocusOverlay />
           <ConfirmSheet />
           <SetupWizard />
-          <SafetyNotice onAcknowledged={startMicAtLaunch} />
+          <SafetyNotice onAcknowledged={() => void startMicAtLaunch()} />
         </div>
       )}
       <AnimatePresence>

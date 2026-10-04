@@ -64,7 +64,11 @@ let os: typeof import('../src/main/os-integration')
 /** A hidden window that keeps its listeners, so that a test can close it the way the user does. */
 function hiddenWindow() {
   const listeners = new Map<string, Listener>()
+  const shown = { visible: false, minimized: false }
   return {
+    shown,
+    /** Raises one of the window's events, such as 'hide', after a test has set what it leaves the window as. */
+    emit: (name: string) => listeners.get(name)?.({ preventDefault: () => {} }),
     on: (name: string, listener: Listener) => listeners.set(name, listener),
     /** Closes the window the way the user does, and says whether it closed. */
     close: () => {
@@ -75,9 +79,9 @@ function hiddenWindow() {
     hide: vi.fn(),
     show: vi.fn(),
     focus: vi.fn(),
-    isVisible: () => false,
+    isVisible: () => shown.visible,
     isFocused: () => false,
-    isMinimized: () => false,
+    isMinimized: () => shown.minimized,
     webContents: { send: vi.fn() }
   }
 }
@@ -247,5 +251,41 @@ describe('the tray menu', () => {
     template.find((item) => item.label === 'app.tray.toggleMic')!.click!()
     mocks.register.mock.calls[0][1]()
     expect(window.webContents.send.mock.calls.map(([channel]) => channel)).toEqual([IpcChannel.ToggleMic, IpcChannel.HotkeyMic])
+  })
+})
+
+describe('the window going to the tray or the menu bar, or minimized', () => {
+  it('has the page turn the microphone off as it goes, and leaves the microphone alone when it comes back', async () => {
+    const presence = await import('../src/main/services/window-presence')
+    const window = hiddenWindow()
+    window.shown.visible = true
+    os.setupOsIntegration(window as never)
+    const sent = (): string[] => window.webContents.send.mock.calls.map(([channel]) => channel)
+    expect(presence.windowAway()).toBe(false)
+
+    window.shown.visible = false
+    window.emit('hide')
+    expect(presence.windowAway()).toBe(true)
+    window.shown.visible = true
+    window.emit('show')
+    expect(presence.windowAway()).toBe(false)
+    window.shown.minimized = true
+    window.emit('minimize')
+    expect(presence.windowAway()).toBe(true)
+    window.shown.minimized = false
+    window.emit('restore')
+    expect(presence.windowAway()).toBe(false)
+    expect(sent()).toEqual([IpcChannel.WindowAway, IpcChannel.WindowAway])
+  })
+
+  it('does not count a window that has not shown yet as away, so that the microphone set to turn on at launch does not race its first show', async () => {
+    const presence = await import('../src/main/services/window-presence')
+    const window = hiddenWindow()
+    os.setupOsIntegration(window as never)
+    expect(presence.windowAway()).toBe(false)
+    window.shown.visible = true
+    window.emit('show')
+    expect(presence.windowAway()).toBe(false)
+    expect(window.webContents.send).not.toHaveBeenCalled()
   })
 })

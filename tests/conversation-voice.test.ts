@@ -358,6 +358,12 @@ describe('the microphone set to turn on at launch', () => {
     await start({ isLaunchPage: async () => false })
     expect(voice().enable).not.toHaveBeenCalled()
   })
+
+  it('stays off when the window was closed or minimized while the page loaded', async () => {
+    mocks.settings.micAutoStart = true
+    await start({ isLaunchPage: async () => true, isWindowAway: async () => true })
+    expect(voice().enable).not.toHaveBeenCalled()
+  })
 })
 
 describe('the aizuchi classifier', () => {
@@ -1455,6 +1461,23 @@ describe('the tray item that toggles the microphone', () => {
     toggle()
     await flush()
     expect(voice().enable).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the window going to the tray or minimized', () => {
+  it('turns the microphone off, of the voice engine and of the live engine alike', async () => {
+    let away!: () => void
+    await start({
+      onWindowAway: (callback: () => void) => {
+        away = callback
+        return () => {}
+      }
+    })
+    voice().current = 'listening'
+    away()
+    expect(voice().disable).toHaveBeenCalledOnce()
+    expect((mocks.live as { disable: Mock }).disable).toHaveBeenCalledOnce()
+    expect(voice().enable).not.toHaveBeenCalled()
   })
 })
 

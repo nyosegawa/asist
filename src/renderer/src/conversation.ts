@@ -402,6 +402,12 @@ async function initializeConversation(): Promise<void> {
   await startStoreSync({ onHeldConfirmationClosed: resumeHeldTurn })
   window.api.onHotkeyMic(() => void enableMic())
   window.api.onToggleMic(() => void toggleMic())
+  // The microphone is off while the window is in the tray or minimized, and stays off when it comes back
+  // until the user turns it on.
+  window.api.onWindowAway(() => {
+    voiceController.disable()
+    liveVoice.disable()
+  })
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)
@@ -435,7 +441,7 @@ async function initializeConversation(): Promise<void> {
 
   feed.append({ role: 'sys', text: '', message: { key: 'conversation.start' } })
   // A page loaded again after a reload or a crash is not a launch, and starts with the microphone off.
-  if (await window.api.isLaunchPage()) startMicAtLaunch()
+  if (await window.api.isLaunchPage()) void startMicAtLaunch()
 
   turn.setPhase('idle')
 }
@@ -453,10 +459,13 @@ function enableMic(): Promise<void> {
 
 /**
  * Turns the microphone on when the user chose to have it on at launch: at launch, and again once the
- * setup or the notice of the risks that held it off has been answered.
+ * setup or the notice of the risks that held it off has been answered. A window closed or minimized while
+ * the page loaded keeps its microphone off, as one closed later does.
  */
-export function startMicAtLaunch(): void {
-  if (useSettingsStore.getState().settings?.micAutoStart) void enableMic()
+export async function startMicAtLaunch(): Promise<void> {
+  if (!useSettingsStore.getState().settings?.micAutoStart) return
+  if (await window.api.isWindowAway()) return
+  await enableMic()
 }
 
 function handleLiveEvent(event: LiveEvent): void {

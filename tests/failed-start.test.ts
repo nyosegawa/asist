@@ -48,7 +48,6 @@ const mocks = vi.hoisted(() => ({
   initMail: vi.fn(),
   ensureLoaded: vi.fn(),
   initMemoryCuration: vi.fn(),
-  ensureServer: vi.fn(() => Promise.resolve(true)),
   ensureEngine: vi.fn(() => Promise.resolve()),
   // The quit gate stops the agents and then quits or installs; here it does the last step at once.
   quitAfterAgentsStop: vi.fn()
@@ -98,10 +97,9 @@ vi.mock('../src/main/file-protocol', () => ({ handleFileScheme: () => undefined,
 vi.mock('../src/main/preview-protocol', () => ({ handlePreviewScheme: () => undefined, previewScheme: {} }))
 vi.mock('../src/main/services/native-mic', () => ({ stop: () => undefined }))
 vi.mock('../src/main/services/live', () => ({ stop: () => Promise.resolve() }))
-vi.mock('../src/main/services/asr', () => ({ ensureServer: mocks.ensureServer }))
 vi.mock('../src/main/services/tts', () => ({ ensureEngine: mocks.ensureEngine }))
 vi.mock('../src/main/services/aizuchi', () => ({ getBank: () => undefined }))
-vi.mock('../src/main/services/aizuchi-classifier', () => ({ wanted: () => false, ensureStarted: () => undefined }))
+vi.mock('../src/main/services/speech-demand', () => ({ ttsWanted: () => true }))
 vi.mock('../src/main/services/watchdog', () => ({ checkAfter: mocks.checkAfter }))
 vi.mock('../src/main/services/brain/job-reporting', () => ({ initJobReporting: mocks.initJobReporting }))
 vi.mock('../src/main/services/maintenance', () => ({ compactionJob: {}, initMaintenance: mocks.initMaintenance }))
@@ -206,7 +204,6 @@ describe('a start that failed', () => {
   it('opens no window and starts no voice when one of the services fails to start', async () => {
     await failToStart()
     expect(mocks.windows).toEqual([])
-    expect(mocks.ensureServer).not.toHaveBeenCalled()
     expect(mocks.ensureEngine).not.toHaveBeenCalled()
   })
 
@@ -233,7 +230,7 @@ describe('the launch that only updates after a failed start', () => {
     mocks.updater.emit('update-available', { version: '0.5.1' })
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalled())
     expect(mocks.windows).toEqual([])
-    for (const started of [mocks.registerIpc, mocks.checkAfter, mocks.initJobReporting, mocks.initMaintenance, mocks.initMail, mocks.ensureLoaded, mocks.initMemoryCuration, mocks.ensureServer, mocks.ensureEngine]) {
+    for (const started of [mocks.registerIpc, mocks.checkAfter, mocks.initJobReporting, mocks.initMaintenance, mocks.initMail, mocks.ensureLoaded, mocks.initMemoryCuration, mocks.ensureEngine]) {
       expect(started).not.toHaveBeenCalled()
     }
   })
