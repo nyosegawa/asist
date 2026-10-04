@@ -472,23 +472,25 @@ export class VoiceController {
       this.watchTurnLag(now, state.turnLagMs)
       this.maybeNod()
     })
+    const run = this.micGeneration
     void window.api.vapStart().then(
       (started) => {
-        if (!started) this.sayMaaiUnavailable()
+        if (!started) this.sayMaaiUnavailable(run)
       },
       (err: unknown) => {
         console.error('MaAI start failed:', errorMessageOf(err))
-        this.sayMaaiUnavailable()
+        this.sayMaaiUnavailable(run)
       }
     )
   }
 
   /**
    * The conversation goes on without MaAI, on the fixed hangover, and the user hears of it once. A start
-   * that ends after MaAI was turned off, or the language changed, has nothing to report.
+   * that ends after MaAI was turned off, the language changed or the microphone was turned off, which stops
+   * the worker it was loading, has nothing to report.
    */
-  private sayMaaiUnavailable(): void {
-    if (!this.usesMaai() || this.maaiUnavailableSaid) return
+  private sayMaaiUnavailable(run: number): void {
+    if (run !== this.micGeneration || !this.usesMaai() || this.maaiUnavailableSaid) return
     this.maaiUnavailableSaid = true
     this.events.emit('maaiUnavailable')
   }

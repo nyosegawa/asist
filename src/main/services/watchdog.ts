@@ -185,8 +185,9 @@ export function start(onChange: (snap: HealthSnapshot) => void): void {
     const settings = getSettings()
     if (demand.classifierWanted(settings)) void aizuchiClassifier.ensureStarted()
     else if (aizuchiClassifier.running()) aizuchiClassifier.stop()
+    // A MaAI worker whose start has not ended, such as one a preparation checks, is left to that start.
     if (!demand.microphoneOn()) {
-      if (vap.running()) vap.stop()
+      if (vap.running() && !vap.starting()) vap.stop()
     } else if (vap.wanted(settings)) void vap.restart()
     if (!embedding.running()) {
       void memory.startEmbeddingIfEnabled().catch((error) => console.error('memory embedding:', error))

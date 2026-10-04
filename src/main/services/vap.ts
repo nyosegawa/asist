@@ -357,6 +357,9 @@ async function startWorker(): Promise<boolean> {
   return ready
 }
 
+/** Whether a start is under way, whose caller, such as a preparation, has not yet heard how it ended. */
+export const starting = (): boolean => startInFlight !== null
+
 /** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
 function start(): Promise<boolean> {
   if (running()) return Promise.resolve(true)
@@ -401,6 +404,9 @@ function stopWorker(): void {
   const stale = child
   child = null
   workerReady = false
+  // The start under way, if any, ends with the worker it was loading, and the next start loads a new one
+  // instead of waiting for it.
+  startInFlight = null
   if (stale && stale.exitCode === null && !stale.killed) {
     try {
       stale.stdin.end()

@@ -441,6 +441,39 @@ describe('the watchdog with the microphone off', () => {
     expect(mocks.ensureEngine).not.toHaveBeenCalled()
   })
 
+  it('lets a start of MaAI that loaded just before a check end before it stops the worker, as a preparation needs', async () => {
+    mocks.settings.vapEnabled = true
+    watchdog.start(() => {})
+    demand.setMicrophone(false)
+    await vi.advanceTimersByTimeAsync(29_000)
+    const starting = vap.ensureStarted(() => {})
+    await vi.advanceTimersByTimeAsync(950)
+    // The worker says it is ready between two of the start's looks, just before the watchdog's check.
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(vap.running()).toBe(false)
+  })
+
+  it('starts MaAI anew when the microphone turns on again while the start it stopped was loading', async () => {
+    mocks.settings.vapEnabled = true
+    watchdog.start(() => {})
+    const stopped = vap.ensureStarted(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    watchdog.microphoneChanged(false)
+    watchdog.microphoneChanged(true)
+    const started = vap.ensureStarted(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    expect(vapChildren()).toHaveLength(2)
+    vapChildren()[1].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await stopped).toBe(false)
+    expect(await started).toBe(true)
+    expect(vap.running()).toBe(true)
+  })
+
   it('starts what the microphone needs at once when it turns on, and stops what served it alone as it turns off', async () => {
     mocks.settings.aizuchi = true
     demand.setMicrophone(false)
