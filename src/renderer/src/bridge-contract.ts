@@ -139,6 +139,7 @@ export const rendererApiMethods = [
   'appVersion',
   'getPlatformCapabilities',
   'isLaunchPage',
+  'isWindowAway',
   'hotkeyStatus',
   'paintWindowControls',
   'licensesOpen',

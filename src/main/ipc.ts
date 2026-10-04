@@ -76,6 +76,7 @@ import { sliceCodePoints } from '@shared/text-slice'
 import { reportOpenMiniApp } from './services/mini-app-view'
 import { windowChrome } from './window-chrome'
 import { isLaunchPage } from './page-lifetime'
+import { windowAway } from './services/window-presence'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { conversationLocale } from './services/conversation-locale'
 
@@ -231,6 +232,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.AppVersion, () => app.getVersion())
   handle(IpcChannel.GetPlatformCapabilities, () => platformCapabilities())
   handle(IpcChannel.IsLaunchPage, () => isLaunchPage())
+  handle(IpcChannel.IsWindowAway, () => windowAway())
   handle(IpcChannel.HotkeyStatus, () => hotkeyStatus())
   handle(IpcChannel.PaintWindowControls, (_e, colors: { symbol: unknown }) => {
     if (typeof colors?.symbol !== 'string') throw new Error('invalid window control colours')

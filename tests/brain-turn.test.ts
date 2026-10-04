@@ -1055,6 +1055,34 @@ describe('brain turn', () => {
     }
   })
 
+  it('holds a job report again when the window goes away while the report waits for room in the history', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      const presence = await import('../src/main/services/window-presence')
+      await historyAtHardLimit()
+      const { initJobReporting, acknowledgePlayback, reportNotice } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(60_000)
+      presence.setWindowAway(true)
+      const { completeText } = await import('../src/main/services/llm')
+      vi.mocked(completeText).mockResolvedValueOnce({ text: '以前の会話の引き継ぎ', stop: 'end' })
+      const { compactionJob } = await import('../src/main/services/maintenance')
+      await compactionJob.run()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mocks.requests).toEqual([])
+      presence.setWindowAway(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.requests).toHaveLength(1)
+      expect(textOf(mocks.requests[0].messages.at(-1)!)).toContain(reportNotice(FINISHED_JOB).text)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reports nothing for a job that is gone by the time the history has room', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     try {

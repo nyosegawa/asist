@@ -278,14 +278,14 @@ describe('the window going to the tray or the menu bar, or minimized', () => {
     expect(sent()).toEqual([IpcChannel.WindowAway, IpcChannel.WindowAway])
   })
 
-  it('counts a window that has not shown yet as away without telling the page, which is still loading', async () => {
+  it('does not count a window that has not shown yet as away, so that the microphone set to turn on at launch does not race its first show', async () => {
     const presence = await import('../src/main/services/window-presence')
     const window = hiddenWindow()
     os.setupOsIntegration(window as never)
-    expect(presence.windowAway()).toBe(true)
-    expect(window.webContents.send).not.toHaveBeenCalled()
+    expect(presence.windowAway()).toBe(false)
     window.shown.visible = true
     window.emit('show')
     expect(presence.windowAway()).toBe(false)
+    expect(window.webContents.send).not.toHaveBeenCalled()
   })
 })

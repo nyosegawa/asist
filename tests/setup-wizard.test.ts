@@ -99,6 +99,7 @@ const api = {
   vapStop: vi.fn(async () => {}),
   ttsTest: vi.fn(async () => ({ audio: new ArrayBuffer(0), text: '' })),
   requestMicPermission: vi.fn(async () => true),
+  isWindowAway: vi.fn(async () => false),
   openExternal: vi.fn(async () => {})
 }
 

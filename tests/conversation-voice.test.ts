@@ -358,6 +358,12 @@ describe('the microphone set to turn on at launch', () => {
     await start({ isLaunchPage: async () => false })
     expect(voice().enable).not.toHaveBeenCalled()
   })
+
+  it('stays off when the window was closed or minimized while the page loaded', async () => {
+    mocks.settings.micAutoStart = true
+    await start({ isLaunchPage: async () => true, isWindowAway: async () => true })
+    expect(voice().enable).not.toHaveBeenCalled()
+  })
 })
 
 describe('the aizuchi classifier', () => {

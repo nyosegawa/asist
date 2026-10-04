@@ -750,6 +750,7 @@ export const mockApi: RendererApi = {
   appUpdateInstall: async () => {},
   getPlatformCapabilities: async () => capabilities,
   isLaunchPage: async () => true,
+  isWindowAway: async () => false,
   hotkeyStatus: async () => (!settings.globalHotkey ? 'off' : hotkeyRefused ? 'failed' : 'registered'),
   paintWindowControls: async () => {},
   licensesOpen: async () => {},

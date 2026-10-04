@@ -111,15 +111,15 @@ export function setupOsIntegration(window: BrowserWindow): void {
   }
 
   // A window hidden in the tray or the menu bar, or minimized, is away. The page turns its microphone off as
-  // the window goes, which lets the models it loaded go, and leaves it off when the window comes back.
-  const awayNow = (): boolean => !window.isVisible() || window.isMinimized()
+  // the window goes, which lets the models it loaded go, and leaves it off when the window comes back. A
+  // window that has not shown yet is not away, so that the microphone set to turn on at launch does not race
+  // the first show.
   const followPresence = (): void => {
-    const away = awayNow()
+    const away = !window.isVisible() || window.isMinimized()
     if (away === windowAway()) return
     setWindowAway(away)
     if (away) window.webContents.send(IpcChannel.WindowAway, undefined)
   }
-  setWindowAway(awayNow())
   window.on('show', followPresence)
   window.on('hide', followPresence)
   window.on('minimize', followPresence)

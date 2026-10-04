@@ -957,6 +957,7 @@ export const IpcChannel = {
   AppVersion: 'app-version',
   GetPlatformCapabilities: 'get-platform-capabilities',
   IsLaunchPage: 'is-launch-page',
+  IsWindowAway: 'is-window-away',
   HotkeyStatus: 'hotkey-status',
   PaintWindowControls: 'paint-window-controls',
   LicensesOpen: 'licenses-open',
@@ -1289,6 +1290,8 @@ export interface RendererApi {
    * A page loaded again after a reload or a crash is not a launch.
    */
   isLaunchPage(): Promise<boolean>
+  /** Whether the window is closed to the tray or the menu bar, or minimized, as main last saw it. */
+  isWindowAway(): Promise<boolean>
   /** Whether the global hotkey is off in the settings, registered, or refused by the OS. */
   hotkeyStatus(): Promise<HotkeyStatus>
   /** Colours the window's minimize, maximize and close buttons where the OS draws them over the page. */

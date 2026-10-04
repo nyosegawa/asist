@@ -5,6 +5,7 @@
  * spoken report waits for the window, since the OS notification has told of the job already.
  */
 
+/** A window that has not shown yet counts as present: it is about to show. */
 let away = false
 let present: Array<() => void> = []
 

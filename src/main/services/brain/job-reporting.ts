@@ -12,7 +12,7 @@ import { beginTurn } from './index'
 import { conversationOwner, currentSpeechRoute, history, turnScheduler } from './session'
 import type { SystemNotice } from './conversation-log'
 import type { SpeechRoute } from './speech-route'
-import { whenPresent } from '../window-presence'
+import { whenPresent, windowAway } from '../window-presence'
 
 /**
  * Automatic reporting of finished jobs. The end of an agent job is handed to a turn as a system
@@ -202,6 +202,11 @@ async function deliverReport(jobId: string): Promise<void> {
     await whenPresent()
     await waitForIdle()
     await waitForRoomInHistory()
+    // The window may have gone away during the waits, and the report waits for it again.
+    if (windowAway()) {
+      attempt--
+      continue
+    }
     // The report is written only now, after waits that can be long: the job may have been merged or
     // discarded meanwhile, and an engine may have taken the conversation over.
     const job = agentRunner.get(jobId)
