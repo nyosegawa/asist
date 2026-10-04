@@ -529,9 +529,10 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
         // The clips exist for Japanese only, so the language decides whether there is a bank at all.
         before.conversationLocale !== after.conversationLocale
       ) {
-        // A local engine nothing needs now is left unloaded, with what ran for the engine before stopped.
+        // A local engine is not loaded for the change while the microphone is off; what ran for the engine or
+        // the size chosen before stops, and a voice is chosen with each sentence.
         if (speechDemand.ttsWanted(after)) watchdog.checkAfter(tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error)))
-        else tts.releaseLocal()
+        else if (before.ttsEngine !== after.ttsEngine || before.qwenTtsSize !== after.qwenTtsSize) tts.releaseLocal()
         aizuchi.rebuild()
       }
       if (before.globalHotkey !== after.globalHotkey) refreshHotkey()
