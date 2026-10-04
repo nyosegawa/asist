@@ -591,6 +591,7 @@ export const mockApi: RendererApi = {
   notify: async () => {},
   reportMiniAppView: async () => {},
   onHotkeyMic: () => () => {},
+  onWindowAway: () => () => {},
   onToggleMic: () => () => {},
   recheckAgentCli: async () => {},
   getSetupStatus: async () => ({

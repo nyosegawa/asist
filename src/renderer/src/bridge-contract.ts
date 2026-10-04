@@ -78,6 +78,7 @@ export const rendererApiMethods = [
   'notify',
   'reportMiniAppView',
   'onHotkeyMic',
+  'onWindowAway',
   'onToggleMic',
   'getSetupStatus',
   'recheckAgentCli',

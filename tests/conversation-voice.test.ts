@@ -1458,6 +1458,23 @@ describe('the tray item that toggles the microphone', () => {
   })
 })
 
+describe('the window going to the tray or minimized', () => {
+  it('turns the microphone off, of the voice engine and of the live engine alike', async () => {
+    let away!: () => void
+    await start({
+      onWindowAway: (callback: () => void) => {
+        away = callback
+        return () => {}
+      }
+    })
+    voice().current = 'listening'
+    away()
+    expect(voice().disable).toHaveBeenCalledOnce()
+    expect((mocks.live as { disable: Mock }).disable).toHaveBeenCalledOnce()
+    expect(voice().enable).not.toHaveBeenCalled()
+  })
+})
+
 describe('the state of the speech services', () => {
   async function startPushed(): Promise<{ push: (status: AppStatus) => void; handled: Mock }> {
     let push!: (status: AppStatus) => void

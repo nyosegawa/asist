@@ -12,12 +12,14 @@ import { beginTurn } from './index'
 import { conversationOwner, currentSpeechRoute, history, turnScheduler } from './session'
 import type { SystemNotice } from './conversation-log'
 import type { SpeechRoute } from './speech-route'
+import { whenPresent } from '../window-presence'
 
 /**
  * Automatic reporting of finished jobs. The end of an agent job is handed to a turn as a system
  * notice, and the LLM reports it in the flow of the conversation. A report never takes a turn away
- * from the user: it starts only while idle. It counts as delivered once it reached the user, and is
- * queued again when it did not.
+ * from the user: it starts only while idle. It waits while the window is away in the tray or minimized,
+ * where the OS notification has told of the job and the microphone is off, so nobody could answer it.
+ * It counts as delivered once it reached the user, and is queued again when it did not.
  */
 
 const JOB_REPORT_PLAYBACK_TIMEOUT_MS = 3 * 60_000
@@ -197,6 +199,7 @@ export function reportNotice(job: AgentJob): SystemNotice {
  */
 async function deliverReport(jobId: string): Promise<void> {
   for (let attempt = 1; attempt <= MAX_JOB_REPORT_ATTEMPTS; attempt++) {
+    await whenPresent()
     await waitForIdle()
     await waitForRoomInHistory()
     // The report is written only now, after waits that can be long: the job may have been merged or

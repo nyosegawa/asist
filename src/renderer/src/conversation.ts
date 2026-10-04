@@ -402,6 +402,12 @@ async function initializeConversation(): Promise<void> {
   await startStoreSync({ onHeldConfirmationClosed: resumeHeldTurn })
   window.api.onHotkeyMic(() => void enableMic())
   window.api.onToggleMic(() => void toggleMic())
+  // The microphone is off while the window is in the tray or minimized, and stays off when it comes back
+  // until the user turns it on.
+  window.api.onWindowAway(() => {
+    voiceController.disable()
+    liveVoice.disable()
+  })
 
   speechPlayer.events.on('segmentstart', ({ segment, durationMs }) => {
     interjectPlayback.markSegmentStarted(segment)

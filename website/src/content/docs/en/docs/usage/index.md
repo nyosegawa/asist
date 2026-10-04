@@ -30,4 +30,6 @@ You can also open a mini app from the conversation by asking, for example, "Open
 
 When you close the window, ASIST stays in the menu bar on a Mac, and in the notification area of the taskbar on Windows. You can bring it back from any app with ⌥Space on a Mac, and with Alt+Shift+Space on Windows. It also uses the system's notifications to tell you when a timer ends, a job finishes or new mail arrives.
 
+When you close the window or minimize it, ASIST turns the microphone off and frees the speech models ([Models ASIST uses](/en/docs/reference/models/)). The microphone stays off when the window comes back, so turn it on with the microphone button when you want to talk. Calling the window up with ⌥Space or Alt+Shift+Space turns the microphone on as well. A job that finishes while the window is closed is announced at once by a system notification, and reported aloud once the window is back.
+
 To see how long speech recognition, generating the reply and reading it aloud took, turn on "Show at the top of the screen" in [Appearance](/en/docs/settings/appearance/) in the settings, and the times appear at the top of the screen.

@@ -936,6 +936,7 @@ export const IpcChannel = {
   NotesChanged: 'notes-changed',
   Notify: 'notify',
   HotkeyMic: 'hotkey-mic',
+  WindowAway: 'window-away',
   ToggleMic: 'toggle-mic',
   GetSetupStatus: 'get-setup-status',
   RecheckAgentCli: 'recheck-agent-cli',
@@ -1161,6 +1162,8 @@ export interface RendererApi {
   reportMiniAppView(view: MiniAppView | null): Promise<void>
   /** The global hotkey called the window up, and a microphone that is off is to be turned on. */
   onHotkeyMic(callback: () => void): () => void
+  /** The window went to the tray or the menu bar, or was minimized, and the microphone is to be turned off. */
+  onWindowAway(callback: () => void): () => void
   /** The tray's item that turns the microphone on when it is off and off when it is on. */
   onToggleMic(callback: () => void): () => void
 

@@ -1032,6 +1032,29 @@ describe('brain turn', () => {
     }
   })
 
+  it('holds a job report while the window is in the tray or minimized, and delivers it once the window is back', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      const { brain } = await loadBrain()
+      const presence = await import('../src/main/services/window-presence')
+      presence.setWindowAway(true)
+      const { initJobReporting, acknowledgePlayback } = await import('../src/main/services/brain/job-reporting')
+      acknowledgeLikeTheRenderer(brain, acknowledgePlayback)
+      initJobReporting()
+      mocks.rounds.push(async (round) => { round.text('調査が終わりました。'); return {} })
+      await finishJob()
+      await vi.advanceTimersByTimeAsync(10 * 60_000)
+      expect(mocks.requests).toEqual([])
+      presence.setWindowAway(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(mocks.requests).toHaveLength(1)
+      const { reportNotice } = await import('../src/main/services/brain/job-reporting')
+      expect(textOf(mocks.requests[0].messages.at(-1)!)).toContain(reportNotice(FINISHED_JOB).text)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reports nothing for a job that is gone by the time the history has room', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
     try {

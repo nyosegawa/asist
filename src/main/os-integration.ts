@@ -17,6 +17,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { errorMessage, t } from './services/i18n'
 import { platformCapabilities } from './services/platform'
 import { getSettings } from './services/settings'
+import { setWindowAway, windowAway } from './services/window-presence'
 import type { OsFamily } from '@shared/platform'
 import macosTrayIcon from './assets/tray/macos-template.png?inline'
 import windowsTrayIcon16 from './assets/tray/windows-16.png?inline'
@@ -108,6 +109,21 @@ export function setupOsIntegration(window: BrowserWindow): void {
     window.show()
     window.focus()
   }
+
+  // A window hidden in the tray or the menu bar, or minimized, is away. The page turns its microphone off as
+  // the window goes, which lets the models it loaded go, and leaves it off when the window comes back.
+  const awayNow = (): boolean => !window.isVisible() || window.isMinimized()
+  const followPresence = (): void => {
+    const away = awayNow()
+    if (away === windowAway()) return
+    setWindowAway(away)
+    if (away) window.webContents.send(IpcChannel.WindowAway, undefined)
+  }
+  setWindowAway(awayNow())
+  window.on('show', followPresence)
+  window.on('hide', followPresence)
+  window.on('minimize', followPresence)
+  window.on('restore', followPresence)
 
   tray = new Tray(TRAY_ICONS[platformCapabilities().os]())
   tray.setToolTip('ASIST')
