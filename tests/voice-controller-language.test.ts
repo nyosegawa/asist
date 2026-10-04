@@ -61,7 +61,8 @@ beforeEach(() => {
       transcribe: vi.fn(),
       transcribeCancel: vi.fn(async () => true),
       transcribePartial: vi.fn(),
-      getStatus: vi.fn(async () => ({ asr: true })),
+      getStatus: vi.fn(async () => ({ asr: 'ready', asrInstalled: true })),
+      voiceMicrophone: vi.fn(async () => {}),
       requestMicPermission: vi.fn(async () => true),
       vapStart: vi.fn(async () => true),
       vapPush: vi.fn(async () => undefined),
@@ -360,6 +361,19 @@ describe('MaAI that does not start', () => {
     answer(false)
     await new Promise((resolve) => setTimeout(resolve, 0))
     controller.disable()
+    expect(said).not.toHaveBeenCalled()
+  })
+
+  it('says nothing when the microphone was turned off before the start answered, which stops the worker it was loading', async () => {
+    const controller = controllerWithMaai()
+    const said = vi.fn()
+    controller.events.on('maaiUnavailable', said)
+    let answer: (started: boolean) => void = () => {}
+    window.api.vapStart = vi.fn(() => new Promise<boolean>((resolve) => (answer = resolve)))
+    await controller.enable()
+    controller.disable()
+    answer(false)
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(said).not.toHaveBeenCalled()
   })
 

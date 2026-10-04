@@ -86,11 +86,10 @@ const status: AppStatus = {
   llm: true,
   conversationModel: { provider: 'openai', id: 'gpt-5.6-luna' },
   llmKeys: { anthropic: 'verified', openai: 'missing', google: 'missing', cerebras: 'saved' },
-  tts: false,
-  ttsStarting: false,
+  tts: 'down',
   ttsEngine: 'system',
   ttsLabel: 'macOS',
-  asr: false,
+  asr: 'down',
   asrInstalled: false,
   agent: 'missing',
   agentEngine: 'codex',
@@ -305,7 +304,7 @@ describe('settings dialog', () => {
   })
 
   it('lets speech recognition that is ready be checked again from its row', async () => {
-    useStatusStore.setState({ status: { ...status, asr: true } })
+    useStatusStore.setState({ status: { ...status, asr: 'ready' } })
     const view = await render()
     await act(async () => nav(view, 'voice').click())
     const listening = view.querySelector(`[aria-label="${t('settingsVoice.recognition.title')}"]`)!
@@ -506,7 +505,7 @@ describe('settings dialog', () => {
     async (ttsEngine, lacking) => {
       const liveSettings = { ...settings, voiceEngine: 'gemini-live', ttsEngine } as AppSettings
       useSettingsStore.setState({ settings: liveSettings })
-      useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'verified', google: 'verified' }, agent: 'found', tts: false } })
+      useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, openai: 'verified', google: 'verified' }, agent: 'found', tts: 'down' } })
       api.saveSettings.mockImplementationOnce(async (patch: Partial<AppSettings>) => ({ ...liveSettings, ...patch }))
       const view = await render()
       expect(pendingLabels(view)).toEqual([])
@@ -547,16 +546,16 @@ describe('settings dialog', () => {
     let answer!: (read: AppStatus) => void
     api.getStatus.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
     const refreshing = useStatusStore.getState().refresh()
-    useStatusStore.getState().apply({ ...status, sequence: 3, tts: true })
-    answer({ ...status, sequence: 2, tts: false })
+    useStatusStore.getState().apply({ ...status, sequence: 3, tts: 'ready' })
+    answer({ ...status, sequence: 2, tts: 'down' })
     await refreshing
-    expect(useStatusStore.getState().status).toMatchObject({ sequence: 3, tts: true })
+    expect(useStatusStore.getState().status).toMatchObject({ sequence: 3, tts: 'ready' })
 
     // Main answers a read just after it pushed a status read before it, and the answer overtakes the push.
-    api.getStatus.mockResolvedValueOnce({ ...status, sequence: 5, tts: false })
+    api.getStatus.mockResolvedValueOnce({ ...status, sequence: 5, tts: 'down' })
     await useStatusStore.getState().refresh()
-    useStatusStore.getState().apply({ ...status, sequence: 4, tts: true })
-    expect(useStatusStore.getState().status).toMatchObject({ sequence: 5, tts: false })
+    useStatusStore.getState().apply({ ...status, sequence: 4, tts: 'ready' })
+    expect(useStatusStore.getState().status).toMatchObject({ sequence: 5, tts: 'down' })
   })
 
   it('says in the page list that the costs could not be read, instead of leaving the line empty', async () => {
@@ -1182,7 +1181,7 @@ describe('the state of the speech models while the settings are open', () => {
     await act(async () => nav(view, 'voice').click())
     const listening = view.querySelector(`[aria-label="${t('settingsVoice.recognition.title')}"]`)!
     expect(listening.querySelector('.st-prepline')).not.toBeNull()
-    await act(async () => useStatusStore.setState({ status: { ...status, asr: true } }))
+    await act(async () => useStatusStore.setState({ status: { ...status, asr: 'ready' } }))
     expect(listening.querySelector('.st-chip')?.textContent).toBe(t('common.ready'))
     expect(listening.querySelector('.st-prepline')).toBeNull()
   })
@@ -1217,7 +1216,7 @@ describe('the state of the speech models while the settings are open', () => {
 
   it('shows a prepared local engine that is still loading as starting, without offering to download its model', async () => {
     useSettingsStore.setState({ settings: { ...settings, ttsEngine: 'irodori' } })
-    useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori', ttsStarting: true } })
+    useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori', tts: 'starting' } })
     const view = await render()
     // The engine is not among the things that cannot work, beside the three this fixture lacks.
     expect(pendingLabels(view)).toEqual([t('settingsModels.asr.title'), 'Agent', t('settingsConversation.models.apiKey', { provider: 'OpenAI' })])
@@ -1225,10 +1224,24 @@ describe('the state of the speech models while the settings are open', () => {
     const speech = view.querySelector(`[aria-label="${t('settingsVoice.speech.title')}"]`)!
     expect(speech.querySelector('.st-chip')?.textContent).toBe(t('settingsModels.starting'))
     expect(speech.querySelector('.st-prepline')).toBeNull()
-    await act(async () => useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori', tts: true } }))
+    await act(async () => useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori', tts: 'ready' } }))
     expect(speech.querySelector('.st-chip')).toBeNull()
     await act(async () => useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori' } }))
     expect(speech.querySelector('.st-prepline-text')?.textContent).toBe(t('settingsModels.speech.localModel', { model: 'Irodori-TTS', sizeGb: '1.9' }))
+  })
+
+  it('shows the local models that are prepared and not loaded, because the microphone is off, as ready', async () => {
+    useSettingsStore.setState({ settings: { ...settings, ttsEngine: 'irodori' } })
+    useStatusStore.setState({ status: { ...status, ttsEngine: 'irodori', tts: 'idle', asr: 'idle', asrInstalled: true } })
+    const view = await render()
+    expect(pendingLabels(view)).not.toContain(t('settingsModels.asr.title'))
+    await act(async () => nav(view, 'voice').click())
+    const listening = view.querySelector(`[aria-label="${t('settingsVoice.recognition.title')}"]`)!
+    expect(listening.querySelector('.st-chip')?.textContent).toBe(t('common.ready'))
+    expect(listening.querySelector('.st-prepline')).toBeNull()
+    const speech = view.querySelector(`[aria-label="${t('settingsVoice.speech.title')}"]`)!
+    expect(speech.querySelector('.st-chip')).toBeNull()
+    expect(speech.querySelector('.st-prepline')).toBeNull()
   })
 })
 

@@ -1,19 +1,21 @@
-import type { AppSettings } from '@shared/ipc'
+import type { AppSettings, SpeechEngineState } from '@shared/ipc'
 import * as asr from './asr'
 import * as tts from './tts'
 import * as aizuchi from './aizuchi'
 import * as aizuchiClassifier from './aizuchi-classifier'
 import * as embedding from './embedding'
 import * as memory from './memory'
+import * as demand from './speech-demand'
 import * as vap from './vap'
 import { getSettings } from './settings'
 
 /**
- * Health monitoring for the speech recognition and TTS engine sidecars, which tries to restart one that has
- * died. It also restarts the aizuchi classifier, the memory embedding worker and the VAP worker after a
- * timeout or a crash: nothing else starts the first two again, and the VAP worker would come back only
- * when the microphone is next turned on. onChange runs only when the snapshot differs from the previous
- * one, because the renderer treats every call as a status change to push.
+ * Keeps the speech recognition and TTS engine sidecars as speech-demand.ts wants them: it tries to restart
+ * one that is wanted and has died, and stops a local one that nothing needs, such as a server a preparation
+ * started with the microphone off. It also restarts the aizuchi classifier, the memory embedding worker and
+ * the VAP worker after a timeout or a crash while they are wanted: nothing else starts the first two again,
+ * and the VAP worker would come back only when the microphone is next turned on. onChange runs only when the
+ * snapshot differs from the previous one, because the renderer treats every call as a status change to push.
  */
 
 const INTERVAL_MS = 30_000
@@ -61,10 +63,8 @@ const ttsRestarts = new Restarts()
 const chosenTts = (settings: AppSettings): string => (settings.ttsEngine === 'qwen3tts' ? `qwen3tts:${settings.qwenTtsSize}` : settings.ttsEngine)
 
 export interface HealthSnapshot {
-  asr: boolean
-  tts: boolean
-  /** The TTS engine is loading, which the screens tell apart from an engine that is missing. */
-  ttsStarting: boolean
+  asr: SpeechEngineState
+  tts: SpeechEngineState
 }
 
 let running = false
@@ -77,8 +77,9 @@ let last: HealthSnapshot | null = null
 let notify: (snap: HealthSnapshot) => void = () => {}
 
 /**
- * Reads whether speech recognition and the TTS engine answer, tries to start one that does not, and passes
- * a snapshot that differs from the previous one to onChange, or any snapshot when `force` is set.
+ * Reads whether speech recognition and the TTS engine answer, tries to start one that is wanted and does not,
+ * stops a local one nothing wants, and passes a snapshot that differs from the previous one to onChange, or
+ * any snapshot when `force` is set.
  */
 export async function checkHealth(force = false): Promise<void> {
   if (!running) return
@@ -93,7 +94,14 @@ export async function checkHealth(force = false): Promise<void> {
     forced = false
     const settings = getSettings()
     let [asrUp, ttsUp] = await Promise.all([asr.available(), tts.available()])
-    if (!asrUp && asrRestarts.due(settings.asrModel)) {
+    // A server or worker nothing wants is stopped once it is up, not while it loads, since a preparation
+    // starts one to check that it loads and would report the stop as a failure.
+    const asrWanted = demand.asrWanted()
+    if (!asrWanted && asrUp) {
+      asr.stop()
+      asrUp = false
+    }
+    if (!asrUp && asrWanted && asrRestarts.due(settings.asrModel)) {
       asrRestarts.started()
       // A start that throws, as in a build without llama-server, leaves speech recognition down, which the
       // screens are told like any other outcome.
@@ -103,16 +111,21 @@ export async function checkHealth(force = false): Promise<void> {
       })
     }
     if (asrUp) asrRestarts.answered()
-    if (!ttsUp && ttsRestarts.due(chosenTts(settings))) {
+    const ttsWanted = demand.ttsWanted(settings)
+    if (!ttsWanted && ttsUp) {
+      tts.releaseLocal()
+      ttsUp = false
+    }
+    if (!ttsUp && ttsWanted && ttsRestarts.due(chosenTts(settings))) {
       ttsRestarts.started()
       // ensureEngine leaves a process it already owns alone while that process is still coming up over
       // HTTP, and retries only after the process has exited or errored.
       void tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error))
     }
     if (ttsUp) ttsRestarts.answered()
-    const snap: HealthSnapshot = { asr: asrUp, tts: ttsUp, ttsStarting: !ttsUp && tts.engineStarting() }
-    if (snap.tts) aizuchi.ttsAnswered(last !== null && !last.tts)
-    if (push || !last || last.asr !== snap.asr || last.tts !== snap.tts || last.ttsStarting !== snap.ttsStarting) {
+    const snap: HealthSnapshot = { asr: asr.state(asrWanted), tts: await tts.state(ttsWanted) }
+    if (snap.tts === 'ready') aizuchi.ttsAnswered(last !== null && last.tts !== 'ready')
+    if (push || !last || last.asr !== snap.asr || last.tts !== snap.tts) {
       if (last && (last.asr !== snap.asr || last.tts !== snap.tts)) {
         console.log(
           `watchdog: asr ${last.asr}→${snap.asr}, tts ${last.tts}→${snap.tts}`
@@ -142,6 +155,25 @@ export function checkAfter(starting: Promise<unknown>): void {
   void starting.then(settled, settled)
 }
 
+/**
+ * The microphone of the voice engine turned on or off. What it needs starts at once, without the waits
+ * between restarts, and what serves it alone stops as it turns off.
+ */
+export function microphoneChanged(on: boolean): void {
+  demand.setMicrophone(on)
+  const settings = getSettings()
+  if (on) {
+    checkAfter(asr.ensureServer().catch((error: unknown) => console.error('speech recognition failed to start:', error)))
+    checkAfter(tts.ensureEngine().catch((error: unknown) => console.error('TTS engine failed to start:', error)))
+    if (demand.classifierWanted(settings)) void aizuchiClassifier.ensureStarted()
+    return
+  }
+  asr.stop()
+  vap.stop()
+  aizuchiClassifier.stop()
+  void checkHealth(true)
+}
+
 export function start(onChange: (snap: HealthSnapshot) => void): void {
   if (running) return
   running = true
@@ -151,8 +183,12 @@ export function start(onChange: (snap: HealthSnapshot) => void): void {
     // These run ahead of the health check, which skips whole ticks while a speech recognition model loads
     // for minutes. None spawns anything while its model is not prepared.
     const settings = getSettings()
-    if (aizuchiClassifier.wanted(settings)) void aizuchiClassifier.ensureStarted()
-    if (vap.wanted(settings)) void vap.restart()
+    if (demand.classifierWanted(settings)) void aizuchiClassifier.ensureStarted()
+    else if (aizuchiClassifier.running()) aizuchiClassifier.stop()
+    // A MaAI worker whose start has not ended, such as one a preparation checks, is left to that start.
+    if (!demand.microphoneOn()) {
+      if (vap.running() && !vap.starting()) vap.stop()
+    } else if (vap.wanted(settings)) void vap.restart()
     if (!embedding.running()) {
       void memory.startEmbeddingIfEnabled().catch((error) => console.error('memory embedding:', error))
     }

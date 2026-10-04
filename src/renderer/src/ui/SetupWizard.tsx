@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
-import { keyReadable, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
+import { keyReadable, speechEnginePrepared, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
 import type { AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
 import { isLocalTtsEngine, localTtsRuns, recommendLocalTts, ttsEngineRuns } from '@shared/tts-models'
@@ -93,7 +93,7 @@ export function SetupWizard(): React.JSX.Element | null {
     setProvider(settings.conversationModel.provider)
     void refresh()
       .then((current) => {
-        if (current?.services.asr) setListening('server')
+        if (current && speechEnginePrepared(current.services.asr)) setListening('server')
         else if (settings.localAsrEnabled) setListening('local')
       })
       .catch((err: unknown) => setError(displayError(err)))
@@ -121,9 +121,9 @@ export function SetupWizard(): React.JSX.Element | null {
   const modelReady = setup?.services.llm === true && modelsMatch
   // A saved key this build cannot decrypt is asked for again rather than offered for another check.
   const keyConfigured = keyReadable(setup?.services.llmKeys[provider] ?? 'missing')
-  const serverReady = setup?.services.asr === true
+  const serverReady = setup !== null && speechEnginePrepared(setup.services.asr)
   const listeningReady = (listening === 'server' && serverReady) || (listening === 'local' && localReady)
-  const ttsReady = setup?.services.tts === true
+  const ttsReady = setup !== null && speechEnginePrepared(setup.services.tts)
   const liveInfo = LIVE_ENGINE_INFO['gemini-live']
   const liveKeyState = setup?.services.llmKeys[liveInfo.provider] ?? 'missing'
   const liveKeyVerified = liveKeyState === 'verified'
@@ -229,7 +229,7 @@ export function SetupWizard(): React.JSX.Element | null {
       setDownloadMessage(result.message)
       for (let attempt = 0; attempt < 12; attempt++) {
         const current = await refresh()
-        if (current?.services.asr || !result.ok) break
+        if ((current && speechEnginePrepared(current.services.asr)) || !result.ok) break
         await new Promise((resolve) => setTimeout(resolve, 1500))
       }
     } catch (err) {
@@ -282,7 +282,7 @@ export function SetupWizard(): React.JSX.Element | null {
     try {
       const status = await window.api.ttsVerify()
       await refresh()
-      if (!status.tts) setError(t(osMessageKey('setup.tts.connectFailed', capabilities.os), { engine: status.ttsLabel }))
+      if (!speechEnginePrepared(status.tts)) setError(t(osMessageKey('setup.tts.connectFailed', capabilities.os), { engine: status.ttsLabel }))
     } catch (err) {
       setError(displayError(err))
     } finally {

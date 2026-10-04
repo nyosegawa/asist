@@ -4,7 +4,7 @@ import { HoloSwitch } from '@/components/ui/switch'
 import { LLM_PROVIDER_INFO, modelName } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
 import { conversationFeatures } from '@shared/conversation-locale'
-import { keyReadable } from '@shared/ipc'
+import { keyReadable, speechEnginePrepared } from '@shared/ipc'
 import { AGENT_CLI_UNAVAILABLE_TEXT } from '@shared/agent-cli'
 import { LOCAL_SPEECH_UNAVAILABLE_TEXT } from '@shared/platform'
 import { isLocalTtsEngine } from '@shared/tts-models'
@@ -68,7 +68,7 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           title: t('settingsModels.asr.title'),
           // What listens now: the local model once it answers, and Whisper in the browser in its place until then.
           value:
-            localSpeech.backend !== null && (status?.asr === true || !settings.localAsrEnabled)
+            localSpeech.backend !== null && ((status !== null && speechEnginePrepared(status.asr)) || !settings.localAsrEnabled)
               ? (asrModel?.label ?? (readFailure(setup) === null ? '…' : t('settingsModels.checkFailed')))
               : t('settingsModels.asr.browserWhisper'),
           chip: listening === null ? checking : listening ? ready : notReady

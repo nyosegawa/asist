@@ -33,7 +33,7 @@ it('prepares no real in-browser Whisper when the microphone turns on with local 
   const api = {
     getSettings: async () => settings,
     saveSettings: async () => settings,
-    getStatus: async () => ({ asr: false, asrInstalled: false }),
+    getStatus: async () => ({ asr: 'down', asrInstalled: false }),
     getSetupStatus: async () => ({}),
     completeSetup: async () => settings
   } as unknown as RendererApi

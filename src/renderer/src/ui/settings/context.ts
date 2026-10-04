@@ -1,4 +1,4 @@
-import type { AizuchiClassifierStatus, AppSettings, AppStatus, EmbeddingStatus, SetupStatus, TtsEngine, VapStatus } from '@shared/ipc'
+import { speechEnginePrepared, type AizuchiClassifierStatus, type AppSettings, type AppStatus, type EmbeddingStatus, type SetupStatus, type TtsEngine, type VapStatus } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import type { SettingsPage } from '@shared/mini-apps'
 import type { SettingsPatch } from '@shared/settings'
@@ -89,7 +89,7 @@ export function speechRecognitionReady(
   localSpeech: PlatformCapabilities['localSpeech']
 ): boolean | null {
   if (localSpeech.backend === null) return settings.localAsrEnabled
-  return status ? status.asr : null
+  return status ? speechEnginePrepared(status.asr) : null
 }
 
 /**
@@ -110,8 +110,9 @@ export type SpeechReadiness = 'ready' | 'starting' | 'off' | 'missing' | 'cannot
 
 /**
  * How the replies are read aloud. 'off' is the engine that reads nothing, which leaves a reply as text
- * alone. 'starting' is an engine that is there and still loading, as a local model does for a few seconds
- * each time its engine is chosen. 'missing' is an engine that cannot be reached or whose model is not
+ * alone. 'ready' includes a local model that is prepared and not loaded until something is to be said.
+ * 'starting' is an engine that is there and still loading, as a local model does for a few seconds
+ * each time it loads. 'missing' is an engine that cannot be reached or whose model is not
  * prepared, in which case the OS's speech synthesis reads the replies instead.
  */
 export function speechReadiness(engine: TtsEngine, status: AppStatus | null, localSpeech: PlatformCapabilities['localSpeech']): SpeechReadiness {
@@ -119,6 +120,6 @@ export function speechReadiness(engine: TtsEngine, status: AppStatus | null, loc
   if (!ttsEngineRuns(engine, localSpeech)) return 'cannotRun'
   if (!ttsNeedsPreparation(engine)) return 'ready'
   if (status === null) return 'checking'
-  if (status.tts) return 'ready'
-  return status.ttsStarting ? 'starting' : 'missing'
+  if (speechEnginePrepared(status.tts)) return 'ready'
+  return status.tts === 'starting' ? 'starting' : 'missing'
 }

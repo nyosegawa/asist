@@ -351,6 +351,9 @@ body {
   background: var(--color-holo-mint);
   box-shadow: 0 0 6px color-mix(in srgb, var(--color-holo-mint) calc(80% * var(--ui-glow-strength)), transparent);
 }
+.status-dot.is-idle i {
+  background: var(--ui-text-faint);
+}
 .mic {
   display: flex;
   align-items: center;

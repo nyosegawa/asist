@@ -20,7 +20,7 @@ beforeEach(() => {
     api: {
       transcribe: vi.fn(),
       transcribeCancel: vi.fn(async () => true),
-      getStatus: vi.fn(async () => ({ asr: true }))
+      getStatus: vi.fn(async () => ({ asr: 'ready' }))
     }
   })
 })
@@ -114,17 +114,26 @@ describe('AsrBackend', () => {
   it('switches away from a stopped server and promotes it again when available', () => {
     const { recognition, serverLost } = backend()
 
-    recognition.handleStatus(false)
+    recognition.handleStatus('down')
     expect(recognition.onServer).toBe(false)
     expect(serverLost).toHaveBeenCalledOnce()
-    recognition.handleStatus(true)
+    recognition.handleStatus('ready')
     expect(recognition.onServer).toBe(true)
+  })
+
+  it('keeps the server through a load and through being let go with the microphone off', () => {
+    const { recognition, serverLost } = backend()
+
+    recognition.handleStatus('idle')
+    recognition.handleStatus('starting')
+    expect(recognition.onServer).toBe(true)
+    expect(serverLost).not.toHaveBeenCalled()
   })
 
   it('moves up to a server that has come up while local was in use', async () => {
     const { recognition, state } = backend()
     state.backend = 'local'
-    vi.mocked(window.api.getStatus).mockResolvedValueOnce({ asr: false } as never)
+    vi.mocked(window.api.getStatus).mockResolvedValueOnce({ asr: 'starting' } as never)
     await recognition.probeUpgrade()
     expect(recognition.onServer).toBe(false)
 

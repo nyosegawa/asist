@@ -210,19 +210,23 @@ async function initializeConversation(): Promise<void> {
 
   // The conversation follows the status the store holds, which a read moves as well as a push, and which
   // keeps a newer read over a push that arrives after it.
+  // Only an engine going down or coming back up is told: one that loads, or is let go with nothing needing
+  // it, is as expected.
   useStatusStore.subscribe(({ status }, { status: prev }) => {
     if (status === null || status === prev) return
     voiceController.handleAsrStatus(status.asr)
-    if (prev && (prev.asr !== status.asr || prev.tts !== status.tts)) {
+    const asrDown = status.asr === 'down'
+    const ttsDown = status.tts === 'down'
+    if (prev && ((prev.asr === 'down') !== asrDown || (prev.tts === 'down') !== ttsDown)) {
       const parts: string[] = []
-      if (prev.asr !== status.asr) {
-        parts.push(translate(status.asr ? 'voice.services.recognitionBack' : 'voice.services.recognitionStopped'))
+      if ((prev.asr === 'down') !== asrDown) {
+        parts.push(translate(asrDown ? 'voice.services.recognitionStopped' : 'voice.services.recognitionBack'))
       }
-      if (prev.tts !== status.tts) {
-        parts.push(translate(status.tts ? 'voice.services.speechBack' : 'voice.services.speechStopped'))
+      if ((prev.tts === 'down') !== ttsDown) {
+        parts.push(translate(ttsDown ? 'voice.services.speechStopped' : 'voice.services.speechBack'))
       }
       toasts.push({
-        kind: status.asr && status.tts ? 'ok' : 'info',
+        kind: !asrDown && !ttsDown ? 'ok' : 'info',
         title: translate('voice.services.title'),
         body: parts.join(' · ')
       })

@@ -9,6 +9,7 @@ export const rendererApiMethods = [
   'getStatus',
   'onStatusChanged',
   'requestMicPermission',
+  'voiceMicrophone',
   'micNativeStart',
   'micNativeStop',
   'onMicNativeFrame',

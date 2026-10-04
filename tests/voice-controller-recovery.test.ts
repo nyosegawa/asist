@@ -84,7 +84,8 @@ beforeEach(() => {
       transcribe: vi.fn(),
       transcribeCancel: vi.fn(async () => true),
       transcribePartial: vi.fn(),
-      getStatus: vi.fn(async () => ({ asr: true })),
+      getStatus: vi.fn(async () => ({ asr: 'ready', asrInstalled: true })),
+      voiceMicrophone: vi.fn(async () => {}),
       requestMicPermission: vi.fn(async () => true)
     }
   })
@@ -233,7 +234,7 @@ describe('VoiceController ASR recovery', () => {
       asr.transcribe.mockImplementation(() => new Promise((resolve) => (finish = resolve)))
       state.recognition.asr = asr
       controller.localFallbackEnabled = true
-      vi.mocked(window.api.getStatus).mockResolvedValue({ asr: false } as never)
+      vi.mocked(window.api.getStatus).mockResolvedValue({ asr: 'down', asrInstalled: true } as never)
 
       const events = await speakThenRecover(controller, asr.transcribe, () => finish('明日の予定を教えて'))
 
@@ -410,7 +411,7 @@ describe('VoiceController ASR recovery', () => {
     expect(microphoneLoading).toEqual([])
 
     controller.localFallbackEnabled = true
-    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: false } as never)
+    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: 'down', asrInstalled: true } as never)
     await controller.enable()
     expect(microphoneLoading).toEqual([40])
     controller.disable()
@@ -441,7 +442,7 @@ describe('VoiceController ASR recovery', () => {
     state.recognition.asr = asr
     state.microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
     controller.localFallbackEnabled = true
-    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: false } as never)
+    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: 'down', asrInstalled: true } as never)
 
     await controller.enable()
 
@@ -455,7 +456,7 @@ describe('VoiceController ASR recovery', () => {
     const controller = new VoiceController()
     const state = internals(controller)
     state.microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
-    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: false, asrInstalled: false } as never)
+    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: 'down', asrInstalled: false } as never)
     const errors: string[] = []
     controller.events.on('error', (message) => errors.push(message))
 
@@ -467,26 +468,42 @@ describe('VoiceController ASR recovery', () => {
     expect(controller.current).toBe('off')
   })
 
-  it('waits for a server that is still starting with its model installed, and listens through it once it answers', async () => {
-    vi.useFakeTimers()
-    try {
-      const controller = new VoiceController()
-      const state = internals(controller)
-      state.microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
-      vi.mocked(window.api.getStatus)
-        .mockResolvedValueOnce({ asr: false, asrInstalled: true } as never)
-        .mockResolvedValue({ asr: true, asrInstalled: true } as never)
+  it('tells main the microphone is on before it reads the status, and listens at once through a server that is still loading', async () => {
+    const controller = new VoiceController()
+    const state = internals(controller)
+    state.microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    vi.mocked(window.api.getStatus).mockResolvedValue({ asr: 'starting', asrInstalled: true } as never)
 
-      const enabling = controller.enable()
-      await vi.advanceTimersByTimeAsync(1500)
-      await enabling
+    await controller.enable()
 
-      expect(window.api.getStatus).toHaveBeenCalledTimes(2)
-      expect(state.microphone.mic.start).toHaveBeenCalledOnce()
-      expect(state.recognition.backend).toBe('server')
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(window.api.voiceMicrophone).toHaveBeenCalledWith(true)
+    expect(vi.mocked(window.api.voiceMicrophone).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(window.api.getStatus).mock.invocationCallOrder[0])
+    expect(window.api.getStatus).toHaveBeenCalledOnce()
+    expect(state.microphone.mic.start).toHaveBeenCalledOnce()
+    expect(controller.current).toBe('listening')
+    expect(state.recognition.backend).toBe('server')
+    controller.disable()
+  })
+
+  it('tells main the microphone is off, so that the models it loaded can go', async () => {
+    const controller = new VoiceController()
+    const state = internals(controller)
+    state.microphone.mic = { start: vi.fn(async () => undefined), stop: vi.fn() }
+    await controller.enable()
+
+    controller.disable()
+
+    expect(vi.mocked(window.api.voiceMicrophone).mock.calls).toEqual([[true], [false]])
+  })
+
+  it('does not ask main for the models when the microphone is refused', async () => {
+    const controller = new VoiceController()
+    vi.mocked(window.api.requestMicPermission).mockResolvedValue(false)
+
+    await controller.enable()
+
+    expect(window.api.voiceMicrophone).not.toHaveBeenCalledWith(true)
+    expect(controller.current).toBe('off')
   })
 
   it('cancels an in-flight server transcription when the mic generation is disabled', async () => {

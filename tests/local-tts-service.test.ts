@@ -227,6 +227,34 @@ describe('Qwen3-TTS service', () => {
   })
 })
 
+describe('how long the worker has had nothing to do', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('counts from when it became ready, is busy while it reads, and counts again from the end of the reading', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(1_000)
+    expect(local.idleSince()).toBe(-Infinity)
+    const starting = local.ensureWorker('qwen3tts')
+    expect(local.idleSince()).toBeNull()
+    await starting
+    expect(local.idleSince()).toBe(1_000)
+
+    vi.setSystemTime(60_000)
+    const stream = local.stream('qwen3tts', REQUEST)
+    const first = stream.next()
+    await settle()
+    expect(local.idleSince()).toBeNull()
+    const child = children[0]
+    const id = child.input.find((message) => message.text)!.id
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    await first
+    vi.setSystemTime(90_000)
+    say(child, { type: 'end', id, samples: 0 })
+    await collect(stream)
+    expect(local.idleSince()).toBe(90_000)
+  })
+})
+
 describe('a sentence the worker fails after its first piece', () => {
   /** Starts a sentence, delivers its first piece, applies the failure and returns the error the rest of the sentence ends with. */
   async function failedAfterFirstPiece(fail: (child: Child, id: string) => void | Promise<void>): Promise<Error> {

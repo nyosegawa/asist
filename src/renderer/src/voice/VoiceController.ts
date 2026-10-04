@@ -1,5 +1,5 @@
 import mitt, { type Emitter } from 'mitt'
-import type { HangoverMode, VapState } from '@shared/ipc'
+import type { HangoverMode, SpeechEngineState, VapState } from '@shared/ipc'
 import { isMeaningfulTranscript } from '@shared/asr-filter'
 import { conversationFeatures, type ConversationLocale } from '@shared/conversation-locale'
 import {
@@ -472,23 +472,25 @@ export class VoiceController {
       this.watchTurnLag(now, state.turnLagMs)
       this.maybeNod()
     })
+    const run = this.micGeneration
     void window.api.vapStart().then(
       (started) => {
-        if (!started) this.sayMaaiUnavailable()
+        if (!started) this.sayMaaiUnavailable(run)
       },
       (err: unknown) => {
         console.error('MaAI start failed:', errorMessageOf(err))
-        this.sayMaaiUnavailable()
+        this.sayMaaiUnavailable(run)
       }
     )
   }
 
   /**
    * The conversation goes on without MaAI, on the fixed hangover, and the user hears of it once. A start
-   * that ends after MaAI was turned off, or the language changed, has nothing to report.
+   * that ends after MaAI was turned off, the language changed or the microphone was turned off, which stops
+   * the worker it was loading, has nothing to report.
    */
-  private sayMaaiUnavailable(): void {
-    if (!this.usesMaai() || this.maaiUnavailableSaid) return
+  private sayMaaiUnavailable(run: number): void {
+    if (run !== this.micGeneration || !this.usesMaai() || this.maaiUnavailableSaid) return
     this.maaiUnavailableSaid = true
     this.events.emit('maaiUnavailable')
   }
@@ -567,6 +569,8 @@ export class VoiceController {
       const permitted = await window.api.requestMicPermission()
       if (!current()) return
       if (!permitted) throw new Error(errorText(osMessageKey('voice.mic.notPermitted', platformCapabilities().os)))
+      await window.api.voiceMicrophone(true)
+      if (!current()) return
       const loading = ({ progress }: AsrProgress): void => {
         if (current()) this.events.emit('progress', progress)
       }
@@ -592,11 +596,12 @@ export class VoiceController {
     this.releaseRebuild?.()
     for (const startedAt of dropped) this.events.emit('speechdropped', { startedAt })
     this.setState('off')
+    void window.api.voiceMicrophone(false).catch((err: unknown) => console.error('main did not hear that the microphone is off:', errorMessageOf(err)))
   }
 
   /** Applies what the service watchdog reports about the speech recognition server. */
-  handleAsrStatus(available: boolean): void {
-    this.recognition.handleStatus(available)
+  handleAsrStatus(state: SpeechEngineState): void {
+    this.recognition.handleStatus(state)
   }
 
   /**

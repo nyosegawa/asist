@@ -102,6 +102,8 @@ let workerReady = false
 let starting: Promise<boolean> | null = null
 let silenceTimer: NodeJS.Timeout | null = null
 const requests = new Map<string, PieceQueue>()
+/** When a worker last became ready or ended a reading. */
+let lastUsedAt = -Infinity
 
 /** Whether the files of the engine's model, as the settings name it, are there. */
 export function installationStatus(engine: LocalTtsEngine): { modelInstalled: boolean } {
@@ -115,6 +117,11 @@ export function available(engine: LocalTtsEngine): boolean {
 /** True while a worker this app started is loading its model. */
 export function isStarting(): boolean {
   return starting !== null
+}
+
+/** Since when the worker has had nothing to do, or null while it loads or reads. */
+export function idleSince(): number | null {
+  return starting !== null || requests.size > 0 ? null : lastUsedAt
 }
 
 /** The sample rate of the pieces, known once the worker is ready. */
@@ -174,6 +181,7 @@ async function startWorker(engine: LocalTtsEngine): Promise<boolean> {
       if (worker !== started) return false
       if (!ready) stopWorker()
       workerReady = ready
+      if (ready) lastUsedAt = Date.now()
       return ready
     })
     .finally(() => {
@@ -274,6 +282,7 @@ export async function* stream(engine: LocalTtsEngine, request: LocalSpeechReques
   } finally {
     signal?.removeEventListener('abort', abort)
     cancel()
+    lastUsedAt = Date.now()
   }
 }
 

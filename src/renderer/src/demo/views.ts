@@ -41,7 +41,7 @@ const localTtsVoices = (engine: LocalTtsEngine): DemoView => ({
   prepare: (api) => {
     void api.saveSettings({ ttsEngine: engine })
     const getStatus = api.getStatus
-    api.getStatus = async () => ({ ...(await getStatus()), tts: true, ttsEngine: engine })
+    api.getStatus = async () => ({ ...(await getStatus()), tts: 'ready', ttsEngine: engine })
   }
 })
 

@@ -7,6 +7,7 @@ import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/
 const mocks = vi.hoisted(() => ({
   settings: { asrModel: 'qwen3-asr-1.7b', uiLocale: 'ja-JP' },
   localAvailable: vi.fn(),
+  localStarting: vi.fn(() => false),
   localEnsure: vi.fn(),
   localTranscribe: vi.fn(),
   localPartial: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('electron', () => ({ app: { getPath: vi.fn(), on: vi.fn() } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/llama-asr', () => ({
   available: mocks.localAvailable,
+  starting: mocks.localStarting,
   ensureServer: mocks.localEnsure,
   transcribe: mocks.localTranscribe,
   transcribePartial: mocks.localPartial,
@@ -70,6 +72,27 @@ describe('ASR service routing', () => {
 
     expect(result.ok).toBe(false)
     expect(mocks.localPrepare).not.toHaveBeenCalled()
+  })
+})
+
+describe('how the speech recognition stands', () => {
+  it('is not loaded while the microphone does not want it, loads when it does, and is down when it is wanted and does not answer', async () => {
+    const asr = await import('../src/main/services/asr')
+    mocks.localAvailable.mockReturnValue(false)
+    expect(asr.state(false)).toBe('idle')
+    expect(asr.state(true)).toBe('down')
+    mocks.localStarting.mockReturnValue(true)
+    expect(asr.state(true)).toBe('starting')
+    mocks.localStarting.mockReturnValue(false)
+    mocks.localAvailable.mockReturnValue(true)
+    expect(asr.state(false)).toBe('ready')
+  })
+
+  it('is down, not merely unloaded, while its model is not prepared', async () => {
+    const asr = await import('../src/main/services/asr')
+    mocks.localAvailable.mockReturnValue(false)
+    mocks.installed = { modelInstalled: false }
+    expect(asr.state(false)).toBe('down')
   })
 })
 

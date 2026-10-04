@@ -234,7 +234,7 @@ function api(overrides: Record<string, unknown>): unknown {
     get(target, key: string) {
       if (key in target) return target[key]
       if (key.startsWith('on')) return () => () => {}
-      if (key === 'getStatus') return async () => ({ sequence: 1, asr: true, tts: true })
+      if (key === 'getStatus') return async () => ({ sequence: 1, asr: 'ready', tts: 'ready' })
       if (key === 'confirmPending') return async () => []
       if (key === 'aizuchiClassifierStatus') return async () => ({ runtimeInstalled: true, modelInstalled: true, running: true })
       return async () => undefined
@@ -1462,7 +1462,7 @@ describe('the state of the speech services', () => {
   async function startPushed(): Promise<{ push: (status: AppStatus) => void; handled: Mock }> {
     let push!: (status: AppStatus) => void
     await start({
-      getStatus: async () => ({ sequence: 1, asr: false, tts: true }),
+      getStatus: async () => ({ sequence: 1, asr: 'down', tts: 'ready' }),
       onStatusChanged: (callback: (status: AppStatus) => void) => {
         push = callback
         return () => {}
@@ -1475,18 +1475,36 @@ describe('the state of the speech services', () => {
 
   it('tells the conversation and the user that speech recognition came back when main pushes it', async () => {
     const { push, handled } = await startPushed()
-    push({ sequence: 2, asr: true, tts: true } as AppStatus)
-    expect(handled.mock.calls).toEqual([[true]])
+    push({ sequence: 2, asr: 'ready', tts: 'ready' } as AppStatus)
+    expect(handled.mock.calls).toEqual([['ready']])
     expect(mocks.toasts).toMatchObject([{ body: 'voice.services.recognitionBack' }])
+  })
+
+  it('says nothing to the user when the models load with the microphone and are let go after it', async () => {
+    const { push, handled } = await startPushed()
+    push({ sequence: 2, asr: 'ready', tts: 'ready' } as AppStatus)
+    mocks.toasts.length = 0
+    push({ sequence: 3, asr: 'idle', tts: 'idle' } as AppStatus)
+    push({ sequence: 4, asr: 'starting', tts: 'starting' } as AppStatus)
+    push({ sequence: 5, asr: 'ready', tts: 'ready' } as AppStatus)
+    expect(handled.mock.calls.map(([state]) => state)).toEqual(['ready', 'idle', 'starting', 'ready'])
+    expect(mocks.toasts).toEqual([])
+  })
+
+  it('tells the user when the speech recognition that was loading for the microphone went down', async () => {
+    const { push } = await startPushed()
+    push({ sequence: 2, asr: 'starting', tts: 'ready' } as AppStatus)
+    push({ sequence: 3, asr: 'down', tts: 'ready' } as AppStatus)
+    expect(mocks.toasts.at(-1)).toMatchObject({ body: 'voice.services.recognitionStopped' })
   })
 
   it('tells them as well when a read of the settings overtook the push and the store keeps the read', async () => {
     const { push, handled } = await startPushed()
     // Main read status 2 for the push that says the server is back and status 3 for the settings just
     // after, and the answer to the settings arrives first.
-    mocks.status!.getState().apply({ sequence: 3, asr: true, tts: true } as AppStatus)
-    push({ sequence: 2, asr: true, tts: true } as AppStatus)
-    expect(handled.mock.calls).toEqual([[true]])
+    mocks.status!.getState().apply({ sequence: 3, asr: 'ready', tts: 'ready' } as AppStatus)
+    push({ sequence: 2, asr: 'ready', tts: 'ready' } as AppStatus)
+    expect(handled.mock.calls).toEqual([['ready']])
     expect(mocks.toasts).toMatchObject([{ body: 'voice.services.recognitionBack' }])
   })
 })

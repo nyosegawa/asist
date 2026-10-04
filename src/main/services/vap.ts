@@ -190,7 +190,8 @@ export function runtimeInstalled(): boolean {
   return environmentCurrent(runtimeDir(), STAMP)
 }
 
-function workerRunning(): boolean {
+/** Whether the worker has loaded and runs. */
+export function running(): boolean {
   return Boolean(child && workerReady && child.exitCode === null)
 }
 
@@ -198,7 +199,7 @@ export function installationStatus(): VapStatus {
   return {
     runtimeInstalled: runtimeInstalled(),
     modelsInstalled: missingModels().length === 0,
-    running: workerRunning()
+    running: running()
   }
 }
 
@@ -220,7 +221,7 @@ export function wanted(settings: AppSettings): boolean {
  * Past the limit of restarts it waits for the conversation to start it.
  */
 export async function restart(): Promise<boolean> {
-  if (workerRunning()) return true
+  if (running()) return true
   if (startInFlight) return startInFlight
   const now = Date.now()
   restartTimestamps = restartTimestamps.filter((time) => now - time < RESTART_WINDOW_MS)
@@ -296,7 +297,7 @@ function workerArgs(): string[] {
 }
 
 async function startWorker(): Promise<boolean> {
-  if (workerRunning()) return true
+  if (running()) return true
   stopWorker()
   if (!runtimeInstalled()) {
     console.warn('vap: the worker cannot start, its Python environment is not prepared')
@@ -356,9 +357,12 @@ async function startWorker(): Promise<boolean> {
   return ready
 }
 
+/** Whether a start is under way, whose caller, such as a preparation, has not yet heard how it ended. */
+export const starting = (): boolean => startInFlight !== null
+
 /** Every start goes through here, so that a second caller waits for the worker being loaded instead of stopping it. */
 function start(): Promise<boolean> {
-  if (workerRunning()) return Promise.resolve(true)
+  if (running()) return Promise.resolve(true)
   if (startInFlight) return startInFlight
   const operation = startWorker().finally(() => {
     if (startInFlight === operation) startInFlight = null
@@ -369,9 +373,7 @@ function start(): Promise<boolean> {
 
 /**
  * Starts the worker, returning true immediately when it is already running, and keeps pushing state to
- * the callback. Turning the microphone off does not stop it, so the few seconds of model loading are not
- * paid again and again; it stops only when the app quits or stop() is called after the setting is turned
- * off.
+ * the callback. It stops when the microphone turns off, when the setting is turned off and when the app quits.
  */
 export function ensureStarted(stateHandler: (state: VapState) => void): Promise<boolean> {
   onState = stateHandler
@@ -402,6 +404,9 @@ function stopWorker(): void {
   const stale = child
   child = null
   workerReady = false
+  // The start under way, if any, ends with the worker it was loading, and the next start loads a new one
+  // instead of waiting for it.
+  startInFlight = null
   if (stale && stale.exitCode === null && !stale.killed) {
     try {
       stale.stdin.end()

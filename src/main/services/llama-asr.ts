@@ -184,6 +184,11 @@ export function available(model: AsrModelSpec): boolean {
   return server !== null && server.model === model && !server.stopped && server.healthy
 }
 
+/** Whether the server on the model has been started and does not answer /health yet. */
+export function starting(model: AsrModelSpec): boolean {
+  return server !== null && server.model === model && !server.stopped && !server.healthy
+}
+
 function stopServer(): void {
   const stale = server
   server = null

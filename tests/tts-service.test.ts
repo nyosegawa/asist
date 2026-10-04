@@ -167,6 +167,13 @@ describe('an engine this app started', () => {
     expect(children[0].kill).toHaveBeenCalled()
   })
 
+  it('stops when a local engine is chosen that is left unloaded, since nothing needs it yet', async () => {
+    const tts = await started('voicevox')
+    mocks.settings.ttsEngine = 'irodori'
+    tts.releaseLocal()
+    expect(children[0].kill).toHaveBeenCalled()
+  })
+
   it('keeps running while it is the engine the settings choose', async () => {
     const tts = await started('voicevox')
     await tts.ensureEngine()
@@ -195,6 +202,20 @@ describe('an engine this app started', () => {
     await again
     expect(children[1].kill).toHaveBeenCalled()
     expect(children[2].kill).not.toHaveBeenCalled()
+  })
+})
+
+describe('how the chosen engine stands', () => {
+  it('reports a prepared local model that nothing needs as not loaded, and as down once something needs it and it does not answer', async () => {
+    const tts = await import('../src/main/services/tts')
+    mocks.settings = { ...mocks.settings, ttsEngine: 'irodori' }
+    expect(await tts.state(false)).toBe('idle')
+    expect(await tts.state(true)).toBe('down')
+  })
+
+  it('reports the engine of another app that does not answer as down, since this app does not load it for a sentence', async () => {
+    const tts = await import('../src/main/services/tts')
+    expect(await tts.state(false)).toBe('down')
   })
 })
 
