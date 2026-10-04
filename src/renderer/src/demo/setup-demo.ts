@@ -65,9 +65,8 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     // As in the app, the LLM counts as usable only once the key of the current conversation model's provider is verified.
     llm: keys[(await base.getSettings()).conversationModel.provider] === 'verified',
     llmKeys: keys,
-    asr: state.asrReady,
-    tts: state.tts,
-    ttsStarting: false,
+    asr: state.asrReady ? 'ready' : 'down',
+    tts: state.tts ? 'ready' : 'down',
     ttsEngine: (await base.getSettings()).ttsEngine,
     ttsLabel: ttsEngineLabel(translate, (await base.getSettings()).ttsEngine)
   })

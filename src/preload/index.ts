@@ -29,6 +29,7 @@ const api: RendererApi = {
   getStatus: () => ipcRenderer.invoke(IpcChannel.Status),
   onStatusChanged: subscribe(IpcChannel.StatusChanged),
   requestMicPermission: () => ipcRenderer.invoke(IpcChannel.RequestMicPermission),
+  voiceMicrophone: (on) => ipcRenderer.invoke(IpcChannel.VoiceMicrophone, on),
   micNativeStart: () => ipcRenderer.invoke(IpcChannel.MicNativeStart),
   micNativeStop: () => ipcRenderer.invoke(IpcChannel.MicNativeStop),
   onMicNativeFrame: subscribe(IpcChannel.MicNativeFrame),

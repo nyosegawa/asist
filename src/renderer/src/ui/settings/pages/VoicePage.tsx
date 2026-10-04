@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ExternalLink, Play } from 'lucide-react'
-import type { HotkeyStatus, TtsEngine } from '@shared/ipc'
+import { speechEnginePrepared, type HotkeyStatus, type TtsEngine } from '@shared/ipc'
 import { asrModelChoices, type AsrModel } from '@shared/asr-models'
 import { HoloSwitch } from '@/components/ui/switch'
 import { speechPlayer } from '@/voice/SpeechPlayer'
@@ -169,7 +169,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   // that runs, until a smaller one is picked.
   const offeredSizes = offeredQwenTtsSizes(localSpeech)
   const qwenTtsSizes = QWEN_TTS_SIZES.filter((size) => offeredSizes.includes(size) || size === settings.qwenTtsSize)
-  const asrReady = status?.asr === true
+  const asrReady = status !== null && speechEnginePrepared(status.asr)
   const asrChoices = localSpeech.backend === null ? [] : asrModelChoices()
   const asrModel = statusOf(setup)?.asr ?? null
   const vapRead = statusOf(vap)

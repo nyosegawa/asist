@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
-import type { AppSettings, PhonemeEvent, SpeakerOption, TtsEngine } from '@shared/ipc'
+import { speechEngineState, type AppSettings, type PhonemeEvent, type SpeakerOption, type SpeechEngineState, type TtsEngine } from '@shared/ipc'
 import type { OsFamily } from '@shared/platform'
 import { withTimeoutSignal } from '@shared/abort'
 import { CONVERSATION_LANGUAGE_NAMES, languageOf, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
@@ -133,6 +133,31 @@ function stopProcess(owned: EngineProcess): void {
   const kill = setTimeout(() => owned.child.kill('SIGKILL'), STOP_GRACE_MS)
   kill.unref?.()
   void owned.exited.then(() => clearTimeout(kill))
+}
+
+/**
+ * How the chosen engine stands. `wanted` says whether something needs a local model loaded now; an HTTP
+ * engine and the OS's speech are always wanted.
+ */
+export async function state(wanted: boolean, engine: TtsEngine = currentEngine()): Promise<SpeechEngineState> {
+  if (engine === 'none') return 'down'
+  const local = isLocalTtsEngine(engine) && ttsEngineRuns(engine, platformCapabilities().localSpeech)
+  return speechEngineState({
+    answers: await available(engine),
+    starting: engineStarting(engine),
+    wanted,
+    prepared: local && localTts.installationStatus(engine).modelInstalled
+  })
+}
+
+/**
+ * Leaves the chosen local engine unloaded with nothing else running for speech synthesis: its worker stops,
+ * and so does any engine process this app started for an engine chosen before. The next sentence to read
+ * loads the worker again.
+ */
+export function releaseLocal(): void {
+  localTts.stop()
+  for (const owned of processes.values()) stopProcess(owned)
 }
 
 /**

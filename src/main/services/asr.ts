@@ -9,7 +9,7 @@ import {
   type AsrModelSpec,
   type ResolvedAsrModel
 } from '@shared/asr-models'
-import type { SetupProgress, SetupStatus } from '@shared/ipc'
+import { speechEngineState, type SetupProgress, type SetupStatus, type SpeechEngineState } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { LOCAL_SPEECH_UNAVAILABLE_TEXT, type LocalSpeechUnavailable } from '@shared/platform'
 import { t } from './i18n'
@@ -69,6 +69,21 @@ export async function available(): Promise<boolean> {
   const spec = startable()
   return spec !== null && (await local.available(spec))
 }
+
+/** How the speech recognition stands, given whether the microphone wants it loaded. */
+export function state(wanted: boolean): SpeechEngineState {
+  const spec = startable()
+  if (spec === null) return 'down'
+  return speechEngineState({
+    answers: local.available(spec),
+    starting: local.starting(spec),
+    wanted,
+    prepared: local.installationStatus(spec).modelInstalled
+  })
+}
+
+/** Stops the server, which fails the transcriptions still waiting on it. */
+export const stop = local.stop
 
 export async function ensureServer(): Promise<boolean> {
   const spec = startable()

@@ -2,14 +2,20 @@ import { Mic, MicOff } from 'lucide-react'
 import { Hud } from './Hud'
 import { toggleMic } from '@/conversation'
 import { isLiveEngine } from '@shared/voice-engine'
+import type { SpeechEngineState } from '@shared/ipc'
 import { useT } from '@/i18n'
 import { useLiveStore, useSettingsStore, useStatusStore, useTurnStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 import asistIcon from '@/assets/holo/asist.png'
 
-function StatusDot({ ok, label }: { ok: boolean; label: string }): React.JSX.Element {
+/** A light that is on, off for a fault, or dim for a local model that is loading or not loaded because nothing needs it. */
+type Light = 'ok' | 'idle' | 'down'
+
+const engineLight = (state: SpeechEngineState): Light => (state === 'ready' ? 'ok' : state === 'down' ? 'down' : 'idle')
+
+function StatusDot({ light, label }: { light: Light; label: string }): React.JSX.Element {
   return (
-    <span className={`status-dot${ok ? ' is-ok' : ''}`}>
+    <span className={`status-dot${light === 'down' ? '' : ` is-${light}`}`}>
       <i />
       {label}
     </span>
@@ -38,16 +44,16 @@ export function TopBar(): React.JSX.Element {
 
       {status && (
         <div className="status-dots">
-          <StatusDot ok={status.llm} label="LLM" />
+          <StatusDot light={status.llm ? 'ok' : 'down'} label="LLM" />
           {isLiveEngine(engine) ? (
-            <StatusDot ok={liveConnection === 'open' || liveConnection === 'idle'} label="GEMINI" />
+            <StatusDot light={liveConnection === 'open' || liveConnection === 'idle' ? 'ok' : 'down'} label="GEMINI" />
           ) : (
             <>
-              <StatusDot ok={status.asr} label="ASR" />
-              <StatusDot ok={status.tts} label="TTS" />
+              <StatusDot light={engineLight(status.asr)} label="ASR" />
+              <StatusDot light={engineLight(status.tts)} label="TTS" />
             </>
           )}
-          <StatusDot ok={status.agent === 'found'} label="AGENT" />
+          <StatusDot light={status.agent === 'found' ? 'ok' : 'down'} label="AGENT" />
         </div>
       )}
 

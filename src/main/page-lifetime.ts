@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import * as nativeMic from './services/native-mic'
 import * as live from './services/live'
+import * as watchdog from './services/watchdog'
 
 /**
  * The life of the app's page in the main window. The page is replaced when a reload commits, from the View
@@ -24,13 +25,14 @@ export function isLaunchPage(): boolean {
 }
 
 /**
- * Stops what main runs for the page in the window: the microphone helper and the live engine the page
- * started. The page that replaces it knows nothing of them, so they would go on capturing, speaking job
- * reports and running a billed session behind it.
+ * Stops what main runs for the page in the window: the microphone helper, the live engine and the speech
+ * models its microphone loaded. The page that replaces it knows nothing of them, so they would go on capturing,
+ * speaking job reports, running a billed session and holding the models behind it.
  */
 function stopPageWork(): void {
   nativeMic.stop()
   void live.stop().catch((error) => console.error('live stop failed:', error))
+  watchdog.microphoneChanged(false)
 }
 
 /** Follows the page in the window: what the old page started stops when it is replaced, and a crashed page is loaded again. */

@@ -54,6 +54,7 @@ import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine, liveTextInput } from '@shared/voice-engine'
 import { stopsLiveEngine } from '@shared/live-session-policy'
 import { appendJsonl } from './services/store'
+import * as speechDemand from './services/speech-demand'
 import * as watchdog from './services/watchdog'
 import * as nativeMic from './services/native-mic'
 import * as vap from './services/vap'
@@ -162,9 +163,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   const computeStatus = async (): Promise<AppStatus> => {
     const sequence = ++statusReads
     const settings = getSettings()
-    const [ttsUp, asrUp, apiUp] = await Promise.all([
-      tts.available(),
-      asr.available(),
+    const [ttsState, apiUp] = await Promise.all([
+      tts.state(speechDemand.ttsWanted(settings)),
       configuredApiKeyAvailable()
     ])
     return {
@@ -172,11 +172,10 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       llm: apiUp,
       conversationModel: settings.conversationModel,
       llmKeys: llmKeyStates(),
-      tts: ttsUp,
-      ttsStarting: !ttsUp && tts.engineStarting(),
+      tts: ttsState,
       ttsEngine: settings.ttsEngine,
       ttsLabel: tts.engineLabel(),
-      asr: asrUp,
+      asr: asr.state(speechDemand.asrWanted()),
       asrInstalled: asr.installed(),
       // The conversation and the microphone wait for the status, so it does not wait for the user's shell.
       agent: cliStatus(settings.agentEngine),
@@ -259,6 +258,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   })
 
   handle(IpcChannel.RequestMicPermission, () => microphone.request())
+  handle(IpcChannel.VoiceMicrophone, (_e, on: unknown) => watchdog.microphoneChanged(on === true))
 
   handle(IpcChannel.MicNativeStart, () =>
     nativeMic.start(
@@ -527,12 +527,17 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
         // The clips exist for Japanese only, so the language decides whether there is a bank at all.
         before.conversationLocale !== after.conversationLocale
       ) {
-        watchdog.checkAfter(tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error)))
+        // A local engine nothing needs now is left unloaded, with what ran for the engine before stopped.
+        if (speechDemand.ttsWanted(after)) watchdog.checkAfter(tts.ensureEngine().catch((error) => console.error('TTS engine failed to start:', error)))
+        else tts.releaseLocal()
         aizuchi.rebuild()
       }
       if (before.globalHotkey !== after.globalHotkey) refreshHotkey()
       if (before.uiLocale !== after.uiLocale) refreshTrayMenu()
-      if (before.asrModel !== after.asrModel) watchdog.checkAfter(asr.switchModel(before.asrModel).catch((error) => console.error('speech recognition failed to start:', error)))
+      if (before.asrModel !== after.asrModel) {
+        if (speechDemand.asrWanted()) watchdog.checkAfter(asr.switchModel(before.asrModel).catch((error) => console.error('speech recognition failed to start:', error)))
+        else asr.stop()
+      }
       if (before.memoryEmbeddingEnabled !== after.memoryEmbeddingEnabled) {
         if (after.memoryEmbeddingEnabled) {
           void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
@@ -543,8 +548,8 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       // MaAI is resident until the setting is turned off or the conversation moves to a language whose
       // turn taking it was not trained on.
       if ((before.vapEnabled && !after.vapEnabled) || !features().maai) vap.stop()
-      if (aizuchiClassifier.wanted(before) !== aizuchiClassifier.wanted(after)) {
-        if (aizuchiClassifier.wanted(after)) void aizuchiClassifier.ensureStarted()
+      if (speechDemand.classifierWanted(before) !== speechDemand.classifierWanted(after)) {
+        if (speechDemand.classifierWanted(after)) void aizuchiClassifier.ensureStarted()
         else aizuchiClassifier.stop()
       }
       if (JSON.stringify(before.mail) !== JSON.stringify(after.mail)) getMailService().applySettings()

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   handlePreviewScheme: vi.fn(),
   setUpPageViewer: vi.fn(() => Promise.resolve()),
   micStop: vi.fn(),
+  microphoneChanged: vi.fn(),
   liveStop: vi.fn(() => Promise.resolve())
 }))
 
@@ -64,11 +65,10 @@ vi.mock('../src/main/preview-protocol', () => ({ handlePreviewScheme: mocks.hand
 vi.mock('../src/main/page-viewer', () => ({ setUpPageViewer: mocks.setUpPageViewer }))
 vi.mock('../src/main/services/native-mic', () => ({ stop: mocks.micStop }))
 vi.mock('../src/main/services/live', () => ({ stop: mocks.liveStop }))
-vi.mock('../src/main/services/asr', () => ({ ensureServer: () => Promise.resolve(true) }))
 vi.mock('../src/main/services/tts', () => ({ ensureEngine: () => Promise.resolve() }))
 vi.mock('../src/main/services/aizuchi', () => ({ getBank: vi.fn() }))
-vi.mock('../src/main/services/aizuchi-classifier', () => ({ wanted: () => false, ensureStarted: vi.fn() }))
-vi.mock('../src/main/services/watchdog', () => ({ checkAfter: vi.fn() }))
+vi.mock('../src/main/services/speech-demand', () => ({ ttsWanted: () => false }))
+vi.mock('../src/main/services/watchdog', () => ({ checkAfter: vi.fn(), microphoneChanged: mocks.microphoneChanged }))
 vi.mock('../src/main/services/brain/job-reporting', () => ({ initJobReporting: vi.fn() }))
 vi.mock('../src/main/services/maintenance', () => ({ compactionJob: {}, initMaintenance: vi.fn() }))
 vi.mock('../src/main/services/memory', () => ({ ensureLoaded: vi.fn(), startEmbeddingIfEnabled: () => Promise.resolve(false) }))
@@ -177,13 +177,15 @@ describe('the launch', () => {
 })
 
 describe('what main runs for the page when the page is replaced', () => {
-  it('stops the microphone helper and the live engine when a reload commits a new page', async () => {
+  it('stops the microphone helper and the live engine, and lets the speech models go, when a reload commits a new page', async () => {
     const { window, trusted } = await startApp()
     mocks.micStop.mockClear()
     mocks.liveStop.mockClear()
+    mocks.microphoneChanged.mockClear()
     window.webContents.emit('did-navigate', {}, trusted, -1, '')
     expect(mocks.micStop).toHaveBeenCalled()
     expect(mocks.liveStop).toHaveBeenCalled()
+    expect(mocks.microphoneChanged).toHaveBeenCalledWith(false)
   })
 
   it('stops them when the renderer crashes and loads the app page again', async () => {
@@ -193,6 +195,7 @@ describe('what main runs for the page when the page is replaced', () => {
     window.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 11 })
     expect(mocks.micStop).toHaveBeenCalled()
     expect(mocks.liveStop).toHaveBeenCalled()
+    expect(mocks.microphoneChanged).toHaveBeenCalledWith(false)
     expect(loadedPages(window)).toEqual([trusted])
   })
 

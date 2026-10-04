@@ -14,9 +14,13 @@ const mocks = vi.hoisted(() => ({
   ttsAnswered: vi.fn(),
   ttsUp: true,
   ttsStarting: false,
-  asrAvailable: async () => true,
+  asrUp: true,
+  asrAvailable: async (): Promise<boolean> => mocks.asrUp,
   asrRevive: async (): Promise<boolean> => true,
-  ensureEngine: vi.fn(async () => {})
+  asrStop: vi.fn(() => { mocks.asrUp = false }),
+  ensureServer: vi.fn(async () => true),
+  ensureEngine: vi.fn(async () => {}),
+  releaseLocal: vi.fn(() => { mocks.ttsUp = false })
 }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
@@ -24,8 +28,19 @@ vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/unused', getPath: () => '/unused', on: vi.fn()
 } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
-vi.mock('../src/main/services/asr', () => ({ available: () => mocks.asrAvailable(), revive: () => mocks.asrRevive() }))
-vi.mock('../src/main/services/tts', () => ({ available: async () => mocks.ttsUp, engineStarting: () => mocks.ttsStarting, ensureEngine: () => mocks.ensureEngine() }))
+vi.mock('../src/main/services/asr', () => ({
+  available: () => mocks.asrAvailable(),
+  revive: () => mocks.asrRevive(),
+  stop: mocks.asrStop,
+  ensureServer: mocks.ensureServer,
+  state: (wanted: boolean) => (mocks.asrUp ? 'ready' : wanted ? 'down' : 'idle')
+}))
+vi.mock('../src/main/services/tts', () => ({
+  available: async () => mocks.ttsUp,
+  ensureEngine: () => mocks.ensureEngine(),
+  releaseLocal: mocks.releaseLocal,
+  state: async (wanted: boolean) => (mocks.ttsUp ? 'ready' : mocks.ttsStarting ? 'starting' : wanted ? 'down' : 'idle')
+}))
 vi.mock('../src/main/services/aizuchi', () => ({ ttsAnswered: mocks.ttsAnswered }))
 vi.mock('../src/main/services/memory', () => ({ startEmbeddingIfEnabled: mocks.startEmbedding }))
 
@@ -47,6 +62,7 @@ let watchdog: typeof import('../src/main/services/watchdog')
 let classifier: typeof import('../src/main/services/aizuchi-classifier')
 let embedding: typeof import('../src/main/services/embedding')
 let vap: typeof import('../src/main/services/vap')
+let demand: typeof import('../src/main/services/speech-demand')
 
 beforeEach(async () => {
   vi.resetModules()
@@ -61,8 +77,12 @@ beforeEach(async () => {
   mocks.ttsAnswered.mockClear()
   mocks.ttsUp = true
   mocks.ttsStarting = false
-  mocks.asrAvailable = async () => true
+  mocks.asrUp = true
+  mocks.asrAvailable = async () => mocks.asrUp
   mocks.asrRevive = async () => true
+  mocks.asrStop.mockClear()
+  mocks.ensureServer.mockClear()
+  mocks.releaseLocal.mockClear()
   mocks.ensureEngine.mockReset().mockResolvedValue(undefined)
   Object.assign(mocks.settings, { asrModel: 'qwen3-asr-1.7b', ttsEngine: 'qwen3tts', qwenTtsSize: '0.6b' })
   children = []
@@ -75,6 +95,9 @@ beforeEach(async () => {
   classifier = await import('../src/main/services/aizuchi-classifier')
   embedding = await import('../src/main/services/embedding')
   vap = await import('../src/main/services/vap')
+  demand = await import('../src/main/services/speech-demand')
+  // The microphone is on unless a test says otherwise, which is when the watchdog keeps every engine up.
+  demand.setMicrophone(true)
 })
 afterEach(() => {
   classifier.stop()
@@ -124,10 +147,10 @@ describe('the watchdog', () => {
     const onChange = vi.fn()
     watchdog.start(onChange)
     await vi.advanceTimersByTimeAsync(10)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: false, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'down' })
     mocks.ttsUp = true
     await watchdog.checkHealth()
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: true, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'ready' })
   })
 
   it('checks once the start of an engine has settled, whether it succeeded or failed', async () => {
@@ -137,7 +160,7 @@ describe('the watchdog', () => {
     mocks.ttsUp = false
     watchdog.checkAfter(Promise.reject(new Error('the worker exited')))
     await vi.advanceTimersByTimeAsync(10)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: false, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'down' })
   })
 
   it('tells the screens the outcome of a start that failed, though the engine did not answer before it either', async () => {
@@ -150,7 +173,7 @@ describe('the watchdog', () => {
     watchdog.checkAfter(Promise.reject(new Error('the worker exited')))
     await vi.advanceTimersByTimeAsync(10)
     expect(onChange).toHaveBeenCalledTimes(2)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: false, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'down' })
   })
 
   it('reports an engine that is loading apart from one that is missing, and again once it answers', async () => {
@@ -159,22 +182,22 @@ describe('the watchdog', () => {
     const onChange = vi.fn()
     watchdog.start(onChange)
     await vi.advanceTimersByTimeAsync(10)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: false, ttsStarting: true })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'starting' })
     mocks.ttsUp = true
     mocks.ttsStarting = false
     await watchdog.checkHealth()
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: true, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'ready' })
   })
 
   it('reports speech recognition as down when starting it again fails, as in a build without llama-server, and logs why', async () => {
     const failed = vi.spyOn(console, 'error').mockImplementation(() => {})
     const missing = new Error('llama-server is missing from /Applications/ASIST.app/Contents/Resources/llama.cpp/llama-server')
-    mocks.asrAvailable = async () => false
+    mocks.asrUp = false
     mocks.asrRevive = async () => { throw missing }
     const onChange = vi.fn()
     watchdog.start(onChange)
     await vi.advanceTimersByTimeAsync(10)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: false, tts: true, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'down', tts: 'ready' })
     expect(failed).toHaveBeenCalledWith(expect.any(String), missing)
   })
 
@@ -191,7 +214,7 @@ describe('the watchdog', () => {
     expect(onChange).not.toHaveBeenCalled()
     release()
     await vi.advanceTimersByTimeAsync(10)
-    expect(onChange).toHaveBeenLastCalledWith({ asr: true, tts: true, ttsStarting: false })
+    expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'ready' })
   })
 
   it('starts the aizuchi classifier again after a timeout stopped it', async () => {
@@ -318,10 +341,10 @@ describe('the watchdog\'s starts of a speech engine that keeps failing to load',
   const engines = {
     'speech recognition': {
       fail: (starts: number[]) => {
-        mocks.asrAvailable = async () => false
+        mocks.asrUp = false
         mocks.asrRevive = async () => { starts.push(Date.now()); return false }
       },
-      answer: (up: boolean) => { mocks.asrAvailable = async () => up },
+      answer: (up: boolean) => { mocks.asrUp = up },
       chooseAnother: () => { mocks.settings.asrModel = 'qwen3-asr-0.6b' }
     },
     'speech synthesis': {
@@ -373,5 +396,76 @@ describe('the watchdog\'s starts of a speech engine that keeps failing to load',
     engines[name].chooseAnother()
     await vi.advanceTimersByTimeAsync(30_000)
     expect(starts).toHaveLength(before + 1)
+  })
+})
+
+describe('the watchdog with the microphone off', () => {
+  beforeEach(() => {
+    // The other workers the watchdog keeps would only add starts of their own.
+    mocks.settings.aizuchi = false
+    mocks.settings.vapEnabled = false
+  })
+
+  it('never starts speech recognition again, and stops a server something else loaded once it is up, not while it loads', async () => {
+    demand.setMicrophone(false)
+    const revive = vi.fn(async () => true)
+    mocks.asrRevive = revive
+    mocks.asrUp = false
+    const onChange = vi.fn()
+    watchdog.start(onChange)
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(revive).not.toHaveBeenCalled()
+    expect(mocks.asrStop).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ asr: 'idle' }))
+
+    // A preparation started the server to check that it loads, and it has come up.
+    mocks.asrUp = true
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(mocks.asrStop).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ asr: 'idle' }))
+  })
+
+  it('keeps a local speech synthesis model for five minutes after the microphone turned off, then lets it go and leaves it unloaded', async () => {
+    const onChange = vi.fn()
+    watchdog.start(onChange)
+    await vi.advanceTimersByTimeAsync(10)
+    demand.setMicrophone(false)
+    await vi.advanceTimersByTimeAsync(4 * 60_000)
+    expect(mocks.releaseLocal).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(90_000)
+    expect(mocks.releaseLocal).toHaveBeenCalledOnce()
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tts: 'idle' }))
+    mocks.ensureEngine.mockClear()
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(mocks.ensureEngine).not.toHaveBeenCalled()
+  })
+
+  it('starts what the microphone needs at once when it turns on, and stops what served it alone as it turns off', async () => {
+    mocks.settings.aizuchi = true
+    demand.setMicrophone(false)
+    watchdog.start(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    expect(classifierChildren()).toEqual([])
+    mocks.ensureEngine.mockClear()
+
+    watchdog.microphoneChanged(true)
+    expect(mocks.ensureServer).toHaveBeenCalledOnce()
+    expect(mocks.ensureEngine).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(10)
+    await classifierReady(classifierChildren()[0])
+    const starting = vap.ensureStarted(() => {})
+    await vi.advanceTimersByTimeAsync(10)
+    vapChildren()[0].stdout.write(VAP_READY)
+    await vi.advanceTimersByTimeAsync(100)
+    expect(await starting).toBe(true)
+
+    watchdog.microphoneChanged(false)
+    expect(mocks.asrStop).toHaveBeenCalled()
+    expect(classifier.running()).toBe(false)
+    expect(vap.running()).toBe(false)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(classifierChildren()).toHaveLength(1)
+    expect(vapChildren()).toHaveLength(1)
   })
 })

@@ -73,7 +73,7 @@ const api = {
     if (patch.conversationModel) status = { ...status, llm: verifiedKeys.has(patch.conversationModel.provider) }
     // As in main, the macOS speech synthesis is available without any preparation, while a separate
     // engine counts as unavailable until it answers.
-    if (patch.ttsEngine) status = { ...status, ttsEngine: patch.ttsEngine, tts: patch.ttsEngine === 'system' }
+    if (patch.ttsEngine) status = { ...status, ttsEngine: patch.ttsEngine, tts: patch.ttsEngine === 'system' ? 'ready' : 'down' }
     return settings
   }),
   // As in main, the microphone at launch is kept only for a way of talking that listens, and a live
@@ -171,11 +171,10 @@ beforeEach(async () => {
     llm: false,
     conversationModel: settings.conversationModel,
     llmKeys: { anthropic: 'missing', openai: 'missing', google: 'missing', cerebras: 'missing' },
-    tts: false,
-    ttsStarting: false,
+    tts: 'down',
     ttsEngine: 'voicevox',
     ttsLabel: 'VOICEVOX',
-    asr: false,
+    asr: 'down',
     asrInstalled: false,
     agent: 'missing',
     agentEngine: 'codex',
@@ -250,7 +249,7 @@ describe('first-run setup', () => {
   })
 
   it('offers Irodori-TTS first, VOICEVOX, AivisSpeech, the backchannel classifier and MaAI for a Japanese conversation', async () => {
-    status = { ...status, asr: true }
+    status = { ...status, asr: 'ready' }
     await render()
     const t = createTranslator('ja-JP')
     await toModel(t)
@@ -270,7 +269,7 @@ describe('first-run setup', () => {
   })
 
   it('prepares MaAI with the other extras but leaves it off, while the semantic search it prepared is turned on', async () => {
-    status = { ...status, asr: true }
+    status = { ...status, asr: 'ready' }
     await render()
     const t = createTranslator('ja-JP')
     await toModel(t)
@@ -291,7 +290,7 @@ describe('first-run setup', () => {
   })
 
   it('unloads the MaAI worker its preparation loaded to check, since the setup leaves MaAI off', async () => {
-    status = { ...status, asr: true }
+    status = { ...status, asr: 'ready' }
     api.vapStatus.mockResolvedValueOnce({ runtimeInstalled: false, modelsInstalled: false, running: false })
     await render()
     const t = createTranslator('ja-JP')
@@ -312,7 +311,7 @@ describe('first-run setup', () => {
   })
 
   it('offers Qwen3-TTS and the macOS voice and prepares only the search model when the conversation is not in Japanese', async () => {
-    status = { ...status, asr: true }
+    status = { ...status, asr: 'ready' }
     await render()
     const t = createTranslator('en-US')
     await chooseLanguage('en-US')
@@ -388,7 +387,7 @@ describe('first-run setup', () => {
   })
 
   it('shows how much of the Qwen3-TTS model has arrived while it is prepared on the reading step', async () => {
-    status = { ...status, asr: true }
+    status = { ...status, asr: 'ready' }
     await render()
     const t = createTranslator('ja-JP')
     await toModel(t)
@@ -406,7 +405,7 @@ describe('first-run setup', () => {
   })
 
   it('says why the sample of the chosen speech engine could not be played', async () => {
-    status = { ...status, asr: true, tts: true }
+    status = { ...status, asr: 'ready', tts: 'ready' }
     api.ttsTest.mockRejectedValueOnce(new Error('the speech engine did not answer'))
     await render()
     await toModel(ja)
@@ -421,7 +420,7 @@ describe('first-run setup', () => {
   })
 
   it('scrolls the error into view once when it appears, and leaves the view alone while the step updates', async () => {
-    status = { ...status, asr: true, tts: true }
+    status = { ...status, asr: 'ready', tts: 'ready' }
     api.ttsTest.mockRejectedValueOnce(new Error('the speech engine did not answer'))
     const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView')
     const errorScrolls = (): number => scrolled.mock.contexts.filter((element) => (element as Element).classList.contains('su-error')).length
@@ -447,7 +446,7 @@ describe('first-run setup', () => {
   it('turns the microphone on at the end of a voice setup through the gate every other switch uses, for the engine the setup saved', async () => {
     // An engine left from before is replaced by the way of talking chosen here.
     settings = { ...settings, voiceEngine: 'gemini-live' } as AppSettings
-    status = { ...status, asr: true, tts: true }
+    status = { ...status, asr: 'ready', tts: 'ready' }
     await render()
     await toModel(ja)
     await verifyKey(ja)

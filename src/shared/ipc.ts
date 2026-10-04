@@ -749,6 +749,23 @@ export type ApiKeyState = 'missing' | 'saved' | 'verified' | 'unreadable'
 /** Whether the state is of a key the app can read and send. A missing key and one this build cannot decrypt are not. */
 export const keyReadable = (state: ApiKeyState): boolean => state === 'saved' || state === 'verified'
 
+/**
+ * How a speech engine stands. `idle` is a local model that is prepared but not loaded, because nothing needs
+ * it now, and that loads as soon as something does. `down` is an engine that should answer and does not, one
+ * whose model is not prepared, or the engine that reads nothing.
+ */
+export type SpeechEngineState = 'ready' | 'starting' | 'idle' | 'down'
+
+/** How an engine stands, from whether it answers, whether it loads, whether something needs it and whether its model is prepared. */
+export function speechEngineState(engine: { answers: boolean; starting: boolean; wanted: boolean; prepared: boolean }): SpeechEngineState {
+  if (engine.answers) return 'ready'
+  if (engine.starting) return 'starting'
+  return !engine.wanted && engine.prepared ? 'idle' : 'down'
+}
+
+/** Whether the engine is there to use: answering, or prepared and loading as soon as something needs it. */
+export const speechEnginePrepared = (state: SpeechEngineState): boolean => state === 'ready' || state === 'idle'
+
 export interface AppStatus {
   /**
    * The order in which main began to read this status: a status with a lower number was read before it. The
@@ -760,17 +777,13 @@ export interface AppStatus {
   llm: boolean
   conversationModel: ConversationModel
   llmKeys: Record<LlmProvider, ApiKeyState>
-  tts: boolean
-  /** The chosen engine is loading in a process this app started, so `tts` turns true once it answers. */
-  ttsStarting: boolean
+  /** The chosen speech synthesis engine. A local model is loaded while the microphone is on and for a while after it last spoke. */
+  tts: SpeechEngineState
   ttsEngine: TtsEngine
   ttsLabel: string
-  /** Whether the local speech recognition model answers. */
-  asr: boolean
-  /**
-   * Whether the selected speech recognition model and its runtime are installed, so that the server can be
-   * started. While it is true and `asr` is false, the server is still starting; while it is false, it never will.
-   */
+  /** The local speech recognition, which is loaded while the microphone of the voice engine is on. */
+  asr: SpeechEngineState
+  /** Whether the selected speech recognition model and its runtime are installed, so that the server can be started at all. */
   asrInstalled: boolean
   /** Whether the CLI of the selected agent engine was found. */
   agent: AgentCliStatus
@@ -847,6 +860,7 @@ export const IpcChannel = {
   Status: 'status',
   StatusChanged: 'status-changed',
   RequestMicPermission: 'request-mic-permission',
+  VoiceMicrophone: 'voice-microphone',
   MicNativeStart: 'mic-native-start',
   MicNativeStop: 'mic-native-stop',
   MicNativeFrame: 'mic-native-frame',
@@ -990,6 +1004,12 @@ export interface RendererApi {
   onStatusChanged(callback: (status: AppStatus) => void): () => void
   requestMicPermission(): Promise<boolean>
   /**
+   * Tells main that the microphone of the voice engine turned on or off. Main loads the local speech models
+   * it needs before this resolves its start, so a status read afterwards shows them loading, and lets them go
+   * as it turns off.
+   */
+  voiceMicrophone(on: boolean): Promise<void>
+  /**
    * Starts microphone capture through the native helper that cancels the echo. When it reports
    * ok, 48 kHz mono Float32 frames arrive at onMicNativeFrame; when it does not, the caller has to
    * fall back to getUserMedia.
@@ -1002,8 +1022,7 @@ export interface RendererApi {
 
   /**
    * Starts the VAP worker, returning true at once when it already runs. On false the app keeps
-   * running on the heuristics, so this fails open. The model stays resident and is not stopped when
-   * the microphone goes off.
+   * running on the heuristics, so this fails open. Main stops it when the microphone turns off.
    */
   vapStart(): Promise<boolean>
   /** Pushes 16 kHz two-channel audio to the worker, ch0 being the microphone and ch1 the TTS. */

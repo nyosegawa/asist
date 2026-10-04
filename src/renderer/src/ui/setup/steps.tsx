@@ -4,7 +4,7 @@ import { asrRecommendationReason } from '../asr-recommendation'
 import { progressLabel } from '../progress-label'
 import type { ReactNode } from 'react'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, PROVIDER_DEFAULT_MODELS, modelName, type LlmProvider } from '@shared/llm-catalog'
-import type { SetupProgress, SetupStatus, TtsEngine } from '@shared/ipc'
+import { speechEnginePrepared, type SetupProgress, type SetupStatus, type TtsEngine } from '@shared/ipc'
 import { asrModelChoices, type AsrModel } from '@shared/asr-models'
 import { isLocalTtsEngine, localTtsModel, localTtsSizeGb, type QwenTtsSize } from '@shared/tts-models'
 import { ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
@@ -197,7 +197,7 @@ export function ListeningStep({
   const t = useT()
   const formatLocale = useFormatLocale()
   const asr = setup?.asr ?? null
-  const serverReady = setup?.services.asr === true
+  const serverReady = setup !== null && speechEnginePrepared(setup.services.asr)
   const serverChip = serverReady
     ? { tone: 'ok' as const, label: t('common.ready') }
     : downloadBusy

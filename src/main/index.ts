@@ -12,10 +12,9 @@ net.setDefaultAutoSelectFamily?.(false)
 dns.setDefaultResultOrder('ipv4first')
 import { registerIpc } from './ipc'
 import { notify, quitAfterAgentsStop, setupOsIntegration } from './os-integration'
-import * as asr from './services/asr'
 import * as tts from './services/tts'
 import * as aizuchi from './services/aizuchi'
-import * as aizuchiClassifier from './services/aizuchi-classifier'
+import * as speechDemand from './services/speech-demand'
 import * as watchdog from './services/watchdog'
 import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
@@ -251,12 +250,11 @@ if (!hasSingleInstanceLock) {
     // leaves no page under its error, where the page would load, turn the microphone on and wait to show itself.
     await setUpPageViewer(allowedFileRoots)
     createWindow()
-    // The sidecars are warmed up here, and a failure does not stop the app from starting.
-    watchdog.checkAfter(asr.ensureServer().catch((error) => console.error('speech recognition failed to start:', error)))
-    watchdog.checkAfter(tts.ensureEngine().then(() => aizuchi.getBank()).catch((error) => console.error('TTS preparation failed:', error)))
-    // The aizuchi classifier stays resident when it is prepared and aizuchi are wanted; without it no
-    // aizuchi plays at the head of a turn.
-    if (aizuchiClassifier.wanted(getSettings())) void aizuchiClassifier.ensureStarted()
+    // The local speech models load when the microphone turns on, which the page does at launch when the
+    // setting asks for it. An engine of another app is started here, and a failure does not stop the app
+    // from starting. The aizuchi of a local engine ship with the app, so its bank needs no engine.
+    const ttsStart = speechDemand.ttsWanted(getSettings()) ? tts.ensureEngine() : Promise.resolve()
+    watchdog.checkAfter(ttsStart.then(() => aizuchi.getBank()).catch((error) => console.error('TTS preparation failed:', error)))
     void memory.startEmbeddingIfEnabled().catch((err) => console.error('memory embedding:', err))
     initAppUpdates()
 

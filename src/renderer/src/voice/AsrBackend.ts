@@ -1,4 +1,5 @@
 import { errorText } from '@shared/i18n/error-text'
+import type { SpeechEngineState } from '@shared/ipc'
 import { whisperLanguageName } from '@shared/asr-models'
 import { AsrEngine, type AsrProgress } from './AsrEngine'
 import { conversationLocale } from '@/conversation-locale'
@@ -47,31 +48,20 @@ export class AsrBackend {
   }
 
   /**
-   * Chooses the backend as the microphone turns on, and prepares local when it is chosen, reporting its
-   * loading to onProgress. It resolves false when isCurrent turns false on the way, and throws when
-   * neither backend can be used.
+   * Chooses the backend as the microphone turns on, once main has heard of it and started the server, and
+   * prepares local when it is chosen, reporting its loading to onProgress. A server that is still loading is
+   * chosen: the capture starts at once and the first transcription waits for the server, which loads in about
+   * the time the first utterance takes. It resolves false when isCurrent turns false on the way, and throws
+   * when neither backend can be used.
    */
   async choose(isCurrent: () => boolean, onProgress: (info: AsrProgress) => void): Promise<boolean> {
-    // With local ASR explicitly enabled, the UI must not sit for 15 seconds waiting for the server.
-    // Local is chosen and prepared at once, and the move up to the server is attempted after the
-    // microphone has started.
-    let status = await window.api.getStatus()
-    if (!status.asr && !this.localFallbackEnabled && !status.asrInstalled) {
-      throw new Error(errorText('speechRecognition.errors.notPrepared'))
-    }
-    if (!status.asr && !this.localFallbackEnabled) {
-      // Only when local has not been chosen does this wait for the more accurate server to start.
-      for (let i = 0; i < 10 && !status.asr; i++) {
-        await new Promise((r) => setTimeout(r, 1500))
-        if (!isCurrent()) return false
-        status = await window.api.getStatus()
-      }
-    }
+    const status = await window.api.getStatus()
     if (!isCurrent()) return false
-    if (!status.asr && !this.localFallbackEnabled) {
-      throw new Error(errorText('speechRecognition.errors.serverUnavailable'))
+    const server = status.asr === 'ready' || status.asr === 'starting'
+    if (!server && !this.localFallbackEnabled) {
+      throw new Error(errorText(status.asrInstalled ? 'speechRecognition.errors.serverUnavailable' : 'speechRecognition.errors.notPrepared'))
     }
-    this.backend = status.asr ? 'server' : 'local'
+    this.backend = server ? 'server' : 'local'
     console.log(`ASR backend: ${this.backend}`)
     if (this.backend === 'local') {
       await this.prepareLocal(onProgress)
@@ -85,8 +75,8 @@ export class AsrBackend {
     if (this.backend === 'server') return
     try {
       const status = await window.api.getStatus()
-      if (status.asr) {
-        this.handleStatus(true)
+      if (status.asr === 'ready') {
+        this.handleStatus('ready')
       }
     } catch {
       // Local stays in use until the next probe.
@@ -94,16 +84,17 @@ export class AsrBackend {
   }
 
   /**
-   * Applies what the service watchdog reports. Recovery goes straight back to the server, and a
-   * stop sends the next final transcription to local, or to an explicit configuration error.
+   * Applies what the service watchdog reports. Recovery goes straight back to the server, and a server that
+   * went down sends the next final transcription to local, or to an explicit configuration error. A server
+   * that loads, or that was let go with the microphone off, is still the one to use.
    */
-  handleStatus(available: boolean): void {
-    if (available) {
+  handleStatus(state: SpeechEngineState): void {
+    if (state === 'ready') {
       if (this.backend !== 'server') console.log('ASR backend upgraded: local → server')
       this.backend = 'server'
       return
     }
-    if (this.backend === 'server') {
+    if (state === 'down' && this.backend === 'server') {
       this.backend = 'local'
       this.hooks.onServerLost()
       console.warn('ASR server unavailable; next utterance will use configured recovery path')
