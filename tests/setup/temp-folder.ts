@@ -32,6 +32,14 @@ export default function setup(): () => void {
     if (match && !alive(Number(match[1]))) fs.rmSync(path.join(parent, name), REMOVE)
   }
   const run = fs.mkdtempSync(path.join(parent, `${PREFIX}${process.pid}-`))
+  const before = TEMP_VARIABLES.map((name) => [name, process.env[name]] as const)
   for (const name of TEMP_VARIABLES) process.env[name] = run
-  return () => fs.rmSync(run, REMOVE)
+  // Watch mode runs the setup again after a restart, which must find the temporary folder it started from.
+  return () => {
+    for (const [name, value] of before) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+    fs.rmSync(run, REMOVE)
+  }
 }

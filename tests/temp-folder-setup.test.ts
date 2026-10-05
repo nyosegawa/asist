@@ -11,7 +11,7 @@ describe('the temporary folder of a test run', () => {
     vi.unstubAllEnvs()
   })
 
-  it('removes the folder a killed run left, keeps the folder of a run still going, and removes its own when the run ends', () => {
+  it('removes the folder a killed run left, keeps the folder of a run still going, and removes its own and points back to the temporary folder when the run ends', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'parent-'))
     for (const name of ['TEMP', 'TMP', 'TMPDIR']) vi.stubEnv(name, parent)
     // No process has a pid this large; process.ppid is the Vitest running this test.
@@ -27,5 +27,7 @@ describe('the temporary folder of a test run', () => {
     teardown()
 
     expect(fs.readdirSync(parent)).toEqual([path.basename(running)])
+    // A restart in watch mode sets up the next run in the same place.
+    expect(os.tmpdir()).toBe(parent)
   })
 })
