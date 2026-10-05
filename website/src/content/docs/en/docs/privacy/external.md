@@ -11,8 +11,8 @@ This is a list of what ASIST sends out and what it receives from outside. When y
 
 | Sent to | What is sent | What comes back |
 |---|---|---|
-| The provider of the conversation model you chose (Anthropic, OpenAI, Google, Cerebras) | The text of the conversation, the prompt, the two memory documents that go into every conversation (About me, The user), the other parts of memory that relate to the conversation, and tool results | Replies and tool calls |
-| The provider's built-in web search (Anthropic, OpenAI, Google) | The search terms the conversation model decides on | Search results |
+| The provider of the conversation model you chose (Anthropic, OpenAI, Google, Cerebras; OpenAI under your ChatGPT account when you use your ChatGPT plan) | The text of the conversation, the prompt, the two memory documents that go into every conversation (About me, The user), the other parts of memory that relate to the conversation, and tool results | Replies and tool calls |
+| The provider's built-in web search (Anthropic, OpenAI, your ChatGPT plan, Google) | The search terms the conversation model decides on | Search results |
 | The OpenAI or Google Live API (only when you choose it as the voice engine) | Microphone audio, the prompt with the two memory documents that go into every conversation, the recent history, and tool results | Audio and transcripts |
 | The service behind the codex or claude CLI | The job's prompt, the contents of the working folder that the CLI reads, and for memory curation, the conversation logs | The results of the work |
 
