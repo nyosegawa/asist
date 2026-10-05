@@ -98,11 +98,20 @@ interface Registration {
 
 export class ChatGptAuth {
   private access: { token: string; expiresAt: number } | null = null
-  private refreshing: Promise<string> | null = null
+  private refreshing: Promise<string | null> | null = null
   private signingIn: AbortController | null = null
   private keys: SigningKey[] | null = null
-  /** The plan's permission was left out last time, so the next sign-in asks for consent again. */
-  private consentNeeded = false
+  /**
+   * The number of the session the store holds, raised whenever a sign-in replaces it or a sign-out ends it. A
+   * refresh that waited on the network writes nothing once the session it renewed is gone, so it cannot bring
+   * back a session signed out meanwhile or overwrite the one a newer sign-in saved.
+   */
+  private session = 0
+  /**
+   * A registration whose sign-in left the plan's permission out. It stays in memory only, so the session signed
+   * in before, which may be another account's, stays whole; the next sign-in returns to it asking for consent.
+   */
+  private declined: Registration | null = null
   constructor(private readonly deps: ChatGptAuthDependencies) {}
 
   private now(): number {
@@ -131,14 +140,18 @@ export class ChatGptAuth {
   }
 
   /** A valid access token, renewed with the saved refresh token when the one in memory is about to expire. */
-  accessToken(): Promise<string> {
-    if (this.access && this.access.expiresAt - EXPIRY_MARGIN_MS > this.now()) return Promise.resolve(this.access.token)
-    // One refresh at a time: the refresh token is replaced at every refresh, and a second request with the
-    // old one is refused as reused.
-    this.refreshing ??= this.refresh().finally(() => {
-      this.refreshing = null
-    })
-    return this.refreshing
+  async accessToken(): Promise<string> {
+    for (;;) {
+      if (this.access && this.access.expiresAt - EXPIRY_MARGIN_MS > this.now()) return this.access.token
+      // One refresh at a time: the refresh token is replaced at every refresh, and a second request with the
+      // old one is refused as reused.
+      this.refreshing ??= this.refresh(this.session).finally(() => {
+        this.refreshing = null
+      })
+      const token = await this.refreshing
+      // A refresh whose session ended or was replaced while it waited gives nothing; the next pass reads the current one.
+      if (token !== null) return token
+    }
   }
 
   /** Drops an access token OpenAI refused, so that the next request renews it. */
@@ -146,27 +159,31 @@ export class ChatGptAuth {
     if (this.access?.token === token) this.access = null
   }
 
-  private async refresh(): Promise<string> {
+  /** Renews the access token of session number `session`, or gives null once that session is no longer the one saved. */
+  private async refresh(session: number): Promise<string | null> {
     const { store } = this.deps
     const refreshToken = store.get('refreshToken')
     const clientId = store.get('clientId')
     if (refreshToken === null || clientId === null) throw new ChatGptSignedOut()
     const response = await this.post(CHATGPT_TOKEN_URL, { grant_type: 'refresh_token', client_id: clientId, refresh_token: refreshToken, resource: RESOURCE })
+    if (session !== this.session) return null
     if (!response.ok) {
       const code = await openAiError(response, 'refresh')
+      if (session !== this.session) return null
       if (code !== null && SESSION_ENDED.has(code)) {
-        this.forgetSession()
+        this.endSession()
         throw new ChatGptSignedOut('chatgpt.errors.sessionEnded')
       }
       // A registration OpenAI no longer knows cannot be signed in to again, so the next sign-in registers anew.
       if (code === 'invalid_client') {
-        this.forgetSession()
+        this.endSession()
         for (const id of ['clientId', 'subject', 'account'] as const) store.remove(id)
         throw new ChatGptSignedOut('chatgpt.errors.sessionEnded')
       }
       throw new Error(errorText('chatgpt.errors.requestFailed', { status: response.status }))
     }
     const token = await tokenOf(response)
+    if (session !== this.session) return null
     if (token.refresh_token) store.set('refreshToken', token.refresh_token)
     if (token.id_token) store.set('idToken', token.id_token)
     this.access = { token: token.access_token, expiresAt: this.now() + token.expires_in * 1000 }
@@ -182,7 +199,7 @@ export class ChatGptAuth {
     this.signingIn?.abort(new SignInReplaced())
     const controller = new AbortController()
     this.signingIn = controller
-    const registration = otherAccount ? null : this.registration()
+    const registration = otherAccount ? null : (this.declined ?? this.registration())
     const hostId = this.hostId()
     const { verifier, challenge } = pkcePair()
     const state = randomToken()
@@ -214,7 +231,7 @@ export class ChatGptAuth {
       }
       if (registration === null) query.agent_name_hint = AGENT_NAME
       else if (registration.account) query.login_hint = registration.account
-      if (this.consentNeeded) query.prompt = 'consent'
+      if (registration !== null && registration === this.declined) query.prompt = 'consent'
       const url = new URL(AUTHORIZE_URL)
       url.search = new URLSearchParams(query).toString()
       controller.signal.throwIfAborted()
@@ -226,13 +243,13 @@ export class ChatGptAuth {
         const issued = params.get('client_id')
         const clientId = registration ? registration.clientId : issued
         if (!clientId || clientId === NEW_REGISTRATION || (registration && issued !== null && issued !== registration.clientId)) throw failed()
-        await this.exchange({ code, verifier, redirectUri: loopback.uri, clientId, nonce, registration, controller })
+        const first = await this.exchange({ code, verifier, redirectUri: loopback.uri, clientId, nonce, registration, controller })
+        answer(true)
+        return { status: this.status(), first }
       } catch (error) {
         answer(false)
         throw error
       }
-      answer(true)
-      return { status: this.status(), first: registration === null }
     } finally {
       loopback.close()
       if (this.signingIn === controller) this.signingIn = null
@@ -241,9 +258,10 @@ export class ChatGptAuth {
 
   /**
    * Trades the code for tokens and checks them before anything is saved: the ID token's signature and claims,
-   * the same account as the registration it returned to, and the plan's permission. The request is not
+   * the same account as the registration it returned to, and the plan's permission. The requests are not
    * aborted halfway, since OpenAI may already have granted the tokens; a sign-in stopped meanwhile saves
-   * nothing and revokes what it was given.
+   * nothing and revokes what it was given. It resolves to whether this is the account's first sign-in on this
+   * computer, after which OpenAI asks apps to say once that the plan is in use.
    */
   private async exchange(attempt: {
     code: string
@@ -253,7 +271,7 @@ export class ChatGptAuth {
     nonce: string
     registration: Registration | null
     controller: AbortController
-  }): Promise<void> {
+  }): Promise<boolean> {
     const { clientId, registration, controller } = attempt
     const response = await this.post(CHATGPT_TOKEN_URL, {
       grant_type: 'authorization_code',
@@ -273,30 +291,31 @@ export class ChatGptAuth {
       await this.revoke(token.refresh_token as string, clientId).catch((cause: unknown) => console.warn('ChatGPT: a refused sign-in could not be revoked:', cause))
       throw error
     }
-    if (controller.signal.aborted) {
-      if (this.signingIn === controller) await this.revoke(token.refresh_token, clientId).catch(() => undefined)
-      throw controller.signal.reason
-    }
     const claims = await this.verifiedIdToken(token.id_token, clientId, attempt.nonce)
+    // Nothing is awaited from here until the store is written, so a sign-out or a newer sign-in that came while
+    // the requests above waited is seen here and never overwritten.
+    if (controller.signal.aborted) return refused(controller.signal.reason as Error)
     if (registration && claims.sub !== registration.subject) return refused(new Error(errorText('chatgpt.errors.accountMismatch')))
+    const signedIn: Registration = { clientId, subject: claims.sub, account: claims.email ?? null }
     if (!(token.scope ?? '').split(' ').includes(PLAN_SCOPE)) {
-      this.consentNeeded = true
-      this.saveRegistration({ clientId, subject: claims.sub, account: claims.email ?? null })
+      this.declined = signedIn
       return refused(new Error(errorText('chatgpt.errors.planNotGranted')))
     }
-    this.consentNeeded = false
-    // Only one account is signed in at a time, so the session of the account left behind ends at OpenAI too
-    // instead of staying valid for the rest of its 30 days.
-    const previous = this.readable('refreshToken')
-    const previousClient = this.readable('clientId')
-    if (previous !== null && previousClient !== null && (previousClient !== clientId || this.readable('subject') !== claims.sub)) {
-      await this.revoke(previous, previousClient).catch((cause: unknown) => console.warn('ChatGPT: the session of the previous account could not be revoked:', cause))
-    }
-    this.saveRegistration({ clientId, subject: claims.sub, account: claims.email ?? null })
     const { store } = this.deps
+    const before = this.registration()
+    const previous = { refreshToken: this.readable('refreshToken'), clientId: this.readable('clientId'), subject: this.readable('subject') }
+    this.declined = null
+    this.saveRegistration(signedIn)
     store.set('refreshToken', token.refresh_token)
     store.set('idToken', token.id_token)
+    this.session++
     this.access = { token: token.access_token, expiresAt: this.now() + token.expires_in * 1000 }
+    // Only one account is signed in at a time, so the session of the account left behind ends at OpenAI too
+    // instead of staying valid for the rest of its 30 days.
+    if (previous.refreshToken !== null && previous.clientId !== null && (previous.clientId !== clientId || previous.subject !== claims.sub)) {
+      await this.revoke(previous.refreshToken, previous.clientId).catch((cause: unknown) => console.warn('ChatGPT: the session of the previous account could not be revoked:', cause))
+    }
+    return before === null || before.subject !== claims.sub
   }
 
   /**
@@ -306,6 +325,7 @@ export class ChatGptAuth {
    */
   async signOut(): Promise<ChatGptStatus> {
     this.signingIn?.abort(new SignInReplaced())
+    this.declined = null
     const { store } = this.deps
     let refreshToken: string | null
     let clientId: string | null
@@ -314,18 +334,25 @@ export class ChatGptAuth {
       clientId = store.get('clientId')
     } catch (error) {
       if (!(error instanceof SecretUnreadableError)) throw error
-      this.forgetSession()
+      this.endSession()
       throw new Error(errorText('chatgpt.errors.revokeUnconfirmed'), { cause: error })
+    }
+    // The session ends for requests at once; a refresh still waiting writes nothing back, and a sign-in that
+    // completes during the revocation below keeps the session it saved.
+    const ending = ++this.session
+    this.access = null
+    const end = (): void => {
+      if (this.session === ending) this.endSession()
     }
     if (refreshToken !== null && clientId !== null) {
       try {
         await this.revoke(refreshToken, clientId)
       } catch (error) {
-        this.forgetSession()
+        end()
         throw new Error(errorText('chatgpt.errors.revokeUnconfirmed'), { cause: error })
       }
     }
-    this.forgetSession()
+    end()
     return this.status()
   }
 
@@ -381,10 +408,11 @@ export class ChatGptAuth {
     return created
   }
 
-  private forgetSession(): void {
+  private endSession(): void {
     this.deps.store.remove('refreshToken')
     this.deps.store.remove('idToken')
     this.access = null
+    this.session++
   }
 
   /** Checks the ID token's RS256 signature against OpenAI's published keys, then its issuer, audience, expiry and nonce. */

@@ -52,7 +52,16 @@ interface Call {
 const json = (body: unknown, status = 200): Response => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 /** OpenAI's endpoints. `account` is who signs in on the consent page; `scope` what the token response grants. */
-function fakeOpenAI(options: { account?: { sub: string; email: string }; scope?: string; refresh?: () => Response; revoke?: () => Response } = {}) {
+function fakeOpenAI(
+  options: {
+    account?: { sub: string; email: string }
+    scope?: string
+    refresh?: () => Response
+    revoke?: () => Response
+    /** Holds the answer to a request until the promise it returns settles. */
+    hold?: (url: string, form: URLSearchParams) => Promise<void> | undefined
+  } = {}
+) {
   const calls: Call[] = []
   let issued = 0
   let nonce = ''
@@ -62,6 +71,7 @@ function fakeOpenAI(options: { account?: { sub: string; email: string }; scope?:
     const url = String(input)
     const form = new URLSearchParams(init.body === undefined ? '' : String(init.body))
     calls.push({ url, form })
+    await options.hold?.(url, form)
     if (url === CHATGPT_JWKS_URL) return json(JWKS)
     if (url === CHATGPT_REVOKE_URL) return options.revoke?.() ?? new Response('', { status: 200 })
     if (url === CHATGPT_TOKEN_URL && form.get('grant_type') === 'refresh_token') {
@@ -180,17 +190,47 @@ describe('the first sign-in with ChatGPT', () => {
     expect(store.values.refreshToken).toBeUndefined()
   })
 
-  it('keeps the registration but no session when the plan was left out, revokes the grant, and asks for consent next time', async () => {
-    const openai = fakeOpenAI({ scope: 'openid profile email offline_access' })
+  it('saves nothing when the plan was left out, revokes the grant, and returns to that registration asking for consent', async () => {
+    const options: { scope?: string } = { scope: 'openid profile email offline_access' }
+    const openai = fakeOpenAI(options)
     const { signIn, store } = authWith(openai)
     const { error } = await signIn()
     expect(error?.message).toBe(errorText('chatgpt.errors.planNotGranted'))
     expect(openai.calls.find((call) => call.url === CHATGPT_REVOKE_URL)?.form.get('token')).toBe('refresh-1')
     expect(store.values.refreshToken).toBeUndefined()
-    expect(store.values.clientId).toBe('oaiapp_user-1')
+    expect(store.values.clientId).toBeUndefined()
+    options.scope = undefined
     const retry = await signIn()
     expect(retry.authorize.searchParams.get('prompt')).toBe('consent')
     expect(retry.authorize.searchParams.get('client_id')).toBe('oaiapp_user-1')
+    // The plan was never used before this sign-in, so the notice that it is in use is still due.
+    expect(retry.value?.first).toBe(true)
+  })
+
+  it('saves nothing of a sign-in that a sign-out overtook while OpenAI\'s keys were being fetched', async () => {
+    let release!: () => void
+    const keysAsked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let keysRequested!: () => void
+    const requested = new Promise<void>((resolve) => (keysRequested = resolve))
+    const openai = fakeOpenAI({
+      hold: (url) => {
+        if (url !== CHATGPT_JWKS_URL) return undefined
+        keysRequested()
+        return keysAsked
+      }
+    })
+    const { auth, signIn, store } = authWith(openai)
+    const signingIn = signIn()
+    await requested
+    await auth.signOut()
+    release()
+    const { error } = await signingIn
+    expect(error).not.toBeNull()
+    expect(store.values.refreshToken).toBeUndefined()
+    expect(auth.status().signIn).toBe('signedOut')
+    expect(openai.calls.filter((call) => call.url === CHATGPT_REVOKE_URL).map((call) => call.form.get('token'))).toEqual(['refresh-1'])
   })
 })
 
@@ -225,6 +265,17 @@ describe('signing in again', () => {
     const { error } = await signIn(false, { client_id: 'oaiapp_someone-else' })
     expect(error?.message).toBe(errorText('chatgpt.errors.signInFailed'))
     expect(store.values.refreshToken).toBeUndefined()
+  })
+
+  it('leaves the signed-in account as it was when another account leaves the plan out', async () => {
+    const store = registered()
+    store.values.refreshToken = 'refresh-of-user-1'
+    const openai = fakeOpenAI({ account: { sub: 'user-2', email: 'other@example.com' }, scope: 'openid profile email offline_access' })
+    const { auth, signIn } = authWith(openai, store)
+    const { error } = await signIn(true)
+    expect(error?.message).toBe(errorText('chatgpt.errors.planNotGranted'))
+    expect(store.values).toMatchObject({ clientId: 'oaiapp_user-1', subject: 'user-1', account: 'me@example.com', refreshToken: 'refresh-of-user-1' })
+    expect(auth.identity()).toBe('oaiapp_user-1:user-1')
   })
 
   it('registers another account on request and ends the session of the account it replaces', async () => {
@@ -291,6 +342,28 @@ describe('the access token', () => {
     expect(error.code).toBe(CHATGPT_SIGN_IN)
     expect(store.values.refreshToken).toBeUndefined()
     expect(auth.status()).toEqual({ signIn: 'signedOut', account: 'me@example.com' })
+  })
+
+  it('writes nothing back from a refresh that was still waiting when the user signed out', async () => {
+    let release!: () => void
+    const answered = new Promise<void>((resolve) => (release = resolve))
+    let asked!: () => void
+    const refreshAsked = new Promise<void>((resolve) => (asked = resolve))
+    const openai = fakeOpenAI({
+      hold: (_url, form) => {
+        if (form.get('grant_type') !== 'refresh_token') return undefined
+        asked()
+        return answered
+      }
+    })
+    const { auth, store } = authWith(openai, signedIn())
+    const renewing = auth.accessToken().catch((caught: unknown) => caught as Error)
+    await refreshAsked
+    await auth.signOut()
+    release()
+    expect(await renewing).toBeInstanceOf(Error)
+    expect(store.values.refreshToken).toBeUndefined()
+    expect(auth.status().signIn).toBe('signedOut')
   })
 
   it('keeps the sign-in through a refresh that failed on the server', async () => {
