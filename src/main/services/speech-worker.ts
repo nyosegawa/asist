@@ -1,12 +1,17 @@
-import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess, type ChildProcessWithoutNullStreams, type SpawnOptions } from 'node:child_process'
 import readline from 'node:readline'
 import { app } from 'electron'
+import { errorText } from '@shared/i18n/error-text'
+import { watchForAsistEnd } from './asist-end-watcher'
 import { childEnv } from './child-env'
+import { platformCapabilities } from './platform'
 
 /**
  * The processes the local speech runs in, and the JSON-lines protocol of the worker ones: every stdout
  * line that carries a message starts with `ASIST_JSON:`, the first message is `ready` (or `fatal`), and
- * stderr goes to the app log under the worker's name. Quitting the app stops every one of them.
+ * stderr goes to the app log under the worker's name. Quitting the app stops every one of them. A worker
+ * reads its requests from stdin and ends by itself once ASIST is gone and the pipe closes, however ASIST
+ * ended; a process that reads nothing from ASIST is started through spawnUnattended.
  */
 
 const PROTOCOL_PREFIX = 'ASIST_JSON:'
@@ -105,6 +110,25 @@ export class SpeechWorker {
       this.options.onMessage(message)
     }
   }
+}
+
+/**
+ * Starts a process of the local speech that reads nothing from ASIST, such as llama-server or the engine of
+ * another app, so that it ends with ASIST however ASIST ends. Killed with ASIST on an Apple M5, llama-server ran
+ * on for more than two days with launchd as its parent, while the workers that read stdin ended (2026-10-05).
+ * On macOS it leads a process group of its own that a watcher stops when ASIST ends, and it is not started when
+ * the watcher cannot be, with `engine` named in the error. On Windows it ended with a killed ASIST already, in
+ * the job object libuv puts it into (RTX 2080, 2026-10-05).
+ */
+export function spawnUnattended(command: string, args: string[], options: SpawnOptions & { env: NodeJS.ProcessEnv }, engine: string): ChildProcess {
+  const macos = platformCapabilities().os === 'macos'
+  const child = spawn(command, args, { ...options, detached: macos, windowsHide: true })
+  stopOnQuit(child)
+  if (macos && child.pid !== undefined && !watchForAsistEnd(child, options.env, 'asist-speech-watcher')) {
+    child.kill('SIGKILL')
+    throw new Error(errorText('voice.speech.watcherUnavailable', { engine }))
+  }
+  return child
 }
 
 /** Starts `command` as a JSON-lines worker. */

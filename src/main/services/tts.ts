@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -16,7 +16,7 @@ import { getSettings } from './settings'
 import * as localTts from './local-tts'
 import type { HttpTtsEngine, TtsVoice } from './tts-voice'
 import { childEnv } from './child-env'
-import { stopOnQuit } from './speech-worker'
+import { spawnUnattended } from './speech-worker'
 
 export type { TtsVoice } from './tts-voice'
 
@@ -198,11 +198,10 @@ async function startEngine(engine: HttpTtsEngine): Promise<void> {
   const binary = ENGINES[engine].binaries[platformCapabilities().os]().find((p): p is string => p !== undefined && fs.existsSync(p))
   if (!binary) return
   console.log(`starting ${ENGINES[engine].label} engine:`, binary)
-  const child = spawn(binary, [], { stdio: 'ignore', cwd: path.dirname(binary), env: childEnv(), windowsHide: true })
+  const child = spawnUnattended(binary, [], { stdio: 'ignore', cwd: path.dirname(binary), env: childEnv() }, ENGINES[engine].label)
   let settleExit!: () => void
   const owned: EngineProcess = { child, exited: new Promise((resolve) => { settleExit = resolve }), stopping: false }
   processes.set(engine, owned)
-  stopOnQuit(child)
   const clear = (): void => {
     if (processes.get(engine) === owned) processes.delete(engine)
     settleExit()
