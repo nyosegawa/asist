@@ -1,4 +1,5 @@
 import type { FileItem } from '@shared/files'
+import { translate } from '@/i18n'
 import { DEMO_PDF_ITEMS } from './files-pdf'
 import { DEMO_CODE_ITEMS } from './files-code'
 import { DEMO_MEDIA_ITEMS } from './files-media'
@@ -134,9 +135,9 @@ Object.assign(DEMO_FILES, Object.fromEntries(DEMO_CODE_ITEMS.map((item) => [item
 export const DEMO_IMAGE_PATHS = ['chart-revenue.png', 'chart-users.png', 'screenshot.png'].map((name) => `${DIR}/charts/${name}`)
 export const DEMO_MIXED_PATHS = [`${DIR}/report.md`, `${DIR}/pricing.csv`, `${DIR}/charts/chart-revenue.png`, `${DIR}/config.json`, `${DIR}/missing.txt`, `${DIR}/build.bin`]
 
-/** A path that is not in the table becomes an item carrying the error "ファイルがありません" ("no such file"). */
+/** A path that is not in the table becomes an item carrying the reason main gives a file that does not exist. */
 export function demoFileItems(paths: string[]): FileItem[] {
   return paths.map(
-    (path) => DEMO_FILES[path] ?? { path, name: path.split('/').pop() ?? path, kind: 'binary', sizeBytes: 0, error: 'ファイルがありません' }
+    (path) => DEMO_FILES[path] ?? { path, name: path.split('/').pop() ?? path, kind: 'binary', sizeBytes: 0, error: translate('files.errors.missing') }
   )
 }

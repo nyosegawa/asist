@@ -101,8 +101,8 @@ describe('board', () => {
     expect(titles('done')).toEqual(['背景を作る'])
     expect(view.querySelector('.tk-column[data-status="todo"] .tk-count')?.textContent).toBe('2')
     expect(view.querySelector('.tk-column[data-status="todo"] .tk-due')?.getAttribute('data-state')).toBe('overdue')
-    expect(view.querySelector('.tk-stats')?.textContent).toContain('1 今日')
-    expect(view.querySelector('.tk-stats')?.textContent).toContain('1 期限切れ')
+    expect(view.querySelector('.tk-stats')?.textContent).toContain(`1 ${t('tasks.counts.dueToday')}`)
+    expect(view.querySelector('.tk-stats')?.textContent).toContain(`1 ${t('tasks.counts.overdue')}`)
   })
 
   it('adds from the field at the top on Enter, and the field under a column sends that column status to main', async () => {

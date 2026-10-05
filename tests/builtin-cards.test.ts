@@ -188,7 +188,7 @@ describe('actions on a news or search result row', () => {
     const card = await renderAt(spec('news', DEMO_NEWS), L)
     await act(async () => card.querySelector<HTMLButtonElement>('.card-row-link')!.click())
     expect(api.openExternal).toHaveBeenCalledWith(DEMO_NEWS.items[0].url)
-    await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="この見出しについて聞く"]')!.click())
+    await act(async () => card.querySelector<HTMLButtonElement>(`[aria-label="${t('cardsInfo.news.ask')}"]`)!.click())
     expect(sendTypedMessage).toHaveBeenCalledWith(expect.stringContaining(DEMO_NEWS.items[0].title))
   })
 
@@ -233,8 +233,8 @@ describe('a search answered by Gemini', () => {
 describe('calendar card', () => {
   it('puts the next event at the top, dims the events that are over, and draws the now line before the next event', async () => {
     const card = await renderAt(spec('calendar', DEMO_CALENDAR_CARD), L)
-    expect(card.querySelector('.card-note')?.textContent).toContain('次は')
-    expect(card.querySelector('.card-note')?.textContent).toContain('ランチ 田中さん')
+    const lunch = DEMO_CALENDAR_CARD.events.find((event) => event.title === 'ランチ 田中さん')!
+    expect(card.querySelector('.card-note')?.textContent).toContain(t('calendar.card.next', { when: clockTime(lunch.start), title: lunch.title }))
     const rows = [...card.querySelectorAll<HTMLElement>('.card-rows > li')]
     const past = rows.filter((row) => row.dataset.past !== undefined)
     expect(past.map((row) => row.textContent)).toEqual([expect.stringContaining('定例')])
@@ -533,7 +533,7 @@ describe('agent job card', () => {
     expect(api.jobMerge).toHaveBeenCalledWith(DEMO_JOB.id, { commit: 'abc', base: 'a0c', into: 'main' })
     expect(card.querySelector('.aj-summary')).toBeNull()
     expect(card.querySelector('.aj-log')).toBeNull()
-    expect(card.querySelector('.card-hero p')?.textContent).toContain('1分05秒で完了')
+    expect(card.querySelector('.card-hero p')?.textContent).toContain(t('jobs.card.ended', { elapsed: t('jobs.elapsed.minutes', { minutes: 1, seconds: '05' }), status: t('jobs.status.done') }))
   })
 
   it('names beside the diff the files the job wrote that the merge leaves behind', async () => {
@@ -665,7 +665,7 @@ describe('agent job card', () => {
     const card = await renderAt(spec('agent-job', { jobId: done.id }), L)
     expect(card.querySelector('.aj')?.getAttribute('data-phase')).toBe('done')
     expect(card.querySelector('.aj-summary')?.textContent).toContain('主要3社')
-    expect(card.querySelector('.aj-cost')?.textContent).toBe('14ターン · $0.620')
+    expect(card.querySelector('.aj-cost')?.textContent).toBe(`${t('jobs.card.turns', { count: 14 })} · $0.620`)
     expect(card.querySelector('.aj-log')).toBeNull()
     const artifacts = [...card.querySelectorAll<HTMLButtonElement>('.aj-artifact .card-row-link')]
     expect(artifacts.map((el) => el.querySelector('.card-row-title')?.textContent)).toEqual(['report.md', 'pricing.csv', 'interview.md'])
@@ -885,7 +885,7 @@ describe('card for a single mail', () => {
   it('puts the query and the number of hits in the heading of a mail search card', async () => {
     const card = await renderAt(spec('mail', { ...DEMO_MAIL_CARD, query: '打合せ', view: 'inbox', total: 2, messages: DEMO_MAIL_CARD.messages.slice(0, 2) }), L)
     expect(card.querySelector('.card-hero h3')?.textContent).toBe(t('mailCards.list.searchTitle', { query: '打合せ' }))
-    expect(card.querySelector('.card-hero p')?.textContent).toBe('2件')
+    expect(card.querySelector('.card-hero p')?.textContent).toBe(t('mailCards.list.count', { count: 2 }))
     const empty = await renderAt(spec('mail', { ...DEMO_MAIL_CARD, query: 'ない', total: 0, messages: [] }), L)
     expect(empty.querySelector('.card-empty')?.textContent).toContain(t('mail.list.noMatches', { query: 'ない' }))
   })
@@ -1004,7 +1004,7 @@ describe('numbers and times on cards', () => {
 
   it('highlights the row of the requested amount on the fx card and shows the inverse rate among the facts', async () => {
     const card = await renderAt(spec('fx', DEMO_FX), L)
-    expect(card.querySelector('.card-row[aria-current]')?.textContent).toContain('162,350 円')
+    expect(card.querySelector('.card-row[aria-current]')?.textContent).toContain(`162,350 ${t('cardsFinance.fx.units.JPY', { count: 162_350 })}`)
     expect(writes(card.querySelector('.card-facts dd')?.textContent, 1 / (DEMO_FX.rate as number))).toBe(true)
     expect(card.querySelector('.panel-meta')?.textContent).toContain(t('cardsFinance.fx.updated', { time: '' }).trim())
   })
@@ -1046,7 +1046,8 @@ describe('numbers and times on cards', () => {
     expect(elapsedLabel(ja, 48_000)).toBe(ja('jobs.elapsed.seconds', { seconds: 48 }))
     expect(elapsedLabel(ja, 192_000)).toBe(ja('jobs.elapsed.minutes', { minutes: 3, seconds: 12 }))
     expect(elapsedLabel(ja, 3_720_000)).toBe(ja('jobs.elapsed.hours', { hours: 1, minutes: '02' }))
-    expect(elapsedLabel(createTranslator('en-US'), 3_720_000)).toBe('1h 02m')
+    const en = createTranslator('en-US')
+    expect(elapsedLabel(en, 3_720_000)).toBe(en('jobs.elapsed.hours', { hours: 1, minutes: '02' }))
     // A time more than a week old is written as its date in the Mac's time zone, so now is noon on that clock.
     const now = new Date(2026, 8, 15, 12).getTime()
     expect(relativeTime(now - 30_000, now)).toBe(t('cardsTime.justNow'))

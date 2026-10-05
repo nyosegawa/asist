@@ -2,10 +2,13 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parse } from '@babel/parser'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MESSAGES, UI_LOCALES, createTranslator, formatMessage } from '@shared/i18n'
 import type { Message, PluralForms } from '@shared/i18n/message'
 import { OS_MESSAGE_VARIANTS } from '@shared/i18n/os-message'
+
+// These tests are about the words of the dictionary, which the setup replaces with keys for every other test.
+vi.unmock('../src/shared/i18n')
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const JAPANESE = /[぀-ヿ一-鿿]/

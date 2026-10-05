@@ -117,7 +117,7 @@ describe('card size', () => {
       const card = dock.querySelector<HTMLElement>('.panel-card')!
       const size = cardSizeFor(height)
       expect(card.dataset.size).toBe(size)
-      expect(card.querySelector('[aria-label="週間の天気"]') !== null).toBe(size !== 's')
+      expect(card.querySelector(`[aria-label="${t('cardsWeather.weekly.title')}"]`) !== null).toBe(size !== 's')
       expect(card.querySelector('.card-more') !== null).toBe(size === 's')
     }
   })
@@ -129,7 +129,7 @@ describe('card size', () => {
     expect(usePanelStore.getState().focusedKey).toBe('weather:25201:today')
     const focus = container.querySelector<HTMLElement>('[data-surface="focus"]')!
     expect(focus.querySelector('.panel-focus')?.getAttribute('data-size')).toBe('focus')
-    expect(focus.querySelector('[aria-label="週間の天気"]')).not.toBeNull()
+    expect(focus.querySelector(`[aria-label="${t('cardsWeather.weekly.title')}"]`)).not.toBeNull()
     expect(focus.textContent).toContain(
       t('cardsWeather.area', {
         area: DEMO_WEATHER_NAGANO.location.forecastAreaName,

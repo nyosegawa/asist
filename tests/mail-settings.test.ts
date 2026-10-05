@@ -84,7 +84,9 @@ it('fills the host presets from the chosen provider and adds the account to main
   expect(api.mailProbe).toHaveBeenCalledWith(
     expect.objectContaining({ provider: 'icloud', label: '個人', email: 'me@example.com', password: 'app-pass', imap: { host: 'imap.mail.me.com', port: 993, secure: true } })
   )
-  expect(form.querySelector('[role="status"]')?.textContent).toContain(`アーカイブ: ${t('settingsMail.form.probeNoFolder')}`)
+  expect(form.querySelector('[role="status"]')?.textContent).toContain(
+    t('settingsMail.form.probeResult', { sent: 'Sent', archive: t('settingsMail.form.probeNoFolder'), trash: 'Trash' })
+  )
   await act(async () => form.requestSubmit())
   expect(api.mailAccountAdd).toHaveBeenCalledWith(expect.objectContaining({ email: 'me@example.com', smtp: { host: 'smtp.mail.me.com', port: 587, secure: false } }))
   expect(useToastStore.getState().toasts.at(-1)).toMatchObject({ kind: 'ok', title: t('settingsMail.added') })

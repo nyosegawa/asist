@@ -416,7 +416,8 @@ describe('TTS speaker selection', () => {
 
   it('does not turn an HTTP failure of the speaker list into an empty list and hands the reason to the UI', async () => {
     const tts = await import('../src/main/services/tts')
-    await expect(tts.listSpeakers('aivisspeech')).rejects.toThrow('HTTP 503')
+    const { errorText } = await import('@shared/i18n/error-text')
+    await expect(tts.listSpeakers('aivisspeech')).rejects.toThrow(errorText('voice.speech.speakersFailed', { engine: tts.engineLabel('aivisspeech'), status: 503 }))
   })
 })
 

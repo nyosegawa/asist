@@ -35,7 +35,7 @@ describe('a system line of the feed', () => {
     expect(container.textContent).toContain(t('conversation.start'))
     expect(container.textContent).toContain('boom')
     await act(async () => withLocale('en-US'))
-    expect(container.textContent).toContain('Turn the microphone on and start talking')
+    expect(container.textContent).toContain(createTranslator('en-US')('conversation.start'))
     expect(container.textContent).not.toContain(t('conversation.start'))
     expect(container.textContent).toContain('boom')
   })

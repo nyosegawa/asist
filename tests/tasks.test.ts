@@ -171,7 +171,8 @@ describe('due dates', () => {
     expect(label('2026-09-20')).toBe(ja('tasks.due.inDays', { count: 4 }))
     expect(label('2026-10-04')).toBe('10/4(日)')
     expect(label('2027-01-05')).toBe('2027/1/5(火)')
-    expect(dueLabel('2026-09-17', today, createTranslator('en-US'), 'en-US')).toBe('Tomorrow')
+    const en = createTranslator('en-US')
+    expect(dueLabel('2026-09-17', today, en, 'en-US')).toBe(en('tasks.due.tomorrow'))
   })
 
   it('names the status of a task in the language the tools are written in', () => {

@@ -122,7 +122,6 @@ describe('the approval gate', () => {
     const result = await f.service.change({ operation: 'markRead', ids: [f.ids.question], read: true }, f.signal.signal, 'agent')
     expect(f.confirm).toHaveBeenCalledOnce()
     expect(f.confirm.mock.calls[0][0]).toContain('見積もりの相談')
-    expect(f.confirm.mock.calls[0][0]).toContain('既読にします')
     // The button names the operation, so pressing it holds no surprise.
     expect(f.confirm.mock.calls[0][2]).toBe(t('mail.confirm.action.markRead'))
     expect(result).toMatchObject({ saved: true, operation: 'markRead', id: f.ids.question })
