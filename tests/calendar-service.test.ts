@@ -181,9 +181,9 @@ describe('CalendarService', () => {
       expect(update).not.toContain(date(9, 8))
       expect(remove).toContain(date(9, 6))
       expect(remove).not.toContain(date(9, 5))
-      // A range too long for its line breaks around the dash and never inside a date.
+      // A range too long for its line breaks where the message of the range allows and never inside a date.
       const range = String(f.confirm.mock.calls[0][0]).split('\n').find((line) => read(line).includes(date(9, 7)))!
-      expect(range.split(' ')).toHaveLength(3)
+      expect(read(range)).toBe(createTranslator(getSettings().uiLocale)('calendar.dateRange', { from: date(9, 6), until: date(9, 7) }))
       expect(range).not.toMatch(JOINABLE)
     } finally {
       if (previous === undefined) delete process.env.TZ

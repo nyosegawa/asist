@@ -403,7 +403,7 @@ describe('settings dialog', () => {
     useSettingsStore.setState({ settings: { ...settings, conversationModel: { provider: 'google', id: 'gemini-3.8-flash' } } })
     const view = await render()
     await act(async () => nav(view, 'conversation').click())
-    const effort = view.querySelector<HTMLSelectElement>('[aria-label="会話の思考の深さ"]')!
+    const effort = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsConversation.models.conversationModel.effort')}"]`)!
     expect(effort.value).toBe('low')
     expect([...effort.options].map((o) => o.value)).toEqual(['low', 'medium', 'high'])
     await act(async () => {
@@ -411,14 +411,14 @@ describe('settings dialog', () => {
       effort.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(api.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ conversationModel: { provider: 'google', id: 'gemini-3.8-flash', effort: 'high' } }))
-    const model = view.querySelector<HTMLSelectElement>('[aria-label="会話のモデル"]')!
+    const model = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsConversation.models.conversationModel.model')}"]`)!
     await act(async () => {
       model.value = 'gemini-3.5-flash-lite'
       model.dispatchEvent(new Event('change', { bubbles: true }))
     })
     expect(api.saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ conversationModel: { provider: 'google', id: 'gemini-3.5-flash-lite' } }))
     // Haiku 4.5, the aizuchi model, does not accept a reasoning effort, so no selector is offered for it.
-    expect(view.querySelector('[aria-label="つなぎの一言の思考の深さ"]')).toBeNull()
+    expect(view.querySelector(`[aria-label="${t('settingsConversation.models.bridgeModel.effort')}"]`)).toBeNull()
   })
 
   it('saves the theme chosen on the appearance page and marks it as the chosen one', async () => {
@@ -1123,7 +1123,7 @@ describe('settings dialog with the conversation held in another language', () =>
     const view = await render()
     await act(async () => nav(view, 'voice').click())
 
-    expect(title(view)).toBe('声')
+    expect(title(view)).toBe(t('settingsVoice.title'))
     // VOICEVOX is not among them, so the select shows no selection until the user picks an engine.
     expect(engineOptions(view)).toEqual(['qwen3tts', 'system', 'none'])
     // The speaker belongs to an engine this conversation cannot use, so it is neither shown nor fetched.

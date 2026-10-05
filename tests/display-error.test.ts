@@ -23,11 +23,12 @@ describe('displayError', () => {
 
   it('writes an error that carries a message key in the language of the interface, while the message itself stays English for the log', () => {
     const message = errorText('settingsModels.preparation.startFailed', { model: 'Qwen3-TTS' })
-    expect(message.startsWith("Couldn't start Qwen3-TTS.")).toBe(true)
+    const english = createTranslator('en-US')('settingsModels.preparation.startFailed', { model: 'Qwen3-TTS' })
+    expect(message.startsWith(`${english} [asist:`)).toBe(true)
     // The settings have not loaded, so the interface is in the source language.
     expect(displayError(new Error(`Error invoking remote method 'tts-prepare': Error: ${message}`))).toBe(t('settingsModels.preparation.startFailed', { model: 'Qwen3-TTS' }))
     useSettingsStore.setState({ settings: { uiLocale: 'en-US' } as never })
-    expect(displayError(new Error(message))).toBe("Couldn't start Qwen3-TTS.")
+    expect(displayError(new Error(message))).toBe(english)
     useSettingsStore.setState({ settings: null })
   })
 

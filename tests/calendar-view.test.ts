@@ -105,7 +105,7 @@ it('loads the events of the visible range, draws bars and a remaining count, and
   expect(text('.cal-pop .cal-ev')).toEqual(['10:00予約画面 レビュー', '13:00ランチ'])
   await act(async () => container.querySelector<HTMLButtonElement>('.cal-pop .cal-ev')!.click())
   const card = container.querySelector('.cal-pop.is-event')!
-  expect(card.textContent).toContain('2026年9月15日火曜日・10:00～11:00')
+  expect(card.textContent).toContain(t('calendar.event.whenSameDay', { date: '2026年9月15日火曜日', time: t('calendar.timeRange', { start: '10:00', end: '11:00' }) }))
   expect(card.textContent).toContain('Zoom')
   expect(card.textContent).toContain(t('calendar.event.hasAttendees'))
   expect(card.querySelector<HTMLButtonElement>(`[aria-label="${t('common.delete')}"]`)?.disabled).toBe(true)

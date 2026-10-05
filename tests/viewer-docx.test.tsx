@@ -561,6 +561,6 @@ describe('Word viewer rendering', () => {
     const pptx = readFileSync(resolve(DEMO_DIR, './demo-files/office/slides.pptx'))
     serve(pptx)
     const frame = await render(docxItem(nextUrl(), pptx.length), 'card')
-    expect(frame.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain('Word を読めません')
+    expect(frame.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain(t('files.viewer.docxFailed', { message: '' }))
   })
 })

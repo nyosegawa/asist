@@ -103,7 +103,8 @@ describe('rowText, the text copied out of a row', () => {
   it('words the outcome of a run that reported no summary in the language it is given', () => {
     const row = { kind: 'result', t: 1, ok: true, text: '' } as const
     expect(rowText(row, t)).toBe(t('jobs.log.done'))
-    expect(rowText(row, createTranslator('en-US'))).toBe('Done')
-    expect(rowText({ ...row, ok: false }, createTranslator('en-US'))).toBe('Failed')
+    const en = createTranslator('en-US')
+    expect(rowText(row, en)).toBe(en('jobs.log.done'))
+    expect(rowText({ ...row, ok: false }, en)).toBe(en('jobs.log.failed'))
   })
 })

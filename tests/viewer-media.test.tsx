@@ -102,13 +102,14 @@ describe('viewer rendering', () => {
   const audio: FileItem = { path: '/v/tone.wav', name: 'tone.wav', kind: 'audio', sizeBytes: 40044, url: '/demo-files/media/interview.wav' }
 
   it('keeps the video controls disabled until the metadata arrives, then notes the duration and size and passes play and pause to the element', async () => {
+    const t = createTranslator('ja-JP')
     const card = await render(VideoViewer, video)
     const el = card.querySelector('video')!
     expect(el.hasAttribute('autoplay')).toBe(false)
     expect(el.hasAttribute('controls')).toBe(false)
-    const playButton = card.querySelector<HTMLButtonElement>('[aria-label="再生"]')!
+    const playButton = card.querySelector<HTMLButtonElement>(`[aria-label="${t('files.viewer.play')}"]`)!
     expect(playButton.disabled).toBe(true)
-    expect(card.querySelector('.fv-note')?.textContent).toBe(createTranslator('ja-JP')('files.viewer.loading'))
+    expect(card.querySelector('.fv-note')?.textContent).toBe(t('files.viewer.loading'))
 
     await loadMetadata(el, 3, { videoWidth: 160, videoHeight: 120 })
     expect(card.querySelector('.fv-note')?.textContent).toBe('0:03 · 160×120')
@@ -121,12 +122,13 @@ describe('viewer rendering', () => {
     await act(async () => {
       el.dispatchEvent(new Event('play'))
     })
-    const pauseButton = card.querySelector<HTMLButtonElement>('[aria-label="一時停止"]')!
+    const pauseButton = card.querySelector<HTMLButtonElement>(`[aria-label="${t('files.viewer.pause')}"]`)!
     await act(async () => pauseButton.click())
     expect(pause).toHaveBeenCalledTimes(1)
   })
 
   it('follows timeupdate on the seek bar, writes currentTime when it is dragged, and toggles muted on the element', async () => {
+    const t = createTranslator('ja-JP')
     const card = await render(VideoViewer, video)
     const el = card.querySelector('video')!
     await loadMetadata(el, 10)
@@ -146,12 +148,12 @@ describe('viewer rendering', () => {
     })
     expect(el.currentTime).toBe(7.5)
 
-    await act(async () => card.querySelector<HTMLButtonElement>('[aria-label="消音"]')!.click())
+    await act(async () => card.querySelector<HTMLButtonElement>(`[aria-label="${t('files.viewer.mute')}"]`)!.click())
     expect(el.muted).toBe(true)
     await act(async () => {
       el.dispatchEvent(new Event('volumechange'))
     })
-    expect(card.querySelector('[aria-label="消音を解く"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(card.querySelector(`[aria-label="${t('files.viewer.unmute')}"]`)?.getAttribute('aria-pressed')).toBe('true')
   })
 
   /** Answers the viewer's last request for the peaks. */

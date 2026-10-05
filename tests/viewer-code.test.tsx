@@ -183,7 +183,7 @@ describe('data: the json tree', () => {
 
   it('shows the reason in red for broken json and renders it as highlighted code', async () => {
     const card = await render(itemOf('broken.json', 'data', '{"a": [1, 2,\n'), 'card')
-    expect(card.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain('JSON として読めません')
+    expect(card.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain(t('files.viewer.jsonFailed', { message: '' }))
     expect(card.querySelector('.fv-code')?.getAttribute('data-language')).toBe('json')
     expect(card.querySelector('.fv-data-tree')).toBeNull()
   })
@@ -245,7 +245,7 @@ describe('notebook: cells and outputs', () => {
     expect(card.querySelector('.fv-nb-cell[data-type="code"] .hljs-keyword')?.textContent).toBe('import')
     expect(card.querySelector('.fv-nb-output[data-kind="stream"]')?.textContent).toContain('0.571429')
     expect(card.querySelector<HTMLImageElement>('.fv-nb-output[data-kind="image"] img')?.src.startsWith('data:image/png;base64,iVBOR')).toBe(true)
-    expect(card.querySelector('.fv-note')?.textContent).toBe(`他 ${DEMO_NOTEBOOK.cells.length - 3} セル`)
+    expect(card.querySelector('.fv-note')?.textContent).toBe(t('files.viewer.notebookCells', { count: DEMO_NOTEBOOK.cells.length - 3 }))
     const focus = await render(item, 'focus')
     expect(focus.querySelectorAll('.fv-nb-cell')).toHaveLength(DEMO_NOTEBOOK.cells.length)
     expect(focus.querySelector('.fv-nb-output[data-kind="error"]')?.textContent).toContain("KeyError: '無料枠'")
