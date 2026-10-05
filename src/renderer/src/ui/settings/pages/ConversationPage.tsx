@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ExternalLink } from 'lucide-react'
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_INFO,
@@ -13,26 +14,22 @@ import {
   type LlmProvider
 } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, VOICE_ENGINES, isLiveEngine, voiceEngineLabel, type LiveEngine, type VoiceEngine } from '@shared/voice-engine'
-import type { MessageKey, Translate } from '@shared/i18n'
-import type { ApiKeyState } from '@shared/ipc'
+import type { Translate } from '@shared/i18n'
+import { keyReadable } from '@shared/ipc'
 import { useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
-import { Btn, Chip, Group, Page, Row, type ChipTone } from '../primitives'
+import { Btn, Chip, Group, Page, Row } from '../primitives'
 import { PrepLine } from '../preparation'
-import { credentialHint, keyProviders } from '../pending'
+import { credentialText, keyProviders } from '../pending'
+import { openChatGptUsage, useChatGptSignIn } from '@/chatgpt'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 
-/** A key this build cannot decrypt is named as on the API keys page, where it is entered again. */
-const KEY_STATE_CHIP = {
-  unreadable: { tone: 'warn', label: 'settingsIntegrations.apiKeys.unreadable' },
-  missing: { tone: 'warn', label: 'settingsConversation.models.notSet' }
-} as const satisfies Record<Exclude<ApiKeyState, 'verified' | 'saved'>, { tone: ChipTone; label: MessageKey }>
-
 /**
- * The conversation page: the voice engine and the models that answer. A key that is missing for a
- * provider in use shows under the models, with the way to the API keys page; a key that works is not
- * repeated here.
+ * The conversation page: the voice engine and the models that answer. A key or sign-in that is missing for
+ * a provider in use shows under the models, with the way to the API keys page; a key that works is not
+ * repeated here. While the models run on the ChatGPT plan, the page says so next to them with the way to
+ * the plan's usage, as OpenAI asks of apps.
  */
 export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
   const { settings, status, save, refreshStatus, go } = ctx
@@ -74,10 +71,13 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
       .finally(() => setSaving(false))
   }
 
-  const missingKeys = status === null ? [] : keyProviders(settings).flatMap((provider) => {
+  const providers = keyProviders(settings)
+  const missingKeys = status === null ? [] : providers.flatMap((provider) => {
     const state = status.llmKeys[provider]
     return state === 'missing' || state === 'unreadable' ? [{ provider, state }] : []
   })
+  const onPlan = status !== null && providers.includes('chatgpt') && keyReadable(status.llmKeys.chatgpt)
+  const chatgpt = useChatGptSignIn(onPlan)
 
   return (
     <Page title={t('settingsConversation.title')} lead={t('settingsConversation.lead')}>
@@ -112,20 +112,34 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
             <ModelPicker role="bridgeModel" value={bridge} disabled={saving} onChange={(model) => change('bridgeModel', model)} />
           </Row>
         )}
-        {missingKeys.map(({ provider, state }) => (
-          <PrepLine key={provider} text={credentialHint(t, provider, state, live)}>
-            <Chip tone={KEY_STATE_CHIP[state].tone}>{t(KEY_STATE_CHIP[state].label)}</Chip>
-            <Btn tone="primary" onClick={() => go('apiKeys')}>
-              {t('settingsIntegrations.apiKeys.register')}
+        {onPlan && (
+          <Row label={t('chatgpt.plan.using')} hint={chatgpt.status?.account ? <span data-fit="data">{chatgpt.status.account}</span> : undefined}>
+            <Btn tone="quiet" onClick={openChatGptUsage}>
+              <ExternalLink size={12} aria-hidden />
+              {t('chatgpt.plan.manageUsage')}
             </Btn>
-          </PrepLine>
-        ))}
+          </Row>
+        )}
+        {missingKeys.map(({ provider, state }) => {
+          const text = credentialText(t, provider, state, live)
+          return (
+            <PrepLine key={provider} text={text.hint}>
+              <Chip tone="warn">{text.state}</Chip>
+              <Btn tone="primary" onClick={() => go('apiKeys')}>
+                {text.action}
+              </Btn>
+            </PrepLine>
+          )
+        })}
         <Row
           label={t('settingsConversation.models.webSearch')}
           hint={
-            conversationInfo.webSearch
-              ? t('settingsConversation.models.webSearchAvailable', { provider: conversationInfo.label })
-              : t('settingsConversation.models.webSearchUnavailable', { provider: conversationInfo.label })
+            // The wording for the API key providers says each search is billed, which a search on the ChatGPT plan is not.
+            conversation.provider === 'chatgpt'
+              ? t('chatgpt.plan.webSearch')
+              : conversationInfo.webSearch
+                ? t('settingsConversation.models.webSearchAvailable', { provider: conversationInfo.label })
+                : t('settingsConversation.models.webSearchUnavailable', { provider: conversationInfo.label })
           }
         >
           <Chip tone={conversationInfo.webSearch ? 'ok' : 'dim'}>

@@ -5,7 +5,7 @@ import type { LocalTtsEngine } from '@shared/tts-models'
 import { dayKey } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
 import { displayError } from '@/display-error'
-import { formatLocale, translate } from '@/i18n'
+import { formatLocale, tConversation, translate } from '@/i18n'
 import { useToastStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 import { useConfirmStore } from '@/state/confirm'
@@ -14,6 +14,11 @@ import { prepareSetupDemo } from './setup-demo'
 import { DEMO_NOTES } from './fixtures/notes'
 import { DEMO_MAIL_DRAFTS, DEMO_MAIL_MESSAGES } from './fixtures/mail'
 import { DEMO_CALENDAR_STATUS } from './fixtures/calendar'
+import { demoUsageDays } from './fixtures/usage'
+import { DEMO_CHATGPT_ACCOUNT, setDemoChatGpt } from './chatgpt-demo'
+import { manageUsageAction } from '@/chatgpt'
+import { defaultModelsFor } from '@shared/llm-catalog'
+import type { ChatGptStatus } from '@shared/chatgpt'
 
 /**
  * How the demo opens each screen and state. The names and how they appear in the list live in
@@ -60,6 +65,44 @@ const googleSignedOutSettings = (signIn: 'signedOut' | 'unreadable'): DemoView =
   },
   open: () => view().openApp({ app: 'settings', page: 'connections' })
 })
+
+/**
+ * A settings page with the sign-in with ChatGPT in the given state. With `models`, the conversation and the
+ * bridge phrase run on ChatGPT's default pair.
+ */
+const chatgptSettings = (page: SettingsPage, status: ChatGptStatus, models: boolean): DemoView => ({
+  prepare: (api) => {
+    setDemoChatGpt(status)
+    if (models) void api.saveSettings(defaultModelsFor('chatgpt'))
+  },
+  open: () => view().openApp({ app: 'settings', page })
+})
+
+/** The usage page after the conversation moved from an OpenAI key to the ChatGPT plan two weeks ago. */
+const usageOnPlan: DemoView = {
+  prepare: (api) => {
+    setDemoChatGpt({ signIn: 'signedIn', account: DEMO_CHATGPT_ACCOUNT })
+    void api.saveSettings(defaultModelsFor('chatgpt'))
+    api.apiUsage = async () => demoUsageDays(new Date(), true)
+  },
+  open: () => view().openApp({ app: 'settings', page: 'usage' })
+}
+
+let usageToastTimer: ReturnType<typeof setInterval> | undefined
+
+/** The toast of a reply that failed on the plan's usage limit, pushed again while someone looks at it, as the other toasts are. */
+function showUsageToast(): void {
+  const push = (): void =>
+    useToastStore.getState().push({
+      kind: 'error',
+      title: translate('conversation.replyFailed'),
+      body: tConversation('conversation.reply.chatgptUsageLimit'),
+      action: manageUsageAction()
+    })
+  if (usageToastTimer) return
+  push()
+  usageToastTimer = setInterval(push, 5000)
+}
 
 /**
  * Semantic search on the memory page while its model downloads. The download stops at 40% and never
@@ -211,7 +254,13 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   'settings/language': settingsPage('language'),
   'settings/appearance': settingsPage('appearance'),
   'settings/api-keys': settingsPage('apiKeys'),
+  'settings/api-keys/chatgpt-signed-in': chatgptSettings('apiKeys', { signIn: 'signedIn', account: DEMO_CHATGPT_ACCOUNT }, true),
+  'settings/api-keys/chatgpt-returning': chatgptSettings('apiKeys', { signIn: 'signedOut', account: DEMO_CHATGPT_ACCOUNT }, false),
+  'settings/api-keys/chatgpt-unreadable': chatgptSettings('apiKeys', { signIn: 'unreadable', account: null }, false),
+  'settings/conversation/chatgpt': chatgptSettings('conversation', { signIn: 'signedIn', account: DEMO_CHATGPT_ACCOUNT }, true),
+  'settings/conversation/chatgpt-signed-out': chatgptSettings('conversation', { signIn: 'signedOut', account: DEMO_CHATGPT_ACCOUNT }, true),
   'settings/usage': settingsPage('usage'),
+  'settings/usage/chatgpt': usageOnPlan,
   'settings/about': settingsPage('about'),
   'settings/memory/preparing': semanticSearchPreparing,
   'settings/memory/converting': memoriesConverting,
@@ -223,6 +272,8 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   'setup/mic-denied': { prepare: (api) => prepareSetupDemo(api, 'mic-denied') },
   'setup/tts-missing': { prepare: (api) => prepareSetupDemo(api, 'tts-missing') },
   'setup/live-key-failed': { prepare: (api) => prepareSetupDemo(api, 'live-key-failed') },
+  'setup/chatgpt': { prepare: (api) => prepareSetupDemo(api, 'chatgpt') },
+  'setup/chatgpt-returning': { prepare: (api) => prepareSetupDemo(api, 'chatgpt-returning') },
   // Someone who finished the setup before the notice of the risks existed sees it once at launch.
   safety: { prepare: (api) => void api.saveSettings({ safetyNoticeVersion: 0 }) },
   boot: {
@@ -269,7 +320,8 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
     location: '大阪支社',
     notes: ''
   }),
-  toasts: { open: showToasts }
+  toasts: { open: showToasts },
+  'toasts/chatgpt-usage': { open: showUsageToast }
 }
 
 /** Waits until the element is rendered and then presses it, to reach a state inside a screen such as one page of the settings. */

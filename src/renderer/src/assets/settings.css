@@ -740,10 +740,34 @@ textarea.st-input.st-roots {
   font-size: 10.5px;
   color: var(--color-holo-dim);
 }
+.st-key-icon {
+  flex-shrink: 0;
+  color: var(--color-holo-dim);
+}
+.st-key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .st-key-hint {
   grid-column: 1;
   font-size: 11px;
   color: var(--color-holo-dim);
+}
+/* The ChatGPT row's actions can be two long buttons, which left its hint a column too narrow for the link
+   to the guide in French; under them the hint takes the whole row, and the link wraps as one piece. */
+.st-key-hint.is-wide {
+  grid-column: 1 / -1;
+}
+.st-key-hint .st-link {
+  white-space: nowrap;
+}
+.st-key-error {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--ui-tone-red-text);
 }
 .st-key-form {
   display: flex;

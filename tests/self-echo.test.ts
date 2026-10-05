@@ -98,7 +98,7 @@ describe('stripClipEcho removes an aizuchi clip that leaked into the transcript'
   })
 
   it('strips the longest matching clip first, so a doubled aizuchi is not read as the short clip twice', () => {
-    expect(stripClipEcho('はいはいわかりました', atBothEdges(['はいはい。', 'はい。']))).toBe('わかりました')
+    expect(stripClipEcho('はいはい承知しました', atBothEdges(['はいはい。', 'はい。']))).toBe('承知しました')
   })
 
   it('strips each end only of the clips that can sit there', () => {

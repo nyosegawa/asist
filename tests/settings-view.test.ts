@@ -14,6 +14,7 @@ import { THEMES } from '@shared/themes'
 import { shortcutLabel } from '@shared/platform'
 import { localDate, type UsageDay } from '@shared/api-usage'
 import { LLM_PROVIDERS, defaultModelsFor } from '@shared/llm-catalog'
+import { CHATGPT_USAGE_URL, type ChatGptSignInResult, type ChatGptStatus } from '@shared/chatgpt'
 import { SettingsDialog } from '../src/renderer/src/ui/SettingsDialog'
 import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
@@ -85,7 +86,7 @@ const status: AppStatus = {
   sequence: 1,
   llm: true,
   conversationModel: { provider: 'openai', id: 'gpt-5.6-luna' },
-  llmKeys: { anthropic: 'verified', openai: 'missing', google: 'missing', cerebras: 'saved' },
+  llmKeys: { anthropic: 'verified', openai: 'missing', chatgpt: 'missing', google: 'missing', cerebras: 'saved' },
   tts: 'down',
   ttsEngine: 'system',
   ttsLabel: 'macOS',
@@ -134,7 +135,11 @@ const api = {
     progressListeners.add(callback)
     return () => void progressListeners.delete(callback)
   }),
-  openExternal: vi.fn(async () => {}),
+  openExternal: vi.fn(async (_url: string) => {}),
+  chatgptStatus: vi.fn(async (): Promise<ChatGptStatus> => ({ signIn: 'signedOut', account: null })),
+  chatgptSignIn: vi.fn(async (_otherAccount: boolean): Promise<ChatGptSignInResult> => ({ status: { signIn: 'signedIn', account: 'you@example.com' }, first: false })),
+  chatgptSignOut: vi.fn(async (): Promise<ChatGptStatus> => ({ signIn: 'signedOut', account: 'you@example.com' })),
+  chatgptOpenGuide: vi.fn(async () => {}),
   appVersion: vi.fn(async () => '1.0.0'),
   appUpdateState: vi.fn(async (): Promise<AppUpdateState> => ({ phase: 'off' })),
   onAppUpdateChanged: vi.fn((_callback: (state: AppUpdateState) => void) => () => {}),
@@ -162,6 +167,9 @@ beforeEach(() => {
   progressListeners.clear()
   api.embeddingStatus.mockReset().mockImplementation(async () => embeddingReady)
   api.embeddingPrepare.mockReset().mockImplementation(async () => ({ ok: true, message: '' }))
+  api.chatgptStatus.mockReset().mockImplementation(async () => ({ signIn: 'signedOut', account: null }))
+  api.chatgptSignIn.mockReset().mockImplementation(async () => ({ status: { signIn: 'signedIn', account: 'you@example.com' }, first: false }))
+  api.chatgptSignOut.mockReset().mockImplementation(async () => ({ signIn: 'signedOut', account: 'you@example.com' }))
   useSettingsStore.setState({ settings })
   useStatusStore.setState({ status })
   useToastStore.setState({ toasts: [] })
@@ -469,6 +477,7 @@ describe('settings dialog', () => {
     expect(keys).toEqual([
       ['anthropic', t('settingsIntegrations.apiKeys.verified')],
       ['openai', t('settingsIntegrations.apiKeys.notSet')],
+      ['chatgpt', t('chatgpt.signIn.signedOut')],
       ['google', t('settingsIntegrations.apiKeys.notSet')],
       ['cerebras', t('settingsIntegrations.apiKeys.saved')]
     ])
@@ -1529,5 +1538,162 @@ describe('the models the about page credits', () => {
     for (const id of offeredAsrModels()) expect(row(view, `${asrModelSpec(id).label} (GGUF)`)).toBeUndefined()
     const whisperInWindow = CREDITS.find((credit) => credit.id === 'asrWhisperOnnx')!
     expect(row(view, whisperInWindow.name)?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.asrWhisperOnnx'))
+  })
+})
+
+describe('ChatGPT in the settings', () => {
+  const onPlan = { ...settings, ...defaultModelsFor('chatgpt') }
+  const chatgptRow = (view: HTMLElement): HTMLElement => view.querySelector<HTMLElement>('.st-key[data-provider="chatgpt"]')!
+  const buttons = (element: Element): Array<string | null> => [...element.querySelectorAll('.st-key-actions .st-btn')].map((button) => button.textContent)
+  const press = async (element: Element, text: string): Promise<void> => {
+    const button = [...element.querySelectorAll<HTMLButtonElement>('button')].find((one) => one.textContent === text)
+    if (!button) throw new Error(`no button ${text}`)
+    await act(async () => button.click())
+    await act(async () => {})
+  }
+  const apiKeysPage = async (): Promise<HTMLElement> => {
+    const view = await render()
+    await act(async () => nav(view, 'apiKeys').click())
+    await act(async () => {})
+    return view
+  }
+
+  it('lists the sign-in right after OpenAI and offers it while signed out, and then the account it signed in to', async () => {
+    const view = await apiKeysPage()
+    expect([...view.querySelectorAll('.st-key')].map((row) => row.getAttribute('data-provider'))).toEqual([...LLM_PROVIDERS])
+    expect(buttons(chatgptRow(view))).toEqual([t('chatgpt.signIn.continue')])
+    await press(chatgptRow(view), t('chatgpt.signIn.guide'))
+    expect(api.chatgptOpenGuide).toHaveBeenCalledTimes(1)
+    await press(chatgptRow(view), t('chatgpt.signIn.continue'))
+    expect(api.chatgptSignIn).toHaveBeenCalledWith(false)
+    expect(buttons(chatgptRow(view))).toEqual([t('chatgpt.plan.manageUsage'), t('chatgpt.signIn.signOut')])
+    expect(chatgptRow(view).querySelector('.st-key-hint')?.textContent).toContain(t('chatgpt.signIn.usesAccount', { account: 'you@example.com' }))
+  })
+
+  it('offers another account beside the one the next sign-in returns to', async () => {
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'signedOut', account: 'you@example.com' }))
+    const view = await apiKeysPage()
+    expect(buttons(chatgptRow(view))).toEqual([t('chatgpt.signIn.continue'), t('chatgpt.signIn.otherAccount')])
+    expect(chatgptRow(view).querySelector('.st-key-hint')?.textContent).toContain(t('chatgpt.signIn.nextAccount', { account: 'you@example.com' }))
+    await press(chatgptRow(view), t('chatgpt.signIn.otherAccount'))
+    expect(api.chatgptSignIn).toHaveBeenCalledWith(true)
+  })
+
+  it('shows the account, the way to its usage and signing out while signed in', async () => {
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'signedIn', account: 'you@example.com' }))
+    const view = await apiKeysPage()
+    const row = chatgptRow(view)
+    expect(row.querySelector('.st-chip')?.textContent).toBe(t('chatgpt.signIn.signedIn'))
+    expect(row.querySelector('.st-key-hint')?.textContent).toContain(t('chatgpt.signIn.usesAccount', { account: 'you@example.com' }))
+    expect(buttons(row)).toEqual([t('chatgpt.plan.manageUsage'), t('chatgpt.signIn.signOut')])
+    await press(row, t('chatgpt.plan.manageUsage'))
+    expect(api.openExternal).toHaveBeenCalledWith(CHATGPT_USAGE_URL)
+
+    await press(row, t('chatgpt.signIn.signOut'))
+    expect(api.chatgptSignOut).toHaveBeenCalledTimes(1)
+    expect(buttons(chatgptRow(view))).toEqual([t('chatgpt.signIn.continue'), t('chatgpt.signIn.otherAccount')])
+  })
+
+  it('offers signing in again or out for a sign-in this build cannot read', async () => {
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'unreadable', account: null }))
+    const view = await apiKeysPage()
+    const row = chatgptRow(view)
+    expect(row.querySelector('.st-chip')?.textContent).toBe(t('settingsIntegrations.apiKeys.unreadable'))
+    expect(row.querySelector('.st-key-hint')?.textContent).toContain(t('chatgpt.errors.tokenUnreadable'))
+    expect(buttons(row)).toEqual([t('chatgpt.signIn.continue'), t('chatgpt.signIn.signOut')])
+  })
+
+  it('says once, after the first sign-in on this computer, that the plan is in use', async () => {
+    api.chatgptSignIn.mockImplementationOnce(async () => ({ status: { signIn: 'signedIn', account: 'you@example.com' }, first: true }))
+    const view = await apiKeysPage()
+    await press(chatgptRow(view), t('chatgpt.signIn.continue'))
+    const notice = document.querySelector('[data-notice="chatgpt-plan"]')!
+    expect(notice.querySelector('h2')?.textContent).toBe(t('chatgpt.planNotice.title'))
+    await press(notice, t('chatgpt.planNotice.dismiss'))
+    expect(document.querySelector('[data-notice="chatgpt-plan"]')).toBeNull()
+
+    // A later sign-in of the same account is not the first, and says nothing.
+    await press(chatgptRow(view), t('chatgpt.signIn.signOut'))
+    await press(chatgptRow(view), t('chatgpt.signIn.continue'))
+    expect(document.querySelector('[data-notice="chatgpt-plan"]')).toBeNull()
+  })
+
+  it('shows a revocation OpenAI did not confirm with the sign-out it still made', async () => {
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'signedIn', account: 'you@example.com' }))
+    api.chatgptSignOut.mockImplementationOnce(async () => {
+      api.chatgptStatus.mockImplementation(async () => ({ signIn: 'signedOut', account: 'you@example.com' }))
+      throw new Error(errorText('chatgpt.errors.revokeUnconfirmed'))
+    })
+    const view = await apiKeysPage()
+    await press(chatgptRow(view), t('chatgpt.signIn.signOut'))
+    expect(chatgptRow(view).querySelector('[role="alert"]')?.textContent).toBe(t('chatgpt.errors.revokeUnconfirmed'))
+    expect(buttons(chatgptRow(view))).toEqual([t('chatgpt.signIn.continue'), t('chatgpt.signIn.otherAccount')])
+  })
+
+  it('does not show the failure of a sign-in that signing out ended while it waited for the browser', async () => {
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'unreadable', account: null }))
+    let fail: (error: Error) => void = () => {}
+    api.chatgptSignIn.mockImplementationOnce(() => new Promise((_resolve, reject) => (fail = reject)))
+    const view = await apiKeysPage()
+    await press(chatgptRow(view), t('chatgpt.signIn.continue'))
+    expect(chatgptRow(view).querySelector('.st-key-hint')?.textContent).toContain(t('chatgpt.signIn.waiting'))
+    await press(chatgptRow(view), t('chatgpt.signIn.signOut'))
+    await act(async () => fail(new Error('replaced')))
+    expect(chatgptRow(view).querySelector('[role="alert"]')).toBeNull()
+    expect(chatgptRow(view).querySelector('.st-key-hint')?.textContent).not.toContain(t('chatgpt.signIn.waiting'))
+  })
+
+  it('says next to the models that the ChatGPT plan is in use, and leads to its usage', async () => {
+    useSettingsStore.setState({ settings: onPlan })
+    useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, chatgpt: 'verified' } } })
+    api.chatgptStatus.mockImplementation(async () => ({ signIn: 'signedIn', account: 'you@example.com' }))
+    const view = await render()
+    await act(async () => nav(view, 'conversation').click())
+    await act(async () => {})
+    const plan = [...view.querySelectorAll('.st-row')].find((row) => row.querySelector('.st-row-label')?.textContent === t('chatgpt.plan.using'))!
+    expect(plan.querySelector('.st-row-hint')?.textContent).toBe('you@example.com')
+    await press(plan, t('chatgpt.plan.manageUsage'))
+    expect(api.openExternal).toHaveBeenCalledWith(CHATGPT_USAGE_URL)
+    expect(view.querySelector('.st-prepline')).toBeNull()
+  })
+
+  it('sends a missing sign-in to the API keys page from the conversation page and the overview, and says nothing of the plan', async () => {
+    useSettingsStore.setState({ settings: onPlan })
+    const view = await render()
+    expect(pendingLabels(view)).toContain(t('chatgpt.signIn.label'))
+    expect(sub(view, 'conversation')?.textContent).toBe(t('chatgpt.signIn.signedOut'))
+    await act(async () => nav(view, 'conversation').click())
+    const line = view.querySelector('.st-prepline')!
+    expect([line.querySelector('.st-chip')?.textContent, line.querySelector('.st-prepline-text')?.textContent]).toEqual([
+      t('chatgpt.signIn.signedOut'),
+      t('chatgpt.signIn.missing')
+    ])
+    expect([...view.querySelectorAll('.st-row-label')].map((label) => label.textContent)).not.toContain(t('chatgpt.plan.using'))
+    await press(line, t('chatgpt.signIn.goSignIn'))
+    expect(title(view)).toBe(t('settings.pages.apiKeys'))
+  })
+
+  it('shows calls on the plan as included in it rather than as a model the price list lacks, and leads to the plan usage', async () => {
+    api.apiUsage.mockResolvedValue([
+      {
+        date: localDate(new Date()),
+        items: [
+          { kind: 'llm', purpose: 'conversation', provider: 'chatgpt', model: 'gpt-5.6-terra', calls: 12, input: 1200, cacheRead: 9000, cacheCreation: 0, output: 600, webSearches: 0, costUsd: null },
+          { kind: 'llm', purpose: 'bridge', provider: 'openai', model: 'my-own-model', calls: 4, input: 400, cacheRead: 0, cacheCreation: 0, output: 40, webSearches: 0, costUsd: null },
+          { kind: 'agent', engine: 'claude', jobs: 1, costUsd: 0.3 }
+        ]
+      }
+    ])
+    const view = await render()
+    await act(async () => nav(view, 'usage').click())
+    await act(async () => {})
+    const lines = [...view.querySelectorAll(`[aria-label="${t('settingsUsage.breakdownTitle')}"] .st-row`)]
+    const chipOf = (label: string): string | null | undefined =>
+      lines.find((row) => row.querySelector('.st-row-label')?.textContent === label)?.querySelector('.st-chip')?.textContent
+    expect(chipOf(`GPT-5.6 Terra · ${t('settingsUsage.purposes.conversation')}`)).toBe(t('chatgpt.plan.included'))
+    expect(chipOf(`my-own-model · ${t('settingsUsage.purposes.bridge')}`)).toBe(t('settingsUsage.unpriced'))
+    const plan = [...view.querySelectorAll('.st-row')].find((row) => row.querySelector('.st-row-label')?.textContent === t('chatgpt.plan.usage'))!
+    await press(plan, t('chatgpt.plan.manageUsage'))
+    expect(api.openExternal).toHaveBeenCalledWith(CHATGPT_USAGE_URL)
   })
 })

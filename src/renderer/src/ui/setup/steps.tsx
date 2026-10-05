@@ -71,11 +71,12 @@ export function ModelStep({
   onApiKey,
   busy,
   onVerify,
-  onRecheck
+  onRecheck,
+  chatgpt
 }: {
   provider: LlmProvider
   onProvider: (provider: LlmProvider) => void
-  /** The conversation model and the bridge phrase model could be fetched with the chosen provider's key. */
+  /** The conversation model and the bridge phrase model could be fetched with the chosen provider's key or sign-in. */
   verified: boolean
   /** The key is stored but has not been confirmed yet, for instance because the request failed. */
   keyConfigured: boolean
@@ -84,6 +85,8 @@ export function ModelStep({
   busy: boolean
   onVerify: () => void
   onRecheck: () => void
+  /** The sign-in with ChatGPT, shown in place of the key field once ChatGPT is chosen. */
+  chatgpt: ReactNode
 }): React.JSX.Element {
   const t = useT()
   const info = LLM_PROVIDER_INFO[provider]
@@ -94,6 +97,8 @@ export function ModelStep({
           const models = PROVIDER_DEFAULT_MODELS[id]
           const conversation = modelName({ provider: id, id: models.conversation })
           const bridge = modelName({ provider: id, id: models.bridge })
+          // The plan decides which models an account may use, which is known only after the sign-in.
+          const detail = id === 'chatgpt' ? t('chatgpt.plan.plusOrPro') : conversation === bridge ? conversation : t('setup.model.modelPair', { conversation, bridge })
           return (
             <button
               key={id}
@@ -106,18 +111,18 @@ export function ModelStep({
               onClick={() => onProvider(id)}
             >
               <span className="su-provider-name">{LLM_PROVIDER_INFO[id].label}</span>
-              <span className="su-provider-models">{conversation === bridge ? conversation : t('setup.model.modelPair', { conversation, bridge })}</span>
+              <span className="su-provider-models">{detail}</span>
             </button>
           )
         })}
       </div>
       {verified ? (
         <div className="su-result" data-tone="ok">
-          <Chip tone="ok">{t('setup.model.verified')}</Chip>
-          <span>{t('setup.model.verifiedNote', { provider: info.label })}</span>
+          <Chip tone="ok">{provider === 'chatgpt' ? t('chatgpt.signIn.signedIn') : t('setup.model.verified')}</Chip>
+          <span>{provider === 'chatgpt' ? t('setup.model.signedInNote') : t('setup.model.verifiedNote', { provider: info.label })}</span>
         </div>
-      ) : (
-        isApiKeyProvider(provider) && <ApiKeyField
+      ) : isApiKeyProvider(provider) ? (
+        <ApiKeyField
           provider={provider}
           keyConfigured={keyConfigured}
           apiKey={apiKey}
@@ -126,6 +131,8 @@ export function ModelStep({
           onVerify={onVerify}
           onRecheck={onRecheck}
         />
+      ) : (
+        chatgpt
       )}
     </div>
   )

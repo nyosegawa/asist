@@ -3,17 +3,17 @@ import { defineMessages } from '../message'
 export const settingsIntegrations = defineMessages({
   apiKeys: {
     description: {
-      'ja-JP': 'キーは暗号化して保存します。会話モデルとつなぎの一言のモデルで選んだプロバイダのキーが必要です。',
-      'en-US': 'Keys are saved encrypted. You need the key of the provider chosen for the conversation model and for the bridge phrase model.',
-      'fr-FR': 'Les clés sont enregistrées chiffrées. Il vous faut la clé du fournisseur choisi pour le modèle de conversation et pour le modèle de la phrase de transition.',
-      'de-DE': 'Die Schlüssel werden verschlüsselt gespeichert. Sie brauchen den Schlüssel des Anbieters, den Sie für das Gesprächsmodell und für das Modell des Überbrückungssatzes gewählt haben.',
-      'hi-IN': 'कुंजियाँ एन्क्रिप्ट करके सेव होती हैं। बातचीत के मॉडल और शुरुआती वाक्य के मॉडल के लिए चुने गए प्रोवाइडर की कुंजी चाहिए।',
-      'id-ID': 'Kunci disimpan dalam bentuk terenkripsi. Anda perlu kunci dari penyedia yang dipilih untuk model percakapan dan untuk model kalimat penyambung.',
-      'it-IT': 'Le chiavi vengono salvate cifrate. Serve la chiave del provider scelto per il modello di conversazione e per il modello della frase di raccordo.',
-      'ko-KR': '키는 암호화해서 저장합니다. 대화 모델과 연결 멘트 모델로 선택한 제공업체의 키가 필요합니다.',
-      'pt-BR': 'As chaves são salvas criptografadas. Você precisa da chave do provedor escolhido para o modelo de conversa e para o modelo da frase de transição.',
-      'es-419': 'Las claves se guardan cifradas. Necesitas la clave del proveedor que elegiste para el modelo de conversación y para el modelo de las frases de enlace.',
-      'es-ES': 'Las claves se guardan cifradas. Necesitas la clave del proveedor elegido para el modelo de conversación y para el modelo de las frases de enlace.'
+      'ja-JP': '会話モデルとつなぎの一言のモデルで選んだプロバイダの API キーが必要です。ChatGPT はキーの代わりにログインして使います。どちらも暗号化して保存します。',
+      'en-US': 'You need the API key of the provider chosen for the conversation model and the bridge phrase model. ChatGPT takes a sign-in instead of a key. Both are saved encrypted.',
+      'fr-FR': "Il vous faut la clé API du fournisseur choisi pour le modèle de conversation et pour le modèle de la phrase de transition. ChatGPT demande une connexion au lieu d'une clé. Les deux sont enregistrées chiffrées.",
+      'de-DE': 'Sie brauchen den API-Schlüssel des Anbieters, den Sie für das Gesprächsmodell und für das Modell des Überbrückungssatzes gewählt haben. ChatGPT braucht statt eines Schlüssels eine Anmeldung. Beides wird verschlüsselt gespeichert.',
+      'hi-IN': 'बातचीत के मॉडल और शुरुआती वाक्य के मॉडल के लिए चुने गए प्रोवाइडर की API कुंजी चाहिए। ChatGPT के लिए कुंजी की जगह साइन इन करना होता है। दोनों एन्क्रिप्ट करके सेव होते हैं।',
+      'id-ID': 'Anda perlu kunci API dari penyedia yang dipilih untuk model percakapan dan untuk model kalimat penyambung. ChatGPT memakai sesi masuk sebagai ganti kunci. Keduanya disimpan dalam bentuk terenkripsi.',
+      'it-IT': 'Serve la chiave API del provider scelto per il modello di conversazione e per il modello della frase di raccordo. ChatGPT richiede un accesso al posto della chiave. Entrambi vengono salvati cifrati.',
+      'ko-KR': '대화 모델과 연결 멘트 모델로 선택한 제공업체의 API 키가 필요합니다. ChatGPT는 키 대신 로그인해서 씁니다. 둘 다 암호화해서 저장합니다.',
+      'pt-BR': 'Você precisa da chave de API do provedor escolhido para o modelo de conversa e para o modelo da frase de transição. O ChatGPT usa um login no lugar da chave. Os dois são salvos criptografados.',
+      'es-419': 'Necesitas la clave de API del proveedor que elegiste para el modelo de conversación y para el modelo de las frases de enlace. ChatGPT usa un inicio de sesión en lugar de una clave. Ambos se guardan cifrados.',
+      'es-ES': 'Necesitas la clave de API del proveedor elegido para el modelo de conversación y para el modelo de las frases de enlace. ChatGPT usa un inicio de sesión en lugar de una clave. Ambos se guardan cifrados.'
     },
     verified: {
       'ja-JP': '検証済み',
