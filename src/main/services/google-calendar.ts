@@ -3,7 +3,8 @@ import type { CalendarAccount, CalendarEvent, CalendarEventInput, CalendarStatus
 import { parseDayKey } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
 import { fetchFailure } from './fetch-failure'
-import { GoogleSignedOut, SignInReplaced, type GoogleAuth } from './google-oauth'
+import { GoogleSignedOut, type GoogleAuth } from './google-oauth'
+import { SignInReplaced } from './oauth-loopback'
 
 /**
  * The calendars of one Google account, read through the Google Calendar API when the calendar is used and

@@ -56,6 +56,7 @@ vi.mock('../src/main/services/settings', () => ({
   getSettings: () => mocks.settings
 }))
 vi.mock('../src/main/services/api-key-secrets', () => ({ savedApiKey: () => null }))
+vi.mock('../src/main/services/chatgpt', () => ({ chatgptAuth: () => ({ identity: () => null }) }))
 
 const previous = { anthropic: process.env.ANTHROPIC_API_KEY, openai: process.env.OPENAI_API_KEY, google: process.env.GEMINI_API_KEY }
 
@@ -191,7 +192,7 @@ describe('the record of which provider keys are verified', () => {
   it('marks a provider verified only once the environment holds the very key that was validated', async () => {
     process.env.OPENAI_API_KEY = 'openai-key'
     const llm = await import('../src/main/services/llm')
-    expect(llm.llmKeyStates()).toEqual({ anthropic: 'saved', openai: 'saved', google: 'missing', cerebras: 'missing' })
+    expect(llm.llmKeyStates()).toEqual({ anthropic: 'saved', openai: 'saved', chatgpt: 'missing', google: 'missing', cerebras: 'missing' })
 
     await llm.validateProviderKey('google', 'g-key')
     expect(llm.llmKeyStates().google).toBe('missing')

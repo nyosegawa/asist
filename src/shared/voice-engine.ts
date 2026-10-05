@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { MessageKey, Translate } from './i18n'
 import { errorText } from './i18n/error-text'
-import type { LlmProvider } from './llm-catalog'
+import type { ApiKeyProvider } from './llm-catalog'
 
 /**
  * The voice engines, that is, who handles listening, speaking and timing in a conversation.
@@ -58,7 +58,7 @@ export type LiveThinkingLevel = 'low' | 'medium' | 'high'
 export interface LiveEngineInfo {
   label: string
   /** The provider whose API key is read, through the envKey of llm-catalog. */
-  provider: LlmProvider
+  provider: ApiKeyProvider
   /** `thinkingLevel` is sent when a session of the model opens; a model without one is opened without a level. */
   models: ReadonlyArray<{ id: string; label: string; note: ModelNote; thinkingLevel?: LiveThinkingLevel }>
   /**

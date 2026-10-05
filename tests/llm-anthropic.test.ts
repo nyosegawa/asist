@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiKeyCredential } from '../src/main/services/llm/credential'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
 
 /** The Anthropic adapter. These tests run a fake Messages API stream and check the conversion to the ASIST types. */
@@ -52,7 +53,7 @@ const request = (over: Partial<ConversationRequest> = {}): ConversationRequest =
 
 async function open(over: Partial<ConversationRequest> = {}) {
   const { anthropicAdapter } = await import('../src/main/services/llm/anthropic')
-  const stream = anthropicAdapter.stream(request(over), 'key')
+  const stream = anthropicAdapter.stream(request(over), apiKeyCredential('key'))
   const seen = { text: [] as string[], calls: [] as ToolCallPart[], search: [] as SearchEvent[] }
   stream.on('text', (delta) => seen.text.push(delta))
   stream.on('toolCall', (call) => seen.calls.push(call))
@@ -272,7 +273,7 @@ describe('the Anthropic stream', () => {
       return { content: [spoken, TOOL_USE, cut], stop_reason: 'max_tokens' }
     }
     const { anthropicAdapter } = await import('../src/main/services/llm/anthropic')
-    const stream = anthropicAdapter.stream(request(), 'key')
+    const stream = anthropicAdapter.stream(request(), apiKeyCredential('key'))
     stream.on('toolCall', (call) => order.push(`call ${call.id}`))
     const result = await stream.final()
     expect(order).toEqual(['call t1', 'second block started'])

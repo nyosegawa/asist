@@ -12,10 +12,11 @@ import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorPrefix } from '@shared/conversation-markers'
 import type { ConversationModel } from '@shared/llm-catalog'
 import type { RoundUsage } from '@shared/ipc'
+import type { ProviderCredential } from './credential'
 
 /**
  * The contract every provider adapter implements. An adapter only converts between the types in
- * shared/conversation and its own API's shape, and never lets an SDK type escape. The key arrives with
+ * shared/conversation and its own API's shape, and never lets an SDK type escape. The credential arrives with
  * each call instead of being held, because a key is also verified before it is saved.
  */
 
@@ -43,12 +44,12 @@ export interface JsonResponse {
 }
 
 export interface ProviderAdapter {
-  stream(request: ConversationRequest, key: string): ConversationStream
-  completeJson(request: JsonRequest, key: string): Promise<JsonResponse>
-  /** Checks that the model exists and the key may use it. A failure carries the HTTP status, where 401 means the key is rejected. */
-  retrieveModel(id: string, key: string, signal: AbortSignal): Promise<void>
-  /** Checks only that the key authenticates. */
-  listModels(key: string, signal: AbortSignal): Promise<void>
+  stream(request: ConversationRequest, credential: ProviderCredential): ConversationStream
+  completeJson(request: JsonRequest, credential: ProviderCredential): Promise<JsonResponse>
+  /** Checks that the model exists and the credential may use it. A failure carries the HTTP status, where 401 means the credential is rejected. */
+  retrieveModel(id: string, credential: ProviderCredential, signal: AbortSignal): Promise<void>
+  /** Checks only that the credential authenticates. */
+  listModels(credential: ProviderCredential, signal: AbortSignal): Promise<void>
 }
 
 /** An error carrying an HTTP status, which is what the checks in shared read to tell a transient failure from a rejected key. */

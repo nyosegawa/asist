@@ -2,14 +2,14 @@ import type { LlmPurpose } from '@shared/api-usage'
 import { llmCost } from '@shared/api-pricing'
 import { textOf, userText, type ConversationRequest, type ConversationStream, type JsonSchema, type StopReason } from '@shared/conversation'
 import type { ConversationLocale } from '@shared/conversation-locale'
-import { errorText } from '@shared/i18n/error-text'
-import { LLM_PROVIDER_INFO, type ConversationModel, type LlmProvider } from '@shared/llm-catalog'
+import type { ConversationModel, LlmProvider } from '@shared/llm-catalog'
 import type { RoundUsage } from '@shared/ipc'
 import { recordUsage } from '../usage-ledger'
-import { providerKey } from './keys'
+import { requireCredential } from './keys'
 import type { ProviderAdapter } from './adapter'
 import { anthropicAdapter } from './anthropic'
 import { cerebrasAdapter } from './cerebras'
+import { chatgptAdapter } from './chatgpt'
 import { googleAdapter } from './google'
 import { openaiAdapter } from './openai'
 
@@ -22,17 +22,9 @@ import { openaiAdapter } from './openai'
 export const ADAPTERS: Record<LlmProvider, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   openai: openaiAdapter,
+  chatgpt: chatgptAdapter,
   google: googleAdapter,
   cerebras: cerebrasAdapter
-}
-
-function requireKey(provider: LlmProvider): string {
-  const key = providerKey(provider)
-  if (!key) {
-    const info = LLM_PROVIDER_INFO[provider]
-    throw new Error(errorText('llmModels.errors.keyMissing', { provider: info.label, envKey: info.envKey }))
-  }
-  return key
 }
 
 function recordCall(purpose: LlmPurpose, model: ConversationModel, usage: RoundUsage): void {
@@ -45,7 +37,7 @@ function recordCall(purpose: LlmPurpose, model: ConversationModel, usage: RoundU
  * its usage, which is only logged.
  */
 export function streamConversation(request: ConversationRequest, purpose: LlmPurpose): ConversationStream {
-  const stream = ADAPTERS[request.model.provider].stream(request, requireKey(request.model.provider))
+  const stream = ADAPTERS[request.model.provider].stream(request, requireCredential(request.model.provider))
   stream.final().then(
     (result) => {
       if (result.usage) recordCall(purpose, request.model, result.usage)
@@ -90,7 +82,7 @@ export async function completeJson(
   signal: AbortSignal,
   purpose: LlmPurpose
 ): Promise<unknown> {
-  const response = await ADAPTERS[model.provider].completeJson({ model, system, user, schema, maxTokens, signal }, requireKey(model.provider))
+  const response = await ADAPTERS[model.provider].completeJson({ model, system, user, schema, maxTokens, signal }, requireCredential(model.provider))
   recordCall(purpose, model, response.usage)
   return response.value()
 }

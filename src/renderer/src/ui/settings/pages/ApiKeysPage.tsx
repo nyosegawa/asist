@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { KeyRound } from 'lucide-react'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
+import { API_KEY_INFO, API_KEY_PROVIDERS, LLM_PROVIDER_INFO, type ApiKeyProvider } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 import type { MessageKey } from '@shared/i18n'
 import { keyReadable, type ApiKeyState } from '@shared/ipc'
@@ -36,12 +36,12 @@ const KEY_STATE_CHIP = {
 function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
   const { settings, status } = ctx
   const t = useT()
-  const [opened, setOpened] = useState<LlmProvider | null>(null)
+  const [opened, setOpened] = useState<ApiKeyProvider | null>(null)
   const inUse = keyProviders(settings)
   return (
     <Group>
-      {LLM_PROVIDERS.map((provider) => {
-        const info = LLM_PROVIDER_INFO[provider]
+      {API_KEY_PROVIDERS.map((provider) => {
+        const info = { ...LLM_PROVIDER_INFO[provider], ...API_KEY_INFO[provider] }
         const state = status?.llmKeys[provider] ?? 'missing'
         const saved = keyReadable(state)
         const engineOfProvider = Object.values(LIVE_ENGINE_INFO).find((engine) => engine.provider === provider)?.label ?? null
@@ -74,13 +74,13 @@ function ApiKeys({ ctx }: { ctx: SettingsContext }): React.JSX.Element {
   )
 }
 
-function KeyForm({ provider, onDone }: { provider: LlmProvider; onDone: () => void }): React.JSX.Element {
+function KeyForm({ provider, onDone }: { provider: ApiKeyProvider; onDone: () => void }): React.JSX.Element {
   const refreshStatus = useStatusStore((s) => s.refresh)
   const toast = useToastStore((s) => s.push)
   const t = useT()
   const [key, setKey] = useState('')
   const [saving, setSaving] = useState(false)
-  const info = LLM_PROVIDER_INFO[provider]
+  const info = { ...LLM_PROVIDER_INFO[provider], ...API_KEY_INFO[provider] }
   const submit = (): void => {
     setSaving(true)
     void window.api

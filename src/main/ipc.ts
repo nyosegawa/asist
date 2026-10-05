@@ -44,13 +44,18 @@ import { fetchPanel } from './services/panel-fetchers'
 import {
   configuredModels,
   configuredApiKeyAvailable,
+  providerCredential,
   providerKey,
   llmKeyStates,
   saveProviderKey,
   validateConfiguration,
+  validateCredential,
   validateProviderKey
 } from './services/llm'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { closeChatGptConnections } from './services/llm/chatgpt'
+import { chatgptAuth } from './services/chatgpt'
+import type { ChatGptSignInResult } from '@shared/chatgpt'
+import { API_KEY_INFO, API_KEY_PROVIDERS } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine, liveTextInput } from '@shared/voice-engine'
 import { stopsLiveEngine } from '@shared/live-session-policy'
 import { appendJsonl } from './services/store'
@@ -511,7 +516,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
       if (isLiveEngine(prospective.voiceEngine) && prospective.voiceEngine !== before.voiceEngine) {
         const info = LIVE_ENGINE_INFO[prospective.voiceEngine]
         if (!providerKey(info.provider)) {
-          throw new Error(errorText('settings.errors.keyRequired', { target: info.label, envKey: LLM_PROVIDER_INFO[info.provider].envKey }))
+          throw new Error(errorText('settings.errors.keyRequired', { target: info.label, envKey: API_KEY_INFO[info.provider].envKey }))
         }
       }
 
@@ -562,7 +567,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
 
   handle(IpcChannel.SaveApiKey, (_e, rawProvider: unknown, rawKey: unknown): Promise<AppStatus> =>
     withConfigurationMutation(async () => {
-      const provider = LLM_PROVIDERS.find((candidate) => candidate === rawProvider)
+      const provider = API_KEY_PROVIDERS.find((candidate) => candidate === rawProvider)
       if (!provider) throw new Error(errorText('settings.errors.unknownProvider', { provider: String(rawProvider) }))
       const key = String(rawKey).trim()
       await validateProviderKey(provider, key)
@@ -572,11 +577,37 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   )
 
   handle(IpcChannel.VerifySavedApiKey, async (_e, rawProvider: unknown): Promise<AppStatus> => {
-    const provider = LLM_PROVIDERS.find((candidate) => candidate === rawProvider)
+    const provider = API_KEY_PROVIDERS.find((candidate) => candidate === rawProvider)
     if (!provider) throw new Error(errorText('settings.errors.unknownProvider', { provider: String(rawProvider) }))
     await validateProviderKey(provider, providerKey(provider) ?? '')
     return computeStatus()
   })
+
+  handle(IpcChannel.ChatGptStatus, () => chatgptAuth().status())
+  // The sign-in is checked against the real API before it reports success, as a key is before it is saved,
+  // so that the status the screen reads next shows it verified. The wait for the browser, which may last
+  // minutes, stays outside the lock on the configuration; only the check is inside it.
+  handle(IpcChannel.ChatGptSignIn, async (_e, otherAccount: unknown): Promise<ChatGptSignInResult> => {
+    try {
+      const result = await chatgptAuth().signIn(otherAccount === true)
+      await withConfigurationMutation(async () => {
+        const credential = providerCredential('chatgpt')
+        if (credential) await validateCredential('chatgpt', credential)
+      })
+      return result
+    } finally {
+      sendStatus()
+    }
+  })
+  handle(IpcChannel.ChatGptSignOut, async () => {
+    try {
+      return await chatgptAuth().signOut()
+    } finally {
+      closeChatGptConnections()
+      sendStatus()
+    }
+  })
+  handle(IpcChannel.ChatGptOpenGuide, () => shell.openExternal(docsUrl('chatgpt', getSettings().uiLocale)))
 
   handle(IpcChannel.ListSpeakers, (_e, engine?: TtsEngine) => tts.listSpeakers(engine))
 

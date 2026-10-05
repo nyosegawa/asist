@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiKeyCredential } from '../src/main/services/llm/credential'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
 import { isTransientApiError } from '@shared/api-errors'
 import { summarizeTurnUsage } from '@shared/turn-usage'
@@ -77,7 +78,7 @@ const completed = (usage = { input_tokens: 1000, input_tokens_details: { cached_
 
 async function open(over: Partial<ConversationRequest> = {}) {
   const { openaiAdapter } = await import('../src/main/services/llm/openai')
-  const stream = openaiAdapter.stream(request(over), 'key')
+  const stream = openaiAdapter.stream(request(over), apiKeyCredential('key'))
   const seen = { text: [] as string[], calls: [] as ToolCallPart[], search: [] as SearchEvent[] }
   stream.on('text', (delta) => seen.text.push(delta))
   stream.on('toolCall', (call) => seen.calls.push(call))
@@ -114,8 +115,9 @@ describe('toResponsesInput', () => {
   }
 
   it('sends the output items back to the same model unchanged, encrypted reasoning included, with results after the calls and text last', async () => {
-    const { toResponsesInput } = await import('../src/main/services/llm/openai')
-    expect(toResponsesInput([assistant, results], 'gpt-5.5', 'ja-JP')).toEqual([
+    const { toResponsesInput } = await import('../src/main/services/llm/responses')
+    const { OPENAI_DIALECT } = await import('../src/main/services/llm/openai')
+    expect(toResponsesInput([assistant, results], 'gpt-5.5', 'ja-JP', OPENAI_DIALECT)).toEqual([
       REASONING,
       CALL,
       { type: 'function_call_output', call_id: 'call_1', output: '{"temp":28}' },
@@ -125,17 +127,19 @@ describe('toResponsesInput', () => {
   })
 
   it('rebuilds a reply from another model or provider out of its parts and sends no reasoning', async () => {
-    const { toResponsesInput } = await import('../src/main/services/llm/openai')
+    const { toResponsesInput } = await import('../src/main/services/llm/responses')
+    const { OPENAI_DIALECT } = await import('../src/main/services/llm/openai')
     const built = [
       { role: 'assistant', content: '調べますね。' },
       { type: 'function_call', call_id: 'call_1', name: 'show_weather', arguments: '{"location":"大阪"}' }
     ]
-    expect(toResponsesInput([assistant], 'gpt-5.5-mini', 'ja-JP')).toEqual(built)
-    expect(toResponsesInput([{ ...assistant, native: { provider: 'google', model: 'gpt-5.5', payload: {} } }], 'gpt-5.5', 'ja-JP')).toEqual(built)
+    expect(toResponsesInput([assistant], 'gpt-5.5-mini', 'ja-JP', OPENAI_DIALECT)).toEqual(built)
+    expect(toResponsesInput([{ ...assistant, native: { provider: 'google', model: 'gpt-5.5', payload: {} } }], 'gpt-5.5', 'ja-JP', OPENAI_DIALECT)).toEqual(built)
   })
 
   it('sends no reasoning item without the item that followed it, from a reply a broken stream or the output limit cut off', async () => {
-    const { toResponsesInput } = await import('../src/main/services/llm/openai')
+    const { toResponsesInput } = await import('../src/main/services/llm/responses')
+    const { OPENAI_DIALECT } = await import('../src/main/services/llm/openai')
     const search = { type: 'web_search_call', id: 'ws_1', status: 'completed', action: { type: 'search', query: '大阪 天気' } }
     const user = (text: string): ConversationMessage => ({ role: 'user', parts: [{ type: 'text', text }] })
     // As the log keeps them: a broken stream leaves the text it cut off without an id, and the output
@@ -147,7 +151,7 @@ describe('toResponsesInput', () => {
       { role: 'assistant', parts: [{ type: 'text', text: '調べますね。' }], native: { provider: 'openai', model: 'gpt-5.5', payload: [REASONING, SPOKEN, search, { ...REASONING, id: 'rs_2' }] } },
       user('続けて')
     ]
-    const input = toResponsesInput(stored, 'gpt-5.5', 'ja-JP')
+    const input = toResponsesInput(stored, 'gpt-5.5', 'ja-JP', OPENAI_DIALECT)
     expect(unpairedReasoning(input)).toEqual([])
     for (const item of [{ role: 'assistant', content: '大阪は' }, REASONING, SPOKEN, search]) expect(input).toContainEqual(item)
   })
@@ -155,7 +159,7 @@ describe('toResponsesInput', () => {
 
 describe('CitationFilter', () => {
   it('removes a citation link that spans several deltas and keeps ordinary parentheses and brackets', async () => {
-    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const { CitationFilter } = await import('../src/main/services/llm/responses')
     const filter = new CitationFilter()
     const out = ['警戒が続いています。 (', '[weathernews.jp](https://weathernews', '.jp/news/1?utm_source=openai))', '明日は快晴(予報)で、[メモ]も', 'あります。']
       .map((delta) => filter.push(delta))
@@ -165,7 +169,7 @@ describe('CitationFilter', () => {
   })
 
   it('lets the text after brackets that cannot become a citation through as it arrives, holding only what still can', async () => {
-    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const { CitationFilter } = await import('../src/main/services/llm/responses')
     const filter = new CitationFilter()
     const out = ['結論から言うと[注]', 'は不要です。', '次に[メモ](', 'メモ帳)を開きます。', '詳しくは [出典', '](https://a.example)です。'].map((delta) => filter.push(delta))
     // Text held until the end of the message reaches the speech synthesis only then.
@@ -173,7 +177,7 @@ describe('CitationFilter', () => {
   })
 
   it('removes the outer parentheses of a citation whose closing ones arrive in separate deltas', async () => {
-    const { CitationFilter } = await import('../src/main/services/llm/openai')
+    const { CitationFilter } = await import('../src/main/services/llm/responses')
     const filter = new CitationFilter()
     const deltas = ['東京は晴れです', ' (', ...'[天気](https://tenki.example/a)', ')', '。']
     const out = deltas.map((delta) => filter.push(delta)).join('')
@@ -375,7 +379,7 @@ describe('the OpenAI JSON call', () => {
       output: [REASONING],
       usage: { input_tokens: 300, input_tokens_details: { cached_tokens: 0 }, output_tokens: 1024 }
     }
-    const response = await openaiAdapter.completeJson({ model: MODEL, system: 's', user: 'u', schema: { type: 'object' }, maxTokens: 1024, signal: new AbortController().signal }, 'key')
+    const response = await openaiAdapter.completeJson({ model: MODEL, system: 's', user: 'u', schema: { type: 'object' }, maxTokens: 1024, signal: new AbortController().signal }, apiKeyCredential('key'))
     expect(response.usage).toEqual({ input: 300, cacheRead: 0, cacheCreation: 0, output: 1024, webSearches: 0 })
     expect(() => response.value()).toThrow('max_output_tokens')
   })

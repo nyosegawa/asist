@@ -13,7 +13,7 @@ import { SETTINGS_PAGES } from '@shared/mini-apps'
 import { THEMES } from '@shared/themes'
 import { shortcutLabel } from '@shared/platform'
 import { localDate, type UsageDay } from '@shared/api-usage'
-import { defaultModelsFor } from '@shared/llm-catalog'
+import { LLM_PROVIDERS, defaultModelsFor } from '@shared/llm-catalog'
 import { SettingsDialog } from '../src/renderer/src/ui/SettingsDialog'
 import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
@@ -212,7 +212,7 @@ describe('settings dialog', () => {
     expect(sub(view, 'usage')?.textContent).toBe(t('settings.summary.usage', { amount: '$1.50' }))
     expect(sub(view, 'language')?.textContent).toBe(`日本語 · ${new Intl.DisplayNames(['ja-JP'], { type: 'region' }).of('JP')}`)
     expect(sub(view, 'connections')?.textContent).toBe(`${t('settings.summary.calendarOff')} · ${t('settings.summary.mailAccounts', { count: 0 })}`)
-    expect(sub(view, 'apiKeys')?.textContent).toBe(t('settings.summary.apiKeys', { keys: 2, total: 4 }))
+    expect(sub(view, 'apiKeys')?.textContent).toBe(t('settings.summary.apiKeys', { keys: 2, total: LLM_PROVIDERS.length }))
   })
 
   it('warns in the list only about what is turned on and cannot work, and counts on the overview the rows it lists', async () => {
@@ -481,7 +481,7 @@ describe('settings dialog', () => {
     useStatusStore.setState({ status: { ...status, llmKeys: { ...status.llmKeys, google: 'unreadable', cerebras: 'unreadable' } } })
     useSettingsStore.setState({ settings: { ...settings, ...defaultModelsFor('google'), voiceEngine: 'gemini-live' } })
     const view = await render()
-    expect(sub(view, 'apiKeys')?.textContent).toBe(t('settings.summary.apiKeys', { keys: 1, total: 4 }))
+    expect(sub(view, 'apiKeys')?.textContent).toBe(t('settings.summary.apiKeys', { keys: 1, total: LLM_PROVIDERS.length }))
     // Gemini Live and the conversation model both need the Google key, which the conversation page names once.
     await act(async () => nav(view, 'conversation').click())
     const lines = [...view.querySelectorAll('.st-prepline')]

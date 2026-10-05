@@ -3,7 +3,7 @@ import { useFormatLocale, useT } from '@/i18n'
 import { asrRecommendationReason } from '../asr-recommendation'
 import { progressLabel } from '../progress-label'
 import type { ReactNode } from 'react'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO, PROVIDER_DEFAULT_MODELS, modelName, type LlmProvider } from '@shared/llm-catalog'
+import { LLM_PROVIDERS, LLM_PROVIDER_INFO, PROVIDER_DEFAULT_MODELS, isApiKeyProvider, modelName, type LlmProvider } from '@shared/llm-catalog'
 import { speechEnginePrepared, type SetupProgress, type SetupStatus, type TtsEngine } from '@shared/ipc'
 import { asrModelChoices, type AsrModel } from '@shared/asr-models'
 import { isLocalTtsEngine, localTtsModel, localTtsSizeGb, type QwenTtsSize } from '@shared/tts-models'
@@ -117,7 +117,7 @@ export function ModelStep({
           <span>{t('setup.model.verifiedNote', { provider: info.label })}</span>
         </div>
       ) : (
-        <ApiKeyField
+        isApiKeyProvider(provider) && <ApiKeyField
           provider={provider}
           keyConfigured={keyConfigured}
           apiKey={apiKey}

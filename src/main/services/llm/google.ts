@@ -131,11 +131,11 @@ class GoogleStream extends AdapterStream {
   private readonly modelParts: Part[] = []
 
   constructor(
-    client: GoogleGenAI,
+    client: Promise<GoogleGenAI>,
     private readonly request: ConversationRequest
   ) {
     super()
-    this.start(() => this.run(client).catch((error) => Promise.reject(normalizeError(error))))
+    this.start(() => client.then((ready) => this.run(ready)).catch((error) => Promise.reject(normalizeError(error))))
   }
 
   protected nativeSnapshot(): ConversationMessage['native'] {
@@ -237,11 +237,11 @@ function roundUsage(usage: GenerateContentResponseUsageMetadata | undefined, gro
 }
 
 export const googleAdapter: ProviderAdapter = {
-  stream: (request, key) => new GoogleStream(clientFor(key), request),
+  stream: (request, credential) => new GoogleStream(credential.token().then(clientFor), request),
 
-  async completeJson(request: JsonRequest, key: string) {
+  async completeJson(request: JsonRequest, credential) {
     try {
-      const response = await clientFor(key).models.generateContent({
+      const response = await clientFor(await credential.token()).models.generateContent({
         model: request.model.id,
         contents: [{ role: 'user', parts: [{ text: request.user }] }],
         config: {
@@ -260,17 +260,17 @@ export const googleAdapter: ProviderAdapter = {
     }
   },
 
-  async retrieveModel(id, key, signal) {
+  async retrieveModel(id, credential, signal) {
     try {
-      await new GoogleGenAI({ apiKey: key }).models.get({ model: id, config: { abortSignal: signal } })
+      await new GoogleGenAI({ apiKey: await credential.token() }).models.get({ model: id, config: { abortSignal: signal } })
     } catch (error) {
       throw normalizeError(error)
     }
   },
 
-  async listModels(key, signal) {
+  async listModels(credential, signal) {
     try {
-      await new GoogleGenAI({ apiKey: key }).models.list({ config: { pageSize: 1, abortSignal: signal } })
+      await new GoogleGenAI({ apiKey: await credential.token() }).models.list({ config: { pageSize: 1, abortSignal: signal } })
     } catch (error) {
       throw normalizeError(error)
     }

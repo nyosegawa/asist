@@ -216,7 +216,7 @@ You are curious, and genuinely interested in their life and their work. You reme
 
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
-  version: 12,
+  version: 13,
   upgrades: {
     // Version 2 adds the theme. Everything written before it was drawn in future.
     1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' }),
@@ -284,7 +284,9 @@ export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
       if (!Array.isArray(accounts)) return stored
       const upgraded = accounts.map((account: unknown) => (typeof account === 'object' && account !== null ? { ...account, otherAddresses: [] } : account))
       return { ...stored, mail: { ...stored.mail, accounts: upgraded } }
-    }
+    },
+    // Version 13 lets a model run on ChatGPT. Every model version 12 allowed is allowed still, so nothing changes.
+    12: (content) => content
   },
   parse: parseAppSettings,
   serialize: (settings) => ({ ...settings })

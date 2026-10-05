@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
+import { LLM_PROVIDER_INFO, defaultModelsFor, isApiKeyProvider, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
 import { keyReadable, speechEnginePrepared, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
 import type { AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
@@ -176,7 +176,7 @@ export function SetupWizard(): React.JSX.Element | null {
     setApiBusy(true)
     setError('')
     try {
-      if (!useSavedKey) applyStatus(await window.api.saveApiKey(provider, apiKey))
+      if (!useSavedKey && isApiKeyProvider(provider)) applyStatus(await window.api.saveApiKey(provider, apiKey))
       // Before it saves, main checks that this pair can really be fetched with the provider's key.
       if (!modelsMatch) await saveSettings(defaults)
       setApiKey('')

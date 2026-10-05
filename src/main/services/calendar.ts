@@ -8,7 +8,7 @@ import { createEncryptedSecretStore } from './encrypted-secrets'
 import { GoogleCalendar } from './google-calendar'
 import { GoogleAuth, type GoogleTokenId } from './google-oauth'
 import { googleOAuthClient } from './google-oauth-client'
-import { googleSignInPage } from './google-sign-in-page'
+import { googleSignInPage } from './sign-in-page'
 import { t } from './i18n'
 import { dataPath } from './store'
 

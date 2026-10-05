@@ -22,6 +22,7 @@ const KEPT: Array<{ file: RegExp; text?: string; reason: string }> = [
   { file: /^src\/main\/services\/brain\//, reason: 'prompts, tool descriptions and tool results, written for the model' },
   { file: /^src\/main\/services\/(bridge-plan|live\/gemini-live|live\/gemini-calls)\.ts$/, reason: 'prompts and bracketed notes sent to a model' },
   { file: /^src\/main\/services\/llm\/adapter\.ts$/, text: '^エラー:', reason: 'the prefix of a failed tool result, read by the model' },
+  { file: /^src\/main\/services\/llm\/responses\.ts$/, reason: 'the description of the namespace the ChatGPT plan groups the tools in, read by the model' },
   { file: /^src\/shared\/(tool-registry|tool-round|turn-recovery|persona|panel-catalog|map-embed|weather|calendar|memory-injection|conversation-markers|job-workspace)\.ts$/, reason: 'prompts, tool schemas and conversation markers, written for the model' },
   { file: /^src\/main\/services\/weather\/(locations|open-meteo)\.ts$/, reason: 'instructions returned to the model when a place is unknown or ambiguous' },
   { file: /^src\/main\/services\/(agent|mail-service)\.ts$/, text: '再起動前のAgent|取り込みで衝突|ユーザーが却下|\\(続き\\)|下書きにしました|件名なし', reason: 'job summaries and draft summaries that the model reads' },

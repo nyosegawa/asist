@@ -14,11 +14,14 @@ import { openStoredFileSync } from './stored-file'
 
 const USAGE_FILE = 'api-usage.json'
 
-/** Version 1 was the bare list of days; version 2 is an object, which is what can carry the version. */
+/**
+ * Version 1 was the bare list of days; version 2 is an object, which is what can carry the version. Version 3
+ * records calls to ChatGPT as well, without a price, since they come out of the user's plan.
+ */
 export const USAGE_FORMAT: StoredFormat<UsageDay[]> = {
   name: USAGE_FILE,
-  version: 2,
-  upgrades: { 1: (content) => ({ days: content }) },
+  version: 3,
+  upgrades: { 1: (content) => ({ days: content }), 2: (content) => content },
   parse: (content) => usageDaysSchema.parse((content as { days?: unknown } | null)?.days),
   serialize: (usage) => ({ days: usage })
 }

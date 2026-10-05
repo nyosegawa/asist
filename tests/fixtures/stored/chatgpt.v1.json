@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "secrets": {
+    "hostId": "djEwdXJuOnV1aWQ6MGY4YjZjMmUtNWQxYS00YzNlLTlhN2ItMmU0ZjZhOGMwZDFl",
+    "clientId": "djEwb2FpYXBwX2V4YW1wbGU=",
+    "subject": "djEwdXNlci1leGFtcGxl",
+    "account": "djEwdXNlckBleGFtcGxlLmNvbQ==",
+    "refreshToken": "djEwZW5jcnlwdGVkLXJlZnJlc2gtdG9rZW4=",
+    "idToken": "djEwZW5jcnlwdGVkLWlkLXRva2Vu"
+  }
+}

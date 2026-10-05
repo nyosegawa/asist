@@ -1,13 +1,12 @@
 import mitt, { type Emitter } from 'mitt'
 import type { LiveAudio, LiveConnection, LiveEvent, LiveStartResult } from '@shared/ipc'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
-import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import { errMessage } from '@shared/api-errors'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from '../conversation-locale'
 import { getSettings } from '../settings'
 import { recordUsage } from '../usage-ledger'
-import { providerKey } from '../llm'
+import { credentialMissing, providerKey } from '../llm'
 import * as memory from '../memory'
 import * as agentRunner from '../agent'
 import { emit as emitTurn, history, record, setConversationOwner } from '../brain/session'
@@ -96,10 +95,7 @@ export function start(): Promise<LiveStartResult> {
     const settings = getSettings()
     if (!isLiveEngine(settings.voiceEngine)) return { ok: false, reason: errorText('voice.live.notLiveEngine') }
     const info = LIVE_ENGINE_INFO[settings.voiceEngine]
-    if (!providerKey(info.provider)) {
-      const provider = LLM_PROVIDER_INFO[info.provider]
-      return { ok: false, reason: errorText('llmModels.errors.keyMissing', { provider: provider.label, envKey: provider.envKey }) }
-    }
+    if (!providerKey(info.provider)) return { ok: false, reason: credentialMissing(info.provider).message }
     const created = createEngine()
     const run = ++runs
     const liveEngine = settings.voiceEngine

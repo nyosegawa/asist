@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { apiKeyCredential } from '../src/main/services/llm/credential'
 import type { ConversationMessage, ConversationRequest, SearchEvent, ToolCallPart } from '@shared/conversation'
 import { isTransientApiError } from '@shared/api-errors'
 import { summarizeTurnUsage } from '@shared/turn-usage'
@@ -51,7 +52,7 @@ const chunk = (parts: unknown[], extra: Record<string, unknown> = {}): unknown =
 
 async function open(over: Partial<ConversationRequest> = {}) {
   const { googleAdapter } = await import('../src/main/services/llm/google')
-  const stream = googleAdapter.stream(request(over), 'key')
+  const stream = googleAdapter.stream(request(over), apiKeyCredential('key'))
   const seen = { text: [] as string[], calls: [] as ToolCallPart[], search: [] as SearchEvent[] }
   stream.on('text', (delta) => seen.text.push(delta))
   stream.on('toolCall', (call) => seen.calls.push(call))
@@ -266,7 +267,7 @@ describe('the Google JSON call', () => {
     mocks.params.length = 0
     mocks.chunks = [chunk([{ text: 'はい。' }], { finishReason: 'STOP' })]
     await (await open({ model })).stream.final()
-    await googleAdapter.completeJson({ model, system: 's', user: 'u', schema: { type: 'object' }, maxTokens: 100, signal: new AbortController().signal }, 'key')
+    await googleAdapter.completeJson({ model, system: 's', user: 'u', schema: { type: 'object' }, maxTokens: 100, signal: new AbortController().signal }, apiKeyCredential('key'))
     const [streamed, json] = mocks.params.map((params) => params.config.thinkingConfig)
     return { streamed, json }
   }

@@ -1,3 +1,4 @@
+import { CHATGPT_NOT_ELIGIBLE, CHATGPT_SIGN_IN, CHATGPT_USAGE_LIMIT } from './chatgpt'
 import type { MessageKey } from './i18n'
 
 /**
@@ -28,6 +29,10 @@ const CONNECTION_FAILURE =
 
 const httpStatus = (err: unknown): number | undefined =>
   err && typeof err === 'object' && 'status' in err && typeof err.status === 'number' ? err.status : undefined
+/** The code a provider or ASIST put on the error, such as the ChatGPT plan's. */
+const errorCode = (err: unknown): unknown => (err && typeof err === 'object' && 'code' in err ? err.code : undefined)
+/** Failures a retry does not mend: the plan's limit lifts only when its period resets, and the others need the user. */
+const LASTING_CODES: ReadonlySet<unknown> = new Set([CHATGPT_USAGE_LIMIT, CHATGPT_NOT_ELIGIBLE, CHATGPT_SIGN_IN])
 /** Connection errors of the Anthropic and OpenAI SDKs. Their `name` stays 'Error', so the class name is the only marker; the timeout error is a subclass. */
 const isConnectionError = (err: unknown): boolean =>
   err instanceof Error && /^APIConnection(Timeout)?Error$/.test(err.constructor.name)
@@ -38,6 +43,7 @@ const isConnectionError = (err: unknown): boolean =>
  * the message text is checked as well.
  */
 export function isTransientApiError(err: unknown): boolean {
+  if (LASTING_CODES.has(errorCode(err))) return false
   if (isConnectionError(err)) return true
   const status = httpStatus(err) ?? 0
   if (status === 408 || status === 409 || status === 429 || status >= 500) return true
@@ -55,7 +61,14 @@ export function isTransientApiError(err: unknown): boolean {
  */
 export type ApiErrorKey = Extract<MessageKey, `conversation.reply.${string}`>
 
+/** Whether the failure is the ChatGPT plan's usage limit, which the user reviews in ChatGPT's usage settings. */
+export const isChatGptUsageLimit = (err: unknown): boolean => errorCode(err) === CHATGPT_USAGE_LIMIT
+
 export function apiErrorKey(err: unknown): ApiErrorKey {
+  const code = errorCode(err)
+  if (code === CHATGPT_USAGE_LIMIT) return 'conversation.reply.chatgptUsageLimit'
+  if (code === CHATGPT_NOT_ELIGIBLE) return 'conversation.reply.chatgptNotEligible'
+  if (code === CHATGPT_SIGN_IN) return 'conversation.reply.chatgptSignIn'
   const msg = errMessage(err)
   const status = httpStatus(err)
   if (status === 529 || /overloaded/i.test(msg)) return 'conversation.reply.overloaded'

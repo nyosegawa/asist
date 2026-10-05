@@ -10,11 +10,33 @@ import { errorText } from './i18n/error-text'
  * is actually called belongs to the per-provider adapters in main/services/llm/.
  */
 
-export const LLM_PROVIDERS = ['anthropic', 'openai', 'google', 'cerebras'] as const
+/**
+ * The providers in the order the screens list them. ChatGPT follows OpenAI because it runs OpenAI's models,
+ * on the user's ChatGPT plan instead of an API key.
+ */
+export const LLM_PROVIDERS = ['anthropic', 'openai', 'chatgpt', 'google', 'cerebras'] as const
 export type LlmProvider = (typeof LLM_PROVIDERS)[number]
+
+/** The providers whose requests carry an API key. ChatGPT's carry the access token of a sign-in with ChatGPT. */
+export type ApiKeyProvider = Exclude<LlmProvider, 'chatgpt'>
+export const isApiKeyProvider = (provider: LlmProvider): provider is ApiKeyProvider => provider !== 'chatgpt'
+export const API_KEY_PROVIDERS: readonly ApiKeyProvider[] = LLM_PROVIDERS.filter(isApiKeyProvider)
 
 export interface LlmProviderInfo {
   label: string
+  /** Whether the provider's built-in web search can be used in conversation. */
+  webSearch: boolean
+}
+
+export const LLM_PROVIDER_INFO: Record<LlmProvider, LlmProviderInfo> = {
+  anthropic: { label: 'Anthropic', webSearch: true },
+  openai: { label: 'OpenAI', webSearch: true },
+  chatgpt: { label: 'ChatGPT', webSearch: true },
+  google: { label: 'Google', webSearch: true },
+  cerebras: { label: 'Cerebras', webSearch: false }
+}
+
+export interface ApiKeyInfo {
   /** The environment variable that holds the key. It wins over the key saved in settings, and no child process receives it. */
   envKey: string
   keyPlaceholder: string
@@ -22,39 +44,17 @@ export interface LlmProviderInfo {
   console: string
   /** Where to create the key once that page is open. It is written only for a provider whose URL does not lead there directly. */
   consoleNote?: Extract<MessageKey, `setup.model.consoleNotes.${string}`>
-  /** Whether the provider's built-in web search can be used in conversation. */
-  webSearch: boolean
 }
 
-export const LLM_PROVIDER_INFO: Record<LlmProvider, LlmProviderInfo> = {
-  anthropic: {
-    label: 'Anthropic',
-    envKey: 'ANTHROPIC_API_KEY',
-    keyPlaceholder: 'sk-ant-…',
-    console: 'https://console.anthropic.com/settings/keys',
-    webSearch: true
-  },
-  openai: {
-    label: 'OpenAI',
-    envKey: 'OPENAI_API_KEY',
-    keyPlaceholder: 'sk-…',
-    console: 'https://platform.openai.com/api-keys',
-    webSearch: true
-  },
-  google: {
-    label: 'Google',
-    envKey: 'GEMINI_API_KEY',
-    keyPlaceholder: 'AIza…',
-    console: 'https://aistudio.google.com/api-keys',
-    webSearch: true
-  },
+export const API_KEY_INFO: Record<ApiKeyProvider, ApiKeyInfo> = {
+  anthropic: { envKey: 'ANTHROPIC_API_KEY', keyPlaceholder: 'sk-ant-…', console: 'https://console.anthropic.com/settings/keys' },
+  openai: { envKey: 'OPENAI_API_KEY', keyPlaceholder: 'sk-…', console: 'https://platform.openai.com/api-keys' },
+  google: { envKey: 'GEMINI_API_KEY', keyPlaceholder: 'AIza…', console: 'https://aistudio.google.com/api-keys' },
   cerebras: {
-    label: 'Cerebras',
     envKey: 'CEREBRAS_API_KEY',
     keyPlaceholder: 'csk-…',
     console: 'https://cloud.cerebras.ai/',
-    consoleNote: 'setup.model.consoleNotes.cerebras',
-    webSearch: false
+    consoleNote: 'setup.model.consoleNotes.cerebras'
   }
 }
 
@@ -94,7 +94,11 @@ export interface CatalogModel extends ConversationModel {
   defaultEffort: Effort | null
 }
 
-/** The models offered on the settings screen. Each `id` is the model ID of that provider's own API. */
+/**
+ * The models offered on the settings screen. Each `id` is the model ID of that provider's own API. ChatGPT's
+ * are the ones its plans listed on 2026-10-05 that match OpenAI's; a model the signed-in account does not
+ * list is refused when it is brought into use.
+ */
 export const CONVERSATION_MODELS: readonly CatalogModel[] = [
   { provider: 'anthropic', id: 'claude-sonnet-5', label: 'Claude Sonnet 5', note: 'llmModels.notes.standard', efforts: ANTHROPIC_EFFORTS, defaultEffort: 'low' },
   { provider: 'anthropic', id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', note: 'llmModels.notes.lightWithoutEffort', efforts: [], defaultEffort: null },
@@ -102,6 +106,9 @@ export const CONVERSATION_MODELS: readonly CatalogModel[] = [
   { provider: 'openai', id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', note: 'llmModels.notes.light', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
   { provider: 'openai', id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', note: 'llmModels.notes.standard', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
   { provider: 'openai', id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', note: 'llmModels.notes.mostCapable', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
+  { provider: 'chatgpt', id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', note: 'llmModels.notes.light', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
+  { provider: 'chatgpt', id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', note: 'llmModels.notes.standard', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
+  { provider: 'chatgpt', id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', note: 'llmModels.notes.mostCapable', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
   { provider: 'google', id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'llmModels.notes.standard', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
   { provider: 'google', id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash Lite', note: 'llmModels.notes.light', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
   { provider: 'cerebras', id: 'qwen-3.8-27b', label: 'Qwen 3.8 27B', note: 'llmModels.notes.cerebrasSpeed', efforts: LOW_TO_HIGH_EFFORTS, defaultEffort: 'low' },
@@ -111,12 +118,14 @@ export const CONVERSATION_MODELS: readonly CatalogModel[] = [
 /**
  * The pair of models a provider is used with: the standard model for conversation and a fast,
  * lightweight one for the bridge look-ahead. It applies at first setup and when the conversation
- * provider is changed in the settings, so the app works with a key for any single provider. Cerebras
+ * provider is changed in the settings, so the app works with a key for any single provider, or with a sign-in
+ * with ChatGPT alone. Cerebras
  * has no lightweight tier, so its bridge look-ahead uses the conversation model too.
  */
 export const PROVIDER_DEFAULT_MODELS: Record<LlmProvider, { conversation: string; bridge: string }> = {
   anthropic: { conversation: 'claude-sonnet-5', bridge: 'claude-haiku-4-5' },
   openai: { conversation: 'gpt-5.6-terra', bridge: 'gpt-5.6-luna' },
+  chatgpt: { conversation: 'gpt-5.6-terra', bridge: 'gpt-5.6-luna' },
   google: { conversation: 'gemini-3.8-flash', bridge: 'gemini-3.5-flash-lite' },
   cerebras: { conversation: 'qwen-3.8-27b', bridge: 'qwen-3.8-27b' }
 }

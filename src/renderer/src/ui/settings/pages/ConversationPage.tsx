@@ -19,7 +19,7 @@ import { useToastStore } from '@/state/stores'
 import type { SettingsContext } from '../context'
 import { Btn, Chip, Group, Page, Row, type ChipTone } from '../primitives'
 import { PrepLine } from '../preparation'
-import { keyProviders } from '../pending'
+import { credentialHint, keyProviders } from '../pending'
 import { displayError } from '@/display-error'
 import { useT } from '@/i18n'
 
@@ -112,26 +112,14 @@ export function ConversationPage({ ctx }: { ctx: SettingsContext }): React.JSX.E
             <ModelPicker role="bridgeModel" value={bridge} disabled={saving} onChange={(model) => change('bridgeModel', model)} />
           </Row>
         )}
-        {missingKeys.map(({ provider, state }) => {
-          const info = LLM_PROVIDER_INFO[provider]
-          return (
-            <PrepLine
-              key={provider}
-              text={
-                state === 'unreadable'
-                  ? t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: info.label })
-                  : live && LIVE_ENGINE_INFO[live].provider === provider
-                    ? t('settingsConversation.live.keyMissing', { envKey: info.envKey })
-                    : t('settingsConversation.models.keyMissing', { envKey: info.envKey })
-              }
-            >
-              <Chip tone={KEY_STATE_CHIP[state].tone}>{t(KEY_STATE_CHIP[state].label)}</Chip>
-              <Btn tone="primary" onClick={() => go('apiKeys')}>
-                {t('settingsIntegrations.apiKeys.register')}
-              </Btn>
-            </PrepLine>
-          )
-        })}
+        {missingKeys.map(({ provider, state }) => (
+          <PrepLine key={provider} text={credentialHint(t, provider, state, live)}>
+            <Chip tone={KEY_STATE_CHIP[state].tone}>{t(KEY_STATE_CHIP[state].label)}</Chip>
+            <Btn tone="primary" onClick={() => go('apiKeys')}>
+              {t('settingsIntegrations.apiKeys.register')}
+            </Btn>
+          </PrepLine>
+        ))}
         <Row
           label={t('settingsConversation.models.webSearch')}
           hint={

@@ -1,4 +1,4 @@
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { API_KEY_INFO, API_KEY_PROVIDERS } from '@shared/llm-catalog'
 
 /**
  * The environment every child process starts with. No child needs a provider's API key: the Python workers
@@ -12,7 +12,7 @@ import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
  * client reaches process.env from .env in a run from the repository, and no child signs in to Google.
  */
 export const WITHHELD_VARIABLES: readonly string[] = [
-  ...LLM_PROVIDERS.map((provider) => LLM_PROVIDER_INFO[provider].envKey),
+  ...API_KEY_PROVIDERS.map((provider) => API_KEY_INFO[provider].envKey),
   'ASIST_GOOGLE_CLIENT_SECRET'
 ]
 
