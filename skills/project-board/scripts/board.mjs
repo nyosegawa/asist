@@ -186,10 +186,15 @@ const [command, ...rest] = positionals
 if (command === 'new') {
   required(options, ['title', 'body-file', 'status', 'area', 'release', 'ja'], 'board.mjs new --title T --body-file F --status S --area A --release R --ja J')
   const values = plannedValues(options)
-  // The issue is assigned to the user, which is what the project's own auto-add workflow looks for.
-  const url = run('gh', ['issue', 'create', '--repo', `${OWNER}/${REPO}`, '--title', options.title, '--body-file', options['body-file'], '--assignee', '@me']).trim()
-  const card = cardFor(url.split('/').pop())
+  // The project's auto-add workflow adds an issue as soon as it is assigned to the user, and when it adds
+  // the issue at the same moment as cardFor, addProjectV2ItemById fails with "Content already exists in
+  // this project" instead of returning the card. The issue is assigned only after its card exists, so the
+  // auto-add finds it already on the board.
+  const url = run('gh', ['issue', 'create', '--repo', `${OWNER}/${REPO}`, '--title', options.title, '--body-file', options['body-file']]).trim()
+  const number = url.split('/').pop()
+  const card = cardFor(number)
   write(card.id, values)
+  run('gh', ['issue', 'edit', number, '--repo', `${OWNER}/${REPO}`, '--add-assignee', '@me'])
   console.log(url)
   console.log(describe(itemById(card.id)))
 } else if (command === 'set') {

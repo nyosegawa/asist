@@ -50,7 +50,10 @@ on a branch of its own, this comes before the first edit too.
      --status 作業中 --area <分野> --release 次のリリース --ja '<日本語の題名>'
    ```
 
-   It assigns the issue to the user, which the project's own auto-add also looks for.
+   It puts the issue on the board and writes its fields before it assigns the issue to the user. The
+   project's own auto-add adds an issue as soon as it is assigned to the user, and when it adds the
+   issue at the same moment as `board.mjs`, `board.mjs` fails with `Content already exists in this
+   project`.
 3. Work that needs several pull requests is a parent issue with one sub-issue per pull request:
    `board.mjs sub <parent> <child>`. The parent's card shows how many are done.
 
