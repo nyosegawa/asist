@@ -390,12 +390,17 @@ describe('the memory store', () => {
     const dir = store.memoryDir()
     const pipe = path.join(dir, 'pages', 'x.md')
     execFileSync('mkfifo', [pipe])
-    // A writer opens the pipe after 1.5 seconds, so that a read that waits ends instead of hanging the run.
-    spawn('sh', ['-c', `sleep 1.5; printf '# x\\n' > '${pipe}'`], { detached: true, stdio: 'ignore' }).unref()
-    const started = Date.now()
-    expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
-    expect(Date.now() - started).toBeLessThan(500)
-    expect(() => store.listDocuments()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+    // A writer opens the pipe after 1.5 seconds, so that a read that waits ends instead of hanging the run. When
+    // nothing read the pipe, the writer waits in its open for ever, so the test stops it.
+    const writer = spawn('sh', ['-c', `sleep 1.5; printf '# x\\n' > '${pipe}'`], { stdio: 'ignore' })
+    try {
+      const started = Date.now()
+      expect(() => store.readAll()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+      expect(Date.now() - started).toBeLessThan(500)
+      expect(() => store.listDocuments()).toThrow(errorText('memory.errors.notRegular', { file: 'pages/x.md' }))
+    } finally {
+      writer.kill()
+    }
   })
 
   it('reads no file through a symbolic link, neither one in place of a document nor one in place of pages/', () => {
