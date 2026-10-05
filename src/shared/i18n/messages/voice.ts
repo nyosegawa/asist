@@ -271,6 +271,19 @@ export const voice = defineMessages({
       'pt-BR': '{engine} não conseguiu ler o texto em voz alta.',
       'es-419': '{engine} no pudo leer el texto en voz alta.',
       'es-ES': '{engine} no ha podido leer el texto en voz alta.'
+    },
+    watcherUnavailable: {
+      'ja-JP': 'ASIST が異常終了したときに止めるためのプロセスを起動できなかったので、{engine} を起動しませんでした。',
+      'en-US': "{engine} wasn't started, because ASIST couldn't start the process that stops it if ASIST quits unexpectedly.",
+      'fr-FR': "{engine} n'a pas été lancé, car ASIST n'a pas pu lancer le processus qui l'arrête si ASIST se ferme de façon inattendue.",
+      'de-DE': '{engine} wurde nicht gestartet, weil ASIST den Prozess nicht starten konnte, der es stoppt, falls ASIST unerwartet beendet wird.',
+      'hi-IN': '{engine} शुरू नहीं किया गया, क्योंकि ASIST अचानक बंद हो जाए तो उसे रोकने वाली प्रोसेस शुरू नहीं हो सकी।',
+      'id-ID': '{engine} tidak dijalankan, karena ASIST tidak bisa menjalankan proses yang menghentikannya jika ASIST tertutup secara tak terduga.',
+      'it-IT': '{engine} non è stato avviato, perché ASIST non è riuscito ad avviare il processo che lo ferma se ASIST si chiude in modo imprevisto.',
+      'ko-KR': 'ASIST가 예기치 않게 종료될 때 멈추게 하는 프로세스를 시작하지 못해 {engine}을(를) 시작하지 않았습니다.',
+      'pt-BR': 'O {engine} não foi iniciado, porque o ASIST não conseguiu iniciar o processo que o para se o ASIST fechar inesperadamente.',
+      'es-419': 'No se inició {engine}, porque ASIST no pudo iniciar el proceso que lo detiene si ASIST se cierra de forma inesperada.',
+      'es-ES': 'No se ha iniciado {engine}, porque ASIST no ha podido iniciar el proceso que lo detiene si ASIST se cierra de forma inesperada.'
     }
   },
   live: {

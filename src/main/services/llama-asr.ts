@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -12,7 +12,7 @@ import { t } from './i18n'
 import { platformCapabilities } from './platform'
 import { llamaServerPath } from './speech-binaries'
 import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-models'
-import { stopOnQuit } from './speech-worker'
+import { spawnUnattended } from './speech-worker'
 
 /**
  * Speech recognition with Qwen3-ASR in llama.cpp's llama-server, on the GPU the capabilities chose. The
@@ -115,7 +115,7 @@ async function launch(started: Server, device: string): Promise<boolean> {
   // user the arguments of all processes, and the environment of their own processes alone (macOS 26.2,
   // 2026-10-02). llama-server reads it from there as it would from --api-key.
   const env = { ...llamaServerEnv(), LLAMA_API_KEY: started.key }
-  const child = spawn(llamaServerPath(), [
+  const child = spawnUnattended(llamaServerPath(), [
     '--model', modelFilePath(started.model.model),
     '--mmproj', modelFilePath(started.model.mmproj),
     '--device', device,
@@ -131,9 +131,8 @@ async function launch(started: Server, device: string): Promise<boolean> {
     // On Windows the automatic setting colours output that goes to a pipe, and the escape codes reach the log.
     '--log-colors', 'off',
     '--no-log-timestamps'
-  ], { stdio: ['ignore', 'ignore', 'pipe'], env, windowsHide: true })
+  ], { stdio: ['ignore', 'ignore', 'pipe'], env }, started.model.label)
   started.child = child
-  stopOnQuit(child)
   logLevels(child.stderr!)
   const exited = new Promise<boolean>((resolve) => {
     child.once('error', (error) => {
