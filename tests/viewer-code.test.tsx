@@ -182,8 +182,17 @@ describe('data: the json tree', () => {
   })
 
   it('shows the reason in red for broken json and renders it as highlighted code', async () => {
-    const card = await render(itemOf('broken.json', 'data', '{"a": [1, 2,\n'), 'card')
-    expect(card.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain(t('files.viewer.jsonFailed', { message: '' }))
+    const broken = '{"a": [1, 2,\n'
+    const reason = (() => {
+      try {
+        JSON.parse(broken)
+        return ''
+      } catch (error) {
+        return (error as Error).message
+      }
+    })()
+    const card = await render(itemOf('broken.json', 'data', broken), 'card')
+    expect(card.querySelector('.fv-note[data-tone="error"]')?.textContent).toBe(t('files.viewer.jsonFailed', { message: reason }))
     expect(card.querySelector('.fv-code')?.getAttribute('data-language')).toBe('json')
     expect(card.querySelector('.fv-data-tree')).toBeNull()
   })

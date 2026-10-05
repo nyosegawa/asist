@@ -55,7 +55,7 @@ npm run i18n -- check
 
 - Read a language setting when it is used, never at module load; all three change while the app runs.
 - Format dates and numbers with `useFormatLocale()` or `formatLocale()`, which combine the interface language with the region's habits. Passing `uiLocale` to `Intl` makes English always use a 12-hour clock.
-- A test reads the text of the screen through the dictionary (`createTranslator('ja-JP')`, then `t('key')`), never as a copied string in any language. In tests every message reads as its locale and key, such as `‹ja-JP common.save›` (`tests/setup/dictionary-keys.ts`), so a copied string fails the test that holds it. Text that does not come from the dictionary, such as text for the model, a stored format or test data, is written as it is. Only `tests/i18n.test.ts`, which checks the words themselves, reads the real dictionary.
+- A test reads the text of the screen through the dictionary (`createTranslator('ja-JP')`, then `t('key')`), never as a copied string in any language. In tests every message reads as its locale and key, such as `‹ja-JP common.save›` (`tests/setup/dictionary-keys.ts`), so a copied string fails the test that holds it. Compare with the whole message built through `t`; when one of its values is text the test cannot know, such as a library's error, `withAnyValue` in `tests/helpers/message.ts` matches it. Text that does not come from the dictionary, such as text for the model, a stored format or test data, is written as it is. Only `tests/i18n.test.ts`, which checks the words themselves, reads the real dictionary.
 
 ## 5. Check it
 
