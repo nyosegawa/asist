@@ -69,11 +69,8 @@ const PROFILE = new RegExp(`^${PROFILE_PREFIX}(\\d+)-[A-Za-z0-9]{6}$`)
  * --disable-background-networking with --disable-component-update nor the model download feature alone kept
  * them out.
  */
-const NO_DOWNLOADS = [
-  '--disable-background-networking',
-  '--disable-component-update',
-  '--disable-features=OptimizationHints,OptimizationGuideModelDownloading,OptimizationHintsFetching,OptimizationTargetPrediction'
-]
+const NO_DOWNLOADS = ['--disable-background-networking', '--disable-component-update']
+const NO_DOWNLOAD_FEATURES = ['OptimizationHints', 'OptimizationGuideModelDownloading', 'OptimizationHintsFetching', 'OptimizationTargetPrediction']
 
 function alive(pid) {
   try {
@@ -114,7 +111,14 @@ function removeAbandonedProfiles() {
     const match = PROFILE.exec(name)
     if (!match || alive(Number(match[1]))) continue
     const profile = path.join(parent, name)
-    for (const pid of chromesUsing(profile)) process.kill(pid, 'SIGKILL')
+    for (const pid of chromesUsing(profile)) {
+      // Another run cleaning the same profile, or Chrome ending by itself, can stop it first.
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error
+      }
+    }
     rmSync(profile, REMOVE_PROFILE)
   }
 }
@@ -128,9 +132,10 @@ const exitOnSignal = (signal) => process.exit(128 + os.constants.signals[signal]
 /**
  * Starts headless Chrome with a CDP port and a profile of its own in the temporary folder, and returns the
  * port and close(), which stops Chrome and removes the profile once Chrome has exited. Port 0 picks a free one.
- * `args` are flags added to the usual ones.
+ * `args` are flags added to the usual ones, and `disabledFeatures` are features turned off beside the usual ones;
+ * Chrome reads only the last --disable-features, so a caller never passes one in `args`.
  */
-export async function launchChrome({ port = 0, url = 'about:blank', args = [] } = {}) {
+export async function launchChrome({ port = 0, url = 'about:blank', args = [], disabledFeatures = [] } = {}) {
   removeAbandonedProfiles()
   const profile = await mkdtemp(path.join(os.tmpdir(), `${PROFILE_PREFIX}${process.pid}-`))
   const child = spawn(
@@ -141,6 +146,7 @@ export async function launchChrome({ port = 0, url = 'about:blank', args = [] } 
       '--hide-scrollbars',
       '--no-first-run',
       ...NO_DOWNLOADS,
+      `--disable-features=${[...NO_DOWNLOAD_FEATURES, ...disabledFeatures].join(',')}`,
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profile}`,
       ...args,
