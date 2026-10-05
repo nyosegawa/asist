@@ -16,9 +16,10 @@ afterAll(() => rmSync(mocks.userData, { recursive: true, force: true }))
 
 import { CalendarService } from '../src/main/services/calendar-service'
 import { GoogleCalendar, googleEventKey, toCalendarEvent } from '../src/main/services/google-calendar'
-import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_URL, GOOGLE_TOKEN_URL, GoogleAuth, SignInReplaced, type GoogleTokenId } from '../src/main/services/google-oauth'
+import { GOOGLE_CALENDAR_SCOPES, GOOGLE_REVOKE_URL, GOOGLE_TOKEN_URL, GoogleAuth, type GoogleTokenId } from '../src/main/services/google-oauth'
+import { SignInReplaced } from '../src/main/services/oauth-loopback'
 import { SecretUnreadableError, type EncryptedSecretStore } from '../src/main/services/encrypted-secrets'
-import { googleSignInPage } from '../src/main/services/google-sign-in-page'
+import { googleSignInPage } from '../src/main/services/sign-in-page'
 
 const API = 'https://www.googleapis.com/calendar/v3'
 

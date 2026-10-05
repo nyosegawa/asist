@@ -25,6 +25,7 @@ import {
 import { describeCalendarEvent, type CalendarChange, type CalendarChangeResult, type CalendarEvent, type CalendarEventInput } from '@shared/calendar'
 import { addDays, overlaps, parseDayKey } from '@shared/calendar-layout'
 import { demoUsageDays } from './fixtures/usage'
+import { demoChatGptApi, demoChatGptKey, onDemoChatGptChange } from './chatgpt-demo'
 import { DEFAULT_DOCK_ORDER } from '@shared/dock'
 import {
   DEFAULT_MAIL_SETTINGS,
@@ -414,7 +415,7 @@ export const mockApi: RendererApi = {
     sequence: ++statusReads,
     llm: true,
     conversationModel: settings.conversationModel,
-    llmKeys: { anthropic: 'verified', openai: 'missing', google: 'missing', cerebras: 'saved' },
+    llmKeys: { anthropic: 'verified', openai: 'missing', chatgpt: demoChatGptKey(), google: 'missing', cerebras: 'saved' },
     tts: 'down',
     ttsEngine: 'system',
     ttsLabel: 'DEMO',
@@ -425,7 +426,8 @@ export const mockApi: RendererApi = {
     voiceEngine: settings.voiceEngine,
     live: 'off'
   }),
-  onStatusChanged: () => () => {},
+  // Main pushes the status after a sign-in with ChatGPT or a sign-out; nothing else in the demo changes it on its own.
+  onStatusChanged: (callback) => onDemoChatGptChange(() => void mockApi.getStatus().then(callback)),
   requestMicPermission: async () => false,
   voiceMicrophone: async () => {},
   micNativeStart: async () => ({ ok: false, sampleRate: 48_000, reason: 'demo' }),
@@ -738,6 +740,7 @@ export const mockApi: RendererApi = {
   saveSettings: async (patch) => Object.assign(settings, mergeSettings(settings, patch)),
   saveApiKey: async () => mockApi.getStatus(),
   verifySavedApiKey: async () => mockApi.getStatus(),
+  ...demoChatGptApi,
   listSpeakers: async () => [],
   ttsTest: async () => ({ turnId: 0, index: 0, text: 'テスト', audio: null, phonemes: null }),
   revealPath: async () => {},

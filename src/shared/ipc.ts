@@ -3,6 +3,7 @@ import type { AgentStreamEvent } from './agent-stream'
 import type { UsageDay } from './api-usage'
 import type { AppUpdateState } from './app-update'
 import type { CalendarChange, CalendarChangeResult, CalendarEvent, CalendarListRange, CalendarStatus } from './calendar'
+import type { ChatGptSignInResult, ChatGptStatus } from './chatgpt'
 import type { ConfirmEvent, ConfirmRequest } from './confirm'
 import type { MiniAppTarget, MiniAppView } from './mini-apps'
 import type { NoteChange, NoteSummary } from './notes'
@@ -31,7 +32,7 @@ import type { AsrModel, ResolvedAsrModel } from './asr-models'
 import type { CacheMissReason } from './cache-diagnosis'
 import type { AppSettings, SettingsPatch } from './settings'
 export type { AppSettings } from './settings'
-import type { ConversationModel, LlmProvider } from './llm-catalog'
+import type { ApiKeyProvider, ConversationModel, LlmProvider } from './llm-catalog'
 export type { ConversationModel, LlmProvider } from './llm-catalog'
 import type { LiveEngine, VoiceEngine } from './voice-engine'
 export type { VoiceEngine } from './voice-engine'
@@ -377,9 +378,10 @@ export type TurnEvent =
   | { type: 'done'; turnId: number; fullText: string }
   /**
    * Why the turn failed: the message of an error as it was thrown, key and all, which the renderer words when it
-   * shows it, or the sentence the assistant said in place of a reply.
+   * shows it, or the sentence the assistant said in place of a reply. `chatgptUsage` is a failure that ChatGPT's
+   * usage settings resolve, where OpenAI asks apps to lead the user.
    */
-  | { type: 'error'; turnId: number; message: string }
+  | { type: 'error'; turnId: number; message: string; chatgptUsage?: true }
 
 /** Whether the renderer really started the interject audio or discarded it before it began. */
 export type TurnPlaybackAckStatus = 'started' | 'interrupted'
@@ -993,6 +995,10 @@ export const IpcChannel = {
   SaveSettings: 'save-settings',
   SaveApiKey: 'save-api-key',
   VerifySavedApiKey: 'verify-saved-api-key',
+  ChatGptStatus: 'chatgpt-status',
+  ChatGptSignIn: 'chatgpt-sign-in',
+  ChatGptSignOut: 'chatgpt-sign-out',
+  ChatGptOpenGuide: 'chatgpt-open-guide',
   ListSpeakers: 'list-speakers',
   TtsTest: 'tts-test',
   OpenExternal: 'open-external',
@@ -1264,13 +1270,24 @@ export interface RendererApi {
    * Validates the provider's API key, saves it encrypted with the Keychain key in userData/api-keys.json, and
    * returns the status afterwards.
    */
-  saveApiKey(provider: LlmProvider, key: string): Promise<AppStatus>
+  saveApiKey(provider: ApiKeyProvider, key: string): Promise<AppStatus>
   /**
    * Validates the key main already holds for the provider, saved in an earlier session or set in the
    * environment, and returns the status afterwards. A key is verified only in main's memory, so such a key
    * reads as saved until this runs.
    */
-  verifySavedApiKey(provider: LlmProvider): Promise<AppStatus>
+  verifySavedApiKey(provider: ApiKeyProvider): Promise<AppStatus>
+  chatgptStatus(): Promise<ChatGptStatus>
+  /**
+   * Signs in with ChatGPT through the browser, with the plan's usage among the permissions, and resolves once
+   * the browser comes back. A sign-in returns to the account signed in last unless `otherAccount` asks for
+   * another; a newer sign-in replaces one still waiting, which then fails.
+   */
+  chatgptSignIn(otherAccount: boolean): Promise<ChatGptSignInResult>
+  /** Ends the sign-in at OpenAI and forgets its tokens here, keeping the account for the next sign-in. */
+  chatgptSignOut(): Promise<ChatGptStatus>
+  /** Opens the documentation page on using a ChatGPT plan in ASIST, in the interface language. */
+  chatgptOpenGuide(): Promise<void>
   listSpeakers(engine?: TtsEngine): Promise<SpeakerOption[]>
   ttsTest(): Promise<SpeechSegment>
   /** Opens a web page in the browser or a mail address in the mail app, and refuses any other link. */

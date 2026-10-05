@@ -4,12 +4,14 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings, AppStatus, PreparationProgress, SetupStatus } from '@shared/ipc'
 import { createTranslator, type Translate, type UiLocale } from '@shared/i18n'
+import { errorText } from '@shared/i18n/error-text'
 import { SetupWizard } from '../src/renderer/src/ui/SetupWizard'
 import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stores'
 import { voiceController } from '../src/renderer/src/voice/VoiceController'
 import { liveVoice } from '../src/renderer/src/voice/LiveVoice'
 import { asrDownloadGb, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
 import { isLiveEngine } from '@shared/voice-engine'
+import type { ChatGptSignInResult, ChatGptStatus } from '@shared/chatgpt'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, platformCapabilities, setCapabilities } from './helpers/platform'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
@@ -100,7 +102,15 @@ const api = {
   ttsTest: vi.fn(async () => ({ audio: new ArrayBuffer(0), text: '' })),
   requestMicPermission: vi.fn(async () => true),
   isWindowAway: vi.fn(async () => false),
-  openExternal: vi.fn(async () => {})
+  openExternal: vi.fn(async () => {}),
+  chatgptStatus: vi.fn(async (): Promise<ChatGptStatus> => ({ signIn: 'signedOut', account: null })),
+  // As in main, the sign-in is checked against the API before it resolves, so the status reads it verified.
+  chatgptSignIn: vi.fn(async (_otherAccount: boolean): Promise<ChatGptSignInResult> => {
+    verifiedKeys.add('chatgpt')
+    status = { ...status, llmKeys: { ...status.llmKeys, chatgpt: 'verified' } }
+    return { status: { signIn: 'signedIn', account: 'you@example.com' }, first: true }
+  }),
+  chatgptOpenGuide: vi.fn(async () => {})
 }
 
 let container: HTMLDivElement
@@ -171,7 +181,7 @@ beforeEach(async () => {
   status = {
     llm: false,
     conversationModel: settings.conversationModel,
-    llmKeys: { anthropic: 'missing', openai: 'missing', google: 'missing', cerebras: 'missing' },
+    llmKeys: { anthropic: 'missing', openai: 'missing', chatgpt: 'missing', google: 'missing', cerebras: 'missing' },
     tts: 'down',
     ttsEngine: 'voicevox',
     ttsLabel: 'VOICEVOX',
@@ -466,6 +476,84 @@ describe('first-run setup', () => {
     expect(api.completeSetup).toHaveBeenCalledWith(expect.objectContaining({ voiceMode: 'server', micAutoStart: true }))
     expect(voiceController.enable).toHaveBeenCalledOnce()
     expect(liveVoice.enable).not.toHaveBeenCalled()
+  })
+})
+
+describe('first-run setup with ChatGPT', () => {
+  const chooseChatGpt = async (): Promise<void> => {
+    await render()
+    await toModel(ja)
+    await act(async () => container.querySelector<HTMLButtonElement>('.su-provider[data-provider="chatgpt"]')!.click())
+    await flush()
+  }
+  const notice = (): Element | null => document.querySelector('[data-notice="chatgpt-plan"]')
+
+  it('signs in through the browser in place of a key, moves the models to the ChatGPT pair and enables the next step', async () => {
+    await chooseChatGpt()
+    expect(container.querySelector('.su-provider[data-provider="chatgpt"] .su-provider-models')?.textContent).toBe(ja('chatgpt.plan.plusOrPro'))
+    expect(container.querySelector('#su-key')).toBeNull()
+    expect(container.querySelector('.su-next')?.textContent).toBe(ja('setup.guide.model.signIn'))
+    expect(button(ja('setup.next')).disabled).toBe(true)
+
+    await press(ja('chatgpt.signIn.continue'))
+    expect(api.chatgptSignIn).toHaveBeenCalledWith(false)
+    expect(api.saveSettings).toHaveBeenCalledWith({
+      conversationModel: { provider: 'chatgpt', id: 'gpt-5.6-terra' },
+      bridgeModel: { provider: 'chatgpt', id: 'gpt-5.6-luna' }
+    })
+    expect(container.querySelector('.su-result')?.textContent).toContain(ja('setup.model.signedInNote'))
+    expect(container.querySelector('.su-next')?.textContent).toBe(ja('setup.guide.model.signedIn'))
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('uses a sign-in already saved without opening the browser again', async () => {
+    verifiedKeys.add('chatgpt')
+    api.chatgptStatus.mockResolvedValueOnce({ signIn: 'signedIn', account: 'you@example.com' })
+    await chooseChatGpt()
+    await press(ja('chatgpt.signIn.continue'))
+    expect(api.chatgptSignIn).not.toHaveBeenCalled()
+    expect(api.saveSettings).toHaveBeenCalledWith({
+      conversationModel: { provider: 'chatgpt', id: 'gpt-5.6-terra' },
+      bridgeModel: { provider: 'chatgpt', id: 'gpt-5.6-luna' }
+    })
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
+  it('says once, after the first sign-in on this computer, that the plan is in use', async () => {
+    await chooseChatGpt()
+    await press(ja('chatgpt.signIn.continue'))
+    expect(notice()?.querySelector('h2')?.textContent).toBe(ja('chatgpt.planNotice.title'))
+    await act(async () => [...notice()!.querySelectorAll('button')].find((one) => one.textContent === ja('chatgpt.planNotice.dismiss'))!.click())
+    expect(notice()).toBeNull()
+  })
+
+  it('offers another account beside the one that signed in before', async () => {
+    api.chatgptStatus.mockResolvedValueOnce({ signIn: 'signedOut', account: 'you@example.com' })
+    await chooseChatGpt()
+    expect(container.querySelector('.su-hint')?.textContent).toContain(ja('chatgpt.signIn.nextAccount', { account: 'you@example.com' }))
+    await press(ja('chatgpt.signIn.otherAccount'))
+    expect(api.chatgptSignIn).toHaveBeenCalledWith(true)
+  })
+
+  it('leaves the models alone when another provider is chosen while the browser is open', async () => {
+    let finish: (result: ChatGptSignInResult) => void = () => {}
+    api.chatgptSignIn.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    await chooseChatGpt()
+    await press(ja('chatgpt.signIn.continue'))
+    expect(container.querySelector('.su-next')?.textContent).toBe(ja('chatgpt.signIn.waiting'))
+    await act(async () => container.querySelector<HTMLButtonElement>('.su-provider[data-provider="anthropic"]')!.click())
+    await act(async () => finish({ status: { signIn: 'signedIn', account: 'you@example.com' }, first: false }))
+    await flush()
+    expect(api.saveSettings.mock.calls.some(([patch]) => patch.conversationModel?.provider === 'chatgpt')).toBe(false)
+    expect(container.querySelector('#su-key')).not.toBeNull()
+  })
+
+  it('shows why the sign-in failed', async () => {
+    api.chatgptSignIn.mockRejectedValueOnce(new Error(errorText('chatgpt.errors.planNotGranted')))
+    await chooseChatGpt()
+    await press(ja('chatgpt.signIn.continue'))
+    expect(container.querySelector('.su-error')?.textContent).toBe(ja('chatgpt.errors.planNotGranted'))
+    expect(api.saveSettings.mock.calls.some(([patch]) => patch.conversationModel?.provider === 'chatgpt')).toBe(false)
   })
 })
 

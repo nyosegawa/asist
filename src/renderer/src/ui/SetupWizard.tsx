@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { LLM_PROVIDER_INFO, defaultModelsFor, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
+import { LLM_PROVIDER_INFO, defaultModelsFor, isApiKeyProvider, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
 import { keyReadable, speechEnginePrepared, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
 import type { AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
@@ -24,6 +24,9 @@ import type { MessageKey } from '@shared/i18n'
 import { osMessageKey } from '@shared/i18n/os-message'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 import { LiveKey } from './setup/live'
+import { ChatGptField } from './setup/chatgpt-field'
+import { ChatGptPlanNotice } from './ChatGptPlanNotice'
+import { useChatGptSignIn } from '@/chatgpt'
 
 /**
  * The first-run setup. It completes only once every requirement has actually been verified, and it
@@ -70,6 +73,10 @@ export function SetupWizard(): React.JSX.Element | null {
   const refreshGeneration = useRef(0)
   const locale = settings?.conversationLocale ?? 'ja-JP'
   const extras = useExtraModels(step === 'extras', mode, locale)
+  const chatgpt = useChatGptSignIn(step === 'model' && provider === 'chatgpt')
+  // The provider chosen now, which a sign-in that waited minutes for the browser compares with its own.
+  const chosenProvider = useRef(provider)
+  chosenProvider.current = provider
   const capabilities = platformCapabilities()
 
   const refresh = async (): Promise<SetupStatus | null> => {
@@ -172,15 +179,41 @@ export function SetupWizard(): React.JSX.Element | null {
 
   /** Verifies and saves the key, and sets the conversation model and the bridge phrase model to the provider's default pair. */
   const verifyKey = async (useSavedKey: boolean): Promise<void> => {
-    if (apiBusy || (!useSavedKey && !apiKey.trim())) return
+    if (apiBusy || (!useSavedKey && !apiKey.trim()) || !isApiKeyProvider(provider)) return
     setApiBusy(true)
     setError('')
     try {
       if (!useSavedKey) applyStatus(await window.api.saveApiKey(provider, apiKey))
-      // Before it saves, main checks that this pair can really be fetched with the provider's key.
-      if (!modelsMatch) await saveSettings(defaults)
+      await applyDefaultModels()
       setApiKey('')
-      await refresh()
+    } catch (err) {
+      setError(displayError(err))
+    } finally {
+      setApiBusy(false)
+    }
+  }
+
+  /** Sets the conversation model and the bridge phrase model to the provider's default pair and reads the setup again. */
+  const applyDefaultModels = async (): Promise<void> => {
+    // Before it saves, main checks that this pair can really be fetched with the provider's key or sign-in.
+    if (!modelsMatch) await saveSettings(defaults)
+    await refresh()
+  }
+
+  /**
+   * Signs in with ChatGPT through the browser and then moves the models to ChatGPT's default pair, unless
+   * another provider was chosen while the browser was open. A sign-in already saved is used as it is, since
+   * the browser would only return to the same account.
+   */
+  const signInToChatGpt = async (otherAccount: boolean): Promise<void> => {
+    if (apiBusy) return
+    setError('')
+    const signedIn = !otherAccount && chatgpt.status?.signIn === 'signedIn'
+    if (!signedIn && !(await chatgpt.signIn(otherAccount))) return
+    if (chosenProvider.current !== 'chatgpt') return
+    setApiBusy(true)
+    try {
+      await applyDefaultModels()
     } catch (err) {
       setError(displayError(err))
     } finally {
@@ -347,11 +380,17 @@ export function SetupWizard(): React.JSX.Element | null {
   }
 
   const services = setup?.services
+  const shownError = error || (step === 'model' && provider === 'chatgpt' ? chatgpt.error : '')
   /** What the user has to do in order to move on, shown as a single line to the left of the buttons. */
   const nextAction = ((): string => {
     if (step === 'language') return t('setup.guide.language.chosen', { language: UI_LOCALE_NAMES[locale] })
     if (step === 'safety') return ready.safety ? t('setup.guide.safety.done') : t('setup.guide.safety.tick')
     if (step === 'model') {
+      if (provider === 'chatgpt') {
+        if (modelReady) return t('setup.guide.model.signedIn')
+        if (chatgpt.signingIn) return t('chatgpt.signIn.waiting')
+        return apiBusy ? t('common.saving') : t('setup.guide.model.signIn')
+      }
       if (modelReady) return t('setup.guide.model.verified')
       if (apiBusy) return t('setup.guide.model.verifying')
       return apiKey.trim() ? t('setup.guide.model.pressVerify') : t('setup.guide.model.enterKey', { provider: LLM_PROVIDER_INFO[provider].label })
@@ -433,6 +472,7 @@ export function SetupWizard(): React.JSX.Element | null {
               busy={apiBusy}
               onVerify={() => void verifyKey(false)}
               onRecheck={() => void verifyKey(true)}
+              chatgpt={<ChatGptField status={chatgpt.status} signingIn={chatgpt.signingIn} busy={apiBusy} onSignIn={(other) => void signInToChatGpt(other)} />}
             />
           )}
           {step === 'speaking' && (
@@ -558,7 +598,7 @@ export function SetupWizard(): React.JSX.Element | null {
               ]}
             />
           )}
-          {error && <SetupError message={error} />}
+          {shownError && <SetupError message={shownError} />}
         </div>
 
         <footer className="su-foot">
@@ -579,6 +619,7 @@ export function SetupWizard(): React.JSX.Element | null {
           )}
         </footer>
       </section>
+      <ChatGptPlanNotice open={chatgpt.noticeOpen} onClose={chatgpt.closeNotice} />
     </div>
   )
 }

@@ -54,6 +54,13 @@ export function classifyApiKeyValidationError(
   const target = targetOf(model)
   const fail = (code: ApiKeyValidationFailure, message: string): ApiKeyValidationError =>
     new ApiKeyValidationError(code, message, model, { cause: error })
+  // ChatGPT has a sign-in rather than a key, and a plan rather than a balance, so its refusals say so.
+  if (model.provider === 'chatgpt') {
+    if (status === 401) return fail('authentication', errorText('chatgpt.errors.notAccepted'))
+    if (status === 403) return fail('permission', errorText('chatgpt.errors.notEligible'))
+    if (status === 404) return fail('model-unavailable', errorText('chatgpt.errors.modelNotListed', { target }))
+    if (status === 429) return fail('rate-limit', errorText('chatgpt.errors.usageLimit'))
+  }
   if (status === 401) return fail('authentication', errorText('llmModels.errors.authentication', { provider }))
   if (status === 403) return fail('permission', errorText('llmModels.errors.permission', { provider, target }))
   if (status === 404) return fail('model-unavailable', errorText('llmModels.errors.modelUnavailable', { target }))

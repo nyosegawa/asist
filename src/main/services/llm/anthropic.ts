@@ -94,11 +94,11 @@ class AnthropicStream extends AdapterStream {
   private heldToolUse: ToolUseBlock | null = null
 
   constructor(
-    client: Anthropic,
+    client: Promise<Anthropic>,
     private readonly request: ConversationRequest
   ) {
     super()
-    this.start(() => this.run(client))
+    this.start(() => client.then((ready) => this.run(ready)))
   }
 
   protected nativeSnapshot(openText: string): ConversationMessage['native'] {
@@ -213,11 +213,11 @@ function roundUsage(usage: Anthropic.Usage): RoundUsage {
 }
 
 export const anthropicAdapter: ProviderAdapter = {
-  stream: (request, key) => new AnthropicStream(clientFor(key), request),
+  stream: (request, credential) => new AnthropicStream(credential.token().then(clientFor), request),
 
-  async completeJson(request: JsonRequest, key: string) {
+  async completeJson(request: JsonRequest, credential) {
     const effort = effortFor(request.model)
-    const message = await clientFor(key).messages.create(
+    const message = await clientFor(await credential.token()).messages.create(
       {
         model: request.model.id,
         max_tokens: request.maxTokens,
@@ -231,11 +231,11 @@ export const anthropicAdapter: ProviderAdapter = {
     return { usage: roundUsage(message.usage), value: () => JSON.parse(text) }
   },
 
-  async retrieveModel(id, key, signal) {
-    await new Anthropic({ apiKey: key, maxRetries: 0 }).models.retrieve(id, {}, { signal, maxRetries: 0 })
+  async retrieveModel(id, credential, signal) {
+    await new Anthropic({ apiKey: await credential.token(), maxRetries: 0 }).models.retrieve(id, {}, { signal, maxRetries: 0 })
   },
 
-  async listModels(key, signal) {
-    await new Anthropic({ apiKey: key, maxRetries: 0 }).models.list({ limit: 1 }, { signal, maxRetries: 0 })
+  async listModels(credential, signal) {
+    await new Anthropic({ apiKey: await credential.token(), maxRetries: 0 }).models.list({ limit: 1 }, { signal, maxRetries: 0 })
   }
 }

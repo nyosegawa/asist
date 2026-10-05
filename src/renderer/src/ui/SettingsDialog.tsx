@@ -28,7 +28,7 @@ import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { localDate } from '@shared/api-usage'
 import { usageReport } from '@shared/usage-report'
 import { readStatus, statusOf, ttsEngineLabel, type SettingsContext, type SettingsPage, type StatusRead } from './settings/context'
-import { pendingItems, type Pending } from './settings/pending'
+import { credentialText, pendingItems, type Pending } from './settings/pending'
 import { ConversationPage } from './settings/pages/ConversationPage'
 import { PersonaPage } from './settings/pages/PersonaPage'
 import { VoicePage } from './settings/pages/VoicePage'
@@ -199,14 +199,15 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
   const live = isLiveEngine(settings.voiceEngine) ? settings.voiceEngine : null
   const has = (...kinds: Array<Pending['kind']>): boolean => pending.some((item) => kinds.includes(item.kind))
   const speechCannotRun = pending.some((item) => item.kind === 'speech' && item.reason === 'cannotRun')
+  const missingKey = pending.find((item): item is Extract<Pending, { kind: 'key' }> => item.kind === 'key')
   const keys = LLM_PROVIDERS.filter((provider) => status !== null && keyReadable(status.llmKeys[provider])).length
   const agentEngine = settings.agentEngine === 'codex' ? 'Codex' : 'Claude Code'
   const formatUsd = usdFormatter(formatLocale)
   const regionName = new Intl.DisplayNames([uiLocale], { type: 'region' }).of(settings.region) ?? settings.region
   const subs: Record<SettingsPage, { text: string; tone?: 'warn' }> = {
     overview: pending.length > 0 ? { text: t('settings.summary.modelsNotPrepared', { count: pending.length }), tone: 'warn' } : { text: t('settings.summary.modelsAllPrepared') },
-    conversation: has('key')
-      ? { text: t('settingsConversation.models.notSet'), tone: 'warn' }
+    conversation: missingKey
+      ? { text: credentialText(t, missingKey.provider, missingKey.state, live).state, tone: 'warn' }
       : {
           text: live ? t('settings.summary.conversationLiveOnly', { engine: LIVE_ENGINE_INFO[live].label }) : modelLabel(settings.conversationModel)
         },

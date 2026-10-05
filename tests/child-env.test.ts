@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { API_KEY_INFO, API_KEY_PROVIDERS } from '@shared/llm-catalog'
 import { childEnv, pythonEnv } from '../src/main/services/child-env'
 
 /** No child process may receive a provider's API key, whether it came from the parent environment or a caller. */
 
-const providerKeys = LLM_PROVIDERS.map((provider) => LLM_PROVIDER_INFO[provider].envKey)
+const providerKeys = API_KEY_PROVIDERS.map((provider) => API_KEY_INFO[provider].envKey)
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 afterEach(() => {

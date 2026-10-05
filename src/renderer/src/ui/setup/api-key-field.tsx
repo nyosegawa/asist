@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { useT } from '@/i18n'
-import { LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
+import { API_KEY_INFO, LLM_PROVIDER_INFO, type ApiKeyProvider } from '@shared/llm-catalog'
 import { Btn } from '../settings/primitives'
 
 /**
@@ -16,7 +16,7 @@ export function ApiKeyField({
   onVerify,
   onRecheck
 }: {
-  provider: LlmProvider
+  provider: ApiKeyProvider
   /** The key is stored but has not been confirmed yet, for instance because the request failed. */
   keyConfigured: boolean
   apiKey: string
@@ -27,7 +27,7 @@ export function ApiKeyField({
   onRecheck?: () => void
 }): React.JSX.Element {
   const t = useT()
-  const info = LLM_PROVIDER_INFO[provider]
+  const info = { ...LLM_PROVIDER_INFO[provider], ...API_KEY_INFO[provider] }
   return (
     <div className="su-field">
       <label htmlFor="su-key">

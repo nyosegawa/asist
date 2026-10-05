@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 import { HoloSwitch } from '@/components/ui/switch'
-import { LLM_PROVIDER_INFO, modelName } from '@shared/llm-catalog'
+import { modelName, type LlmProvider } from '@shared/llm-catalog'
 import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { keyReadable, speechEnginePrepared } from '@shared/ipc'
@@ -14,7 +14,7 @@ import { platformCapabilities } from '@/platform'
 import { AGENT_INSTALL_GUIDE, TTS_SITE, cascadeListeningReady, isExternalTts, readFailure, speechReadiness, statusOf, ttsEngineLabel, type SettingsContext, type SettingsPage } from '../context'
 import { Btn, Chip, Group, Page, Row, type ChipTone } from '../primitives'
 import { PrepProgress, PrepareButton, UnreadChip, WhisperControl } from '../preparation'
-import type { Pending } from '../pending'
+import { credentialText, type Pending } from '../pending'
 
 /** One step of the conversation as it runs now: listening, answering or reading aloud. */
 interface Step {
@@ -49,8 +49,11 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
   const notReady = { tone: 'warn', label: t('common.notReady') } as const
   const checking = { tone: 'dim', label: t('settingsModels.checking') } as const
   const starting = { tone: 'dim', label: t('settingsModels.starting') } as const
-  const keyOf = (provider: keyof typeof LLM_PROVIDER_INFO): Step['chip'] =>
-    status === null ? checking : keyReadable(status.llmKeys[provider]) ? ready : { tone: 'warn', label: t('settingsConversation.models.notSet') }
+  const keyOf = (provider: LlmProvider): Step['chip'] => {
+    if (status === null) return checking
+    const state = status.llmKeys[provider]
+    return keyReadable(state) ? ready : { tone: 'warn', label: credentialText(t, provider, state === 'unreadable' ? 'unreadable' : 'missing', live).state }
+  }
 
   const steps: Step[] = live
     ? [
@@ -164,17 +167,8 @@ export function OverviewPage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
           )
         }
       case 'key': {
-        const info = LLM_PROVIDER_INFO[item.provider]
-        return {
-          label: t('settingsConversation.models.apiKey', { provider: info.label }),
-          hint:
-            item.state === 'unreadable'
-              ? t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: info.label })
-              : live && LIVE_ENGINE_INFO[live].provider === item.provider
-                ? t('settingsConversation.live.keyMissing', { envKey: info.envKey })
-                : t('settingsConversation.models.keyMissing', { envKey: info.envKey }),
-          action: <Btn onClick={() => go('apiKeys')}>{t('settingsIntegrations.apiKeys.register')}</Btn>
-        }
+        const text = credentialText(t, item.provider, item.state, live)
+        return { label: text.label, hint: text.hint, action: <Btn onClick={() => go('apiKeys')}>{text.action}</Btn> }
       }
     }
   }

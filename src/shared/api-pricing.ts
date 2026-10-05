@@ -1,5 +1,5 @@
 import type { RoundUsage } from './ipc'
-import type { ConversationModel } from './llm-catalog'
+import { isApiKeyProvider, type ApiKeyProvider, type ConversationModel } from './llm-catalog'
 
 /**
  * The list prices of the conversation models, in USD per million tokens, from each provider's pricing
@@ -14,6 +14,7 @@ import type { ConversationModel } from './llm-catalog'
  *   $14 per 1,000 search queries after 5,000 free ones a month shared by every Gemini 3 model; the free
  *   allowance is not subtracted, since other uses of the same key draw on it too.
  * - Cerebras lists no cache price, so cached tokens are priced as input.
+ * - ChatGPT has no price: its calls come out of the user's ChatGPT plan.
  */
 
 export interface TokenPrice {
@@ -44,17 +45,17 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
 }
 
 /** The fee in USD for one provider-side web search. Cerebras offers no web search. */
-const WEB_SEARCH_PRICE: Record<ConversationModel['provider'], number> = {
+const WEB_SEARCH_PRICE: Record<ApiKeyProvider, number> = {
   anthropic: 10 / 1000,
   openai: 10 / 1000,
   google: 14 / 1000,
   cerebras: 0
 }
 
-/** The cost in USD of one response, or null for a model the price list does not have. */
+/** The cost in USD of one response, or null for a model the price list does not have and for ChatGPT's plan. */
 export function llmCost(model: Pick<ConversationModel, 'provider' | 'id'>, usage: RoundUsage): number | null {
   const price = MODEL_PRICES[`${model.provider}:${model.id}`]
-  if (!price) return null
+  if (!price || !isApiKeyProvider(model.provider)) return null
   const promptSize = usage.input + usage.cacheRead + usage.cacheCreation
   const long = price.longContext && promptSize > price.longContext.above ? price.longContext : null
   const inputFactor = long?.inputFactor ?? 1

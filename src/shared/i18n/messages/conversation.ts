@@ -213,6 +213,45 @@ export const conversation = defineMessages({
       'pt-BR': 'Não foi possível escrever uma resposta. Fale comigo de novo.',
       'es-419': 'No se pudo escribir una respuesta. Vuelve a hablarme.',
       'es-ES': 'No se ha podido escribir una respuesta. Vuelve a hablarme.'
+    },
+    chatgptUsageLimit: {
+      'ja-JP': 'ChatGPT の使用量の上限に達しました。ChatGPT の設定で使用量を確かめてください。',
+      'en-US': "The ChatGPT usage limit was reached. Check your usage in ChatGPT's settings.",
+      'fr-FR': "La limite d'utilisation de ChatGPT est atteinte. Vérifiez votre utilisation dans les réglages de ChatGPT.",
+      'de-DE': 'Das Nutzungslimit von ChatGPT ist erreicht. Prüfen Sie Ihre Nutzung in den Einstellungen von ChatGPT.',
+      'hi-IN': 'ChatGPT की इस्तेमाल सीमा पूरी हो गई। ChatGPT की सेटिंग्ज़ में अपना इस्तेमाल देखें।',
+      'id-ID': 'Batas pemakaian ChatGPT sudah tercapai. Periksa pemakaian Anda di pengaturan ChatGPT.',
+      'it-IT': "È stato raggiunto il limite di utilizzo di ChatGPT. Controlla l'utilizzo nelle impostazioni di ChatGPT.",
+      'ko-KR': 'ChatGPT 사용 한도에 도달했습니다. ChatGPT 설정에서 사용량을 확인하십시오.',
+      'pt-BR': 'O limite de uso do ChatGPT foi atingido. Confira seu uso nas configurações do ChatGPT.',
+      'es-419': 'Se alcanzó el límite de uso de ChatGPT. Revisa tu uso en la configuración de ChatGPT.',
+      'es-ES': 'Se ha alcanzado el límite de uso de ChatGPT. Revisa tu uso en la configuración de ChatGPT.'
+    },
+    chatgptNotEligible: {
+      'ja-JP': 'この ChatGPT のアカウントのプランは、ASIST では使えません。Plus か Pro のプランが必要です。',
+      'en-US': "This ChatGPT account's plan can't be used in ASIST. It needs a Plus or Pro plan.",
+      'fr-FR': 'Le forfait de ce compte ChatGPT ne peut pas être utilisé dans ASIST. Il faut un forfait Plus ou Pro.',
+      'de-DE': 'Der Plan dieses ChatGPT-Kontos kann in ASIST nicht genutzt werden. Dafür ist ein Plus- oder Pro-Plan nötig.',
+      'hi-IN': 'इस ChatGPT खाते का प्लान ASIST में इस्तेमाल नहीं हो सकता। इसके लिए Plus या Pro प्लान चाहिए।',
+      'id-ID': 'Paket akun ChatGPT ini tidak bisa dipakai di ASIST. Dibutuhkan paket Plus atau Pro.',
+      'it-IT': 'Il piano di questo account ChatGPT non può essere usato in ASIST. Serve un piano Plus o Pro.',
+      'ko-KR': '이 ChatGPT 계정의 플랜은 ASIST에서 쓸 수 없습니다. Plus 또는 Pro 플랜이 필요합니다.',
+      'pt-BR': 'O plano desta conta do ChatGPT não pode ser usado no ASIST. É preciso um plano Plus ou Pro.',
+      'es-419': 'El plan de esta cuenta de ChatGPT no se puede usar en ASIST. Se necesita un plan Plus o Pro.',
+      'es-ES': 'El plan de esta cuenta de ChatGPT no se puede usar en ASIST. Hace falta un plan Plus o Pro.'
+    },
+    chatgptSignIn: {
+      'ja-JP': 'ChatGPT のログインを確かめられませんでした。設定の「API キー」でもう一度ログインしてください。',
+      'en-US': "Couldn't confirm the ChatGPT sign-in. Sign in again on the API keys page in Settings.",
+      'fr-FR': 'Impossible de confirmer la connexion à ChatGPT. Reconnectez-vous sur la page Clés API des réglages.',
+      'de-DE': 'Die Anmeldung bei ChatGPT ließ sich nicht bestätigen. Melden Sie sich auf der Seite „API-Schlüssel“ in den Einstellungen erneut an.',
+      'hi-IN': 'ChatGPT साइन इन की पुष्टि नहीं हो सकी। सेटिंग्ज़ के "API कुंजी" पेज पर फिर से साइन इन करें।',
+      'id-ID': 'Tidak bisa memastikan sesi masuk ChatGPT. Masuk lagi di halaman Kunci API pada Pengaturan.',
+      'it-IT': "Impossibile confermare l'accesso a ChatGPT. Accedi di nuovo nella pagina «Chiavi API» delle impostazioni.",
+      'ko-KR': "ChatGPT 로그인을 확인하지 못했습니다. 설정의 'API 키'에서 다시 로그인하십시오.",
+      'pt-BR': 'Não foi possível confirmar o login no ChatGPT. Entre de novo na página Chaves de API dos ajustes.',
+      'es-419': 'No se pudo confirmar el inicio de sesión de ChatGPT. Vuelve a iniciar sesión en la página Claves de API de Configuración.',
+      'es-ES': 'No se ha podido confirmar el inicio de sesión de ChatGPT. Vuelve a iniciar sesión en la página “Claves de API” de Ajustes.'
     }
   },
   logUnreadable: {

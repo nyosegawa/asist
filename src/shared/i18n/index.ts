@@ -6,6 +6,7 @@ import { cardsFinance } from './messages/cards-finance'
 import { cardsInfo } from './messages/cards-info'
 import { cardsTime } from './messages/cards-time'
 import { cardsWeather } from './messages/cards-weather'
+import { chatgpt } from './messages/chatgpt'
 import { common } from './messages/common'
 import { confirm } from './messages/confirm'
 import { conversation } from './messages/conversation'
@@ -52,6 +53,7 @@ export interface MessageGroups {
   readonly cardsInfo: typeof cardsInfo
   readonly cardsTime: typeof cardsTime
   readonly cardsWeather: typeof cardsWeather
+  readonly chatgpt: typeof chatgpt
   readonly common: typeof common
   readonly confirm: typeof confirm
   readonly conversation: typeof conversation
@@ -101,6 +103,7 @@ export const MESSAGES: MessageGroups = {
   cardsInfo,
   cardsTime,
   cardsWeather,
+  chatgpt,
   common,
   confirm,
   conversation,

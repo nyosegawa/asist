@@ -11,7 +11,7 @@ vi.mock('motion/react', async () => {
   return {
     AnimatePresence: ({ children }: { children: React.ReactNode }) => createElement(Fragment, null, children),
     motion: {
-      button: forwardRef<HTMLButtonElement, Record<string, unknown>>(({ initial, animate, exit, ...props }, ref) => createElement('button', { ...props, ref }))
+      div: forwardRef<HTMLDivElement, Record<string, unknown>>(({ initial, animate, exit, ...props }, ref) => createElement('div', { ...props, ref }))
     }
   }
 })
@@ -81,6 +81,27 @@ describe('a toast', () => {
     await act(async () => toast()!.blur())
     await act(async () => vi.advanceTimersByTime(TOAST_MS))
     expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('runs its action and goes away when the action is pressed, leaving the text to dismiss it otherwise', async () => {
+    const run = vi.fn()
+    await act(async () => root.render(<Toasts />))
+    await act(async () => useToastStore.getState().push({ kind: 'error', title: "Couldn't reply", body, action: { label: 'Manage usage', run } }))
+    const buttons = [...container.querySelectorAll('button')]
+    expect(buttons.map((button) => button.textContent)).toEqual([`Couldn't reply${body}`, 'Manage usage'])
+    await act(async () => buttons[1].click())
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('stays up while the keyboard moves from its text to its action', async () => {
+    await act(async () => root.render(<Toasts />))
+    await act(async () => useToastStore.getState().push({ kind: 'error', title: "Couldn't reply", body, action: { label: 'Manage usage', run: () => {} } }))
+    const [text, action] = [...container.querySelectorAll('button')]
+    await act(async () => text.focus())
+    await act(async () => action.focus())
+    await act(async () => vi.advanceTimersByTime(TOAST_MS * 2))
+    expect(useToastStore.getState().toasts).toHaveLength(1)
   })
 
   it('goes away by itself when no one rests on it', async () => {

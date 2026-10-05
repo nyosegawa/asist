@@ -136,17 +136,17 @@ export const setup = defineMessages({
         'es-ES': 'Modelo de conversación'
       },
       lead: {
-        'ja-JP': '会話に使うプロバイダを選び、API キーを検証します。',
-        'en-US': 'Choose the provider of the conversation model and verify its API key.',
-        'fr-FR': 'Choisissez le fournisseur du modèle de conversation et vérifiez sa clé API.',
-        'de-DE': 'Wählen Sie den Anbieter für das Gesprächsmodell und prüfen Sie dessen API-Schlüssel.',
-        'hi-IN': 'बातचीत के मॉडल का प्रोवाइडर चुनें और उसकी API कुंजी जाँचें।',
-        'id-ID': 'Pilih penyedia model percakapan lalu verifikasi kunci API-nya.',
-        'it-IT': 'Scegli il provider del modello di conversazione e verifica la sua chiave API.',
-        'ko-KR': '대화에 쓸 제공업체를 선택하고 API 키를 검증합니다.',
-        'pt-BR': 'Escolha o provedor do modelo de conversa e verifique a chave de API dele.',
-        'es-419': 'Elige el proveedor del modelo de conversación y verifica su clave de API.',
-        'es-ES': 'Elige el proveedor del modelo de conversación y verifica su clave de API.'
+        'ja-JP': '会話に使うプロバイダを選び、API キーを検証するか ChatGPT にログインします。',
+        'en-US': 'Choose the provider of the conversation model, then verify its API key or sign in to ChatGPT.',
+        'fr-FR': 'Choisissez le fournisseur du modèle de conversation, puis vérifiez sa clé API ou connectez-vous à ChatGPT.',
+        'de-DE': 'Wählen Sie den Anbieter für das Gesprächsmodell und prüfen Sie dann dessen API-Schlüssel oder melden Sie sich bei ChatGPT an.',
+        'hi-IN': 'बातचीत के मॉडल का प्रोवाइडर चुनें, फिर उसकी API कुंजी जाँचें या ChatGPT में साइन इन करें।',
+        'id-ID': 'Pilih penyedia model percakapan, lalu verifikasi kunci API-nya atau masuk ke ChatGPT.',
+        'it-IT': 'Scegli il provider del modello di conversazione, poi verifica la sua chiave API o accedi a ChatGPT.',
+        'ko-KR': '대화에 쓸 제공업체를 선택하고 API 키를 검증하거나 ChatGPT에 로그인합니다.',
+        'pt-BR': 'Escolha o provedor do modelo de conversa e verifique a chave de API dele ou entre no ChatGPT.',
+        'es-419': 'Elige el proveedor del modelo de conversación y verifica su clave de API o inicia sesión en ChatGPT.',
+        'es-ES': 'Elige el proveedor del modelo de conversación y verifica su clave de API o inicia sesión en ChatGPT.'
       }
     },
     speaking: {
@@ -533,6 +533,32 @@ export const setup = defineMessages({
         'pt-BR': 'Escolha um provedor e digite a sua chave de API de {provider}.',
         'es-419': 'Elige un proveedor y escribe tu clave de API de {provider}.',
         'es-ES': 'Elige un proveedor e introduce tu clave de API de {provider}.'
+      },
+      signIn: {
+        'ja-JP': '「ChatGPT で続ける」を押して、ブラウザでログインしてください。',
+        'en-US': 'Press Continue with ChatGPT, then sign in through your browser.',
+        'fr-FR': 'Cliquez sur « Continuer avec ChatGPT », puis connectez-vous dans votre navigateur.',
+        'de-DE': 'Drücken Sie „Mit ChatGPT fortfahren“ und melden Sie sich dann im Browser an.',
+        'hi-IN': '"ChatGPT के साथ जारी रखें" दबाएँ, फिर ब्राउज़र में साइन इन करें।',
+        'id-ID': 'Tekan Lanjutkan dengan ChatGPT, lalu masuk di browser.',
+        'it-IT': 'Premi «Continua con ChatGPT», poi accedi nel browser.',
+        'ko-KR': "'ChatGPT로 계속하기'를 누르고 브라우저에서 로그인하십시오.",
+        'pt-BR': 'Clique em Continuar com o ChatGPT e entre pelo navegador.',
+        'es-419': 'Presiona «Continuar con ChatGPT» y luego inicia sesión en tu navegador.',
+        'es-ES': 'Pulsa “Continuar con ChatGPT” y después inicia sesión en el navegador.'
+      },
+      signedIn: {
+        'ja-JP': 'ログインできました。「次へ」で進みます。',
+        'en-US': 'Signed in. Continue with Next.',
+        'fr-FR': 'Connexion réussie. Continuez avec « Suivant ».',
+        'de-DE': 'Angemeldet. Mit „Weiter“ geht es weiter.',
+        'hi-IN': 'साइन इन हो गया। "आगे" से आगे बढ़ें।',
+        'id-ID': 'Sudah masuk. Lanjutkan dengan Berikutnya.',
+        'it-IT': 'Accesso eseguito. Prosegui con «Avanti».',
+        'ko-KR': "로그인했습니다. '다음'으로 넘어갑니다.",
+        'pt-BR': 'Login feito. Continue em Avançar.',
+        'es-419': 'Sesión iniciada. Continúa con Siguiente.',
+        'es-ES': 'Sesión iniciada. Continúa con “Siguiente”.'
       }
     },
     speaking: {
@@ -1052,6 +1078,19 @@ export const setup = defineMessages({
       'pt-BR': 'Verificar a chave salva',
       'es-419': 'Verificar la clave guardada',
       'es-ES': 'Verificar la clave guardada'
+    },
+    signedInNote: {
+      'ja-JP': 'ChatGPT のプランで会話のモデルを使えました。モデルはあとから設定の「会話」で変えられます。',
+      'en-US': 'The conversation model works on your ChatGPT plan. You can change the model later on the Conversation page in Settings.',
+      'fr-FR': 'Le modèle de conversation fonctionne avec votre forfait ChatGPT. Vous pourrez changer de modèle plus tard sur la page Conversation des réglages.',
+      'de-DE': 'Das Gesprächsmodell funktioniert mit Ihrem ChatGPT-Plan. Das Modell können Sie später auf der Seite „Gespräch“ in den Einstellungen ändern.',
+      'hi-IN': 'बातचीत का मॉडल आपके ChatGPT प्लान पर चलता है। मॉडल आप बाद में सेटिंग्ज़ के "बातचीत" पेज पर बदल सकते हैं।',
+      'id-ID': 'Model percakapan berjalan dengan paket ChatGPT Anda. Modelnya bisa Anda ganti nanti di halaman Percakapan pada Pengaturan.',
+      'it-IT': 'Il modello di conversazione funziona con il tuo piano ChatGPT. Il modello si può cambiare più tardi nella pagina «Conversazione» delle impostazioni.',
+      'ko-KR': "ChatGPT 플랜으로 대화 모델을 쓸 수 있었습니다. 모델은 나중에 설정의 '대화'에서 바꿀 수 있습니다.",
+      'pt-BR': 'O modelo de conversa funciona no seu plano do ChatGPT. Você pode mudar o modelo depois, na página Conversa dos ajustes.',
+      'es-419': 'El modelo de conversación funciona con tu plan de ChatGPT. Puedes cambiar el modelo más adelante en la página Conversación de Configuración.',
+      'es-ES': 'El modelo de conversación funciona con tu plan de ChatGPT. Puedes cambiar el modelo más adelante en la página “Conversación” de Ajustes.'
     }
   },
   speaking: {

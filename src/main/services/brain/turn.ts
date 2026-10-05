@@ -1,9 +1,8 @@
 import type { RoundUsage, TurnStartOptions } from '@shared/ipc'
 import { hasContent, type ConversationMessage, type ConversationResult, type ConversationStream, type SystemLayer } from '@shared/conversation'
 import { waitWithAbort, withTimeoutSignal } from '@shared/abort'
-import { apiErrorKey, errMessage, isTransientApiError } from '@shared/api-errors'
+import { apiErrorKey, errMessage, isChatGptUsageLimit, isTransientApiError } from '@shared/api-errors'
 import type { MessageKey } from '@shared/i18n'
-import { errorText } from '@shared/i18n/error-text'
 import { SegmentAssembler } from '@shared/segmenter'
 import { withRetry } from '@shared/retry'
 import type { TurnHandle, TurnRunContext } from '@shared/turn-scheduler'
@@ -15,7 +14,7 @@ import { diagnoseCacheMiss, fingerprintRequest, type CacheMissReason } from '@sh
 import { conversationFeatures, fillPrompt, promptText, type ConversationLocale, type PromptText } from '@shared/conversation-locale'
 import { marker } from '@shared/conversation-markers'
 import { personaText } from '@shared/persona'
-import { providerKey, streamConversation } from '../llm'
+import { credentialMissing, providerCredential, streamConversation } from '../llm'
 import { LLM_PROVIDER_INFO, type ConversationModel } from '@shared/llm-catalog'
 import { translatorIn } from '../i18n'
 import { conversationLocale } from '../conversation-locale'
@@ -224,9 +223,7 @@ async function runTurn(
   try {
     conversationModel = getSettings().conversationModel
     const providerInfo = LLM_PROVIDER_INFO[conversationModel.provider]
-    if (!providerKey(conversationModel.provider)) {
-      throw new Error(errorText('llmModels.errors.keyMissing', { provider: providerInfo.label, envKey: providerInfo.envKey }))
-    }
+    if (!providerCredential(conversationModel.provider)) throw credentialMissing(conversationModel.provider)
     // A provider without a built-in web search must not have it listed in the tool guide either.
     toolOptions = { webSearch: providerInfo.webSearch }
     history.ensureLoaded()
@@ -668,7 +665,7 @@ async function runTurn(
       synth.push(friendly)
       await synth.drain()
       emitUsage()
-      emit({ type: 'error', turnId, message: friendly })
+      emit({ type: 'error', turnId, message: friendly, ...(isChatGptUsageLimit(err) ? { chatgptUsage: true as const } : {}) })
       emit({ type: 'done', turnId, fullText: visibleReply || friendly })
     }
   }

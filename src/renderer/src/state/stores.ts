@@ -502,6 +502,8 @@ export interface Toast {
   title: string
   body?: string
   kind: 'ok' | 'error' | 'info'
+  /** The one step that resolves what the toast reports, offered as a button. Pressing it also dismisses the toast. */
+  action?: { label: string; run: () => void }
 }
 
 interface ToastState {

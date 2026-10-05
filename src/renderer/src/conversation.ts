@@ -28,6 +28,7 @@ import {
 import { startStoreSync } from '@/state/store-sync'
 import { reportMiniAppAnswer, startMiniAppReports, useViewStore } from '@/state/view'
 import { displayError, errorMessageOf } from '@/display-error'
+import { manageUsageAction } from '@/chatgpt'
 import { platformCapabilities } from '@/platform'
 
 /** The conversation orchestrator, wiring the voice pipeline, brain, panels and feed. It initializes once, when App mounts. */
@@ -797,7 +798,12 @@ export function handleTurnEvent(event: TurnEvent): void {
     }
     case 'error': {
       interjectPlayback.finishTurn(event.turnId)
-      useToastStore.getState().push({ kind: 'error', title: translate('conversation.replyFailed'), body: displayError(event.message) })
+      useToastStore.getState().push({
+        kind: 'error',
+        title: translate('conversation.replyFailed'),
+        body: displayError(event.message),
+        ...(event.chatgptUsage ? { action: manageUsageAction() } : {})
+      })
       feed.append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message: event.message } } })
       break
     }

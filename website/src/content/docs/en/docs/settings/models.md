@@ -9,6 +9,8 @@ Under "Conversation", choose the conversation model and the model for the bridge
 
 Save an API key for each provider on the "API keys" page. When the provider of a model in use has no key, it shows below the models in "Conversation" and on "Overview". Before saving a key, ASIST checks that it can get the list of models from that provider's API. You can't choose a model from a provider that has no key. Keys are stored encrypted, with a key from the keychain on a Mac and with a key tied to your Windows user account (DPAPI) on Windows.
 
+"ChatGPT" works with a sign-in with ChatGPT instead of an API key. You sign in in the "ChatGPT" row of the same "API keys" page, and conversations count towards your ChatGPT plan's usage. See [Using your ChatGPT plan](/en/docs/start/chatgpt/).
+
 Next to the model, you can choose the depth of thinking. The default is the shallowest setting, so that a voice conversation doesn't keep you waiting. With a deeper setting, it can take more than ten seconds before the answer starts.
 
 Web search uses the provider's built-in search, so it isn't available with Cerebras models, which have no built-in search. The conversation history is stored in a form that doesn't depend on the provider, so the conversation carries on even if you switch models partway through.

@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import mitt from 'mitt'
 import type { AppStatus, LiveAudio } from '@shared/ipc'
+import { CHATGPT_USAGE_URL } from '@shared/chatgpt'
 import { createTranslator } from '@shared/i18n'
 import type { RouterNote } from '@/state/stores'
 import { routerNoteText } from '@/ui/router-note'
@@ -1252,6 +1253,23 @@ describe("the assistant's line in the conversation view", () => {
     event(conversation, { type: 'done', turnId: 42, fullText: cannotAnswer })
 
     expect(shown()).toBe(1)
+  })
+})
+
+describe("a reply that failed on the ChatGPT plan's usage", () => {
+  it('offers the plan usage as the action of its toast, and leaves other failures without one', async () => {
+    const openExternal = vi.fn(async () => {})
+    const conversation = await start({ openExternal, turnStart: vi.fn().mockResolvedValueOnce(42).mockResolvedValueOnce(43) })
+    await conversation.sendTypedMessage('明日の天気は?')
+    conversation.handleTurnEvent({ type: 'error', turnId: 42, message: 'The ChatGPT usage limit was reached.', chatgptUsage: true })
+    conversation.handleTurnEvent({ type: 'done', turnId: 42, fullText: '' })
+    await conversation.sendTypedMessage('明後日は?')
+    conversation.handleTurnEvent({ type: 'error', turnId: 43, message: 'The connection failed.' })
+    const [usage, other] = mocks.toasts as Array<{ kind: string; action?: { label: string; run: () => void } }>
+    expect(usage).toMatchObject({ kind: 'error', action: { label: 'chatgpt.plan.manageUsage' } })
+    usage.action!.run()
+    expect(openExternal).toHaveBeenCalledWith(CHATGPT_USAGE_URL)
+    expect(other.action).toBeUndefined()
   })
 })
 

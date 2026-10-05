@@ -87,3 +87,14 @@
 .confirm-destructive:hover {
   filter: brightness(1.08);
 }
+
+/* A notice with one button, such as the one after the first sign-in with ChatGPT. It opens from the
+   first-run setup too, so it stacks above the setup (z 100). */
+.confirm-backdrop.is-notice {
+  z-index: 110;
+}
+.confirm-body {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-holo-muted);
+}

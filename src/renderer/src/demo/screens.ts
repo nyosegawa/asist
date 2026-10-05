@@ -33,7 +33,13 @@ export const SCREENS = {
   'settings/language': { label: '言語と地域', group: '設定のページ' },
   'settings/appearance': { label: '見た目', group: '設定のページ' },
   'settings/api-keys': { label: 'API キー', group: '設定のページ' },
+  'settings/api-keys/chatgpt-signed-in': { label: 'API キー(ChatGPT にログイン中で、会話に使っている)', group: '設定のページ' },
+  'settings/api-keys/chatgpt-returning': { label: 'API キー(前回の ChatGPT のアカウントからログアウトした)', group: '設定のページ' },
+  'settings/api-keys/chatgpt-unreadable': { label: 'API キー(ChatGPT のログインを読めない)', group: '設定のページ' },
+  'settings/conversation/chatgpt': { label: '会話(ChatGPT のプランを使っている)', group: '設定のページ' },
+  'settings/conversation/chatgpt-signed-out': { label: '会話(ChatGPT を選んだが未ログイン)', group: '設定のページ' },
   'settings/usage': { label: 'API の料金', group: '設定のページ' },
+  'settings/usage/chatgpt': { label: 'API の料金(この 2 週間は ChatGPT のプラン)', group: '設定のページ' },
   'settings/about': { label: 'このアプリについて', group: '設定のページ' },
   'settings/memory/preparing': { label: '記憶(意味検索を準備中)', group: '設定のページ' },
   'settings/memory/converting': { label: '記憶(記憶を変換中)', group: '設定のページ' },
@@ -44,13 +50,16 @@ export const SCREENS = {
   'setup/mic-denied': { label: 'セットアップ(マイクが不許可)', group: '起動と確認' },
   'setup/tts-missing': { label: 'セットアップ(読み上げのアプリがない)', group: '起動と確認' },
   'setup/live-key-failed': { label: 'セットアップ(音声モデルのキーの認証に失敗)', group: '起動と確認' },
+  'setup/chatgpt': { label: 'セットアップ(ChatGPT を選んである)', group: '起動と確認' },
+  'setup/chatgpt-returning': { label: 'セットアップ(ChatGPT を選んであり、前回のアカウントがある)', group: '起動と確認' },
   safety: { label: 'リスクの確認(セットアップを終えた人)', group: '起動と確認' },
   boot: { label: '起動中', group: '起動と確認' },
   'boot/error': { label: '起動の失敗', group: '起動と確認' },
   confirm: { label: '承認の確認', group: '起動と確認' },
   'confirm/calendar': { label: '承認の確認(ほかのタイムゾーンの予定の変更)', group: '起動と確認' },
   'confirm/calendar-all-day': { label: '承認の確認(数日にわたる終日の予定)', group: '起動と確認' },
-  toasts: { label: '通知', group: '起動と確認' }
+  toasts: { label: '通知', group: '起動と確認' },
+  'toasts/chatgpt-usage': { label: '通知(ChatGPT の使用量の上限)', group: '起動と確認' }
 } as const satisfies Record<string, { label: string; group: ScreenGroup }>
 
 export type ScreenName = keyof typeof SCREENS

@@ -63,11 +63,11 @@ interface CallDraft {
 
 class CerebrasStream extends AdapterStream {
   constructor(
-    client: OpenAI,
+    client: Promise<OpenAI>,
     private readonly request: ConversationRequest
   ) {
     super()
-    this.start(() => this.run(client))
+    this.start(() => client.then((ready) => this.run(ready)))
   }
 
   protected nativeSnapshot(): ConversationMessage['native'] {
@@ -152,11 +152,11 @@ function roundUsage(usage: CompletionUsage): RoundUsage {
 }
 
 export const cerebrasAdapter: ProviderAdapter = {
-  stream: (request, key) => new CerebrasStream(clientFor(key), request),
+  stream: (request, credential) => new CerebrasStream(credential.token().then(clientFor), request),
 
-  async completeJson(request: JsonRequest, key: string) {
+  async completeJson(request: JsonRequest, credential) {
     const effort = effortFor(request.model)
-    const response = await clientFor(key).chat.completions.create(
+    const response = await clientFor(await credential.token()).chat.completions.create(
       {
         model: request.model.id,
         messages: [
@@ -174,11 +174,11 @@ export const cerebrasAdapter: ProviderAdapter = {
     return { usage: roundUsage(response.usage), value: () => JSON.parse(text) }
   },
 
-  async retrieveModel(id, key, signal) {
-    await newClient(key).models.retrieve(id, { signal })
+  async retrieveModel(id, credential, signal) {
+    await newClient(await credential.token()).models.retrieve(id, { signal })
   },
 
-  async listModels(key, signal) {
-    await newClient(key).models.list({ signal })
+  async listModels(credential, signal) {
+    await newClient(await credential.token()).models.list({ signal })
   }
 }

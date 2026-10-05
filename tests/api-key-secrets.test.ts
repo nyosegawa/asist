@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorText } from '@shared/i18n/error-text'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { API_KEY_INFO, API_KEY_PROVIDERS } from '@shared/llm-catalog'
 
 /**
  * API keys saved on the settings screen: only the encrypted value reaches the file, the key never enters
@@ -41,10 +41,10 @@ const models = vi.hoisted(() => ({
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => models.settings }))
 vi.mock('../src/main/services/llm/call', () => {
   const adapter = {
-    retrieveModel: async (id: string, key: string) => { models.retrieved.push({ id, key }) },
+    retrieveModel: async (id: string, credential: { token: () => Promise<string> }) => { models.retrieved.push({ id, key: await credential.token() }) },
     listModels: async () => {}
   }
-  return { ADAPTERS: { anthropic: adapter, openai: adapter, google: adapter, cerebras: adapter }, completeJson: vi.fn(), completeText: vi.fn() }
+  return { ADAPTERS: { anthropic: adapter, openai: adapter, chatgpt: adapter, google: adapter, cerebras: adapter }, completeJson: vi.fn(), completeText: vi.fn() }
 })
 
 const KEY = 'sk-ant-api03-saved-in-settings'
@@ -58,7 +58,7 @@ beforeEach(() => {
   models.settings.conversationModel = { provider: 'anthropic', id: 'claude-main' }
   models.settings.bridgeModel = { provider: 'anthropic', id: 'claude-fast' }
   models.retrieved.length = 0
-  for (const provider of LLM_PROVIDERS) vi.stubEnv(LLM_PROVIDER_INFO[provider].envKey, undefined)
+  for (const provider of API_KEY_PROVIDERS) vi.stubEnv(API_KEY_INFO[provider].envKey, undefined)
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -140,7 +140,7 @@ describe('a saved key that this build cannot decrypt', () => {
     const llm = await import('../src/main/services/llm/configuration')
     await llm.validateProviderKey('openai', 'sk-openai-new')
     llm.saveProviderKey('openai', 'sk-openai-new')
-    expect(llm.llmKeyStates()).toEqual({ anthropic: 'unreadable', openai: 'verified', google: 'missing', cerebras: 'missing' })
+    expect(llm.llmKeyStates()).toEqual({ anthropic: 'unreadable', openai: 'verified', chatgpt: 'missing', google: 'missing', cerebras: 'missing' })
     await expect(llm.configuredApiKeyAvailable()).resolves.toBe(false)
     expect(() => llm.providerKey('anthropic')).toThrow(errorText('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: 'Anthropic' }))
   })

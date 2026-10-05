@@ -1,13 +1,14 @@
 import { ttsEngineLabel } from '@/ui/settings/context'
 import { translate } from '@/i18n'
 import type { ApiKeyState, PreparationProgress, PreparationTarget, RendererApi } from '@shared/ipc'
-import { LLM_PROVIDERS, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
+import { API_KEY_PROVIDERS, LLM_PROVIDER_INFO, defaultModelsFor, type ApiKeyProvider, type LlmProvider } from '@shared/llm-catalog'
 import { errorText } from '@shared/i18n/error-text'
 import { LIVE_ENGINE_INFO } from '@shared/voice-engine'
 import { defaultTtsEngine } from '@shared/conversation-locale'
 import { isLocalTtsEngine, localTtsModel, localTtsSizeGb } from '@shared/tts-models'
 import { platformCapabilities } from '@/platform'
 import { voiceController } from '@/voice/VoiceController'
+import { DEMO_CHATGPT_ACCOUNT, demoChatGptKey, setDemoChatGpt } from './chatgpt-demo'
 
 /**
  * The first-run setup of the demo. It starts from a Mac where nothing is prepared and advances the mock
@@ -18,8 +19,10 @@ import { voiceController } from '@/voice/VoiceController'
  * - 'mic-denied': the microphone permission is refused.
  * - 'tts-missing': neither VOICEVOX nor AivisSpeech is installed, so verification fails.
  * - 'live-key-failed': the Google key Gemini Live runs on is refused as unauthenticated.
+ * - 'chatgpt': ChatGPT is the provider chosen when the model step opens, and no account signed in before.
+ * - 'chatgpt-returning': the same, with the account that signed in before and signed out since.
  */
-export type SetupDemoVariant = 'fresh' | 'key-failed' | 'mic-denied' | 'tts-missing' | 'live-key-failed'
+export type SetupDemoVariant = 'fresh' | 'key-failed' | 'mic-denied' | 'tts-missing' | 'live-key-failed' | 'chatgpt' | 'chatgpt-returning'
 
 const LIVE_PROVIDERS: LlmProvider[] = Object.values(LIVE_ENGINE_INFO).map((info) => info.provider)
 
@@ -27,9 +30,12 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): void {
   const state = { asrReady: false, tts: false, completed: false }
-  // The key state per provider. In 'key-failed' the Anthropic key is stored but has not been verified.
-  const keys = Object.fromEntries(LLM_PROVIDERS.map((provider) => [provider, 'missing'])) as Record<LlmProvider, ApiKeyState>
-  if (variant === 'key-failed') keys.anthropic = 'saved'
+  // The key state per provider. In 'key-failed' the Anthropic key is stored but has not been verified. The
+  // sign-in with ChatGPT is the demo's own, which signing in from the model step changes.
+  const apiKeys = Object.fromEntries(API_KEY_PROVIDERS.map((provider) => [provider, 'missing'])) as Record<ApiKeyProvider, ApiKeyState>
+  if (variant === 'key-failed') apiKeys.anthropic = 'saved'
+  const keys = (): Record<LlmProvider, ApiKeyState> => ({ ...apiKeys, chatgpt: demoChatGptKey() })
+  if (variant === 'chatgpt-returning') setDemoChatGpt({ signIn: 'signedOut', account: DEMO_CHATGPT_ACCOUNT })
   const progressListeners = new Set<(progress: PreparationProgress) => void>()
   const base = {
     getSettings: api.getSettings,
@@ -40,6 +46,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
   }
   // The risks have not been acknowledged yet, as on a new Mac.
   void base.saveSettings({ safetyNoticeVersion: 0 })
+  if (variant === 'chatgpt' || variant === 'chatgpt-returning') void base.saveSettings(defaultModelsFor('chatgpt'))
   // The speech engine starts on the one the app starts the language on: Irodori-TTS for Japanese on the demo
   // Mac, whose model is not prepared yet. It is chosen at the first read of the settings, which comes after the
   // capabilities are loaded and before the wizard can change the language.
@@ -63,8 +70,8 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
   api.getStatus = async () => ({
     ...(await base.getStatus()),
     // As in the app, the LLM counts as usable only once the key of the current conversation model's provider is verified.
-    llm: keys[(await base.getSettings()).conversationModel.provider] === 'verified',
-    llmKeys: keys,
+    llm: keys()[(await base.getSettings()).conversationModel.provider] === 'verified',
+    llmKeys: keys(),
     asr: state.asrReady ? 'ready' : 'down',
     tts: state.tts ? 'ready' : 'down',
     ttsEngine: (await base.getSettings()).ttsEngine,
@@ -83,7 +90,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     if (variant === 'live-key-failed' && LIVE_PROVIDERS.includes(provider)) {
       throw new Error(errorText('llmModels.errors.authentication', { provider: LLM_PROVIDER_INFO[provider].label }))
     }
-    keys[provider] = 'verified'
+    apiKeys[provider] = 'verified'
     return api.getStatus()
   }
   api.onSetupProgress = (callback) => {
@@ -121,7 +128,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
     if (patch.ttsEngine) state.tts = patch.ttsEngine === 'system'
     // As in the app, changing the model checks that the provider's key can fetch it.
     if (patch.conversationModel) {
-      if (keys[patch.conversationModel.provider] !== 'verified') throw new Error('このキーではモデルを取得できませんでした。通信の状態とキーを確かめてください。')
+      if (keys()[patch.conversationModel.provider] !== 'verified') throw new Error('このキーではモデルを取得できませんでした。通信の状態とキーを確かめてください。')
     }
     return unfinished(await base.saveSettings(patch))
   }

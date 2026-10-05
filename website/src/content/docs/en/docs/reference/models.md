@@ -36,6 +36,7 @@ For reading aloud, you can also use the system's voice ("macOS voice" or "Window
 |---|---|---|
 | Conversation, bridge phrase, history summary | Claude Sonnet 5, Claude Haiku 4.5, Claude Opus 5 | Anthropic |
 | Same as above | GPT-5.6 Luna, GPT-5.6 Terra, GPT-5.6 Sol | OpenAI |
+| Same as above | GPT-5.6 Luna, GPT-5.6 Terra, GPT-5.6 Sol (on a ChatGPT plan) | ChatGPT (OpenAI) |
 | Same as above | Gemini 3.8 Flash, Gemini 3.5 Flash Lite | Google |
 | Same as above | Qwen 3.8 27B, GPT OSS 120B | Cerebras |
 | Voice engine | `gemini-3.8-live`, `gemini-3.8-live-extended-thinking` | Google |

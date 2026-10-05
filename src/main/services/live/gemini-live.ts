@@ -7,7 +7,7 @@ import { fillPrompt, promptText, type ConversationLocale, type PromptText } from
 import { marker } from '@shared/conversation-markers'
 import { errorText } from '@shared/i18n/error-text'
 import { conversationLocale } from '../conversation-locale'
-import { LLM_PROVIDER_INFO } from '@shared/llm-catalog'
+import { API_KEY_INFO, LLM_PROVIDER_INFO } from '@shared/llm-catalog'
 import type { ToolExecution, ToolExecutionTask } from '@shared/tool-registry'
 import { buildMemoryInjection, type InjectableMemory } from '@shared/memory-injection'
 import { record, turnScheduler, type ConversationOwner } from '../brain/session'
@@ -260,8 +260,7 @@ export class GeminiLiveEngine implements ConversationOwner {
   private async openSession(signal: AbortSignal): Promise<void> {
     const key = this.deps.apiKey()
     if (!key) {
-      const info = LLM_PROVIDER_INFO.google
-      throw new Error(errorText('llmModels.errors.keyMissing', { provider: info.label, envKey: info.envKey }))
+      throw new Error(errorText('llmModels.errors.keyMissing', { provider: LLM_PROVIDER_INFO.google.label, envKey: API_KEY_INFO.google.envKey }))
     }
     const settings = this.deps.settings().geminiLive
     // Built before the timer exists, since building them reads the memory, the history and the jobs, which can fail.

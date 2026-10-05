@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../src/main/services/usage-ledger', () => ({ recordUsage: mocks.recordUsage }))
-vi.mock('../src/main/services/llm/keys', () => ({ providerKey: () => 'key' }))
+vi.mock('../src/main/services/llm/keys', async () => ({ requireCredential: (await import('../src/main/services/llm/credential')).apiKeyCredential.bind(null, 'key') }))
 const adapter = {
   stream: () => ({ final: mocks.final }),
   completeJson: mocks.completeJson,
@@ -21,6 +21,7 @@ const adapter = {
 vi.mock('../src/main/services/llm/anthropic', () => ({ anthropicAdapter: adapter }))
 vi.mock('../src/main/services/llm/openai', () => ({ openaiAdapter: adapter }))
 vi.mock('../src/main/services/llm/cerebras', () => ({ cerebrasAdapter: adapter }))
+vi.mock('../src/main/services/llm/chatgpt', () => ({ chatgptAdapter: adapter }))
 // Google's adapter runs for real, on a fake SDK, to show what a response the adapter cannot read leaves behind.
 vi.mock('@google/genai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@google/genai')>()),

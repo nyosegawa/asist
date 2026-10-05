@@ -1,6 +1,7 @@
 import { keyReadable, type AizuchiClassifierStatus, type AppSettings, type AppStatus, type EmbeddingStatus, type VapStatus } from '@shared/ipc'
-import type { LlmProvider } from '@shared/llm-catalog'
-import { LIVE_ENGINE_INFO, isLiveEngine } from '@shared/voice-engine'
+import { API_KEY_INFO, LLM_PROVIDER_INFO, type LlmProvider } from '@shared/llm-catalog'
+import { LIVE_ENGINE_INFO, isLiveEngine, type LiveEngine } from '@shared/voice-engine'
+import type { Translate } from '@shared/i18n'
 import { conversationFeatures } from '@shared/conversation-locale'
 import { modelsInUse } from '@shared/settings'
 import type { PlatformCapabilities } from '@shared/platform'
@@ -28,6 +29,43 @@ export type Pending =
 export function keyProviders(settings: AppSettings): LlmProvider[] {
   const live = isLiveEngine(settings.voiceEngine) ? [LIVE_ENGINE_INFO[settings.voiceEngine].provider] : []
   return [...new Set([...live, ...modelsInUse(settings).map(({ model }) => model.provider)])]
+}
+
+/** How the screens word a provider's key or sign-in that is missing or cannot be read. */
+export interface CredentialText {
+  /** What is missing: the provider's API key, or the sign-in with ChatGPT. */
+  label: string
+  /** Why the conversation needs it, worded for the live engine when that engine runs on the provider. */
+  hint: string
+  /** The state in a word or two, for a chip. */
+  state: string
+  /** The button that leads to the API keys page, where the key is entered or the sign-in made. */
+  action: string
+}
+
+export function credentialText(t: Translate, provider: LlmProvider, state: 'missing' | 'unreadable', live: LiveEngine | null): CredentialText {
+  const stateText = state === 'unreadable' ? t('settingsIntegrations.apiKeys.unreadable') : null
+  if (provider === 'chatgpt') {
+    return {
+      label: t('chatgpt.signIn.label'),
+      hint: t(state === 'unreadable' ? 'chatgpt.signIn.unreadable' : 'chatgpt.signIn.missing'),
+      state: stateText ?? t('chatgpt.signIn.signedOut'),
+      action: t('chatgpt.signIn.goSignIn')
+    }
+  }
+  const label = LLM_PROVIDER_INFO[provider].label
+  const envKey = API_KEY_INFO[provider].envKey
+  return {
+    label: t('settingsConversation.models.apiKey', { provider: label }),
+    hint:
+      state === 'unreadable'
+        ? t('settingsIntegrations.apiKeys.errors.keyUnreadable', { provider: label })
+        : live && LIVE_ENGINE_INFO[live].provider === provider
+          ? t('settingsConversation.live.keyMissing', { envKey })
+          : t('settingsConversation.models.keyMissing', { envKey }),
+    state: stateText ?? t('settingsConversation.models.notSet'),
+    action: t('settingsIntegrations.apiKeys.register')
+  }
 }
 
 /** Whether a state main reported shows its item missing, or main failed to report it. Not read yet, it shows nothing. */

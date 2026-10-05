@@ -6,7 +6,8 @@ import { geminiLiveCost } from '@shared/voice-engine'
  * Ninety days of API use ending today, for the costs page. The numbers come from a fixed seed so the
  * screen looks the same on every run: weekdays are busier than weekends, the conversation moved from
  * Claude Sonnet 5 to GPT-5.6 Terra five weeks ago, Gemini Live was tried for about two weeks, and Claude
- * Code jobs run a few times a week.
+ * Code jobs run a few times a week. With `onPlan`, the last two weeks ran on the ChatGPT plan instead of an
+ * OpenAI key, so those calls carry no cost.
  */
 
 function seeded(seed: number): () => number {
@@ -19,7 +20,7 @@ function seeded(seed: number): () => number {
 
 function llm(
   purpose: 'conversation' | 'bridge' | 'summary',
-  provider: 'anthropic' | 'openai',
+  provider: 'anthropic' | 'openai' | 'chatgpt',
   model: string,
   calls: number,
   perCall: { input: number; cacheRead: number; cacheCreation: number; output: number },
@@ -35,7 +36,7 @@ function llm(
   return { kind: 'llm', purpose, provider, model, calls, ...usage, costUsd: llmCost({ provider, id: model }, usage) }
 }
 
-export function demoUsageDays(today = new Date()): UsageDay[] {
+export function demoUsageDays(today = new Date(), onPlan = false): UsageDay[] {
   const random = seeded(20260923)
   let days: UsageDay[] = []
   for (let back = 89; back >= 0; back--) {
@@ -49,19 +50,20 @@ export function demoUsageDays(today = new Date()): UsageDay[] {
       days = addUsage(days, day, item)
     }
     const onTerra = back < 35
+    const gpt = onPlan && back < 14 ? 'chatgpt' : 'openai'
     const conversation = onTerra
-      ? llm('conversation', 'openai', 'gpt-5.6-terra', turns, { input: 900, cacheRead: 14_000, cacheCreation: 600, output: 220 }, Math.round(turns * 0.08))
+      ? llm('conversation', gpt, 'gpt-5.6-terra', turns, { input: 900, cacheRead: 14_000, cacheCreation: 600, output: 220 }, Math.round(turns * 0.08))
       : llm('conversation', 'anthropic', 'claude-sonnet-5', turns, { input: 700, cacheRead: 15_000, cacheCreation: 1_100, output: 240 }, Math.round(turns * 0.08))
     add(conversation)
     add(
       onTerra
-        ? llm('bridge', 'openai', 'gpt-5.6-luna', turns * 3, { input: 380, cacheRead: 0, cacheCreation: 0, output: 30 })
+        ? llm('bridge', gpt, 'gpt-5.6-luna', turns * 3, { input: 380, cacheRead: 0, cacheCreation: 0, output: 30 })
         : llm('bridge', 'anthropic', 'claude-haiku-4-5', turns * 3, { input: 380, cacheRead: 0, cacheCreation: 0, output: 30 })
     )
     if (turns > 25) {
       add(
         onTerra
-          ? llm('summary', 'openai', 'gpt-5.6-terra', 1, { input: 18_000, cacheRead: 0, cacheCreation: 0, output: 2_400 })
+          ? llm('summary', gpt, 'gpt-5.6-terra', 1, { input: 18_000, cacheRead: 0, cacheCreation: 0, output: 2_400 })
           : llm('summary', 'anthropic', 'claude-sonnet-5', 1, { input: 18_000, cacheRead: 0, cacheCreation: 0, output: 2_400 })
       )
     }
