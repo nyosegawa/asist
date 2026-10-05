@@ -223,6 +223,14 @@ function steps({ locale, name }) {
     settle,
     { op: 'shot', value: 'calendar-settings.webp', clip: '.st-page > .st-group' },
 
+    // Signing in with ChatGPT: its row of the API keys before the sign-in, and after it, with the plan in use.
+    view('settings/api-keys'),
+    settle,
+    { op: 'shot', value: 'chatgpt-sign-in.webp', clip: '.st-key[data-provider="chatgpt"]' },
+    view('settings/api-keys/chatgpt-signed-in'),
+    settle,
+    { op: 'shot', value: 'chatgpt-signed-in.webp', clip: '.st-key[data-provider="chatgpt"]' },
+
     // Adding a mail account: a Gmail account with a sample app password, after the connection is checked.
     view('settings/connections'),
     settle,

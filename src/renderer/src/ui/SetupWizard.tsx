@@ -202,12 +202,15 @@ export function SetupWizard(): React.JSX.Element | null {
 
   /**
    * Signs in with ChatGPT through the browser and then moves the models to ChatGPT's default pair, unless
-   * another provider was chosen while the browser was open.
+   * another provider was chosen while the browser was open. A sign-in already saved is used as it is, since
+   * the browser would only return to the same account.
    */
   const signInToChatGpt = async (otherAccount: boolean): Promise<void> => {
     if (apiBusy) return
     setError('')
-    if (!(await chatgpt.signIn(otherAccount)) || chosenProvider.current !== 'chatgpt') return
+    const signedIn = !otherAccount && chatgpt.status?.signIn === 'signedIn'
+    if (!signedIn && !(await chatgpt.signIn(otherAccount))) return
+    if (chosenProvider.current !== 'chatgpt') return
     setApiBusy(true)
     try {
       await applyDefaultModels()

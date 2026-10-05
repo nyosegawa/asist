@@ -506,6 +506,19 @@ describe('first-run setup with ChatGPT', () => {
     expect(button(ja('setup.next')).disabled).toBe(false)
   })
 
+  it('uses a sign-in already saved without opening the browser again', async () => {
+    verifiedKeys.add('chatgpt')
+    api.chatgptStatus.mockResolvedValueOnce({ signIn: 'signedIn', account: 'you@example.com' })
+    await chooseChatGpt()
+    await press(ja('chatgpt.signIn.continue'))
+    expect(api.chatgptSignIn).not.toHaveBeenCalled()
+    expect(api.saveSettings).toHaveBeenCalledWith({
+      conversationModel: { provider: 'chatgpt', id: 'gpt-5.6-terra' },
+      bridgeModel: { provider: 'chatgpt', id: 'gpt-5.6-luna' }
+    })
+    expect(button(ja('setup.next')).disabled).toBe(false)
+  })
+
   it('says once, after the first sign-in on this computer, that the plan is in use', async () => {
     await chooseChatGpt()
     await press(ja('chatgpt.signIn.continue'))
