@@ -23,16 +23,9 @@ const sayings = argv.flatMap((a, i) => (a === '--say' ? [argv[i + 1]] : []))
 
 const demo = await startDemo()
 const url = new URL(path, demo.origin).href
+// On Ctrl-C or SIGTERM, launchChrome ends the process, which kills Chrome and removes its profile; the demo
+// runs in this process and ends with it.
 const chrome = await launchChrome({ port })
-const stop = () => {
-  // Wait for Chrome to exit and its profile to go before leaving; if that takes too long, the handler
-  // launchChrome set on the exit kills Chrome and removes the profile.
-  void chrome.close().then(() => process.exit(0))
-  void demo.close()
-  setTimeout(() => process.exit(0), 2000).unref()
-}
-process.on('SIGINT', stop)
-process.on('SIGTERM', stop)
 try {
   const client = await connect(chrome.port)
   await client.resize(size)

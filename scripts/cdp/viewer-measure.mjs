@@ -40,19 +40,15 @@ const SHOW_TIMEOUT_MS = 120_000
 const SCREEN_TIMEOUT_MS = 30_000
 
 /**
- * Flags that keep this Chrome from starting renderers of its own while a file is measured, for extensions,
- * components and a spare, of 100 to 130 MB each (measured 2026-10-02). One that starts during a measurement could
- * not be told from an iframe of the page's, and without these flags the renderers grew by 200 MB while a card
- * that reads nothing was shown.
+ * Flags and a feature that keep this Chrome from starting renderers of its own while a file is measured, for
+ * extensions, components and a spare, of 100 to 130 MB each (measured 2026-10-02); launchChrome already turns off
+ * the component updates. One that starts during a measurement could not be told from an iframe of the page's,
+ * and without these the renderers grew by 200 MB while a card that reads nothing was shown.
  */
-const QUIET = [
-  '--disable-extensions',
-  '--disable-component-extensions-with-background-pages',
-  '--disable-component-update',
-  '--disable-background-networking',
-  '--disable-default-apps',
-  '--disable-features=SpareRendererForSitePerProcess'
-]
+const QUIET = {
+  args: ['--disable-extensions', '--disable-component-extensions-with-background-pages', '--disable-default-apps'],
+  disabledFeatures: ['SpareRendererForSitePerProcess']
+}
 
 const CARD = '.panel-card[data-panel-type="files"]'
 const FOCUS = '.panel-focus[data-panel-type="files"]'
@@ -346,7 +342,7 @@ async function collectGarbage(browser, client) {
  * view has more than a screen to page through, which a recording or a placard does not.
  */
 export async function measureFile({ origin, path, url, sizeBytes, scrolls = true, shown = contentShown, complete = null }) {
-  const chrome = await launchChrome({ args: QUIET })
+  const chrome = await launchChrome(QUIET)
   const browser = await connectBrowser(chrome.port)
   const client = await connect(chrome.port)
   // A crash of the page or of any frame in it, such as an iframe a viewer works in, fails the measurement, even

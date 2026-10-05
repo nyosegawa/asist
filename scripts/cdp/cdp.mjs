@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { spawn } from 'node:child_process'
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -59,24 +59,105 @@ export function windowSize(value) {
  */
 const REMOVE_PROFILE = { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }
 
+const PROFILE_PREFIX = 'asist-chrome-'
+/** A profile's name carries the pid of the process that started its Chrome. */
+const PROFILE = new RegExp(`^${PROFILE_PREFIX}(\\d+)-[A-Za-z0-9]{6}$`)
+
+/**
+ * Without these, Chrome downloads its optimization guide's models into every new profile: a profile grew to
+ * 61 MB in 90 seconds on about:blank, against 4.1 MB with them (Chrome 154 on macOS, 2026-10-06). Neither
+ * --disable-background-networking with --disable-component-update nor the model download feature alone kept
+ * them out.
+ */
+const NO_DOWNLOADS = ['--disable-background-networking', '--disable-component-update']
+const NO_DOWNLOAD_FEATURES = ['OptimizationHints', 'OptimizationGuideModelDownloading', 'OptimizationHintsFetching', 'OptimizationTargetPrediction']
+
+function alive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error.code === 'EPERM'
+  }
+}
+
+/**
+ * The pids of the Chromes started with the profile. The profile's path ends in letters mkdtemp picked, so a pid
+ * the system gave again to another program never matches.
+ */
+function chromesUsing(profile) {
+  const table =
+    process.platform === 'win32'
+      ? execFileSync(
+          'powershell.exe',
+          ['-NoProfile', '-NonInteractive', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.CommandLine)" }'],
+          { encoding: 'utf8', windowsHide: true }
+        )
+      : execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8' })
+  return table
+    .split('\n')
+    .filter((line) => line.includes(`--user-data-dir=${profile}`))
+    .map((line) => Number(line.trim().split(/\s+/)[0]))
+}
+
+/**
+ * Removes the profiles whose process is gone, with the Chrome that still runs on one. When the process is killed
+ * outright (SIGKILL), as an agent's shell stops a command that runs past its time, no handler of the exit runs,
+ * and its Chrome goes on running without it.
+ */
+function removeAbandonedProfiles() {
+  const parent = os.tmpdir()
+  for (const name of readdirSync(parent)) {
+    const match = PROFILE.exec(name)
+    if (!match || alive(Number(match[1]))) continue
+    const profile = path.join(parent, name)
+    for (const pid of chromesUsing(profile)) {
+      // Another run cleaning the same profile, or Chrome ending by itself, can stop it first.
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error
+      }
+    }
+    rmSync(profile, REMOVE_PROFILE)
+  }
+}
+
+/**
+ * Ends the process on SIGINT and SIGTERM through process.exit, which runs the handlers of the exit that kill
+ * each Chrome and remove its profile. Without a handler, Node ends on these signals without emitting the exit.
+ */
+const exitOnSignal = (signal) => process.exit(128 + os.constants.signals[signal])
+
 /**
  * Starts headless Chrome with a CDP port and a profile of its own in the temporary folder, and returns the
  * port and close(), which stops Chrome and removes the profile once Chrome has exited. Port 0 picks a free one.
- * `args` are flags added to the usual ones.
+ * `args` are flags added to the usual ones, and `disabledFeatures` are features turned off beside the usual ones;
+ * Chrome reads only the last --disable-features, so a caller never passes one in `args`.
  */
-export async function launchChrome({ port = 0, url = 'about:blank', args = [] } = {}) {
-  const profile = await mkdtemp(path.join(os.tmpdir(), 'asist-chrome-'))
-  const child = spawn(chromePath(), [
-    '--headless=new',
-    '--disable-gpu',
-    '--hide-scrollbars',
-    '--no-first-run',
-    `--remote-debugging-port=${port}`,
-    `--user-data-dir=${profile}`,
-    ...args,
-    url
-  ])
+export async function launchChrome({ port = 0, url = 'about:blank', args = [], disabledFeatures = [] } = {}) {
+  removeAbandonedProfiles()
+  const profile = await mkdtemp(path.join(os.tmpdir(), `${PROFILE_PREFIX}${process.pid}-`))
+  const child = spawn(
+    chromePath(),
+    [
+      '--headless=new',
+      '--disable-gpu',
+      '--hide-scrollbars',
+      '--no-first-run',
+      ...NO_DOWNLOADS,
+      `--disable-features=${[...NO_DOWNLOAD_FEATURES, ...disabledFeatures].join(',')}`,
+      `--remote-debugging-port=${port}`,
+      `--user-data-dir=${profile}`,
+      ...args,
+      url
+    ],
+    { windowsHide: true }
+  )
   const exited = new Promise((resolve) => child.once('exit', resolve))
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    if (!process.listeners(signal).includes(exitOnSignal)) process.on(signal, exitOnSignal)
+  }
   // Chrome and its profile are never left behind, however this process ends. A handler of the exit cannot
   // wait for Chrome to end, so it kills Chrome outright and removes the profile at once.
   const leave = () => {
