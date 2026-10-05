@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Emitter } from 'mitt'
+import { createTranslator } from '@shared/i18n'
 import { IpcChannel, type AgentJob, type JobEvent } from '@shared/ipc'
 import { MACOS, WINDOWS } from './helpers/platform'
+
+const t = createTranslator('ja-JP')
 
 type Listener = (event: { preventDefault: () => void }) => void
 
@@ -15,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   liveStop: vi.fn<() => Promise<void>>(),
   register: vi.fn((_accelerator: string, _callback: () => void) => true),
   buildMenu: vi.fn((_template: Array<{ label?: string; click?: () => void }>) => ({})),
-  settings: { globalHotkey: false },
+  settings: { globalHotkey: false, uiLocale: 'ja-JP' },
   windows: false
 }))
 
@@ -55,7 +58,6 @@ vi.mock('../src/main/services/agent', async () => {
   return { events: mocks.agentEvents, shutdown: mocks.shutdown }
 })
 vi.mock('../src/main/services/live', () => ({ stop: mocks.liveStop }))
-vi.mock('../src/main/services/i18n', () => ({ t: (key: string) => key, errorMessage: (error: unknown) => (error as Error).message }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 
 // The quit is approved once for the whole process, so each test takes a fresh copy of the module.
@@ -117,7 +119,7 @@ describe('the OS notification when a job ends while the window is hidden', () =>
     os.setupOsIntegration(hiddenWindow() as never)
     mocks.agentEvents.emit('event', { type: 'update', job: finished('curation', { memoryCuration: { through: '2026-09-25', applied: false } }) })
     mocks.agentEvents.emit('event', { type: 'update', job: finished('report') })
-    expect(mocks.notifications).toEqual([{ title: 'app.notify.jobDone', body: 'report' }])
+    expect(mocks.notifications).toEqual([{ title: t('app.notify.jobDone'), body: 'report' }])
   })
 })
 
@@ -163,7 +165,7 @@ describe('quitting while agents run', () => {
     os.setupOsIntegration(window as never)
     mocks.shutdown.mockRejectedValueOnce(new Error('an agent did not stop'))
     expect(quit()).toBe(false)
-    await vi.waitFor(() => expect(mocks.showErrorBox).toHaveBeenCalledWith('app.startup.agentStopFailed', 'an agent did not stop'))
+    await vi.waitFor(() => expect(mocks.showErrorBox).toHaveBeenCalledWith(t('app.startup.agentStopFailed'), 'an agent did not stop'))
     expect(window.close()).toBe(false)
     expect(window.hide).toHaveBeenCalledOnce()
     expect(mocks.quit).not.toHaveBeenCalled()
@@ -248,7 +250,7 @@ describe('the tray menu', () => {
     const window = hiddenWindow()
     os.setupOsIntegration(window as never)
     const template = mocks.buildMenu.mock.calls.at(-1)![0]
-    template.find((item) => item.label === 'app.tray.toggleMic')!.click!()
+    template.find((item) => item.label === t('app.tray.toggleMic'))!.click!()
     mocks.register.mock.calls[0][1]()
     expect(window.webContents.send.mock.calls.map(([channel]) => channel)).toEqual([IpcChannel.ToggleMic, IpcChannel.HotkeyMic])
   })

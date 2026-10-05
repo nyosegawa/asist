@@ -121,7 +121,9 @@ describe('the approval gate', () => {
     const f = await setup()
     const result = await f.service.change({ operation: 'markRead', ids: [f.ids.question], read: true }, f.signal.signal, 'agent')
     expect(f.confirm).toHaveBeenCalledOnce()
-    expect(f.confirm.mock.calls[0][0]).toContain('見積もりの相談')
+    // The settings name no region, so the date is written in the language alone.
+    const date = new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(NOW - HOUR)
+    expect(f.confirm.mock.calls[0][0]).toBe(t('mail.confirm.markRead', { label: '仕事', subject: '見積もりの相談', name: '田中', date }))
     // The button names the operation, so pressing it holds no surprise.
     expect(f.confirm.mock.calls[0][2]).toBe(t('mail.confirm.action.markRead'))
     expect(result).toMatchObject({ saved: true, operation: 'markRead', id: f.ids.question })

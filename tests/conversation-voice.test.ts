@@ -6,6 +6,8 @@ import { createTranslator } from '@shared/i18n'
 import type { RouterNote } from '@/state/stores'
 import { routerNoteText } from '@/ui/router-note'
 
+const t = createTranslator('ja-JP')
+
 /**
  * The conversation driven by the events of the voice pipeline: the voice controller and the speech
  * player are replaced by emitters, and the stores by plain objects.
@@ -167,7 +169,6 @@ vi.mock('@/voice/aizuchi-bank', () => ({
   pickAizuchi: vi.fn(() => ({ text: 'はい。', category: 'flow', weight: 1, audio: 'eA==' })),
   pickListeningClip: vi.fn(() => ({ text: 'うん', audio: 'eA==' }))
 }))
-vi.mock('@/i18n', () => ({ translate: (key: string) => key, uiLocale: () => 'ja-JP' }))
 vi.mock('@/state/confirm', () => ({
   useConfirmStore: {
     getState: () => ({
@@ -1266,7 +1267,7 @@ describe("a reply that failed on the ChatGPT plan's usage", () => {
     await conversation.sendTypedMessage('明後日は?')
     conversation.handleTurnEvent({ type: 'error', turnId: 43, message: 'The connection failed.' })
     const [usage, other] = mocks.toasts as Array<{ kind: string; action?: { label: string; run: () => void } }>
-    expect(usage).toMatchObject({ kind: 'error', action: { label: 'chatgpt.plan.manageUsage' } })
+    expect(usage).toMatchObject({ kind: 'error', action: { label: t('chatgpt.plan.manageUsage') } })
     usage.action!.run()
     expect(openExternal).toHaveBeenCalledWith(CHATGPT_USAGE_URL)
     expect(other.action).toBeUndefined()
@@ -1518,7 +1519,7 @@ describe('the state of the speech services', () => {
     const { push, handled } = await startPushed()
     push({ sequence: 2, asr: 'ready', tts: 'ready' } as AppStatus)
     expect(handled.mock.calls).toEqual([['ready']])
-    expect(mocks.toasts).toMatchObject([{ body: 'voice.services.recognitionBack' }])
+    expect(mocks.toasts).toMatchObject([{ body: t('voice.services.recognitionBack') }])
   })
 
   it('says nothing to the user when the models load with the microphone and are let go after it', async () => {
@@ -1536,7 +1537,7 @@ describe('the state of the speech services', () => {
     const { push } = await startPushed()
     push({ sequence: 2, asr: 'starting', tts: 'ready' } as AppStatus)
     push({ sequence: 3, asr: 'down', tts: 'ready' } as AppStatus)
-    expect(mocks.toasts.at(-1)).toMatchObject({ body: 'voice.services.recognitionStopped' })
+    expect(mocks.toasts.at(-1)).toMatchObject({ body: t('voice.services.recognitionStopped') })
   })
 
   it('tells them as well when a read of the settings overtook the push and the store keeps the read', async () => {
@@ -1546,7 +1547,7 @@ describe('the state of the speech services', () => {
     mocks.status!.getState().apply({ sequence: 3, asr: 'ready', tts: 'ready' } as AppStatus)
     push({ sequence: 2, asr: 'ready', tts: 'ready' } as AppStatus)
     expect(handled.mock.calls).toEqual([['ready']])
-    expect(mocks.toasts).toMatchObject([{ body: 'voice.services.recognitionBack' }])
+    expect(mocks.toasts).toMatchObject([{ body: t('voice.services.recognitionBack') }])
   })
 })
 

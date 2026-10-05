@@ -14,6 +14,7 @@ import { cleanDocxHtml } from '@/panels/viewers/docx-html'
 import { FileViewer } from '@/panels/viewers'
 import { useToastStore } from '@/state/stores'
 import { LayoutIntersectionObserver } from './helpers/intersection-observer'
+import { ANY_VALUE, withAnyValue } from './helpers/message'
 import { entryRanges } from './helpers/zip'
 
 /**
@@ -561,6 +562,7 @@ describe('Word viewer rendering', () => {
     const pptx = readFileSync(resolve(DEMO_DIR, './demo-files/office/slides.pptx'))
     serve(pptx)
     const frame = await render(docxItem(nextUrl(), pptx.length), 'card')
-    expect(frame.querySelector('.fv-note[data-tone="error"]')?.textContent).toContain(t('files.viewer.docxFailed', { message: '' }))
+    // The reason is the error of docx-preview, whose wording is the library's.
+    expect(frame.querySelector('.fv-note[data-tone="error"]')?.textContent).toMatch(withAnyValue(t('files.viewer.docxFailed', { message: ANY_VALUE })))
   })
 })
