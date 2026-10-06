@@ -19,9 +19,9 @@ import { startRecognizer, startSynthesizer } from './aizuchi-clips/speech.mjs'
  *   node scripts/gen-tts-voices.mjs qwen3tts en ryan      builds one again
  *
  * Every voice reads VOICE_SAMPLE_TEXT of src/shared/voice-samples.ts, Irodori-TTS in Japanese and Qwen3-TTS
- * in each language it reads for a conversation locale, through the bundled speech-worker and the model files
- * the app has prepared (Irodori-TTS and Qwen3-TTS 0.6B), until speech recognition hears it as written. The
- * reading is trimmed and levelled like a reply and written by ffmpeg to
+ * in each language it reads for a conversation locale, through the worker of the bundled speech and the model
+ * files the app has prepared (Irodori-TTS and Qwen3-TTS 0.6B), until speech recognition hears it as written.
+ * The reading is trimmed and levelled like a reply and written by ffmpeg to
  * src/renderer/src/assets/tts-voices/<engine>/<language>/<voice>.mp3.
  */
 

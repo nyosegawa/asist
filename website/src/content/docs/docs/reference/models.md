@@ -16,8 +16,8 @@ sidebar:
 | 音声認識(ブラウザの中、予備) | Whisper small(ONNX、transformers.js) | `onnx-community/whisper-small` | MIT(OpenAI Whisper) |
 | 声の区間の検出 | Silero VAD(ONNX、同梱) | 同梱 | MIT |
 | マイクの雑音の抑制 | DeepFilterNet3(ONNX、同梱) | 同梱 | MIT か Apache-2.0 |
-| 読み上げ(日本語の既定) | Irodori-TTS v4.1-Small-MF(GGUF、F16)と、音声に戻すデコーダの Semantic-DACVAE-Japanese-32dim(GGUF、F32)。3 つの声 | `sakasegawa/irodori-tts-ggml`(Aratako が公開したモデルを変換したもの) | MIT(デコーダの元の facebook/dacvae-watermarked は Apache-2.0) |
-| 読み上げ | Qwen3-TTS 12Hz CustomVoice の 0.6B と 1.7B(GGUF。本体は Q8_0、音声のデコーダは F16 で、2 つのサイズで共通)。9 つの声 | `sakasegawa/qwen3-tts-ggml`(Qwen が公開したモデルを変換したもの) | Apache-2.0 |
+| 読み上げ(日本語の既定) | Irodori-TTS v4.1-Small-MF(GGUF、F16)。音声に戻すデコーダの Semantic-DACVAE-Japanese-32dim も同じファイルに入っています。3 つの声 | `sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF`(Aratako が公開したモデルを変換したもの) | MIT(デコーダの元の facebook/dacvae-watermarked は Apache-2.0) |
+| 読み上げ | Qwen3-TTS 12Hz CustomVoice の 0.6B と 1.7B(GGUF、Q8_0)。サイズごとに 1 つのファイルで、音声のデコーダも入っています。9 つの声 | `sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF` と `sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF`(Qwen が公開したモデルを変換したもの) | Apache-2.0 |
 | 話し終わりと相槌の間合い(MaAI、日本語) | 京都大学 MaAI team の `vap_jp_kyoto`、`bc_det_jp`、`vap_bc_2type_jp`、`vap_nod_jp`。エンコーダは kyutai の Mimi、CPC の事前学習の重みは facebookresearch/CPC_audio | Hugging Face の `maai-kyoto`、`dl.fbaipublicfiles.com` | MIT(Mimi は CC BY 4.0) |
 | 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8) | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT |
 | 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(`intfloat/multilingual-e5-small` を変換したもの) | MIT |

@@ -5,7 +5,8 @@ import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TtsEngine } from '@shared/ipc'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
-import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_CODEC, QWEN_TTS_MODELS, localTtsModel, qwenTtsLanguage } from '@shared/tts-models'
+import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS, localTtsModel, qwenTtsLanguage } from '@shared/tts-models'
+import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -35,7 +36,16 @@ type Child = ReturnType<typeof fakeChild>
 let children: Child[] = []
 let local: typeof import('../src/main/services/local-tts')
 
-const say = (child: Child, message: Record<string, unknown>): void => { child.stdout.write(`ASIST_JSON:${JSON.stringify(message)}\n`) }
+const say = (child: Child, message: Record<string, unknown>): void => { child.stdout.write(`${JSON.stringify(message)}\n`) }
+/** The `ready` of a 0.7 worker of a synthesis model on the GPU the capabilities chose, with the model information in part. */
+const ready = (model: Record<string, unknown> = {}): Record<string, unknown> => ({
+  type: 'ready',
+  protocol: WORKER_PROTOCOL,
+  version: `${SPEECH_CPP_SERIES}.0`,
+  model: { name: 'Qwen3-TTS-12Hz-0.6B-CustomVoice', task: 'synthesis', sample_rate: RATE, incremental: true, device: 'MTL0', threads: 0, ...model }
+})
+/** How the worker answers a line it cannot take, as speech.cpp words it. */
+const workerError = (message: string, option: string | null = null): Record<string, unknown> => ({ code: 'invalid_argument', option, message })
 const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 5))
 /** A piece of loud tone, which the shaper passes on at once. */
 function voiced(seconds = 0.48): string {
@@ -55,7 +65,7 @@ beforeEach(async () => {
     const child = fakeChild()
     children.push(child)
     // The worker reports ready as soon as something listens, as a loaded model would.
-    setTimeout(() => say(child, { type: 'ready', sampleRate: RATE, voices: ['ono_anna'], languages: ['ja'] }), 0)
+    setTimeout(() => say(child, ready()), 0)
     return child
   })
   local = await import('../src/main/services/local-tts')
@@ -82,7 +92,8 @@ describe('Qwen3-TTS service', () => {
     await settle()
     const child = children[0]
     const request = child.input.find((message) => message.text === REQUEST.text)!
-    expect(request).toMatchObject({ voice: 'ono_anna', language: 'ja' })
+    // Nothing else rides along: the worker refuses a member a request does not have, and a speed would change the voice.
+    expect(request).toEqual({ type: 'synthesize', id: expect.any(String), text: REQUEST.text, voice: 'ono_anna', language: 'ja' })
     say(child, { type: 'chunk', id: request.id, seq: 0, pcm: voiced() })
     // The first piece is delivered before the sentence is finished.
     expect((await first).value!.length).toBeGreaterThan(0)
@@ -143,10 +154,10 @@ describe('Qwen3-TTS service', () => {
     await settle()
     const child = children[0]
     const [a, b] = child.input.filter((message) => message.text).map((message) => message.id)
-    say(child, { type: 'error', id: a, error: 'unknown voice' })
+    say(child, { type: 'error', id: a, error: { code: 'out_of_range', option: 'voice', message: 'unknown voice' } })
     say(child, { type: 'chunk', id: b, seq: 0, pcm: voiced() })
     say(child, { type: 'end', id: b, samples: 0 })
-    await expect(failing).rejects.toThrow('unknown voice')
+    await expect(failing).rejects.toThrow('out_of_range (voice): unknown voice')
     expect(await healthy).toBeGreaterThan(0)
   })
 
@@ -203,27 +214,27 @@ describe('Qwen3-TTS service', () => {
   })
 
   it('does not start a worker while a file of the model is missing', async () => {
-    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith('qwen3-tts-codec-12hz-f16.gguf'))
+    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(QWEN_TTS_MODELS['0.6b'].model.file))
     await expect(collect(local.stream('qwen3tts', REQUEST))).rejects.toThrow('not installed')
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
-  it('runs the worker on the talker of the size the setting names, the shared codec and the GPU the capabilities chose', async () => {
+  it('runs the worker on the model file of the size the setting names and the GPU the capabilities chose', async () => {
     await expect(local.ensureWorker('qwen3tts')).resolves.toBe(true)
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
-    expect(path.basename(command)).toMatch(/^speech-worker(\.exe)?$/)
+    expect(path.basename(command)).toMatch(/^speech(\.exe)?$/)
     expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual([
-      QWEN_TTS_MODELS['0.6b'].talker.file, QWEN_TTS_CODEC.file, '--device', 'MTL0'
+      'worker', QWEN_TTS_MODELS['0.6b'].model.file, '--device', 'MTL0'
     ])
   })
 
-  it('starts the worker again on the other talker when the size changes', async () => {
+  it('starts the worker again on the model of the other size when the size changes', async () => {
     await expect(local.ensureWorker('qwen3tts')).resolves.toBe(true)
     mocks.settings.qwenTtsSize = '1.7b'
     expect(local.available('qwen3tts')).toBe(false)
     await expect(local.ensureWorker('qwen3tts')).resolves.toBe(true)
     expect(children[0].kill).toHaveBeenCalled()
-    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][0])).toBe(QWEN_TTS_MODELS['1.7b'].talker.file)
+    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][1])).toBe(QWEN_TTS_MODELS['1.7b'].model.file)
   })
 })
 
@@ -273,7 +284,9 @@ describe('a sentence the worker fails after its first piece', () => {
   // The conversation shows this error on its error line, in the language of the interface.
   it.each([
     ['the worker exits', (child: Child) => { child.exitCode = 1; child.emit('exit', 1) }],
-    ['the worker reports an error for the sentence', (child: Child, id: string) => say(child, { type: 'error', id, error: 'decoder failed' })]
+    ['the worker reports an error for the sentence', (child: Child, id: string) => say(child, { type: 'error', id, error: { code: 'internal', option: null, message: 'decoder failed' } })],
+    ['the worker reports an error without its object', (child: Child, id: string) => say(child, { type: 'error', id })],
+    ['the worker writes a line that is not a message', (child: Child) => { child.stdout.write('ggml_metal_init: loaded kernel\n') }]
   ])('ends it with an error the screen words in its own language when %s', async (_case, fail) => {
     const error = await failedAfterFirstPiece(fail)
     expect(readErrorText(error.message, 'ja-JP')).not.toBeNull()
@@ -298,24 +311,131 @@ describe('a sentence the worker fails after its first piece', () => {
     }
   })
 
-  it('ends it with an error of the app\'s own when the worker reports an error without saying why', async () => {
-    const error = await failedAfterFirstPiece((child, id) => say(child, { type: 'error', id }))
-    expect(error.message).toBe(errorText('voice.speech.engineFailedWithoutReason', { engine }))
-  })
-
   it('ends it as stopped, which is no failure, when the worker is stopped for another engine', async () => {
     const error = await failedAfterFirstPiece(() => local.stop())
     expect(error.name).toBe('AbortError')
   })
 })
 
+describe('the start of a worker', () => {
+  /** Starts the engine's worker with the given first line and resolves to whether it became ready. */
+  async function startWith(first: Record<string, unknown> | string, engine: 'qwen3tts' | 'irodori' = 'qwen3tts'): Promise<boolean> {
+    mocks.spawn.mockImplementation(() => {
+      const child = fakeChild()
+      children.push(child)
+      setTimeout(() => (typeof first === 'string' ? child.stdout.write(`${first}\n`) : say(child, first)), 0)
+      return child
+    })
+    return local.ensureWorker(engine)
+  }
+
+  it('takes any release of the series the client is written for', async () => {
+    await expect(startWith({ ...ready(), version: `${SPEECH_CPP_SERIES}.9` })).resolves.toBe(true)
+  })
+
+  it.each([
+    ['another protocol', { ...ready(), protocol: 1 }],
+    ['a release of an earlier series', { ...ready(), version: '0.6.2' }],
+    ['a model for another task', ready({ task: 'recognition', sample_rate: 16_000 })],
+    ['a model on another device than the one asked for', ready({ device: 'CPU' })],
+    ['no sample rate', ready({ sample_rate: undefined })],
+    ['fatal instead of ready', { type: 'fatal', error: { code: 'model_file', option: null, message: 'no speech.layout' } }],
+    ['a line that is not JSON', 'ASIST_JSON:{"type":"ready"}']
+  ])('starts nothing to read with when the worker reports %s', async (_case, first) => {
+    await expect(startWith(first)).resolves.toBe(false)
+    expect(children[0].kill).toHaveBeenCalled()
+    expect(local.available('qwen3tts')).toBe(false)
+  })
+
+  it('reads the rate of the audio from the model information', async () => {
+    await startWith(ready({ name: 'Irodori-TTS-848M-MF-v4.1', sample_rate: 48_000, incremental: false }), 'irodori')
+    const wav = local.synthesizeWav('irodori', { text: 'うん。', voice: 'calm-young-woman', language: 'ja' })
+    await settle()
+    const id = children[0].input.find((message) => message.text)!.id
+    say(children[0], { type: 'chunk', id, seq: 0, pcm: voiced() })
+    say(children[0], { type: 'end', id, seed: 7, samples: 0, stop: 'complete' })
+    expect((await wav).readUInt32LE(24)).toBe(48_000)
+  })
+})
+
+describe('the answers of the worker', () => {
+  /** Starts a sentence and resolves to its worker, its request id and the outcome of reading it to the end. */
+  async function reading(): Promise<{ child: Child; id: string; outcome: Promise<number | Error> }> {
+    const outcome = collect(local.stream('qwen3tts', REQUEST)).catch((error: Error) => error)
+    await settle()
+    const child = children[0]
+    return { child, id: child.input.find((message) => message.text)!.id as string, outcome }
+  }
+
+  it('keeps a sentence the worker reports progress on, however long it passes no audio', async () => {
+    vi.useFakeTimers()
+    try {
+      const outcome = collect(local.stream('qwen3tts', REQUEST)).catch((error: Error) => error)
+      await vi.advanceTimersByTimeAsync(10)
+      const child = children[0]
+      const id = child.input.find((message) => message.text)!.id
+      for (let second = 1; second <= 90; second++) {
+        say(child, { type: 'progress', id, done: second / 100 })
+        await vi.advanceTimersByTimeAsync(1_000)
+      }
+      say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+      say(child, { type: 'end', id, seed: 7, samples: 0, stop: 'complete' })
+      expect(await outcome).toBeGreaterThan(0)
+      expect(child.kill).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the worker on an error that names no request, which answers a line ASIST got wrong', async () => {
+    const { child, outcome } = await reading()
+    say(child, { type: 'error', error: workerError('a member the type does not have', 'speed') })
+    expect(readErrorText(((await outcome) as Error).message, 'ja-JP')).not.toBeNull()
+    expect(child.kill).toHaveBeenCalled()
+  })
+
+  it('drops the audio of a sentence it cancelled until the worker answers the cancel, and then takes nothing more for it', async () => {
+    const stream = local.stream('qwen3tts', REQUEST)
+    const first = stream.next()
+    await settle()
+    const child = children[0]
+    const id = child.input.find((message) => message.text)!.id
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    await first
+    await stream.return(undefined)
+    // The worker was making the next chunk when the cancel arrived.
+    say(child, { type: 'chunk', id, seq: 1, pcm: voiced() })
+    say(child, { type: 'cancelled', id })
+    await settle()
+    expect(local.available('qwen3tts')).toBe(true)
+    say(child, { type: 'chunk', id, seq: 2, pcm: voiced() })
+    await settle()
+    expect(child.kill).toHaveBeenCalled()
+  })
+
+  it('stops the worker when it cancels a sentence ASIST did not cancel', async () => {
+    const { child, id, outcome } = await reading()
+    say(child, { type: 'cancelled', id })
+    expect(readErrorText(((await outcome) as Error).message, 'ja-JP')).not.toBeNull()
+    expect(child.kill).toHaveBeenCalled()
+  })
+
+  it('passes over a message of a type the protocol may add', async () => {
+    const { child, id, outcome } = await reading()
+    say(child, { type: 'partial', id, text: '' })
+    say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+    say(child, { type: 'end', id, seed: 7, samples: 0, stop: 'complete' })
+    expect(await outcome).toBeGreaterThan(0)
+  })
+})
+
 describe('Irodori-TTS service', () => {
-  it('runs the worker on the model, its codec, every voice the app ships and the GPU the capabilities chose', async () => {
+  it('runs the worker on the model file, every voice the app ships and the GPU the capabilities chose', async () => {
     await expect(local.ensureWorker('irodori')).resolves.toBe(true)
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
-    expect(path.basename(command)).toMatch(/^speech-worker(\.exe)?$/)
-    expect(args.slice(0, 2).map((arg) => path.basename(arg))).toEqual([IRODORI_TTS_MODEL.model.file, IRODORI_TTS_MODEL.codec.file])
-    const voices = args.flatMap((arg, index) => (args[index - 1] === '--voice' ? [arg] : []))
+    expect(path.basename(command)).toMatch(/^speech(\.exe)?$/)
+    expect([args[0], path.basename(args[1])]).toEqual(['worker', IRODORI_TTS_MODEL.model.file])
+    const voices = args.flatMap((arg, index) => (args[index - 1] === '--add-voice' ? [arg] : []))
     expect(voices.map((voice) => voice.split('=')[0])).toEqual([...IRODORI_TTS_VOICE_IDS])
     for (const voice of voices) {
       const [name, file] = voice.split('=')

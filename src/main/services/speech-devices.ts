@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { parseSpeechDevices, type SpeechDevice } from '@shared/speech-devices'
 import { childEnv } from './child-env'
-import { speechWorkerPath } from './speech-binaries'
+import { speechPath } from './speech-binaries'
 
 /**
  * Listing the devices starts every GPU driver ggml was built for: under a second on an RTX 2080 with
@@ -11,13 +11,13 @@ import { speechWorkerPath } from './speech-binaries'
 const DEVICE_LIST_TIMEOUT_MS = 30_000
 
 /**
- * The devices the local speech binaries can run on, from `speech-worker --devices`, or null when the
- * worker could not list them. Asked on Windows only.
+ * The devices the local speech binaries can run on, from `speech devices --json`, or null when speech
+ * could not list them. Asked on Windows only.
  */
 export function listSpeechDevices(): SpeechDevice[] | null {
   let output: string
   try {
-    output = execFileSync(speechWorkerPath(), ['--devices'], {
+    output = execFileSync(speechPath(), ['devices', '--json'], {
       encoding: 'utf8',
       env: childEnv(),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -25,10 +25,10 @@ export function listSpeechDevices(): SpeechDevice[] | null {
       windowsHide: true
     })
   } catch (error) {
-    console.error('speech-worker could not list the devices:', error)
+    console.error('speech could not list the devices:', error)
     return null
   }
   const devices = parseSpeechDevices(output)
-  if (devices === null) console.error('speech-worker printed no device list that could be read:', output)
+  if (devices === null) console.error('speech printed no device list that could be read:', output)
   return devices
 }

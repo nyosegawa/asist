@@ -208,8 +208,8 @@ jobs:
             resources/git
             resources/uv
             resources/llama.cpp
-            resources/speech-worker
-          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/resources/git-*.mjs', 'scripts/resources/uv.mjs', 'scripts/resources/llama-cpp.mjs', 'scripts/resources/speech-worker.mjs') }}
+            resources/speech
+          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/resources/git-*.mjs', 'scripts/resources/uv.mjs', 'scripts/resources/llama-cpp.mjs', 'scripts/resources/speech.mjs') }}
       - uses: ./.github/actions/setup-app
       - run: npm run dist:mac:unsigned
         # electron.vite.config.ts embeds Google's OAuth client in the main process. A pull request from a fork
@@ -223,7 +223,7 @@ jobs:
           "$resources/git/bin/git" --version
           "$resources/uv/uv" --version
           "$resources/llama.cpp/llama-server" --version
-          "$resources/speech-worker/speech-worker" --devices
+          "$resources/speech/speech" devices
 
   # The tests of test on Windows. The types and the dictionary do not depend on the OS, and test checks them. The
   # tests are shared out between two runners: Windows runners did not wait for one on 2026-10-02 and 03, while the
@@ -281,8 +281,8 @@ jobs:
             resources/git
             resources/uv
             resources/llama.cpp
-            resources/speech-worker
-          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/resources/git-*.mjs', 'scripts/resources/uv.mjs', 'scripts/resources/llama-cpp.mjs', 'scripts/resources/speech-worker.mjs') }}
+            resources/speech
+          key: bundled-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/resources/git-*.mjs', 'scripts/resources/uv.mjs', 'scripts/resources/llama-cpp.mjs', 'scripts/resources/speech.mjs') }}
       - uses: ./.github/actions/setup-app
       - run: npm run dist:win:dir
         # electron.vite.config.ts embeds Google's OAuth client in the main process. A pull request from a fork
@@ -297,7 +297,7 @@ jobs:
           "$resources/git/mingw64/bin/git.exe" --version
           "$resources/uv/uv.exe" --version
           "$resources/llama.cpp/llama-server.exe" --version
-          "$resources/speech-worker/speech-worker.exe" --devices
+          "$resources/speech/speech.exe" devices
           "$resources/asist-agent-launcher.exe" --version
           "$resources/asist-mic.exe" --version
       # A changed app.asar stops ASIST.exe within a second with "Integrity check failed for asar archive"
