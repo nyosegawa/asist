@@ -17,7 +17,7 @@ import { LIVE_ENGINE_INFO, isLiveEngine, type LiveEngine } from '@shared/voice-e
 import { displayError } from '@/display-error'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { platformCapabilities } from '@/platform'
-import { asrChoiceLabel, asrRecommendationReason } from '../../asr-recommendation'
+import { asrChoiceLabel, asrChoiceReason } from '../../asr-recommendation'
 import { osMessageKey } from '@shared/i18n/os-message'
 
 /** The global hotkey, labelled as this OS writes it, with the OS's refusal in place of the hint. */
@@ -216,7 +216,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
               label={t('settingsVoice.recognition.model')}
               hint={
                 asrModel
-                  ? t('settingsVoice.recognition.modelHint', { memoryGb: asrModel.totalMemoryGb, model: asrModel.label, reason: asrRecommendationReason(t, localSpeech.backend, asrModel) })
+                  ? t('settingsVoice.recognition.modelHint', { memoryGb: asrModel.totalMemoryGb, model: asrModel.label, reason: asrChoiceReason(t, localSpeech.backend, asrModel) })
                   : (readFailure(setup) ?? t('settingsVoice.recognition.checking'))
               }
             >

@@ -9,7 +9,7 @@ import { SetupWizard } from '../src/renderer/src/ui/SetupWizard'
 import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stores'
 import { voiceController } from '../src/renderer/src/voice/VoiceController'
 import { liveVoice } from '../src/renderer/src/voice/LiveVoice'
-import { asrDownloadGb, asrModelSizeGb, asrModelSpec, recommendAsrModel, type ResolvedAsrModel } from '@shared/asr-models'
+import { asrDownloadGb, asrModelSizeGb, asrModelSpec, recommendAsrModel, resolveAsrModel, type AsrModel, type ResolvedAsrModel } from '@shared/asr-models'
 import { isLiveEngine } from '@shared/voice-engine'
 import type { ChatGptSignInResult, ChatGptStatus } from '@shared/chatgpt'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, platformCapabilities, setCapabilities } from './helpers/platform'
@@ -33,17 +33,18 @@ let progressListener: (progress: PreparationProgress) => void = () => {}
 
 /**
  * The local speech recognition as main reports it before anything is downloaded: none on a machine without
- * a GPU for it, and otherwise the model it recommends for the memory it has.
+ * a GPU for it, and otherwise the model the setting stands for beside the one main recommends for the memory it has.
  */
 const asrStatus = (): SetupStatus['asr'] => {
   const { localSpeech } = platformCapabilities()
   if (localSpeech.backend === null) return null
-  const { recommendedModel } = recommendAsrModel(localSpeech.backend, localSpeech.memoryGb)
-  const spec = asrModelSpec(recommendedModel)
+  const recommendation = recommendAsrModel(localSpeech.backend, localSpeech.memoryGb)
+  const resolvedModel = resolveAsrModel(settings.asrModel, recommendation)
+  const spec = asrModelSpec(resolvedModel)
   return {
-    selectedModel: 'auto',
-    resolvedModel: recommendedModel,
-    recommendedModel,
+    selectedModel: settings.asrModel,
+    resolvedModel,
+    recommendedModel: recommendation.recommendedModel,
     label: spec.label,
     totalMemoryGb: localSpeech.memoryGb,
     modelInstalled: false,
@@ -735,6 +736,39 @@ describe('first-run setup on Windows with an NVIDIA GPU', () => {
       option('parakeet-tdt_ctc-0.6b-ja'),
       option('reazonspeech-nemo-v2')
     ])
+  })
+
+  it('marks as recommended only the model the automatic choice picks, and names that model under one chosen by hand', async () => {
+    await render()
+    await toModel(ja)
+    await verifyKey(ja)
+    await press(ja('setup.next'))
+    await press(ja('setup.speaking.voice.title'))
+    await press(ja('setup.next'))
+    const label = (model: ResolvedAsrModel): string => asrModelSpec(model).label
+    await press(ja('setup.listening.recommended', { model: label('qwen3-asr-1.7b') }))
+    const choose = async (model: AsrModel): Promise<void> => {
+      const select = container.querySelector<HTMLSelectElement>('.su-details select')!
+      await act(async () => {
+        select.value = model
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flush()
+    }
+    const option = (): { title: string; detail: string } => ({
+      title: optionTitles()[0],
+      detail: container.querySelector('.su-option-detail')?.textContent ?? ''
+    })
+    // This GPU's 8 GB recommends 1.7B, so 0.6B and the FastConformer models, which the automatic choice never picks, go unmarked.
+    for (const model of ['qwen3-asr-0.6b', 'parakeet-tdt_ctc-0.6b-ja', 'reazonspeech-nemo-v2'] as const) {
+      await choose(model)
+      expect(option()).toEqual({ title: label(model), detail: ja('speechRecognition.recommendedForThisComputer', { model: label('qwen3-asr-1.7b') }) })
+    }
+    const marked = { title: ja('setup.listening.recommended', { model: label('qwen3-asr-1.7b') }), detail: ja('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 }) }
+    await choose('qwen3-asr-1.7b')
+    expect(option()).toEqual(marked)
+    await choose('auto')
+    expect(option()).toEqual(marked)
   })
 })
 

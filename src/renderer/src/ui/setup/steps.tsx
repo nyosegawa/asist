@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { useFormatLocale, useT } from '@/i18n'
-import { asrChoiceLabel, asrRecommendationReason } from '../asr-recommendation'
+import { asrChoiceLabel, asrChoiceReason, usesRecommendedAsr } from '../asr-recommendation'
 import { progressLabel } from '../progress-label'
 import type { ReactNode } from 'react'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, PROVIDER_DEFAULT_MODELS, isApiKeyProvider, modelName, type LlmProvider } from '@shared/llm-catalog'
@@ -225,8 +225,8 @@ export function ListeningStep({
       ) : (
         <Option
           active={choice === 'server'}
-          title={t('setup.listening.recommended', { model: asr?.label ?? t('setup.listening.unknownModel') })}
-          detail={asr ? asrRecommendationReason(t, localSpeech.backend, asr) : t(`setup.listening.unknownReason.${localSpeech.backend}`)}
+          title={asr && !usesRecommendedAsr(asr) ? asr.label : t('setup.listening.recommended', { model: asr?.label ?? t('setup.listening.unknownModel') })}
+          detail={asr ? asrChoiceReason(t, localSpeech.backend, asr) : t(`setup.listening.unknownReason.${localSpeech.backend}`)}
           chip={serverChip}
           onClick={() => onChoice('server')}
         >

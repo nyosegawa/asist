@@ -1,13 +1,20 @@
-import { asrRecommendationSize, type AsrModelChoice } from '@shared/asr-models'
+import { asrModelSpec, asrRecommendationSize, type AsrModelChoice } from '@shared/asr-models'
 import type { SetupStatus } from '@shared/ipc'
 import type { Translate } from '@shared/i18n'
 import type { SpeechBackend } from '@shared/platform'
 
+type AsrStatus = NonNullable<SetupStatus['asr']>
+
+/** Whether the model in use is the one `auto` picks for this machine, the only model the screens mark as recommended. */
+export const usesRecommendedAsr = (asr: AsrStatus): boolean => asr.resolvedModel === asr.recommendedModel
+
 /**
- * Why the recommended speech recognition model suits this machine, from the memory the main process
- * reports: the Mac's own on metal, the GPU's on vulkan.
+ * What the screens say about the model in use: why it suits this machine when it is the recommended one, from the
+ * memory the main process reports (the Mac's own on metal, the GPU's on vulkan), and otherwise which model is
+ * recommended.
  */
-export function asrRecommendationReason(t: Translate, backend: SpeechBackend, asr: NonNullable<SetupStatus['asr']>): string {
+export function asrChoiceReason(t: Translate, backend: SpeechBackend, asr: AsrStatus): string {
+  if (!usesRecommendedAsr(asr)) return t('speechRecognition.recommendedForThisComputer', { model: asrModelSpec(asr.recommendedModel).label })
   return t(`speechRecognition.recommendation.${backend}.${asrRecommendationSize(backend, asr.totalMemoryGb)}`, { memoryGb: asr.totalMemoryGb })
 }
 
