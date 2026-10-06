@@ -38,7 +38,7 @@ function modelOrThrow(): AsrModelSpec {
 }
 
 /** The model the setting stands for, or null where there is none to start. */
-export function startable(selected?: AsrModel): AsrModelSpec | null {
+function startable(selected?: AsrModel): AsrModelSpec | null {
   const resolution = resolve(selected)
   return resolution.model === null ? null : resolution.spec
 }

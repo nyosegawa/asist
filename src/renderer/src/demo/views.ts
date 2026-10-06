@@ -94,13 +94,14 @@ let usageToastTimer: ReturnType<typeof setInterval> | undefined
 
 /** The toast of a reply that failed on the plan's usage limit, pushed again while someone looks at it, as the other toasts are. */
 function showUsageToast(): void {
-  const push = (): void =>
+  const push = (): void => {
     useToastStore.getState().push({
       kind: 'error',
       title: translate('conversation.replyFailed'),
       body: tConversation('conversation.reply.chatgptUsageLimit'),
       action: manageUsageAction()
     })
+  }
   if (usageToastTimer) return
   push()
   usageToastTimer = setInterval(push, 5000)

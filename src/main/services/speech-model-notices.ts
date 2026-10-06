@@ -1,13 +1,10 @@
 import fs from 'node:fs'
 import { z } from 'zod'
-import { asrModelFiles } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
 import type { SpeechModelNotice } from '@shared/ipc'
+import { localSpeechModelsInUse } from '@shared/local-speech-models'
 import type { PinnedFile } from '@shared/pinned-file'
 import { storedContent, type StoredFormat } from '@shared/stored-format'
-import { isLocalTtsEngine, localTtsModel, ttsEngineRuns } from '@shared/tts-models'
-import { isLiveEngine } from '@shared/voice-engine'
-import * as asr from './asr'
 import { platformCapabilities } from './platform'
 import { getSettings } from './settings'
 import { fileInstalled, pinnedSpeechModelFiles } from './speech-models'
@@ -58,31 +55,6 @@ function readTold(): PinName[] {
   return openStoredFileSync(file, stored, SPEECH_MODEL_NOTICES_FORMAT)
 }
 
-interface ModelInUse {
-  target: SpeechModelNotice['target']
-  label: string
-  files: readonly PinnedFile[]
-}
-
-/**
- * The local speech models the settings put to use on this machine: under the cascade engine, the speech
- * recognition model the setting stands for wherever local speech runs, and Irodori-TTS or Qwen3-TTS when the
- * settings read the replies with it. A live engine listens and speaks by itself and uses neither.
- */
-function modelsInUse(): ModelInUse[] {
-  const settings = getSettings()
-  if (isLiveEngine(settings.voiceEngine)) return []
-  const used: ModelInUse[] = []
-  const recognition = asr.startable()
-  if (recognition) used.push({ target: 'asr', label: recognition.label, files: asrModelFiles(recognition) })
-  const engine = settings.ttsEngine
-  if (isLocalTtsEngine(engine) && ttsEngineRuns(engine, platformCapabilities().localSpeech)) {
-    const { label, files } = localTtsModel(engine, settings.qwenTtsSize)
-    used.push({ target: 'tts', label, files })
-  }
-  return used
-}
-
 /**
  * The models in use whose files are not all there and whose files the user has not been told about, each of
  * them told once: they are recorded as told before they are returned. A model whose pin changes in any file
@@ -90,7 +62,7 @@ function modelsInUse(): ModelInUse[] {
  */
 export function takeSpeechModelNotices(): SpeechModelNotice[] {
   const told = readTold()
-  const due = modelsInUse().filter(({ files }) => !files.every(fileInstalled) && !files.every((file) => told.some((pin) => samePin(pin, file))))
+  const due = localSpeechModelsInUse(getSettings(), platformCapabilities().localSpeech).filter(({ files }) => !files.every(fileInstalled) && !files.every((file) => told.some((pin) => samePin(pin, file))))
   if (due.length === 0) return []
   const pinned = pinnedSpeechModelFiles()
   const record = told.filter((pin) => pinned.some((file) => samePin(file, pin)))

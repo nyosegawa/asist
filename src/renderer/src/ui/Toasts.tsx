@@ -13,7 +13,8 @@ const KIND_STYLE: Record<string, string> = {
 /**
  * The toasts at the top right. A body shows two lines, and the toast the pointer or the keyboard rests on
  * shows the whole of it and stays up until it is left, so that a long error can be read to the end.
- * A click on its text dismisses it, and so does its action, after running. The action is a button beside the
+ * A click on its text dismisses it, and so does its action, after running, unless the action leaves that to the
+ * toast's owner. The action is a button beside the
  * text rather than inside it, since a button cannot hold another. A persistent toast never goes by itself, so it
  * has a close button beside its action, where it is seen. Each toast carries its kind in data-toast,
  * which the scripts that drive the app over CDP read to report an error the app showed.
@@ -77,9 +78,10 @@ export function Toasts(): React.JSX.Element {
                 {toast.action && (
                   <Btn
                     tone="primary"
+                    disabled={toast.action.disabled}
                     onClick={() => {
                       toast.action!.run()
-                      remove(toast.id)
+                      if (!toast.action!.keepsToast) remove(toast.id)
                     }}
                   >
                     {toast.action.label}
