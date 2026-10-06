@@ -90,8 +90,11 @@ export class SpeechWorker {
     const timeout = setTimeout(() => this.fail(new Error(`${logName} worker did not become ready`)), WORKER_READY_TIMEOUT_MS)
     void this.ready.then(() => clearTimeout(timeout))
     readline.createInterface({ input: child.stdout }).on('line', (line) => this.handleLine(line))
+    // Protocol 2 carries every failure as a message on stdout, which fail() logs as an error. stderr is the
+    // worker's own log, such as the device the model loaded on and its `ready`, so it goes to the app log as
+    // information.
     readline.createInterface({ input: child.stderr }).on('line', (line) => {
-      if (line.trim()) console.error(`${logName}: ${line}`)
+      if (line.trim()) console.log(`${logName}: ${line}`)
     })
     child.on('error', (error) => this.fail(error))
     child.on('exit', (code) => this.fail(new Error(`${logName} worker exited (${code ?? 'signal'})`)))
