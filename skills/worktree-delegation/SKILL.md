@@ -32,6 +32,15 @@ two sets of changes from colliding, and to make sure what reaches your branch is
   that copies `resources/git` itself is refused by the guard, so leave that only for a task that runs no
   checks. A worktree starts from a commit, not from your working tree, so commit anything it must see
   first.
+
+  When your session runs in a worktree of its own, as a session of the Claude Code desktop app does, a
+  guard refuses every write the subagent makes outside that worktree, through Write, Edit and Bash
+  alike, and the subagent may not rephrase a refused command, so it can change nothing. Its first step
+  is therefore the EnterWorktree tool with `path` set to the printed path, before its first edit; the
+  brief template gives the exact words. That moves only the subagent's working directory, so several
+  subagents can each enter their own. EnterWorktree accepts only a worktree under `.claude/worktrees/`
+  of the same repository, which is where the script puts it. Switching your own worktree to its branch
+  also lets it write, but for one subagent at a time.
 - **The main working tree, without a worktree**, only when the task depends on your uncommitted changes
   (updating the tests for the change you just made). Then name exactly which files are its own and which
   are yours, tell it not to commit, and do not touch its files until it reports.
@@ -80,7 +89,10 @@ permissions refused, and one that did so lost its shell for the rest of its task
    skill.
 5. Remove what it left: `git worktree remove --force <path>`, `git branch -d <branch>` (or `-D` when the
    branch was merged under another commit), and confirm with `git worktree list` and `git branch`.
-   A branch you decide not to merge is removed the same way, after telling the user.
+   Run them from your session as they are, also when it runs in a worktree of its own: the guard lets
+   `git worktree remove` through. ExitWorktree does not remove it, because that tool acts only on a
+   worktree your session entered itself. A branch you decide not to merge is removed the same way,
+   after telling the user.
 
 ## 6. Report to the user
 
