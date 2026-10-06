@@ -97,7 +97,7 @@ export class AsrBackend {
     if (state === 'down' && this.backend === 'server') {
       this.backend = 'local'
       this.hooks.onServerLost()
-      console.warn('ASR server unavailable; next utterance will use configured recovery path')
+      console.warn('speech recognition on this computer is unavailable; the next utterance takes the configured recovery path')
     }
   }
 
