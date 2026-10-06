@@ -19,7 +19,7 @@ import { SettingsDialog } from '../src/renderer/src/ui/SettingsDialog'
 import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { usePreparationStore } from '../src/renderer/src/state/preparation'
-import { asrModelSpec, offeredAsrModels } from '@shared/asr-models'
+import { asrModelSizeGb, asrModelSpec, offeredAsrModels, type AsrModel, type ResolvedAsrModel } from '@shared/asr-models'
 import { CREDITS } from '@shared/credits'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICES, QWEN_TTS_MODELS } from '@shared/tts-models'
 import { VOICE_SAMPLE_TEXT } from '@shared/voice-samples'
@@ -364,6 +364,21 @@ describe('settings dialog', () => {
     const engineRow = [...view.querySelectorAll('.st-row')].find((row) => row.querySelector('.st-row-label')?.textContent === t('settingsAgent.run.engine'))!
     expect(engineRow.querySelector('.st-chip')?.textContent).toBe(t('common.notReady'))
     expect(view.querySelector('.st-prepline-text')?.textContent).toBe(t(reason, { engine: 'codex' }))
+  })
+
+  it.each([
+    ['keeps a speech recognition model that recognizes the new language', 'de-DE', { conversationLocale: 'de-DE' }],
+    ['moves a speech recognition model that does not recognize the new language to the automatic choice', 'ja-JP', { conversationLocale: 'ja-JP', asrModel: 'auto' }]
+  ] as const)('%s, in the same save as the language', async (_case, locale, saved) => {
+    useSettingsStore.setState({ settings: { ...settings, conversationLocale: 'en-US', asrModel: 'parakeet-tdt-0.6b-v3' } })
+    const view = await render()
+    await act(async () => nav(view, 'language').click())
+    const language = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsLanguage.conversation')}"]`)!
+    await act(async () => {
+      language.value = locale
+      language.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(api.saveSettings).toHaveBeenLastCalledWith(saved)
   })
 
   it('saves the conversation language together with a speech engine that can read it, and the region on its own', async () => {
@@ -1142,6 +1157,25 @@ describe('settings dialog with the conversation held in another language', () =>
   })
 })
 
+describe('the speech recognition models of the voice page', () => {
+  const values = (view: HTMLElement): string[] =>
+    [...view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsVoice.recognition.modelLabel')}"]`)!.options].map((option) => option.value)
+
+  it('offers the automatic choice, Qwen3-ASR and parakeet-tdt-0.6b-v3 in an English conversation, and no Japanese model', async () => {
+    useSettingsStore.setState({ settings: { ...settings, conversationLocale: 'en-US' } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    expect(values(view)).toEqual(['auto', 'qwen3-asr-1.7b', 'qwen3-asr-0.6b', 'parakeet-tdt-0.6b-v3'] satisfies AsrModel[])
+  })
+
+  it('offers the automatic choice and Qwen3-ASR alone in a Korean conversation', async () => {
+    useSettingsStore.setState({ settings: { ...settings, conversationLocale: 'ko-KR' } })
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    expect(values(view)).toEqual(['auto', 'qwen3-asr-1.7b', 'qwen3-asr-0.6b'] satisfies AsrModel[])
+  })
+})
+
 describe('settings dialog on Windows with a discrete GPU', () => {
   const macSetup = api.getSetupStatus.getMockImplementation()!
   const label = asrModelSpec('qwen3-asr-1.7b').label
@@ -1161,14 +1195,18 @@ describe('settings dialog on Windows with a discrete GPU', () => {
     api.getSetupStatus.mockImplementation(macSetup)
   })
 
-  it('offers the Qwen3-ASR models on the voice page, explained by the GPU memory', async () => {
+  it('offers on the voice page the models that recognize Japanese with what each downloads, explained by the GPU memory', async () => {
     const view = await render()
     await act(async () => nav(view, 'voice').click())
     const select = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsVoice.recognition.modelLabel')}"]`)!
+    const option = (model: ResolvedAsrModel): string =>
+      t('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model))) })
     expect([...select.options].map((option) => option.textContent)).toEqual([
       t('settingsVoice.recognition.automatic.vulkan'),
-      label,
-      asrModelSpec('qwen3-asr-0.6b').label
+      option('qwen3-asr-1.7b'),
+      option('qwen3-asr-0.6b'),
+      option('parakeet-tdt_ctc-0.6b-ja'),
+      option('reazonspeech-nemo-v2')
     ])
     expect(hint(view, t('settingsVoice.recognition.model'))).toBe(
       t('settingsVoice.recognition.modelHint', { memoryGb: 8, model: label, reason: t('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 }) })
@@ -1531,6 +1569,18 @@ describe('the models the about page credits', () => {
       expect(credit?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.asr'))
       expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${spec.model.repo}`)
     }
+  })
+
+  it.each([
+    ['parakeet-tdt_ctc-0.6b-ja', 'NVIDIA', 'CC BY 4.0'],
+    ['parakeet-tdt-0.6b-v3', 'NVIDIA', 'CC BY 4.0'],
+    ['reazonspeech-nemo-v2', 'Reazon Human Interaction Lab', 'Apache-2.0'],
+    ['qwen3-asr-1.7b', 'Alibaba Qwen', 'Apache-2.0']
+  ] as const)('credits %s to the publisher of the model it was converted from, under its license', async (model, provider, license) => {
+    const view = await about(MACOS)
+    const credit = row(view, `${asrModelSpec(model).label} (GGUF)`)
+    expect(credit?.querySelector('a')?.textContent).toBe(provider)
+    expect(credit?.querySelector('.st-chip')?.textContent).toBe(license)
   })
 
   it('credits no local speech recognition model on Windows without a GPU, and still the Whisper that runs in the window', async () => {

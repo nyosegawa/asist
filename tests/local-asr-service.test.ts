@@ -113,6 +113,19 @@ describe('the speech recognition worker', () => {
     await expect(outcome).resolves.toBe('こんにちは。')
   })
 
+  it('runs a FastConformer model on its own file and sends it the same request, with nothing it does not take', async () => {
+    const PARAKEET = ASR_MODEL_SPECS['parakeet-tdt-0.6b-v3']
+    mocks.settings.conversationLocale = 'de-DE'
+    const outcome = asr.transcribe(PARAKEET, new Float32Array(1600), 'r1')
+    await vi.waitFor(() => expect(transcribed(children[0])).toEqual(['r1']))
+    const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
+    expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual(['worker', PARAKEET.model.file, '--device', 'MTL0'])
+    // The model checks the language against its own and refuses a prompt, which it has no input for.
+    expect(children[0].input.at(-1)).toEqual({ type: 'transcribe', id: 'r1', sample_rate: 16_000, language: 'de' })
+    answer(children[0], 'r1', 'Er griff auch alles an. ')
+    await expect(outcome).resolves.toBe('Er griff auch alles an.')
+  })
+
   it('reads the conversation language for each utterance, so that a change applies without loading the model again', async () => {
     const first = await underWay('first')
     answer(first.child, first.id, 'はい。')

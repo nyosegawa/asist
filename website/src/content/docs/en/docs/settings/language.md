@@ -19,13 +19,13 @@ The text in the nine languages other than Japanese and English has not been chec
 
 ## Talking in a language other than Japanese
 
-- Backchannels, MaAI, VOICEVOX, AivisSpeech and Irodori-TTS are not used. They don't appear in the settings either.
+- Backchannels, MaAI, VOICEVOX, AivisSpeech, Irodori-TTS and the Japanese speech recognition models (parakeet-tdt_ctc-0.6b-ja and ReazonSpeech NeMo v2) are not used. They don't appear in the settings either.
 - The bridge phrase is said in every language. To stop it, turn off "Bridge phrase" on the "Voice" page.
 - The memory is written in the conversation language. Memory written earlier in another language stays as it is and can still be searched.
 - If the region is Japan, the weather comes from the Japan Meteorological Agency. A place in Japan named the way English names it, such as "Sapporo" or "Fuchu, Tokyo", gets the weather of that municipality. When several municipalities share the name, ASIST asks which one you mean.
 - If the region is outside Japan, the weather comes from [Open-Meteo](https://open-meteo.com). Fahrenheit and miles per hour are used only when the region is the United States.
 
-If you change the conversation language to one the current speech engine can't speak, reading aloud switches to the system's voice ("macOS voice" on a Mac, "Windows voice" on Windows).
+If you change the conversation language to one the current speech engine can't speak, reading aloud switches to the system's voice ("macOS voice" on a Mac, "Windows voice" on Windows). If you change it to one the current speech recognition model doesn't recognize, the speech recognition model goes back to the automatic choice.
 
 When you change the conversation language, the text on the "Character" page of the settings changes to that language too, as long as you have not edited it: Japanese for Japanese, and English for every other language. A text you edited is used as you wrote it, whatever the language. "Reset to default" makes it follow the conversation language again.
 

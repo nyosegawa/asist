@@ -1,3 +1,4 @@
+import { asrModelRecognizes } from '@shared/asr-models'
 import { CONVERSATION_LOCALES, REGIONS, ttsEngineSpeaks, type ConversationLocale } from '@shared/conversation-locale'
 import { UI_LOCALES, UI_LOCALE_NAMES, type UiLocale } from '@shared/i18n'
 import type { SettingsContext } from '../context'
@@ -20,9 +21,11 @@ export function LanguagePage({ ctx }: { ctx: SettingsContext }): React.JSX.Eleme
 
   const changeLocale = (locale: ConversationLocale): void => {
     // An engine that cannot read the new language aloud would leave the conversation silent, so it
-    // moves to the OS's voice in the same save.
+    // moves to the OS's voice in the same save. A speech recognition model that does not recognize it
+    // would refuse every utterance, so it moves to the automatic choice the same way.
     const engine = ttsEngineSpeaks(locale, settings.ttsEngine) ? {} : { ttsEngine: 'system' as const }
-    set({ conversationLocale: locale, ...engine })
+    const recognition = asrModelRecognizes(locale, settings.asrModel) ? {} : { asrModel: 'auto' as const }
+    set({ conversationLocale: locale, ...engine, ...recognition })
   }
 
   return (

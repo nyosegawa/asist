@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { LLM_PROVIDER_INFO, defaultModelsFor, isApiKeyProvider, modelLabel, sameModel, type LlmProvider } from '@shared/llm-catalog'
 import { keyReadable, speechEnginePrepared, type SetupProgress, type SetupStatus, type SetupVoiceMode } from '@shared/ipc'
-import type { AsrModel } from '@shared/asr-models'
+import { asrModelRecognizes, type AsrModel } from '@shared/asr-models'
 import { errorText } from '@shared/i18n/error-text'
 import { isLocalTtsEngine, localTtsRuns, recommendLocalTts, ttsEngineRuns } from '@shared/tts-models'
 import { defaultRegion, defaultTtsEngine, type ConversationLocale } from '@shared/conversation-locale'
@@ -166,13 +166,15 @@ export function SetupWizard(): React.JSX.Element | null {
   }
 
   /**
-   * Saves the one language choice: the interface, the conversation and the region move together, and the
-   * speech engine moves to the one the new language starts with, which the speech step comes after.
+   * Saves the one language choice: the interface, the conversation and the region move together, the
+   * speech engine moves to the one the new language starts with, which the speech step comes after, and a
+   * speech recognition model that does not recognize the new language moves to the automatic choice.
    */
   const chooseLocale = (next: ConversationLocale): void => {
     setError('')
     const engine = next === settings.conversationLocale ? {} : { ttsEngine: defaultTtsEngine(next, capabilities.localSpeech) }
-    void saveSettings({ uiLocale: next, conversationLocale: next, region: defaultRegion(next), ...engine })
+    const recognition = asrModelRecognizes(next, settings.asrModel) ? {} : { asrModel: 'auto' as const }
+    void saveSettings({ uiLocale: next, conversationLocale: next, region: defaultRegion(next), ...engine, ...recognition })
       .then(() => refresh())
       .catch((err: unknown) => setError(displayError(err)))
   }
@@ -494,6 +496,7 @@ export function SetupWizard(): React.JSX.Element | null {
           )}
           {step === 'listening' && (
             <ListeningStep
+              locale={locale}
               localSpeech={capabilities.localSpeech}
               choice={listening}
               onChoice={setListening}

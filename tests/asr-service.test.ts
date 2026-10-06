@@ -55,6 +55,26 @@ describe('ASR service routing', () => {
     expect(mocks.localTranscribe).toHaveBeenCalledWith(LARGE, samples, 'request-1')
   })
 
+  it('starts and transcribes through a FastConformer model the setting chose, whatever auto would stand for', async () => {
+    const asr = await import('../src/main/services/asr')
+    const REAZONSPEECH = ASR_MODEL_SPECS['reazonspeech-nemo-v2']
+    mocks.settings.asrModel = 'reazonspeech-nemo-v2'
+    mocks.installed = { modelInstalled: false }
+    mocks.localEnsure.mockResolvedValue(true)
+    mocks.localTranscribe.mockResolvedValue('音声認識のテストです。')
+    expect(await asr.installationStatus()).toMatchObject({
+      resolvedModel: 'reazonspeech-nemo-v2',
+      recommendedModel: 'qwen3-asr-1.7b',
+      label: REAZONSPEECH.label,
+      downloadGb: asrDownloadGb(REAZONSPEECH, false)
+    })
+    const samples = new Float32Array([0.1])
+    await expect(asr.ensureWorker()).resolves.toBe(true)
+    await expect(asr.transcribe(samples, 'request-1')).resolves.toBe('音声認識のテストです。')
+    expect(mocks.localEnsure).toHaveBeenCalledWith(REAZONSPEECH)
+    expect(mocks.localTranscribe).toHaveBeenCalledWith(REAZONSPEECH, samples, 'request-1')
+  })
+
   it('stops the running worker before starting the newly selected model', async () => {
     const asr = await import('../src/main/services/asr')
     mocks.settings.asrModel = 'qwen3-asr-0.6b'

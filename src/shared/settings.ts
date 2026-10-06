@@ -216,7 +216,7 @@ You are curious, and genuinely interested in their life and their work. You reme
 
 export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
   name: 'settings.json',
-  version: 13,
+  version: 14,
   upgrades: {
     // Version 2 adds the theme. Everything written before it was drawn in future.
     1: (content) => ({ ...(content as Record<string, unknown>), theme: 'future' }),
@@ -286,7 +286,10 @@ export const SETTINGS_FORMAT: StoredFormat<AppSettings> = {
       return { ...stored, mail: { ...stored.mail, accounts: upgraded } }
     },
     // Version 13 lets a model run on ChatGPT. Every model version 12 allowed is allowed still, so nothing changes.
-    12: (content) => content
+    12: (content) => content,
+    // Version 14 lets the speech recognition be one of speech.cpp's three FastConformer models. Every model version 13
+    // allowed is allowed still, so nothing changes.
+    13: (content) => content
   },
   parse: parseAppSettings,
   serialize: (settings) => ({ ...settings })

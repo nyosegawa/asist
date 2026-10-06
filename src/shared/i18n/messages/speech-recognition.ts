@@ -361,5 +361,18 @@ export const speechRecognition = defineMessages({
       'es-419': 'Este reconocimiento de voz necesita una GPU dedicada y no se encontró ninguna en esta computadora. Usa Whisper en el navegador en su lugar.',
       'es-ES': 'Este reconocimiento de voz necesita una GPU dedicada y no se ha encontrado ninguna en este ordenador. Usa Whisper en el navegador en su lugar.'
     }
+  },
+  modelOption: {
+    'ja-JP': '{model}(約 {sizeGb}GB)',
+    'en-US': '{model} (about {sizeGb} GB)',
+    'fr-FR': '{model} (environ {sizeGb} Go)',
+    'de-DE': '{model} (rund {sizeGb} GB)',
+    'hi-IN': '{model} (करीब {sizeGb} GB)',
+    'id-ID': '{model} (sekitar {sizeGb} GB)',
+    'it-IT': '{model} (circa {sizeGb} GB)',
+    'ko-KR': '{model}(약 {sizeGb}GB)',
+    'pt-BR': '{model} (cerca de {sizeGb} GB)',
+    'es-419': '{model} (unos {sizeGb} GB)',
+    'es-ES': '{model} (unos {sizeGb} GB)'
   }
 })
