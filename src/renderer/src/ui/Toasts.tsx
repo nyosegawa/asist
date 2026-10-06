@@ -11,8 +11,8 @@ const KIND_STYLE: Record<string, string> = {
 }
 
 /**
- * The toasts at the top right. A body shows two lines, and the toast the pointer or the keyboard rests on
- * shows the whole of it and stays up until it is left, so that a long error can be read to the end.
+ * The toasts at the top right, under the top bar. A body shows two lines, and the toast the pointer or the
+ * keyboard rests on shows the whole of it and stays up until it is left, so that a long error can be read to the end.
  * A click on its text dismisses it, and so does its action, after running, unless the action leaves that to the
  * toast's owner. The action is a button beside the
  * text rather than inside it, since a button cannot hold another. A persistent toast never goes by itself, so it
@@ -43,7 +43,7 @@ export function Toasts(): React.JSX.Element {
   }
   const reading = (id: number): boolean => pointerOn === id || focusOn === id
   return (
-    <div className="pointer-events-none fixed top-14 right-4 z-50 flex w-96 flex-col gap-2">
+    <div className="toasts pointer-events-none fixed right-4 z-50 flex w-96 flex-col gap-2">
       <AnimatePresence>
         {toasts.map((toast) => (
           <motion.div
