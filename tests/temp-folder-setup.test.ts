@@ -30,4 +30,34 @@ describe('the temporary folder of a test run', () => {
     // A restart in watch mode sets up the next run in the same place.
     expect(os.tmpdir()).toBe(parent)
   })
+
+  it('removes the folder of a killed run and its own folder though a test in them left a folder read-only or unreadable', () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'parent-'))
+    for (const name of ['TEMP', 'TMP', 'TMPDIR']) vi.stubEnv(name, parent)
+    const killed = path.join(parent, 'asist-test-2147483646-AbC123')
+    leaveLocked(killed)
+
+    const teardown = setup()
+    const run = process.env[TEMP_VARIABLE]!
+    expect(fs.readdirSync(parent)).toEqual([path.basename(run)])
+    // A test that hangs past its timeout never gives the permission back either.
+    leaveLocked(run)
+    teardown()
+
+    expect(fs.readdirSync(parent)).toEqual([])
+  })
 })
+
+/**
+ * Leaves in a folder what the tests that check a permission error leave when the run ends before they give the
+ * permission back. On Windows each of these modes sets the read-only attribute.
+ */
+function leaveLocked(folder: string): void {
+  for (const [name, mode] of [['read-only', 0o500], ['unreadable', 0o000]] as const) {
+    const locked = path.join(folder, name)
+    fs.mkdirSync(locked, { recursive: true })
+    fs.writeFileSync(path.join(locked, 'secret.md'), 'secret')
+    fs.chmodSync(path.join(locked, 'secret.md'), 0o000)
+    fs.chmodSync(locked, mode)
+  }
+}
