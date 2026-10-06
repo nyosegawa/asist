@@ -96,14 +96,27 @@ function encodePcm(samples) {
  * Starts `speech worker` with the arguments and resolves, once the model is loaded, to its model information and a
  * function that sends a request's lines and resolves to its `end` and the chunks before it. Every line of the
  * worker's stdout is one JSON object, and anything else on it, or an answer to no request in flight, stops the script.
+ * A worker that exits or whose pipes fail rejects its start and every request in flight or sent later, so that the
+ * script reaches its cleanup instead of waiting for an answer that cannot come.
  */
 async function startWorker(args) {
   const child = spawn(speechProgram(), args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
   const pending = new Map()
   let ready
+  let failure = null
   const started = new Promise((resolve, reject) => {
     ready = resolve
-    child.once('exit', (code) => reject(new Error(`speech worker exited (${code})`)))
+    const fail = (error) => {
+      if (failure) return
+      failure = error
+      reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+    }
+    child.once('exit', (code) => fail(new Error(`speech worker exited (${code})`)))
+    child.once('error', fail)
+    child.stdin.on('error', fail)
+    child.stdout.on('error', fail)
   })
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
     const message = JSON.parse(line)
@@ -130,6 +143,7 @@ async function startWorker(args) {
   return {
     model,
     request(lines) {
+      if (failure) return Promise.reject(failure)
       const id = String(next++)
       const answer = new Promise((resolve, reject) => pending.set(id, { chunks: [], resolve, reject }))
       for (const line of lines(id)) child.stdin.write(JSON.stringify(line) + '\n')
