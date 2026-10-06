@@ -80,6 +80,16 @@ describe('the notice at launch of a local speech model that needs preparing', ()
     expect(useViewStore.getState().open).toEqual(expect.objectContaining({ app: 'settings', page: 'voice' }))
   })
 
+  it.each([
+    [false, 'settingsModels.notice.recognition'],
+    [true, 'settingsModels.notice.recognitionWhisper']
+  ] as const)('says, for the recognition model with in-browser Whisper %s, what listens until it is prepared', async (whisper, body) => {
+    api.speechModelNotices.mockResolvedValueOnce([{ target: 'asr', label: 'Qwen3-ASR 1.7B', downloadBytes: 2_520_744_288 }])
+    launchedWith({ localAsrEnabled: whisper })
+    await act(async () => root.render(<SpeechModelNotices />))
+    expect(useToastStore.getState().toasts).toEqual([expect.objectContaining({ body: t(body) })])
+  })
+
   it('asks for nothing in a launch that opened on the first-run setup', async () => {
     launchedWith({ onboardingVersion: 0, safetyNoticeVersion: 0 })
     await act(async () => root.render(<SpeechModelNotices />))

@@ -108,12 +108,13 @@ function showUsageToast(): void {
 
 /**
  * The notices at launch of a Mac on which an update pinned other files of Irodori-TTS and of the speech
- * recognition model. Pressing the notice of Irodori-TTS starts a preparation that stops at 40% and never
- * finishes, so the voice page it opens keeps showing the progress.
+ * recognition model, for someone who listens through in-browser Whisper until it is prepared or without it.
+ * Pressing the notice of Irodori-TTS starts a preparation that stops at 40% and never finishes, so the voice
+ * page it opens keeps showing the progress.
  */
-const speechModelNotices = (press: boolean): DemoView => ({
+const speechModelNotices = ({ press = false, whisper = false }: { press?: boolean; whisper?: boolean }): DemoView => ({
   prepare: (api) => {
-    void api.saveSettings({ ttsEngine: 'irodori' })
+    void api.saveSettings({ ttsEngine: 'irodori', localAsrEnabled: whisper })
     const getStatus = api.getStatus
     api.getStatus = async () => ({ ...(await getStatus()), tts: 'down', ttsEngine: 'irodori' })
     const reading = localTtsModel('irodori', '0.6b')
@@ -356,8 +357,9 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
   }),
   toasts: { open: showToasts },
   'toasts/chatgpt-usage': { open: showUsageToast },
-  'toasts/speech-models': speechModelNotices(false),
-  'toasts/speech-models/preparing': speechModelNotices(true)
+  'toasts/speech-models': speechModelNotices({}),
+  'toasts/speech-models/whisper': speechModelNotices({ whisper: true }),
+  'toasts/speech-models/preparing': speechModelNotices({ press: true })
 }
 
 /** Waits until the element is rendered and then presses it, to reach a state inside a screen such as one page of the settings. */

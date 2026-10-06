@@ -61,6 +61,7 @@ export const SCREENS = {
   toasts: { label: '通知', group: '起動と確認' },
   'toasts/chatgpt-usage': { label: '通知(ChatGPT の使用量の上限)', group: '起動と確認' },
   'toasts/speech-models': { label: '通知(更新で音声のモデルの準備が要る)', group: '起動と確認' },
+  'toasts/speech-models/whisper': { label: '通知(更新で音声のモデルの準備が要る、ブラウザ内 Whisper がオン)', group: '起動と確認' },
   'toasts/speech-models/preparing': { label: '通知(音声のモデルの準備を通知から始めた)', group: '起動と確認' }
 } as const satisfies Record<string, { label: string; group: ScreenGroup }>
 
