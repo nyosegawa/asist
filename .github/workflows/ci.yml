@@ -339,8 +339,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/ci-result.mjs
+          sparse-checkout-cone-mode: false
+      # The script uses only JSON and process.env, so the Node the runner image carries runs it without setup-node.
+      - run: node scripts/ci-result.mjs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
 
   # Without node_modules, npm audit checks the tree in the lockfile, which is the same on every OS, so the job takes
   # no macOS runner from the others.
