@@ -13,20 +13,10 @@ export const QWEN_TTS_SIZES = ['0.6b', '1.7b'] as const
 
 export type QwenTtsSize = (typeof QWEN_TTS_SIZES)[number]
 
-/** One size of Qwen3-TTS for speech.cpp: its talker, which runs with the shared codec. */
+/** One size of Qwen3-TTS for speech.cpp: its model file, which holds the codec it speaks through. */
 export interface QwenTtsModelSpec {
   label: string
-  talker: PinnedFile
-}
-
-const QWEN_TTS_REPO = { repo: 'sakasegawa/qwen3-tts-ggml', revision: '3fa3234ee65c9a70fd23a7b7843722a0284b8027' }
-
-/** The codec decoder every size speaks through. */
-export const QWEN_TTS_CODEC: PinnedFile = {
-  ...QWEN_TTS_REPO,
-  file: 'qwen3-tts-codec-12hz-f16.gguf',
-  bytes: 245_553_152,
-  sha256: '38763be32099ad36b7b4345fc852ac379fb4fde0782ff85929d2b984b4bc22c1'
+  model: PinnedFile
 }
 
 /**
@@ -39,27 +29,42 @@ export const QWEN_TTS_CODEC: PinnedFile = {
 export const QWEN_TTS_MODELS: Readonly<Record<QwenTtsSize, QwenTtsModelSpec>> = {
   '0.6b': {
     label: 'Qwen3-TTS 0.6B',
-    talker: { ...QWEN_TTS_REPO, file: 'qwen3-tts-0.6b-customvoice-q8_0.gguf', bytes: 967_979_712, sha256: '4a819d1c9d9c6358bd5dc1ded15f93db970fbaeac9f0a021dfae62c242682baf' }
+    model: {
+      repo: 'sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF',
+      revision: '28707fd399be0ae418681eec1e065804527eac6c',
+      file: 'Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf',
+      bytes: 1_213_534_464,
+      sha256: 'f606ea3981aa42762b16db9a94826d2d560eb60f0b102001618f40d5a2f78cc6'
+    }
   },
   '1.7b': {
     label: 'Qwen3-TTS 1.7B',
-    talker: { ...QWEN_TTS_REPO, file: 'qwen3-tts-1.7b-customvoice-q8_0.gguf', bytes: 2_042_225_472, sha256: 'fb6e79b6ae51c1fe5fe8313cf9a69e5c6f4e34a9869b478a576ed954b3d314e1' }
+    model: {
+      repo: 'sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF',
+      revision: '0c0dc3861a19d0b98085b6f9973b6a5933b382a3',
+      file: 'Qwen3-TTS-12Hz-1.7B-CustomVoice-Q8_0.gguf',
+      bytes: 2_287_780_352,
+      sha256: '1bc0ef69547c003507b6536639a6080c8856382f4d0963b15d4475528330592d'
+    }
   }
 }
 
-const IRODORI_TTS_REPO = { repo: 'sakasegawa/irodori-tts-ggml', revision: '8a45f617775ebc1c71b047b8b80c8350ec010617' }
-
 /**
- * Irodori-TTS v4.1-Small-MF in F16 and the codec it speaks through. On an M5 with Metal and speech.cpp
- * v0.3.0 (2026-10-01) it speaks a sentence's first audio 0.19 to 0.38 s after the request, later the longer
- * the sentence, at 0.17 of real time in 2.1 GB. It makes the whole sentence before the first audio, while
- * Qwen3-TTS streams it frame by frame.
+ * Irodori-TTS v4.1-Small-MF in F16, with the codec it speaks through in the same file. On an M5 with Metal and
+ * speech.cpp v0.3.0 (2026-10-01) it speaks a sentence's first audio 0.19 to 0.38 s after the request, later
+ * the longer the sentence, at 0.17 of real time in 2.1 GB. It makes the whole sentence before the first audio,
+ * while Qwen3-TTS streams it frame by frame.
  */
 export const IRODORI_TTS_MODEL = {
   label: 'Irodori-TTS',
-  model: { ...IRODORI_TTS_REPO, file: 'irodori-tts-v4.1-small-mf-f16.gguf', bytes: 1_514_765_472, sha256: '30b230256ce19a08b8769c582ca1afad0954a7c1f5d37b47c47e520b21d06262' },
-  codec: { ...IRODORI_TTS_REPO, file: 'semantic-dacvae-japanese-32dim-f32.gguf', bytes: 370_670_496, sha256: '43ef3084cedd88b73113db2663f1741d5deed97ae9a72d84dff4ff593374f125' }
-} as const satisfies { label: string; model: PinnedFile; codec: PinnedFile }
+  model: {
+    repo: 'sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF',
+    revision: '99e5d77f6d92a70d4b9bff52829ac118fa1bf7d3',
+    file: 'Irodori-TTS-848M-MF-v4.1-F16.gguf',
+    bytes: 1_885_438_016,
+    sha256: 'd59b2fca0b0884f80d02562a58b2f6c344871a92e4cf3607971d78affcc11987'
+  }
+} as const satisfies { label: string; model: PinnedFile }
 
 /**
  * The voices ASIST ships for Irodori-TTS, each a voice file under resources/irodori-voices made from a
@@ -85,8 +90,8 @@ export interface LocalTtsModel {
 }
 
 export function localTtsModel(engine: LocalTtsEngine, qwenTtsSize: QwenTtsSize): LocalTtsModel {
-  if (engine === 'irodori') return { label: IRODORI_TTS_MODEL.label, files: [IRODORI_TTS_MODEL.model, IRODORI_TTS_MODEL.codec] }
-  return { label: QWEN_TTS_MODELS[qwenTtsSize].label, files: [QWEN_TTS_MODELS[qwenTtsSize].talker, QWEN_TTS_CODEC] }
+  if (engine === 'irodori') return { label: IRODORI_TTS_MODEL.label, files: [IRODORI_TTS_MODEL.model] }
+  return { label: QWEN_TTS_MODELS[qwenTtsSize].label, files: [QWEN_TTS_MODELS[qwenTtsSize].model] }
 }
 
 /** The files of a model together, in GB of 10^9 bytes. */

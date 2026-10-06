@@ -98,7 +98,7 @@ const BUNDLED_PROGRAMS = {
     '  each release at https://github.com/nyosegawa/asist/releases.',
     'uv (MIT or Apache-2.0): see uv/LICENSE-MIT and uv/LICENSE-APACHE in this folder.',
     'llama.cpp (MIT): see llama.cpp/LICENSE in this folder.',
-    'speech.cpp (MIT): see speech-worker/LICENSE in this folder.'
+    'speech.cpp (MIT): see speech/LICENSE in this folder.'
   ],
   win32: [
     'Electron and Chromium: see LICENSE.electron.txt and LICENSES.chromium.html next to ASIST.exe, in the',
@@ -109,7 +109,7 @@ const BUNDLED_PROGRAMS = {
     'uv (MIT or Apache-2.0): see uv/LICENSE-MIT and uv/LICENSE-APACHE in this folder.',
     'llama.cpp (MIT): see llama.cpp/LICENSE in this folder, and llama.cpp/LICENSE-LLVM-OpenMP for the',
     '  OpenMP runtime it runs with.',
-    'speech.cpp (MIT): see speech-worker/LICENSE in this folder.'
+    'speech.cpp (MIT): see speech/LICENSE in this folder.'
   ]
 }
 

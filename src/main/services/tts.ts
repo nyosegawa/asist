@@ -325,7 +325,7 @@ export interface SynthesisResult {
 export interface ProsodyOptions {
   /**
    * The speaking rate, where 1.0 is normal. Aizuchi are spoken faster and lighter. Only the HTTP engines
-   * apply it: speech.cpp's worker accepts a speed and ignores it.
+   * apply it; the local engines read at the model's own speed.
    */
   speedScale?: number
   /** The volume, where 1.0 is normal. */
@@ -395,7 +395,7 @@ export async function synthesize(
 
 /**
  * How long a stretch of a reply Qwen3-TTS reads in one request: about 45 s of Japanese, well inside the
- * talker's context of about 160 s of speech.
+ * 655 s of speech the model makes at most.
  */
 const QWEN_REQUEST_CHARS = 300
 

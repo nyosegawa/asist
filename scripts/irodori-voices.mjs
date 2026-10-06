@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS } from '../src/shared/tts-models.ts'
-import { modelPath } from './aizuchi-clips/speech.mjs'
-import { download, extract, run, withTemporaryDir } from './resources/shared.mjs'
+import { modelPath, speechProgram } from './aizuchi-clips/speech.mjs'
+import { run } from './resources/shared.mjs'
 
 /*
  * Writes resources/irodori-voices/<voice>.voice.gguf, the voices ASIST ships for Irodori-TTS, from the reference
@@ -13,34 +13,20 @@ import { download, extract, run, withTemporaryDir } from './resources/shared.mjs
  *   node scripts/irodori-voices.mjs [references folder]
  *
  * The references folder defaults to ~/speech-bench-data/references. Each voice file holds the reference's codec
- * latent and names the codec, so the voices are made again whenever the codec's pin changes. They are made on
- * the CPU, where the latent matches the official encoder to 99 dB; on a GPU it differs by device. The model
- * and the codec are read from the files the app has prepared, or from the folder ASIST_SPEECH_MODELS names.
+ * latent and the hash of the codec it was made with, and a model of another codec refuses it, so the voices are
+ * made again whenever the pin moves to another codec or speech.cpp changes the form of a voice file. They are made
+ * with `speech voice` on the CPU, where the latent matches the official encoder to 99 dB; on a GPU it differs by
+ * device. speech is the one prepare-resources bundles, and the model is read from the files the app has prepared,
+ * or from the folder ASIST_SPEECH_MODELS names.
  */
-
-const VERSION = 'v0.3.1'
-const TOOLS = {
-  'darwin-arm64': { name: 'speech-cpp-tools-v0.3.1-macos-arm64-metal.zip', sha256: 'ca88585b5960eadd89187bacd164549d19ac2f9abc5f499707a3377b785cd2d9', program: 'irodori-tts' },
-  'win32-x64': { name: 'speech-cpp-tools-v0.3.1-windows-x64-vulkan.zip', sha256: 'e9d0c60cb5b47d488d20161953c1f70a42700327d312b357690a372e5479291f', program: 'irodori-tts.exe' }
-}
 
 const root = path.resolve(import.meta.dirname, '..')
 const references = process.argv[2] ?? path.join(homedir(), 'speech-bench-data', 'references')
-
-const tools = TOOLS[`${process.platform}-${process.arch}`]
-if (!tools) throw new Error(`speech.cpp ${VERSION} has no tools for ${process.platform} ${process.arch}`)
 const out = path.join(root, 'resources', 'irodori-voices')
 
-await withTemporaryDir('asist-irodori-voices-', async (work) => {
-  const archive = path.join(work, tools.name)
-  await download(`https://github.com/nyosegawa/speech.cpp/releases/download/${VERSION}/${tools.name}`, archive, tools.sha256)
-  extract(archive, path.join(work, 'tools'))
-  const program = path.join(work, 'tools', tools.program)
-  fs.chmodSync(program, 0o755)
-  fs.mkdirSync(out, { recursive: true })
-  for (const voice of IRODORI_TTS_VOICE_IDS) {
-    const reference = path.join(references, `voice-${voice}.wav`)
-    run(program, ['--make-voice', modelPath(IRODORI_TTS_MODEL.model), modelPath(IRODORI_TTS_MODEL.codec), reference, path.join(out, `${voice}.voice.gguf`), '--device', 'cpu'])
-  }
-})
+fs.mkdirSync(out, { recursive: true })
+for (const voice of IRODORI_TTS_VOICE_IDS) {
+  const reference = path.join(references, `voice-${voice}.wav`)
+  run(speechProgram(), ['voice', modelPath(IRODORI_TTS_MODEL.model), reference, path.join(out, `${voice}.voice.gguf`), '--device', 'cpu'])
+}
 console.log(`irodori voices: ${IRODORI_TTS_VOICE_IDS.length} files → ${path.relative(root, out)}`)

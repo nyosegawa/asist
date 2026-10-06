@@ -5,20 +5,20 @@ sidebar:
   order: 2
 ---
 
-Each prepared model stays resident in a process of its own. The table below gives values measured on an M5 Mac (32GB). For searching the memory by meaning, choosing the kind of backchannel and detecting the end of a turn, it is the physical footprint from `vmmap --summary`, 30 seconds after launch. Speech recognition was measured running a Q8_0 model in llama.cpp b11246, and reading aloud running Irodori-TTS (F16) and Qwen3-TTS (Q8_0) in speech.cpp v0.3.0. Reading aloud was measured after it had read one sentence.
+Each prepared model stays resident in a process of its own. The table below gives values measured on an M5 Mac (32GB). For searching the memory by meaning, choosing the kind of backchannel and detecting the end of a turn, it is the physical footprint from `vmmap --summary`, 30 seconds after launch. Speech recognition was measured running a Q8_0 model in llama.cpp b11246, and reading aloud running Irodori-TTS (F16) and Qwen3-TTS (Q8_0) in speech.cpp 0.7.0. Reading aloud was measured after it had read one sentence.
 
 | Process | Model | Memory | Runs when | Measured on |
 |---|---|---|---|---|
 | Speech recognition | Qwen3-ASR 1.7B (Q8_0) | 3.4GB | At launch (when speech recognition is Qwen3-ASR 1.7B) | 2026-09-29 |
 | Speech recognition | Qwen3-ASR 0.6B (Q8_0) | 1.8GB | At launch (when speech recognition is Qwen3-ASR 0.6B) | 2026-09-29 |
-| Reading aloud | Irodori-TTS v4.1-Small-MF (F16) | 2.1GB | At launch (when reading aloud uses Irodori-TTS) | 2026-10-01 |
-| Reading aloud | Qwen3-TTS 0.6B (Q8_0) | 1.8GB | At launch (when reading aloud uses Qwen3-TTS with the 0.6B model) | 2026-10-01 |
-| Reading aloud | Qwen3-TTS 1.7B (Q8_0) | 2.8GB | At launch (when reading aloud uses Qwen3-TTS with the 1.7B model) | 2026-10-01 |
+| Reading aloud | Irodori-TTS v4.1-Small-MF (F16) | 2.0GB | At launch (when reading aloud uses Irodori-TTS) | 2026-10-06 |
+| Reading aloud | Qwen3-TTS 0.6B (Q8_0) | 1.6GB | At launch (when reading aloud uses Qwen3-TTS with the 0.6B model) | 2026-10-06 |
+| Reading aloud | Qwen3-TTS 1.7B (Q8_0) | 2.6GB | At launch (when reading aloud uses Qwen3-TTS with the 1.7B model) | 2026-10-06 |
 | Searching the memory by meaning | multilingual-e5 small (ONNX int8) | 655MB | At launch (when semantic search is on) | 2026-09-22 |
 | Choosing the kind of backchannel | ModernBERT-ja 70m (ONNX int8) | 325MB | At launch (in Japanese, with backchannels on, and not with a Live engine) | 2026-09-20 |
 | Detecting the end of a turn | MaAI (PyTorch) | 685MB | When the microphone is turned on (in Japanese, with MaAI on) | 2026-09-20 |
 
-With Qwen3-ASR 1.7B for speech recognition and the other three running, they use about 5.1GB; with 0.6B for speech recognition, about 3.5GB. Choosing Irodori-TTS for reading aloud uses about 2.1GB more, and Qwen3-TTS about 1.8GB more with 0.6B and about 2.8GB more with 1.7B. The app itself and its window each use about 90MB.
+With Qwen3-ASR 1.7B for speech recognition and the other three running, they use about 5.1GB; with 0.6B for speech recognition, about 3.5GB. Choosing Irodori-TTS for reading aloud uses about 2.0GB more, and Qwen3-TTS about 1.6GB more with 0.6B and about 2.6GB more with 1.7B. The app itself and its window each use about 90MB.
 
 On a Mac with 16GB of memory or more, ASIST recommends 1.7B for speech recognition, and the first-time setup recommends Irodori-TTS and Qwen3-TTS. With less than 16GB, it recommends 0.6B for speech recognition. The 1.7B size of Qwen3-TTS can be chosen on a Mac with 24GB of memory or more.
 

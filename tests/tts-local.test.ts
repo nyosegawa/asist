@@ -72,7 +72,7 @@ describe('TTS service with Qwen3-TTS', () => {
     await expect(tts.synthesizeSentence('こんにちは。', 'ja-JP', controller.signal)).rejects.toThrow('aborted')
   })
 
-  it('synthesizes a clip as a WAV at the clip\'s volume', async () => {
+  it('synthesizes a clip as a WAV at the clip\'s volume and the model\'s own speed, whatever speed the clip asks for', async () => {
     mocks.synthesizeWav.mockResolvedValue(Buffer.from([1, 2, 3]))
     const tts = await import('../src/main/services/tts')
     const result = await tts.synthesize('うん', undefined, { speedScale: 1.1, volumeScale: 0.8 })

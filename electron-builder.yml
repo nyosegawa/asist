@@ -56,13 +56,13 @@ extraResources:
   # MinGit on Windows, both put there by scripts/prepare-resources.mjs.
   - from: resources/git
     to: git
-  # The local speech: llama.cpp's llama-server for the speech recognition and speech.cpp's worker for
-  # the speech synthesis, the Metal builds on macOS and the Vulkan builds on Windows, both put there by
-  # scripts/prepare-resources.mjs.
+  # The local speech: llama.cpp's llama-server for the speech recognition and speech.cpp's speech, whose
+  # worker runs the speech synthesis, the Metal builds on macOS and the Vulkan builds on Windows, both put
+  # there by scripts/prepare-resources.mjs.
   - from: resources/llama.cpp
     to: llama.cpp
-  - from: resources/speech-worker
-    to: speech-worker
+  - from: resources/speech
+    to: speech
   # The voices of Irodori-TTS, which scripts/irodori-voices.mjs makes from speech-bench's reference recordings.
   - from: resources/irodori-voices
     to: irodori-voices
