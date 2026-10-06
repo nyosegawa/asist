@@ -18,7 +18,8 @@ import { startSpeechWorker, type SpeechWorker, type WorkerMessage } from './spee
 
 /**
  * A request left unanswered this long means the worker is hung, and it is stopped. The worker answers one
- * request at a time, so the time also covers the requests queued ahead.
+ * request at a time, so the time also covers the requests queued ahead. A worker that sends nothing for as
+ * long while it has a request in flight, a cancelled partial included, is stopped as hung too.
  */
 const ANSWER_TIMEOUT_MS = 60_000
 
@@ -59,6 +60,7 @@ export function isStarting(model: AsrModelSpec): boolean {
 }
 
 const stoppedError = (): Error => new DOMException(errorText('speechRecognition.errors.stopped'), 'AbortError')
+const timedOutError = (): Error => new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError')
 
 /** Stops the worker and ends every transcription on it with `reason`. */
 function stopWorker(reason: Error = stoppedError()): void {
@@ -87,6 +89,7 @@ export async function ensureWorker(model: AsrModelSpec): Promise<boolean> {
   const started: SpeechWorker = startSpeechWorker(speechPath(), modelFilePath(model.model), [], 'qwen3-asr', {
     task: 'recognition',
     device: localSpeech.device,
+    silence: { ms: ANSWER_TIMEOUT_MS, error: timedOutError },
     onFailure: (error) => {
       if (worker === started) stopWorker(error)
     }
@@ -145,7 +148,7 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
     const target = worker
     // The time runs from the request, not from the start of the worker, which has its own limit.
     timer = setTimeout(() => {
-      const timedOut = new DOMException(errorText('speechRecognition.errors.timedOut'), 'TimeoutError')
+      const timedOut = timedOutError()
       controller.abort(timedOut)
       if (worker === target) stopWorker(timedOut)
     }, ANSWER_TIMEOUT_MS)

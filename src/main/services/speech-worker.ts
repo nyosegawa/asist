@@ -70,11 +70,17 @@ export interface WorkerOptions {
   task: WorkerTask
   /** The device the model is loaded on, which the worker is given and its `ready` must name. */
   device: string
-  /** Called after each message that answers a request, once the request has taken it. */
-  onAnswer?: () => void
   /**
-   * The worker failed to load, broke the protocol, crashed or exited on its own. The owner may stop it here with the
-   * error its requests in flight are to fail with; it stops itself with `error` otherwise. It is not called after
+   * How long the worker may send nothing while it has a request in flight, a cancelled one included, before it is
+   * taken to be hung. A hung worker is stopped, its requests in flight fail with `error()`, and `onFailure` is called
+   * with that error. A request whose caller stopped waiting is still awaited, so that a worker that never answers it
+   * is found out and started again rather than left holding every later request back.
+   */
+  silence: { ms: number; error: () => Error }
+  /**
+   * The worker failed to load, broke the protocol, crashed, exited on its own or went silent. The owner may stop it
+   * here with the error its requests in flight are to fail with; it stops itself with `error` otherwise. A worker that
+   * went silent has stopped already, its requests failed with the error of `silence`. It is not called after
    * `stop()`.
    */
   onFailure: (error: Error) => void
@@ -113,6 +119,7 @@ export class SpeechWorker {
   private settleReady!: (ready: boolean) => void
   private isReady = false
   private readonly inFlight = new Map<string, InFlight>()
+  private silenceTimer: NodeJS.Timeout | null = null
 
   constructor(
     readonly child: ChildProcessWithoutNullStreams,
@@ -152,6 +159,7 @@ export class SpeechWorker {
     if (this.inFlight.has(id)) throw new Error(`${this.logName} worker has a request ${id} in flight already`)
     this.inFlight.set(id, { answers, cancelled: false })
     for (const line of lines) this.send(line)
+    this.armSilence()
   }
 
   /** Cancels a request in flight. One that has had its terminal message, or was cancelled already, is left alone. */
@@ -160,6 +168,7 @@ export class SpeechWorker {
     if (!request || request.cancelled || this.stopped) return
     request.cancelled = true
     this.send({ type: 'cancel', id })
+    this.armSilence()
   }
 
   /** Stops the worker and ends every request in flight that was not cancelled with `reason`. */
@@ -170,7 +179,22 @@ export class SpeechWorker {
     if (this.child.exitCode === null && !this.child.killed) this.child.kill('SIGTERM')
     const abandoned = [...this.inFlight.values()]
     this.inFlight.clear()
+    this.armSilence()
     for (const request of abandoned) if (!request.cancelled) request.answers.abandoned(reason)
+  }
+
+  /** Starts the wait for the worker's next message over, while a request is in flight; with none, nothing is awaited. */
+  private armSilence(): void {
+    if (this.silenceTimer) clearTimeout(this.silenceTimer)
+    this.silenceTimer = this.inFlight.size === 0 ? null : setTimeout(() => this.wentSilent(), this.options.silence.ms)
+  }
+
+  private wentSilent(): void {
+    if (this.stopped) return
+    const error = this.options.silence.error()
+    console.error(`${this.logName}: sent nothing for ${this.options.silence.ms / 1000} s with ${this.inFlight.size} requests in flight`)
+    this.stop(error)
+    this.options.onFailure(error)
   }
 
   private send(message: Record<string, unknown>): void {
@@ -199,7 +223,7 @@ export class SpeechWorker {
       this.fail(error as Error)
       return
     }
-    this.options.onAnswer?.()
+    this.armSilence()
   }
 
   /** The message of a line, after the checks of the protocol that concern no request. Throws on a line that breaks it. */

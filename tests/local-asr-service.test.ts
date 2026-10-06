@@ -323,6 +323,30 @@ describe('a partial transcription', () => {
     await expect(next).resolves.toBe('次')
   })
 
+  it('stops a worker that never answers a partial it gave up on, rather than skipping every later partial', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const started = asr.ensureWorker(LARGE)
+    await vi.advanceTimersByTimeAsync(10)
+    await started
+    const partial = asr.transcribePartial(LARGE, new Float32Array(1600))
+    await vi.advanceTimersByTimeAsync(4_010)
+    await expect(partial).resolves.toBe('')
+    // The worker hangs and answers neither the partial nor its cancel.
+    await vi.advanceTimersByTimeAsync(59_000)
+    expect(children[0].kill).not.toHaveBeenCalled()
+    await expect(asr.transcribePartial(LARGE, new Float32Array(1600))).resolves.toBe('')
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(children[0].kill).toHaveBeenCalled()
+    expect(asr.available(LARGE)).toBe(false)
+
+    const next = asr.transcribePartial(LARGE, new Float32Array(1600))
+    await vi.advanceTimersByTimeAsync(10)
+    expect(children).toHaveLength(2)
+    answer(children[1], transcribed(children[1])[0], '次')
+    await expect(next).resolves.toBe('次')
+  })
+
   it('returns nothing when the worker refuses it, rather than failing the conversation', async () => {
     await asr.ensureWorker(LARGE)
     const partial = asr.transcribePartial(LARGE, new Float32Array(1600))

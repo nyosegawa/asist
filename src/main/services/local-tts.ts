@@ -100,7 +100,6 @@ let workerKey: string | null = null
 let workerLabel = ''
 let workerReady = false
 let starting: Promise<boolean> | null = null
-let silenceTimer: NodeJS.Timeout | null = null
 /** When a worker last became ready or ended a reading. */
 let lastUsedAt = -Infinity
 
@@ -129,13 +128,6 @@ export function sampleRate(): number {
   return worker.sampleRate
 }
 
-function armSilenceTimer(): void {
-  if (silenceTimer) clearTimeout(silenceTimer)
-  silenceTimer = (worker?.pending ?? 0) === 0
-    ? null
-    : setTimeout(() => stopWorker(new Error(errorText('voice.speech.engineNoResponse', { engine: workerLabel }))), SILENT_WORKER_TIMEOUT_MS)
-}
-
 /** The samples of a `chunk` of a synthesis. Throws on one without its audio. */
 function piece(message: WorkerMessage): Int16Array {
   if (message.type !== 'chunk' || typeof message.pcm !== 'string') throw new Error(`the worker sent a ${message.type} of ${String(message.id)} where a synthesis has a chunk of audio`)
@@ -158,9 +150,7 @@ async function startWorker(engine: LocalTtsEngine): Promise<boolean> {
   const started: SpeechWorker = startSpeechWorker(speechPath(), spec.file, spec.args, spec.logName, {
     task: 'synthesis',
     device: localSpeech.device,
-    onAnswer: () => {
-      if (worker === started) armSilenceTimer()
-    },
+    silence: { ms: SILENT_WORKER_TIMEOUT_MS, error: () => new Error(errorText('voice.speech.engineNoResponse', { engine: spec.model.label })) },
     onFailure: (error) => {
       if (worker === started) stopWorker(workerFailure(error))
     }
@@ -210,7 +200,6 @@ function stopWorker(error: Error = new DOMException(errorText('voice.speech.engi
   workerReady = false
   starting = null
   stale?.stop(error)
-  armSilenceTimer()
 }
 
 /**
@@ -243,15 +232,10 @@ export async function* stream(engine: LocalTtsEngine, speech: LocalSpeechRequest
   const active = worker
   const id = randomUUID()
   const queue = new PieceQueue()
-  // The worker keeps a request until it answers it, a cancelled one included.
-  const cancel = (): void => {
-    active.cancel(id)
-    armSilenceTimer()
-  }
   // The abort reaches the worker at once, even while the consumer is not pulling the next piece.
   const abort = (): void => {
     queue.fail(signal?.reason instanceof Error ? signal.reason : new DOMException('Speech synthesis aborted', 'AbortError'))
-    cancel()
+    active.cancel(id)
   }
   signal?.addEventListener('abort', abort, { once: true })
   try {
@@ -261,7 +245,6 @@ export async function* stream(engine: LocalTtsEngine, speech: LocalSpeechRequest
       error: (reason) => queue.fail(workerFailure(new Error(reason))),
       abandoned: (reason) => queue.fail(reason)
     })
-    armSilenceTimer()
     const shaper = new SpeechShaper(sampleRate())
     const limit = plausibleSeconds(engine, speech.text) * sampleRate()
     let samples = 0
@@ -275,7 +258,8 @@ export async function* stream(engine: LocalTtsEngine, speech: LocalSpeechRequest
     if (tail.length > 0) yield tail
   } finally {
     signal?.removeEventListener('abort', abort)
-    cancel()
+    // The worker keeps a request until it answers it, a cancelled one included.
+    active.cancel(id)
     lastUsedAt = Date.now()
   }
 }

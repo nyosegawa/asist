@@ -311,6 +311,29 @@ describe('a sentence the worker fails after its first piece', () => {
     }
   })
 
+  it('stops a worker that never answers a sentence the consumer stopped reading, so that the next sentence starts a new one', async () => {
+    vi.useFakeTimers()
+    try {
+      const stream = local.stream('qwen3tts', REQUEST)
+      const first = stream.next()
+      await vi.advanceTimersByTimeAsync(10)
+      const child = children[0]
+      const id = child.input.find((message) => message.text)!.id
+      say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+      await first
+      await stream.return(undefined)
+      expect(child.input).toContainEqual({ type: 'cancel', id })
+      // The worker hangs and never answers the cancel.
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(child.kill).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(child.kill).toHaveBeenCalled()
+      expect(local.available('qwen3tts')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ends it as stopped, which is no failure, when the worker is stopped for another engine', async () => {
     const error = await failedAfterFirstPiece(() => local.stop())
     expect(error.name).toBe('AbortError')
