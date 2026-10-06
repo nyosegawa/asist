@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "told": [
+    {
+      "repo": "sakasegawa/irodori-tts-ggml",
+      "revision": "8a45f617775ebc1c71b047b8b80c8350ec010617",
+      "file": "irodori-tts-v4.1-small-mf-f16.gguf"
+    },
+    {
+      "repo": "sakasegawa/irodori-tts-ggml",
+      "revision": "8a45f617775ebc1c71b047b8b80c8350ec010617",
+      "file": "semantic-dacvae-japanese-32dim-f32.gguf"
+    }
+  ]
+}

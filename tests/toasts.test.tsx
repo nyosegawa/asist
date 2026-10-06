@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Toasts } from '@/ui/Toasts'
 import { TOAST_MS, useToastStore } from '@/state/stores'
+import { createTranslator } from '@shared/i18n'
 
 // motion's animations do not run in happy-dom, and a cancelled one surfaces as an unhandled AbortError.
 vi.mock('motion/react', async () => {
@@ -16,6 +17,7 @@ vi.mock('motion/react', async () => {
   }
 })
 
+const t = createTranslator('ja-JP')
 let container: HTMLDivElement
 let root: Root
 
@@ -102,6 +104,28 @@ describe('a toast', () => {
     await act(async () => action.focus())
     await act(async () => vi.advanceTimersByTime(TOAST_MS * 2))
     expect(useToastStore.getState().toasts).toHaveLength(1)
+  })
+
+  it('stays up when it is persistent until its close button is pressed', async () => {
+    await act(async () => root.render(<Toasts />))
+    await act(async () => useToastStore.getState().push({ kind: 'info', title: 'Irodori-TTS needs preparing', body, persistent: true, action: { label: 'Prepare', run: () => {} } }))
+    await act(async () => vi.advanceTimersByTime(TOAST_MS * 3))
+    const [text] = [...container.querySelectorAll('button')]
+    await act(async () => void text.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })))
+    await act(async () => void text.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })))
+    await act(async () => vi.advanceTimersByTime(TOAST_MS * 3))
+    expect(useToastStore.getState().toasts).toHaveLength(1)
+
+    const close = [...container.querySelectorAll('button')].find((button) => button.textContent === t('common.close'))
+    await act(async () => close!.click())
+    expect(useToastStore.getState().toasts).toEqual([])
+  })
+
+  it('keeps a persistent toast when later ones push the oldest out', async () => {
+    const { push } = useToastStore.getState()
+    push({ kind: 'info', title: 'Irodori-TTS needs preparing', persistent: true })
+    for (const title of ['one', 'two', 'three', 'four']) push({ kind: 'ok', title })
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toEqual(['Irodori-TTS needs preparing', 'two', 'three', 'four'])
   })
 
   it('goes away by itself when no one rests on it', async () => {

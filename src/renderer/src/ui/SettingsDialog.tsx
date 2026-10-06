@@ -23,7 +23,7 @@ import { conversationFeatures } from '@shared/conversation-locale'
 import { voiceController } from '@/voice/VoiceController'
 import { useSettingsStore, useStatusStore, useToastStore } from '@/state/stores'
 import { useMiniApp, useViewStore } from '@/state/view'
-import { usePreparationStore } from '@/state/preparation'
+import { prepareAsrModel, prepareTtsModel, usePreparationStore } from '@/state/preparation'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { localDate } from '@shared/api-usage'
 import { usageReport } from '@shared/usage-report'
@@ -162,7 +162,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
 
   const { run, runLocalAsr } = prep
   const prepare: SettingsContext['prepare'] = {
-    asr: () => void run('asr', () => window.api.prepareAsrModel(settings.asrModel), () => refreshStatus()),
+    asr: () => void prepareAsrModel(),
     cancelAsr: () => void window.api.cancelAsrPreparation(),
     localAsr: () =>
       void runLocalAsr(async (onProgress) => {
@@ -172,7 +172,7 @@ export function SettingsDialog({ open }: { open: boolean }): React.JSX.Element {
         return t('settings.localAsrPrepared')
       }),
     cancelLocalAsr: () => voiceController.cancelLocalAsrPreparation(),
-    tts: () => void run('tts', () => window.api.prepareTtsModel(), () => refreshStatus()),
+    tts: () => void prepareTtsModel(),
     vap: () =>
       void run('vap', () => window.api.vapPrepare(), async (ok) => {
         if (ok) await set({ vapEnabled: true })

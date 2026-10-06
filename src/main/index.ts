@@ -15,6 +15,7 @@ import { notify, quitAfterAgentsStop, setupOsIntegration } from './os-integratio
 import * as tts from './services/tts'
 import * as aizuchi from './services/aizuchi'
 import * as speechDemand from './services/speech-demand'
+import { pinnedSpeechModelFiles, removeUnpinnedFiles } from './services/speech-models'
 import * as watchdog from './services/watchdog'
 import { initJobReporting } from './services/brain/job-reporting'
 import { compactionJob, initMaintenance } from './services/maintenance'
@@ -245,6 +246,9 @@ if (!hasSingleInstanceLock) {
     // starts only when semantic search is on.
     memory.ensureLoaded()
     initMemoryCuration()
+    // A download of a speech model starts only from a button on the page, so files that no pin of this version
+    // names are removed before the window opens, while nothing can be writing beside them.
+    await removeUnpinnedFiles(pinnedSpeechModelFiles())
 
     // The window and the voice open only once the services have started, so that a service that fails to start
     // leaves no page under its error, where the page would load, turn the microphone on and wait to show itself.

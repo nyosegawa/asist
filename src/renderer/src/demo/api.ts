@@ -613,6 +613,7 @@ export const mockApi: RendererApi = {
   cancelAsrPreparation: async () => false,
   prepareTtsModel: async () => ({ ok: false, message: 'デモモードでは使えません' }),
   cancelTtsPreparation: async () => false,
+  speechModelNotices: async () => [],
   onSetupProgress: () => () => {},
   jobCancel: async () => {},
   jobMerge: async () => {},

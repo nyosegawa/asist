@@ -502,13 +502,25 @@ export interface Toast {
   title: string
   body?: string
   kind: 'ok' | 'error' | 'info'
-  /** The one step that resolves what the toast reports, offered as a button. Pressing it also dismisses the toast. */
-  action?: { label: string; run: () => void }
+  /**
+   * The one step that resolves what the toast reports, offered as a button. Pressing it also dismisses the
+   * toast, unless `keepsToast`: then whoever pushed the toast removes it once the step has taken effect, since
+   * the app may not take the step at that moment. While `disabled`, the button shows and cannot be pressed.
+   */
+  action?: { label: string; run: () => void; disabled?: boolean; keepsToast?: boolean }
+  /** Stays up until it is closed, for something told only once, which a toast gone in five seconds could take away unread. */
+  persistent?: boolean
 }
+
+/** How many toasts show at once. A newer one pushes out the oldest that goes away by itself. */
+const TOAST_LIMIT = 4
 
 interface ToastState {
   toasts: Toast[]
-  push: (t: Omit<Toast, 'id'>) => void
+  /** Shows the toast and returns its id. */
+  push: (t: Omit<Toast, 'id'>) => number
+  /** Changes a toast that is still up. */
+  update: (id: number, patch: Partial<Omit<Toast, 'id'>>) => void
   /** Keeps the toast up while someone reads it, until `release`. */
   hold: (id: number) => void
   /** Lets a held toast go away TOAST_MS later. */
@@ -529,15 +541,27 @@ export const useToastStore = create<ToastState>((set, get) => {
   }
   const removeLater = (id: number): void => {
     stop(id)
+    if (get().toasts.find((x) => x.id === id)?.persistent) return
     toastTimers.set(id, setTimeout(() => get().remove(id), TOAST_MS))
   }
   return {
     toasts: [],
     push: (t) => {
       const id = nextToastId++
-      set((s) => ({ toasts: [...s.toasts, { ...t, id }].slice(-4) }))
+      set((s) => {
+        const toasts = [...s.toasts, { ...t, id }]
+        while (toasts.length > TOAST_LIMIT) {
+          const oldest = toasts.findIndex((x) => !x.persistent)
+          if (oldest < 0) break
+          stop(toasts[oldest].id)
+          toasts.splice(oldest, 1)
+        }
+        return { toasts }
+      })
       removeLater(id)
+      return id
     },
+    update: (id, patch) => set((s) => ({ toasts: s.toasts.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
     hold: stop,
     release: (id) => {
       if (get().toasts.some((x) => x.id === id)) removeLater(id)

@@ -14,6 +14,7 @@ import { JOBS_FORMAT } from '../src/main/services/job-history'
 import { USAGE_FORMAT } from '../src/main/services/usage-ledger'
 import { CURATION_STATE_FORMAT } from '../src/main/services/memory-curation-state'
 import { PROJECTS_FORMAT } from '../src/main/services/project-index'
+import { SPEECH_MODEL_NOTICES_FORMAT } from '../src/main/services/speech-model-notices'
 
 /**
  * tests/fixtures/stored keeps a sample of each stored file for every version that was released, named
@@ -34,7 +35,8 @@ const FORMATS: StoredFormat<unknown>[] = [
   JOBS_FORMAT,
   USAGE_FORMAT,
   CURATION_STATE_FORMAT,
-  PROJECTS_FORMAT
+  PROJECTS_FORMAT,
+  SPEECH_MODEL_NOTICES_FORMAT
 ] as StoredFormat<unknown>[]
 
 const samplesOf = (format: StoredFormat<unknown>): string[] => {

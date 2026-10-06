@@ -19,6 +19,14 @@ If a released version has a problem, a fixed version with a higher number is rel
 
 If "Couldn't start ASIST" appears while ASIST starts, ASIST checks for a new version after you close the message. If there is one, it downloads and installs it and opens ASIST. While it downloads, ASIST shows no window, and a notification tells you what it is doing; opening ASIST again meanwhile shows the notification again. If there is none, or the check fails, ASIST quits. If the download fails, ASIST shows why and quits. When ASIST fails to start with any other error, it does not update itself; install the new version from the [Releases page](https://github.com/nyosegawa/asist/releases).
 
+### Preparing the voice models
+
+An update can change the files of the models for speech recognition and for reading aloud (Irodori-TTS and Qwen3-TTS). A model you prepared before then needs preparing again. ASIST does not download it on its own. The first time you open ASIST after such an update, a notice at the top right of the screen tells you once about each model you use that needs preparing, with the model's name and the size of its files. The button in the notice starts the download and opens "Voice" in the settings, where the progress shows in the row of that model. If you close the notice, prepare the model under "Voice" in the settings.
+
+Until the model is prepared, replies are read with the system's voice. Until the speech recognition model is prepared, you can't talk to ASIST through the microphone, unless in-browser Whisper is on, which then does the listening.
+
+The files of the models an earlier version used are no longer needed, and ASIST removes them when it opens.
+
 ## Uninstalling
 
 If you are signed in to Google Calendar, click "Sign out" under "Calendar and mail" in the settings before you uninstall. This withdraws the permission you gave ASIST in Google.

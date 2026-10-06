@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PreparationTarget, SetupProgress } from '@shared/ipc'
 import { displayError } from '@/display-error'
+import { useSettingsStore, useStatusStore } from '@/state/stores'
 import { useViewStore } from '@/state/view'
 
 /**
@@ -71,6 +72,21 @@ export const usePreparationStore = create<PreparationState>((set, get) => ({
     }
   }
 }))
+
+/**
+ * Prepares the speech recognition model the settings name, and reads the status again once it ends. The
+ * settings and the notice at launch both start it here, so the progress shows in the same row of the settings.
+ */
+export const prepareAsrModel = (): Promise<void> =>
+  usePreparationStore.getState().run(
+    'asr',
+    () => window.api.prepareAsrModel(useSettingsStore.getState().settings?.asrModel),
+    () => useStatusStore.getState().refresh()
+  )
+
+/** Prepares the local speech synthesis model the settings name, as prepareAsrModel does the recognition model. */
+export const prepareTtsModel = (): Promise<void> =>
+  usePreparationStore.getState().run('tts', () => window.api.prepareTtsModel(), () => useStatusStore.getState().refresh())
 
 // The message goes once the settings close, and one that arrives while they are closed waits for the next
 // time they open. The view store tells when they close; an effect's cleanup in the settings screen cannot,

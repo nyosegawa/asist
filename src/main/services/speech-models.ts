@@ -1,9 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
+import { asrModelFiles, asrModelSpec, offeredAsrModels } from '@shared/asr-models'
 import type { SetupProgress } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import type { PinnedFile } from '@shared/pinned-file'
+import { appSettingsSchema } from '@shared/settings'
+import { QWEN_TTS_SIZES, isLocalTtsEngine, localTtsModel } from '@shared/tts-models'
 import { errorMessage, t } from './i18n'
 import { platformCapabilities } from './platform'
 import { downloadMissing } from './pinned-download'
@@ -28,6 +31,73 @@ export function fileInstalled(file: PinnedFile): boolean {
 
 export function filesInstalled(files: readonly PinnedFile[]): boolean {
   return files.every(fileInstalled)
+}
+
+/**
+ * Every file a preparation can fetch: the files of each local speech synthesis engine at each size of
+ * Qwen3-TTS, and of each speech recognition model, whichever of them the settings name now.
+ */
+export function pinnedSpeechModelFiles(): PinnedFile[] {
+  const engines = appSettingsSchema.shape.ttsEngine.options.filter(isLocalTtsEngine)
+  return [
+    ...engines.flatMap((engine) => QWEN_TTS_SIZES.flatMap((size) => localTtsModel(engine, size).files)),
+    ...offeredAsrModels().flatMap((model) => asrModelFiles(asrModelSpec(model)))
+  ]
+}
+
+/** The entries of a folder, or none after logging why they could not be read. */
+async function entriesOf(folder: string, name: string): Promise<fs.Dirent[]> {
+  try {
+    return await fs.promises.readdir(folder, { withFileTypes: true })
+  } catch (error) {
+    console.error(`speech models: ${name} could not be read:`, error)
+    return []
+  }
+}
+
+/**
+ * Removes from the folder whatever no file of `pinned` needs, so that the gigabytes of a model an update
+ * pinned to other files do not stay for good: the folder of a repository no file names, a revision folder
+ * of a named repository that no file names, and any other file in a named revision, such as one an earlier
+ * pin named or the temporary file of a download that never finished. Only the folders at the top named
+ * <owner>--<name>, the form the folder of every repository has, are looked into; anything else there is not
+ * of this layout and is left alone. It runs before anything can start a download, so no temporary file it
+ * finds is still being written. A path that cannot be removed is logged and left for the next start.
+ */
+export async function removeUnpinnedFiles(pinned: readonly PinnedFile[]): Promise<void> {
+  const root = modelsDir()
+  if (!fs.existsSync(root)) return
+  // macOS and Windows find a file under any case of its name, so a pin whose repository changed only in case
+  // still names the folder its files are in, which a comparison of the exact names would remove.
+  const key = (target: string): string => target.toLowerCase()
+  const files = new Set(pinned.map((file) => key(modelFilePath(file))))
+  const folders = new Set<string>()
+  for (const file of pinned) {
+    for (let dir = path.dirname(modelFilePath(file)); dir.length > root.length; dir = path.dirname(dir)) folders.add(key(dir))
+  }
+  const remove = async (target: string): Promise<void> => {
+    const name = path.relative(root, target)
+    try {
+      await fs.promises.rm(target, { recursive: true, force: true })
+      console.log(`speech models: removed ${name}, which no pinned file needs`)
+    } catch (error) {
+      console.error(`speech models: ${name} could not be removed:`, error)
+    }
+  }
+  const tidy = async (folder: string): Promise<void> => {
+    for (const entry of await entriesOf(folder, path.relative(root, folder))) {
+      const target = path.join(folder, entry.name)
+      if (files.has(key(target))) continue
+      if (folders.has(key(target))) await tidy(target)
+      else await remove(target)
+    }
+  }
+  for (const entry of await entriesOf(root, 'the folder')) {
+    if (!entry.isDirectory() || !entry.name.includes('--')) continue
+    const target = path.join(root, entry.name)
+    if (folders.has(key(target))) await tidy(target)
+    else await remove(target)
+  }
 }
 
 export interface PrepareOptions {
