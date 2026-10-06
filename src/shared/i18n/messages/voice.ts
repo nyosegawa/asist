@@ -259,19 +259,6 @@ export const voice = defineMessages({
       'es-419': '{engine} dejó de responder durante la lectura en voz alta.',
       'es-ES': '{engine} ha dejado de responder durante la lectura en voz alta.'
     },
-    engineFailedWithoutReason: {
-      'ja-JP': '{engine} で読み上げられませんでした。',
-      'en-US': "{engine} couldn't read aloud.",
-      'fr-FR': "{engine} n'a pas pu lire le texte à voix haute.",
-      'de-DE': '{engine} konnte den Text nicht vorlesen.',
-      'hi-IN': '{engine} से पढ़कर सुनाया नहीं जा सका।',
-      'id-ID': '{engine} tidak bisa membacakan teksnya.',
-      'it-IT': '{engine} non è riuscito a leggere il testo ad alta voce.',
-      'ko-KR': '{engine}에서 읽어주지 못했습니다.',
-      'pt-BR': '{engine} não conseguiu ler o texto em voz alta.',
-      'es-419': '{engine} no pudo leer el texto en voz alta.',
-      'es-ES': '{engine} no ha podido leer el texto en voz alta.'
-    },
     watcherUnavailable: {
       'ja-JP': 'ASIST が異常終了したときに止めるためのプロセスを起動できなかったので、{engine} を起動しませんでした。',
       'en-US': "{engine} wasn't started, because ASIST couldn't start the process that stops it if ASIST quits unexpectedly.",

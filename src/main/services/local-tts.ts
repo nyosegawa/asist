@@ -1,22 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
-import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_CODEC, QWEN_TTS_MODELS, isLocalTtsEngine, localTtsModel, type LocalTtsEngine, type LocalTtsModel } from '@shared/tts-models'
+import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS, isLocalTtsEngine, localTtsModel, type LocalTtsEngine, type LocalTtsModel } from '@shared/tts-models'
 import type { SetupProgress } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { platformCapabilities } from './platform'
 import { resourcePath } from './resource-path'
 import { getSettings } from './settings'
-import { speechWorkerPath } from './speech-binaries'
+import { speechPath } from './speech-binaries'
 import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-models'
 import { SpeechShaper, encodeWav } from './speech-shaper'
-import { startSpeechWorker, type SpeechWorker } from './speech-worker'
+import { describeWorkerError, startSpeechWorker, type SpeechWorker, type WorkerMessage } from './speech-worker'
 
 /**
  * Speech synthesis on the GPU the capabilities chose, in speech.cpp's worker, which runs one model per
  * process: Irodori-TTS, or Qwen3-TTS at the size the setting names. Choosing the other engine or size starts
  * the worker again. The worker serves one request at a time in arrival order and returns the audio in pieces:
  * Qwen3-TTS while the sentence is still being generated, its first frame alone and then four frames at a
- * time, and Irodori-TTS once the whole sentence is made, as its codec decodes it.
+ * time, and Irodori-TTS once the whole sentence is made, as its codec decodes it. Every request is read at the
+ * model's own speed: a request carries no speed, which Qwen3-TTS refuses and Irodori-TTS would apply.
  */
 
 export interface LocalSpeechRequest {
@@ -28,7 +29,8 @@ export interface LocalSpeechRequest {
 
 /**
  * A worker that sends nothing for this long while requests are waiting is taken to be hung and is
- * replaced. A piece normally follows the previous one within a second.
+ * replaced. A piece normally follows the previous one within a second, and a request that passes no audio
+ * for a second reports its progress.
  */
 const SILENT_WORKER_TIMEOUT_MS = 30_000
 
@@ -65,11 +67,12 @@ class PieceQueue {
   }
 }
 
-/** What one worker runs. Two starts run the same worker when their keys match. */
+/** What one worker runs: the model file and the arguments after it. Two starts run the same worker when their keys match. */
 interface WorkerSpec {
   key: string
   model: LocalTtsModel
   logName: string
+  file: string
   args: string[]
 }
 
@@ -84,14 +87,17 @@ function workerSpec(engine: LocalTtsEngine): WorkerSpec {
       key: 'irodori',
       model,
       logName: 'irodori-tts',
-      args: [
-        modelFilePath(IRODORI_TTS_MODEL.model),
-        modelFilePath(IRODORI_TTS_MODEL.codec),
-        ...IRODORI_TTS_VOICE_IDS.flatMap((voice) => ['--voice', `${voice}=${irodoriVoicePath(voice)}`])
-      ]
+      file: modelFilePath(IRODORI_TTS_MODEL.model),
+      args: IRODORI_TTS_VOICE_IDS.flatMap((voice) => ['--add-voice', `${voice}=${irodoriVoicePath(voice)}`])
     }
   }
-  return { key: `qwen3tts:${size}`, model, logName: 'qwen3-tts', args: [modelFilePath(QWEN_TTS_MODELS[size].talker), modelFilePath(QWEN_TTS_CODEC)] }
+  return { key: `qwen3tts:${size}`, model, logName: 'qwen3-tts', file: modelFilePath(QWEN_TTS_MODELS[size].model), args: [] }
+}
+
+/** A request the worker has not answered yet. A cancelled one stays until the worker's answer, and its audio is dropped. */
+interface PendingRequest {
+  queue: PieceQueue
+  cancelled: boolean
 }
 
 let worker: SpeechWorker | null = null
@@ -101,7 +107,7 @@ let workerLabel = ''
 let workerReady = false
 let starting: Promise<boolean> | null = null
 let silenceTimer: NodeJS.Timeout | null = null
-const requests = new Map<string, PieceQueue>()
+const requests = new Map<string, PendingRequest>()
 /** When a worker last became ready or ended a reading. */
 let lastUsedAt = -Infinity
 
@@ -126,9 +132,8 @@ export function idleSince(): number | null {
 
 /** The sample rate of the pieces, known once the worker is ready. */
 export function sampleRate(): number {
-  const rate = worker?.info.sampleRate
-  if (typeof rate !== 'number') throw new Error('the speech worker is not ready')
-  return rate
+  if (!worker || !workerReady) throw new Error('the speech worker is not ready')
+  return worker.sampleRate
 }
 
 function armSilenceTimer(): void {
@@ -138,18 +143,33 @@ function armSilenceTimer(): void {
     : setTimeout(() => stopWorker(new Error(errorText('voice.speech.engineNoResponse', { engine: workerLabel }))), SILENT_WORKER_TIMEOUT_MS)
 }
 
-function handleMessage(message: Record<string, unknown>): void {
-  const queue = typeof message.id === 'string' ? requests.get(message.id) : undefined
-  if (!queue) return
-  if (message.type === 'chunk' && typeof message.pcm === 'string') {
-    const bytes = Buffer.from(message.pcm, 'base64')
-    // The copy gives the samples their own aligned buffer; a Buffer from the pool can start at an odd offset.
-    queue.push(new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)))
-  } else {
-    requests.delete(message.id as string)
-    if (message.type === 'end') queue.end()
-    else if (typeof message.error === 'string' && message.error) queue.fail(workerFailure(new Error(message.error)))
-    else queue.fail(new Error(errorText('voice.speech.engineFailedWithoutReason', { engine: workerLabel })))
+/** The messages that answer a request. Protocol 2 may gain messages without being raised, so any other is passed over. */
+const ANSWERS: ReadonlySet<string> = new Set(['chunk', 'progress', 'end', 'error', 'cancelled'])
+
+/**
+ * Takes a message that answers a request. Every request gets exactly one terminal message, `end`, `error` or
+ * `cancelled`, and nothing after it, so a message for no request in flight, or a cancel ASIST did not ask for,
+ * is the worker's defect and stops it.
+ */
+function handleMessage(message: WorkerMessage): void {
+  if (!ANSWERS.has(message.type)) return
+  const id = typeof message.id === 'string' ? message.id : null
+  const request = id === null ? undefined : requests.get(id)
+  if (id === null || !request) return stopWorker(workerFailure(new Error(`the worker sent ${message.type} for ${String(message.id)}, which no request in flight has`)))
+  if (message.type === 'chunk') {
+    if (typeof message.pcm !== 'string') return stopWorker(workerFailure(new Error(`the worker sent a chunk of ${id} without its audio`)))
+    if (!request.cancelled) {
+      const bytes = Buffer.from(message.pcm, 'base64')
+      // The copy gives the samples their own aligned buffer; a Buffer from the pool can start at an odd offset.
+      request.queue.push(new Int16Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)))
+    }
+  } else if (message.type !== 'progress') {
+    // The request is still registered here, so stopping the worker fails it with the others.
+    if (message.type === 'cancelled' && !request.cancelled) return stopWorker(workerFailure(new Error(`the worker cancelled ${id}, which ASIST did not cancel`)))
+    requests.delete(id)
+    if (message.type === 'end') request.queue.end()
+    // An error without its object never gets here: SpeechWorker fails the worker on it.
+    else if (message.type === 'error') request.queue.fail(workerFailure(new Error(describeWorkerError(message.error))))
   }
   armSilenceTimer()
 }
@@ -163,9 +183,11 @@ async function startWorker(engine: LocalTtsEngine): Promise<boolean> {
   // The capabilities leave the local engines out where the local speech does not run, so a start here is a caller's mistake.
   if (localSpeech.backend === null) throw new Error(`${spec.model.label} cannot run on this machine`)
   if (!filesInstalled(spec.model.files)) return false
-  // The worker ships with the app, so a missing one is a broken build rather than something to prepare.
-  if (!fs.existsSync(speechWorkerPath())) throw new Error(`speech-worker is missing from ${speechWorkerPath()}`)
-  const started: SpeechWorker = startSpeechWorker(speechWorkerPath(), [...spec.args, '--device', localSpeech.device], spec.logName, {
+  // speech ships with the app, so a missing one is a broken build rather than something to prepare.
+  if (!fs.existsSync(speechPath())) throw new Error(`speech is missing from ${speechPath()}`)
+  const started: SpeechWorker = startSpeechWorker(speechPath(), spec.file, spec.args, spec.logName, {
+    task: 'synthesis',
+    device: localSpeech.device,
     onMessage: (message) => {
       if (worker === started) handleMessage(message)
     },
@@ -218,7 +240,7 @@ function stopWorker(error: Error = new DOMException(errorText('voice.speech.engi
   workerReady = false
   starting = null
   stale?.stop()
-  for (const queue of requests.values()) queue.fail(error)
+  for (const request of requests.values()) request.queue.fail(error)
   requests.clear()
   armSilenceTimer()
 }
@@ -247,15 +269,19 @@ const CLIP_ATTEMPTS = 6
  * when the model rambles past a plausible length. Aborting the signal, or leaving the loop early, cancels
  * the request in the worker.
  */
-export async function* stream(engine: LocalTtsEngine, request: LocalSpeechRequest, signal?: AbortSignal): AsyncGenerator<Float32Array> {
+export async function* stream(engine: LocalTtsEngine, speech: LocalSpeechRequest, signal?: AbortSignal): AsyncGenerator<Float32Array> {
   if (!(await ensureWorker(engine)) || !worker) throw new Error(`${localTtsModel(engine, getSettings().qwenTtsSize).label} is not installed or failed to start`)
   signal?.throwIfAborted()
   const active = worker
   const id = randomUUID()
   const queue = new PieceQueue()
-  // Still registered means the worker has not finished the request.
+  const request: PendingRequest = { queue, cancelled: false }
+  // A request stays registered until the worker answers it, a cancelled one included.
   const cancel = (): void => {
-    if (requests.delete(id) && worker === active) active.send({ type: 'cancel', id })
+    if (requests.get(id) === request && !request.cancelled) {
+      request.cancelled = true
+      active.send({ type: 'cancel', id })
+    }
     armSilenceTimer()
   }
   // The abort reaches the worker at once, even while the consumer is not pulling the next piece.
@@ -263,13 +289,13 @@ export async function* stream(engine: LocalTtsEngine, request: LocalSpeechReques
     queue.fail(signal?.reason instanceof Error ? signal.reason : new DOMException('Speech synthesis aborted', 'AbortError'))
     cancel()
   }
-  requests.set(id, queue)
+  requests.set(id, request)
   signal?.addEventListener('abort', abort, { once: true })
   try {
-    active.send({ id, text: request.text, voice: request.voice, language: request.language })
+    active.send({ type: 'synthesize', id, text: speech.text, voice: speech.voice, language: speech.language })
     armSilenceTimer()
     const shaper = new SpeechShaper(sampleRate())
-    const limit = plausibleSeconds(engine, request.text) * sampleRate()
+    const limit = plausibleSeconds(engine, speech.text) * sampleRate()
     let samples = 0
     for await (const piece of queue.read()) {
       const shaped = shaper.push(piece)

@@ -6,12 +6,12 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { ASR_MODEL_SPECS } from '../../src/shared/asr-models.ts'
-import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_CODEC, QWEN_TTS_MODELS } from '../../src/shared/tts-models.ts'
+import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS } from '../../src/shared/tts-models.ts'
 import { RATE } from './cut.mjs'
 
 /**
- * The bundled speech-worker and llama-server, run on the model files the app has prepared, so that the
- * clips are read by the same program and model as the rest of a reply.
+ * The bundled speech and llama-server, run on the model files the app has prepared, so that the clips are read
+ * by the same program and model as the rest of a reply.
  */
 
 const root = path.resolve(import.meta.dirname, '../..')
@@ -42,16 +42,25 @@ function program(dir, name) {
  * Irodori-TTS with the voice files the app ships.
  */
 export const TTS_MODELS = {
-  qwen3tts: QWEN_TTS_MODELS['0.6b'].talker,
+  qwen3tts: QWEN_TTS_MODELS['0.6b'].model,
   irodori: IRODORI_TTS_MODEL.model
 }
 
+/** The bundled speech, which prepare-resources puts in resources/speech. */
+export const speechProgram = () => program('speech', 'speech')
+
 function workerArgs(engine) {
-  if (engine === 'qwen3tts') return [modelPath(TTS_MODELS.qwen3tts), modelPath(QWEN_TTS_CODEC)]
+  if (engine === 'qwen3tts') return ['worker', modelPath(TTS_MODELS.qwen3tts)]
   if (engine !== 'irodori') throw new Error(`no aizuchi clips are made for ${engine}`)
-  const voices = IRODORI_TTS_VOICE_IDS.flatMap((voice) => ['--voice', `${voice}=${path.join(root, 'resources', 'irodori-voices', `${voice}.voice.gguf`)}`])
-  return [modelPath(IRODORI_TTS_MODEL.model), modelPath(IRODORI_TTS_MODEL.codec), ...voices]
+  const voices = IRODORI_TTS_VOICE_IDS.flatMap((voice) => ['--add-voice', `${voice}=${path.join(root, 'resources', 'irodori-voices', `${voice}.voice.gguf`)}`])
+  return ['worker', modelPath(IRODORI_TTS_MODEL.model), ...voices]
 }
+
+/** The version of speech.cpp's worker protocol the scripts speak, as the app's client does. */
+const WORKER_PROTOCOL = 2
+
+/** The `error` member of `error` and `fatal`, written as speech's command line writes a failure. */
+const describeError = ({ code, option, message }) => `${code}${typeof option === 'string' ? ` (${option})` : ''}: ${message}`
 
 /**
  * Halves the sample rate. A windowed-sinc low-pass at 0.45 of the new rate keeps what lies above the new
@@ -78,32 +87,40 @@ function halve(samples) {
   return out
 }
 
-/** Starts the worker on the engine's model and resolves to a function that reads a text and resolves to its samples at RATE. */
+/**
+ * Starts the worker on the engine's model and resolves to a function that reads a text and resolves to its samples
+ * at RATE. Every line of the worker's stdout is one JSON object, and anything else on it, or an answer to no request
+ * in flight, stops the script. A request carries no speed, so a clip is read at the model's own speed as in the app.
+ */
 export async function startSynthesizer(engine) {
-  const child = spawn(program('speech-worker', 'speech-worker'), workerArgs(engine), { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
+  const child = spawn(speechProgram(), workerArgs(engine), { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
   const pending = new Map()
   let ready
   let rate = RATE
   const started = new Promise((resolve, reject) => {
     ready = resolve
-    child.once('exit', (code) => reject(new Error(`speech-worker exited (${code})`)))
+    child.once('exit', (code) => reject(new Error(`speech worker exited (${code})`)))
   })
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
-    if (!line.startsWith('ASIST_JSON:')) return
-    const message = JSON.parse(line.slice('ASIST_JSON:'.length))
+    const message = JSON.parse(line)
+    if (typeof message !== 'object' || message === null || Array.isArray(message)) throw new Error(`speech worker wrote a line that is not a JSON object: ${line}`)
     if (message.type === 'ready') {
-      rate = message.sampleRate
-      if (rate !== RATE && rate !== 2 * RATE) throw new Error(`speech-worker speaks at ${rate} Hz, which the clips cannot be made from`)
+      if (message.protocol !== WORKER_PROTOCOL) throw new Error(`speech worker speaks protocol ${message.protocol}, and the script speaks ${WORKER_PROTOCOL}`)
+      rate = message.model.sample_rate
+      if (rate !== RATE && rate !== 2 * RATE) throw new Error(`speech worker speaks at ${rate} Hz, which the clips cannot be made from`)
       return ready()
     }
-    if (message.type === 'fatal') throw new Error(`speech-worker: ${message.error}`)
+    if (message.type === 'fatal') throw new Error(`speech worker: ${describeError(message.error)}`)
+    if (!['chunk', 'progress', 'end', 'error', 'cancelled'].includes(message.type)) return
+    if (message.type === 'error' && typeof message.id !== 'string') throw new Error(`speech worker could not take a line the script sent: ${describeError(message.error)}`)
     const request = pending.get(message.id)
-    if (!request) return
+    if (!request) throw new Error(`speech worker sent ${message.type} for ${message.id}, which no request in flight has`)
     if (message.type === 'chunk') request.chunks.push(Buffer.from(message.pcm, 'base64'))
-    else {
+    else if (message.type !== 'progress') {
       pending.delete(message.id)
       if (message.type === 'end') request.resolve(Buffer.concat(request.chunks))
-      else request.reject(new Error(message.error))
+      else if (message.type === 'error') request.reject(new Error(describeError(message.error)))
+      else throw new Error(`speech worker cancelled ${message.id}, which the script did not cancel`)
     }
   })
   await started
@@ -112,7 +129,7 @@ export async function startSynthesizer(engine) {
     speak(text, voice, language) {
       const id = String(next++)
       const bytes = new Promise((resolve, reject) => pending.set(id, { chunks: [], resolve, reject }))
-      child.stdin.write(JSON.stringify({ id, text, voice, language }) + '\n')
+      child.stdin.write(JSON.stringify({ type: 'synthesize', id, text, voice, language }) + '\n')
       return bytes.then((pcm) => {
         const samples = new Float32Array(pcm.length / 2)
         for (let i = 0; i < samples.length; i++) samples[i] = pcm.readInt16LE(i * 2) / 32768

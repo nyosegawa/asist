@@ -16,6 +16,8 @@ import { UNUSED, matchesUnused, unusedFiles } from '../scripts/resources/git-win
 import { stampCurrent, writeStamp } from '../scripts/resources/shared.mjs'
 // @ts-expect-error The build script is plain JavaScript without type declarations.
 import { prepareNativeMacos } from '../scripts/resources/native-macos.mjs'
+// @ts-expect-error The build script is plain JavaScript without type declarations.
+import { VERSION as SPEECH_VERSION, prepareSpeech } from '../scripts/resources/speech.mjs'
 
 let dir: string
 
@@ -121,6 +123,19 @@ describe('the Swift helpers', () => {
     prepareNativeMacos({ resources: dir })
     expect(fs.readdirSync(path.join(dir, 'native')).sort()).toEqual(['macos'])
     expect(fs.readFileSync(path.join(helpers, 'asist-mic'), 'utf8')).toBe('current')
+  })
+})
+
+describe('speech.cpp', () => {
+  it('removes the speech-worker prepared before speech replaced it, which Git no longer ignores, and keeps the current speech', async () => {
+    fs.mkdirSync(path.join(dir, 'speech-worker'))
+    fs.writeFileSync(path.join(dir, 'speech-worker', 'speech-worker'), 'old')
+    fs.mkdirSync(path.join(dir, 'speech'))
+    fs.writeFileSync(path.join(dir, 'speech', 'speech'), 'current')
+    writeStamp(path.join(dir, 'speech', 'VERSION'), SPEECH_VERSION, path.resolve('scripts/resources/speech.mjs'))
+    await prepareSpeech({ resources: dir, platform: 'darwin', arch: 'arm64' })
+    expect(fs.readdirSync(dir)).toEqual(['speech'])
+    expect(fs.readFileSync(path.join(dir, 'speech', 'speech'), 'utf8')).toBe('current')
   })
 })
 

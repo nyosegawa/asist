@@ -1,5 +1,6 @@
 import { ASR_MODEL_SPECS } from './asr-models'
 import type { MessageKey } from './i18n'
+import { IRODORI_TTS_MODEL, QWEN_TTS_MODELS } from './tts-models'
 
 /** The groups of the credits, in the order the about page shows them. */
 export type CreditGroup = 'local' | 'api' | 'data' | 'bundled' | 'software'
@@ -53,20 +54,12 @@ export const CREDITS = [
     url: 'https://github.com/Rikorose/DeepFilterNet'
   },
   {
-    id: 'ttsQwen',
-    group: 'local',
-    name: 'Qwen3-TTS 12Hz CustomVoice 0.6B, 1.7B (GGUF)',
-    provider: 'Alibaba Qwen',
-    license: 'Apache-2.0',
-    url: 'https://huggingface.co/sakasegawa/qwen3-tts-ggml'
-  },
-  {
     id: 'ttsIrodori',
     group: 'local',
     name: 'Irodori-TTS v4.1-Small-MF (GGUF)',
     provider: 'Aratako',
     license: 'MIT',
-    url: 'https://huggingface.co/sakasegawa/irodori-tts-ggml'
+    url: `https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`
   },
   {
     id: 'ttsIrodoriCodec',
@@ -74,7 +67,7 @@ export const CREDITS = [
     name: 'Semantic-DACVAE-Japanese-32dim (GGUF)',
     provider: 'Aratako',
     license: 'MIT',
-    url: 'https://huggingface.co/sakasegawa/irodori-tts-ggml'
+    url: `https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`
   },
   {
     id: 'dacvae',
@@ -301,6 +294,19 @@ function speechRecognitionCredits(localSpeechRuns: boolean): ListedCredit[] {
   }))
 }
 
+/** The sizes of Qwen3-TTS, each converted to GGUF in a repository of its own. */
+function qwenTtsCredits(): ListedCredit[] {
+  return Object.values(QWEN_TTS_MODELS).map((spec) => ({
+    id: spec.model.repo,
+    group: 'local',
+    name: `${spec.label} CustomVoice (GGUF)`,
+    provider: 'Alibaba Qwen',
+    license: 'Apache-2.0',
+    url: `https://huggingface.co/${spec.model.repo}`,
+    use: 'settingsAbout.use.ttsQwen'
+  }))
+}
+
 /** The license ASIST itself is published under, as the LICENSE file at the root of the repository states it. */
 export const ASIST_LICENSE = { name: 'MIT', url: 'https://opensource.org/license/mit' } as const
 
@@ -310,5 +316,8 @@ export function creditsOf(group: CreditGroup, localSpeechRuns: boolean): ListedC
     ...credit,
     use: `settingsAbout.use.${credit.id}` as const
   }))
-  return group === 'local' ? [...speechRecognitionCredits(localSpeechRuns), ...listed] : listed
+  if (group !== 'local') return listed
+  // Qwen3-TTS goes beside Irodori-TTS, the other local speech synthesis.
+  const irodori = listed.findIndex((credit) => credit.id === 'ttsIrodori')
+  return [...speechRecognitionCredits(localSpeechRuns), ...listed.slice(0, irodori), ...qwenTtsCredits(), ...listed.slice(irodori)]
 }

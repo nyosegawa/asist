@@ -21,7 +21,7 @@ import { useViewStore } from '../src/renderer/src/state/view'
 import { usePreparationStore } from '../src/renderer/src/state/preparation'
 import { asrModelSpec, offeredAsrModels } from '@shared/asr-models'
 import { CREDITS } from '@shared/credits'
-import { IRODORI_TTS_VOICES } from '@shared/tts-models'
+import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICES, QWEN_TTS_MODELS } from '@shared/tts-models'
 import { VOICE_SAMPLE_TEXT } from '@shared/voice-samples'
 import { speechPlayer } from '../src/renderer/src/voice/SpeechPlayer'
 import type { PlatformCapabilities } from '@shared/platform'
@@ -1538,6 +1538,17 @@ describe('the models the about page credits', () => {
     for (const id of offeredAsrModels()) expect(row(view, `${asrModelSpec(id).label} (GGUF)`)).toBeUndefined()
     const whisperInWindow = CREDITS.find((credit) => credit.id === 'asrWhisperOnnx')!
     expect(row(view, whisperInWindow.name)?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.asrWhisperOnnx'))
+  })
+
+  it('credits each size of Qwen3-TTS and Irodori-TTS, linked to the repositories of the files ASIST pins', async () => {
+    const view = await about(MACOS)
+    for (const spec of Object.values(QWEN_TTS_MODELS)) {
+      const credit = row(view, `${spec.label} CustomVoice (GGUF)`)
+      expect(credit?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.ttsQwen'))
+      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${spec.model.repo}`)
+    }
+    const irodori = CREDITS.find((credit) => credit.id === 'ttsIrodori')!
+    expect(row(view, irodori.name)?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`)
   })
 })
 
