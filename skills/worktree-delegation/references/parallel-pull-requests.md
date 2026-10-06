@@ -24,9 +24,11 @@ node skills/worktree-delegation/scripts/prepare-worktree.mjs <name> <branch>
 
 It adds `.claude/worktrees/<name>` on a new branch from origin/main and clones `node_modules`,
 `resources/git` and `resources/uv` into it. Start the subagent without `isolation`, and give it the
-printed path: it works through absolute paths or `(cd <path> && …)`. The Agent tool's own worktree has
-none of these files, and a subagent that copies `resources/git` itself is refused by the guard; one that
-rephrased the command to get past it lost its shell altogether.
+printed path: it works through absolute paths or `(cd <path> && …)`. When your session runs in a
+worktree of its own, each subagent first enters its worktree with EnterWorktree (SKILL.md, section 2),
+or the guard refuses all of its writes. The Agent tool's own worktree has none of these files, and a
+subagent that copies `resources/git` itself is refused by the guard; one that rephrased the command to
+get past it lost its shell altogether.
 
 ## What the brief adds
 

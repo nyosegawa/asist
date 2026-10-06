@@ -3,6 +3,13 @@
 Fill in every part. A subagent sees nothing of the conversation, so anything left out is guessed.
 
 ```text
+[When your session runs in a worktree of its own, as in the Claude Code desktop app, begin with:]
+Before anything else, call the EnterWorktree tool with path set to <absolute path>; if it is not
+loaded, load it with ToolSearch "select:EnterWorktree". Do not pass name, which creates another
+worktree. The session that started you runs in a different worktree, and until you enter yours a
+guard refuses every write to it, through Write, Edit and Bash alike. If EnterWorktree fails, change
+nothing: stop and put its error in the report.
+
 You are working in the ASIST repository. Read AGENTS.md at the repo root first and follow it
 (comment rules, the ui-text skill for any text the app shows or says, tests that protect behavior
 rather than wording). Your git worktree is <absolute path>, on branch <branch>; work only there,
