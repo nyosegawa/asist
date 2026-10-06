@@ -184,6 +184,7 @@ body {
 }
 
 .topbar {
+  anchor-name: --topbar;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -385,6 +386,12 @@ body {
 }
 .mic.is-loading {
   color: var(--color-holo-muted);
+}
+/* The top bar's height changes with the window's height and with the HUD, so the toasts take their top from
+   its bottom edge rather than from a fixed offset, which would lie inside the bar at some heights and cover
+   the microphone button. */
+.toasts {
+  top: anchor(--topbar bottom);
 }
 
 .main {
