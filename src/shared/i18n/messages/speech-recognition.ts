@@ -242,45 +242,6 @@ export const speechRecognition = defineMessages({
       'es-419': 'Se detuvo la transcripción de una frase anterior.',
       'es-ES': 'Se ha detenido la transcripción de una frase anterior.'
     },
-    serverUnavailable: {
-      'ja-JP': '音声認識サーバーを使えません。設定の「声」でブラウザ内 Whisper を準備してください。',
-      'en-US': 'The speech recognition server is unavailable. Prepare in-browser Whisper on the Voice page in Settings.',
-      'fr-FR': 'Le serveur de reconnaissance vocale est indisponible. Préparez Whisper dans le navigateur sur la page Voix des réglages.',
-      'de-DE': 'Der Server für die Spracherkennung ist nicht erreichbar. Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
-      'hi-IN': 'स्पीच रिकग्निशन सर्वर उपलब्ध नहीं है। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
-      'id-ID': 'Server pengenalan suara tidak bisa dipakai. Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
-      'it-IT': 'Il server di riconoscimento vocale non è disponibile. Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
-      'ko-KR': "음성 인식 서버를 사용할 수 없습니다. 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
-      'pt-BR': 'O servidor de reconhecimento de fala está indisponível. Prepare o Whisper no navegador na página Voz dos ajustes.',
-      'es-419': 'El servidor de reconocimiento de voz no está disponible. Prepara Whisper en el navegador en la página Voz de Configuración.',
-      'es-ES': 'El servidor de reconocimiento de voz no está disponible. Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
-    },
-    serverStopped: {
-      'ja-JP': '音声認識サーバーが止まっています。設定の「声」でブラウザ内 Whisper を準備してください。',
-      'en-US': 'The speech recognition server has stopped. Prepare in-browser Whisper on the Voice page in Settings.',
-      'fr-FR': "Le serveur de reconnaissance vocale s'est arrêté. Préparez Whisper dans le navigateur sur la page Voix des réglages.",
-      'de-DE': 'Der Server für die Spracherkennung läuft nicht mehr. Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
-      'hi-IN': 'स्पीच रिकग्निशन सर्वर रुक गया है। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
-      'id-ID': 'Server pengenalan suara berhenti. Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
-      'it-IT': 'Il server di riconoscimento vocale si è fermato. Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
-      'ko-KR': "음성 인식 서버가 멈췄습니다. 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
-      'pt-BR': 'O servidor de reconhecimento de fala parou. Prepare o Whisper no navegador na página Voz dos ajustes.',
-      'es-419': 'El servidor de reconocimiento de voz se detuvo. Prepara Whisper en el navegador en la página Voz de Configuración.',
-      'es-ES': 'El servidor de reconocimiento de voz se ha detenido. Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
-    },
-    serverTranscribeFailed: {
-      'ja-JP': '音声認識サーバーで転写できませんでした({detail})。設定の「声」でブラウザ内 Whisper を準備してください。',
-      'en-US': "The speech recognition server couldn't transcribe ({detail}). Prepare in-browser Whisper on the Voice page in Settings.",
-      'fr-FR': "Le serveur de reconnaissance vocale n'a pas pu transcrire ({detail}). Préparez Whisper dans le navigateur sur la page Voix des réglages.",
-      'de-DE': 'Der Server für die Spracherkennung konnte nicht transkribieren ({detail}). Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
-      'hi-IN': 'स्पीच रिकग्निशन सर्वर टेक्स्ट नहीं बना सका ({detail})। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
-      'id-ID': 'Server pengenalan suara tidak bisa membuat transkripsi ({detail}). Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
-      'it-IT': 'Il server di riconoscimento vocale non è riuscito a trascrivere ({detail}). Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
-      'ko-KR': "음성 인식 서버에서 받아쓰지 못했습니다({detail}). 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
-      'pt-BR': 'O servidor de reconhecimento de fala não conseguiu transcrever ({detail}). Prepare o Whisper no navegador na página Voz dos ajustes.',
-      'es-419': 'El servidor de reconocimiento de voz no pudo transcribir ({detail}). Prepara Whisper en el navegador en la página Voz de Configuración.',
-      'es-ES': 'El servidor de reconocimiento de voz no ha podido transcribir ({detail}). Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
-    },
     localRecoveryFailed: {
       'ja-JP': 'ブラウザ内 Whisper で転写できませんでした。設定の「声」で準備し直してください。',
       'en-US': "In-browser Whisper couldn't transcribe. Prepare it again on the Voice page in Settings.",
@@ -332,6 +293,45 @@ export const speechRecognition = defineMessages({
       'pt-BR': 'Não foi possível carregar o modelo do Whisper no navegador ({detail}).',
       'es-419': 'No se pudo cargar el modelo de Whisper en el navegador ({detail}).',
       'es-ES': 'No se ha podido cargar el modelo de Whisper en el navegador ({detail}).'
+    },
+    onComputerUnavailable: {
+      'ja-JP': 'このコンピュータの音声認識を使えません。設定の「声」でブラウザ内 Whisper を準備してください。',
+      'en-US': 'Speech recognition on this computer is unavailable. Prepare in-browser Whisper on the Voice page in Settings.',
+      'fr-FR': 'La reconnaissance vocale de cet ordinateur est indisponible. Préparez Whisper dans le navigateur sur la page Voix des réglages.',
+      'de-DE': 'Die Spracherkennung auf diesem Computer ist nicht verfügbar. Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
+      'hi-IN': 'इस कंप्यूटर का स्पीच रिकग्निशन उपलब्ध नहीं है। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
+      'id-ID': 'Pengenalan suara di komputer ini tidak bisa dipakai. Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
+      'it-IT': 'Il riconoscimento vocale su questo computer non è disponibile. Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
+      'ko-KR': "이 컴퓨터의 음성 인식을 사용할 수 없습니다. 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
+      'pt-BR': 'O reconhecimento de fala deste computador está indisponível. Prepare o Whisper no navegador na página Voz dos ajustes.',
+      'es-419': 'El reconocimiento de voz de esta computadora no está disponible. Prepara Whisper en el navegador en la página Voz de Configuración.',
+      'es-ES': 'El reconocimiento de voz de este ordenador no está disponible. Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
+    },
+    onComputerStopped: {
+      'ja-JP': 'このコンピュータの音声認識が止まっています。設定の「声」でブラウザ内 Whisper を準備してください。',
+      'en-US': 'Speech recognition on this computer has stopped. Prepare in-browser Whisper on the Voice page in Settings.',
+      'fr-FR': "La reconnaissance vocale de cet ordinateur s'est arrêtée. Préparez Whisper dans le navigateur sur la page Voix des réglages.",
+      'de-DE': 'Die Spracherkennung auf diesem Computer läuft nicht mehr. Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
+      'hi-IN': 'इस कंप्यूटर का स्पीच रिकग्निशन रुक गया है। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
+      'id-ID': 'Pengenalan suara di komputer ini berhenti. Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
+      'it-IT': 'Il riconoscimento vocale su questo computer si è fermato. Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
+      'ko-KR': "이 컴퓨터의 음성 인식이 멈췄습니다. 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
+      'pt-BR': 'O reconhecimento de fala deste computador parou. Prepare o Whisper no navegador na página Voz dos ajustes.',
+      'es-419': 'El reconocimiento de voz de esta computadora se detuvo. Prepara Whisper en el navegador en la página Voz de Configuración.',
+      'es-ES': 'El reconocimiento de voz de este ordenador se ha detenido. Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
+    },
+    onComputerTranscribeFailed: {
+      'ja-JP': 'このコンピュータの音声認識で転写できませんでした({detail})。設定の「声」でブラウザ内 Whisper を準備してください。',
+      'en-US': "Speech recognition on this computer couldn't transcribe ({detail}). Prepare in-browser Whisper on the Voice page in Settings.",
+      'fr-FR': "La reconnaissance vocale de cet ordinateur n'a pas pu transcrire ({detail}). Préparez Whisper dans le navigateur sur la page Voix des réglages.",
+      'de-DE': 'Die Spracherkennung auf diesem Computer konnte nicht transkribieren ({detail}). Bereiten Sie Whisper im Browser auf der Seite „Stimme“ in den Einstellungen vor.',
+      'hi-IN': 'इस कंप्यूटर का स्पीच रिकग्निशन टेक्स्ट नहीं बना सका ({detail})। सेटिंग्ज़ के "आवाज़" पेज पर ब्राउज़र वाला Whisper तैयार करें।',
+      'id-ID': 'Pengenalan suara di komputer ini tidak bisa membuat transkripsi ({detail}). Siapkan Whisper dalam browser di halaman Suara pada Pengaturan.',
+      'it-IT': 'Il riconoscimento vocale su questo computer non è riuscito a trascrivere ({detail}). Prepara Whisper nel browser nella pagina «Voce» delle impostazioni.',
+      'ko-KR': "이 컴퓨터의 음성 인식으로 받아쓰지 못했습니다({detail}). 설정의 '음성'에서 브라우저 내 Whisper를 준비하십시오.",
+      'pt-BR': 'O reconhecimento de fala deste computador não conseguiu transcrever ({detail}). Prepare o Whisper no navegador na página Voz dos ajustes.',
+      'es-419': 'El reconocimiento de voz de esta computadora no pudo transcribir ({detail}). Prepara Whisper en el navegador en la página Voz de Configuración.',
+      'es-ES': 'El reconocimiento de voz de este ordenador no ha podido transcribir ({detail}). Prepara Whisper en el navegador en la página “Voz” de Ajustes.'
     }
   },
   unavailable: {

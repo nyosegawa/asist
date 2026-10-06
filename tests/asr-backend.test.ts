@@ -49,7 +49,7 @@ describe('AsrBackend', () => {
     const { recognition, asr } = backend()
     vi.mocked(window.api.transcribe).mockRejectedValue(new Error('server offline'))
 
-    await expect(recognition.transcribe(new Float32Array([0.1]), always)).rejects.toThrow('[asist:speechRecognition.errors.serverTranscribeFailed')
+    await expect(recognition.transcribe(new Float32Array([0.1]), always)).rejects.toThrow('[asist:speechRecognition.errors.onComputerTranscribeFailed')
     expect(recognition.localFallbackEnabled).toBe(false)
     expect(asr.init).not.toHaveBeenCalled()
     expect(asr.transcribe).not.toHaveBeenCalled()
@@ -64,7 +64,7 @@ describe('AsrBackend', () => {
     const thrown = await recognition.transcribe(new Float32Array([0.1]), always).catch((error: unknown) => error as Error)
     const en = createTranslator('en-US')
     expect(readErrorText(thrown.message, 'en-US')).toBe(
-      en('speechRecognition.errors.serverTranscribeFailed', { detail: en('speechRecognition.errors.transcribeTimeout') })
+      en('speechRecognition.errors.onComputerTranscribeFailed', { detail: en('speechRecognition.errors.transcribeTimeout') })
     )
     expect(thrown.message).not.toContain('Error invoking remote method')
   })

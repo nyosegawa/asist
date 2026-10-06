@@ -524,7 +524,7 @@ describe('VoiceController ASR recovery', () => {
     controller.disable()
 
     expect(window.api.transcribeCancel).toHaveBeenCalledWith(requestId)
-    await expect(pending).rejects.toThrow('[asist:speechRecognition.errors.serverTranscribeFailed')
+    await expect(pending).rejects.toThrow('[asist:speechRecognition.errors.onComputerTranscribeFailed')
   })
 
   it('resets local ASR when the mic is disabled', () => {
