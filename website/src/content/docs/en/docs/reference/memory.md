@@ -27,18 +27,19 @@ On a Mac with 16GB of memory or more, ASIST recommends 1.7B for speech recogniti
 
 ## Windows
 
-On Windows, speech recognition and reading aloud (Irodori-TTS and Qwen3-TTS) load their models into the memory of a discrete GPU. Measured on a GeForce RTX 2080 (8GB) with Windows 11, as the use of the whole GPU that `nvidia-smi` reports, less the 1.64GB it showed with ASIST running and the microphone off. Speech recognition and 0.6B Qwen3-TTS were measured on 2026-10-07 with speech.cpp 0.7.1. Speech recognition is given after it transcribed an utterance of 25.5 seconds; just after loading, 1.7B took 2.3GB and 0.6B 0.9GB. It grows with the length of the utterance: after one of 10.5 seconds, 1.7B took 2.4GB and 0.6B 1.1GB. 0.6B Qwen3-TTS is given after it read three sentences. Irodori-TTS was measured on 2026-10-01 with speech.cpp v0.3.0, and 1.7B Qwen3-TTS on 2026-09-29 with the implementation used before.
+On Windows, speech recognition and reading aloud (Irodori-TTS and Qwen3-TTS) load their models into the memory of a discrete GPU. Measured on a GeForce RTX 2080 (8GB) with Windows 11, as the use of the whole GPU that `nvidia-smi` reports, less the 1.64GB it showed with ASIST running and the microphone off. Speech recognition and 0.6B Qwen3-TTS were measured on 2026-10-07 with speech.cpp 0.7.1. Speech recognition is given after it transcribed an utterance of 25.5 seconds; just after loading, 1.7B took 2.3GB and 0.6B 0.9GB. It grows with the length of the utterance: after one of 10.5 seconds, 1.7B took 2.4GB and 0.6B 1.1GB. The three FastConformer models were measured on the same day running speech.cpp 0.7.1's `speech worker` alone, as the growth over the use before the worker started. They are given after transcribing 20 seconds, the longest utterance ASIST sends at once (the first 20 seconds of a FLEURS utterance, in Japanese for the two Japanese models and in English for parakeet-tdt-0.6b-v3); just after loading, each took 1.2GB. 0.6B Qwen3-TTS is given after it read three sentences. Irodori-TTS was measured on 2026-10-01 with speech.cpp v0.3.0, and 1.7B Qwen3-TTS on 2026-09-29 with the implementation used before.
 
 | Model | GPU memory |
 |---|---|
 | Qwen3-ASR 1.7B (Q8_0) | 2.7GB |
 | Qwen3-ASR 0.6B (Q8_0) | 1.4GB |
+| parakeet-tdt_ctc-0.6b-ja (F16) | 1.3GB |
+| ReazonSpeech NeMo v2 (F16) | 1.3GB |
+| parakeet-tdt-0.6b-v3 (F16) | 1.3GB |
 | Irodori-TTS v4.1-Small-MF (F16) | 2.1GB |
 | Qwen3-TTS 0.6B (Q8_0) | 1.3GB |
 | Qwen3-TTS 1.7B (Q8_0) | 2.7GB |
 
 The Windows desktop and ASIST with the microphone off use the same GPU memory as well, 1.64GB at the time of the measurement. Adding the values of the table to it, 1.7B speech recognition comes to about 6.4GB with Irodori-TTS, about 5.6GB with 0.6B Qwen3-TTS, and about 7.0GB with 1.7B Qwen3-TTS. This is why ASIST recommends 1.7B for speech recognition with 6GB of GPU memory or more, and the first-time setup also recommends Irodori-TTS and Qwen3-TTS with 8GB or more. Below 6GB, it recommends 0.6B for speech recognition. The 1.7B size of Qwen3-TTS can be chosen with 10GB of GPU memory or more.
-
-The GPU memory of the three FastConformer models has not been measured yet.
 
 Searching the memory by meaning, choosing the kind of backchannel and detecting the end of a turn run on the CPU and the main memory on Windows as well. Their memory use on Windows has not been measured yet.
