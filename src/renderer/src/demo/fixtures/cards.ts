@@ -1,6 +1,6 @@
 import type { PanelState } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
-import { DEMO_CALENDAR_CARD } from './calendar'
+import { buildDemoCalendarCard } from './calendar'
 import { DEMO_FX, demoFx } from './finance'
 import { DEMO_JOB } from './jobs'
 import { DEMO_DOWNLOADS_DIR, DEMO_FILES_DIR, DEMO_IMAGE_PATHS, DEMO_MIXED_PATHS, demoFileItems } from './files'
@@ -77,7 +77,7 @@ export const CARD_GROUPS: Array<{ command: string; label: string; cards: CardFix
     command: '/g3',
     label: '記録・Agent',
     cards: [
-      { type: 'calendar', props: DEMO_CALENDAR_CARD, get source() { return translate('calendar.card.source') } },
+      { type: 'calendar', props: buildDemoCalendarCard(), get source() { return translate('calendar.card.source') } },
       { type: 'todo', props: {} },
       { type: 'mail', props: DEMO_MAIL_CARD, source: 'IMAP · 仕事 / 個人' },
       { type: 'mail-message', props: DEMO_MAIL_MESSAGE_CARD, source: 'IMAP · 仕事' },
