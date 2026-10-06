@@ -20,6 +20,30 @@ function alive(pid: number): boolean {
 }
 
 /**
+ * Gives write and search permission back to a folder and every folder in it. The tests that check a permission
+ * error take it from a folder and give it back in a finally, which a killed run, or a test that hangs past its
+ * timeout, never reaches, and fs.rmSync fails with EACCES on a folder it may not list or empty. On Windows a mode
+ * with the write bit clears the read-only attribute.
+ */
+function unlock(folder: string): void {
+  fs.chmodSync(folder, 0o700)
+  for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
+    if (entry.isDirectory()) unlock(path.join(folder, entry.name))
+  }
+}
+
+function remove(folder: string): void {
+  try {
+    unlock(folder)
+  } catch (error) {
+    // Two runs that start together remove the same leftover. A folder in it disappears only after the other run
+    // has unlocked the whole leftover, so fs.rmSync can remove what is left.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  fs.rmSync(folder, REMOVE)
+}
+
+/**
  * Gives the run one folder in the temporary folder and points os.tmpdir() of every worker into it, so that the
  * folders the tests make go when the run ends, whether it passes or fails. The workers start after this and
  * inherit the environment. A run killed before its teardown leaves its folder, which a later run removes once
@@ -29,7 +53,7 @@ export default function setup(): () => void {
   const parent = os.tmpdir()
   for (const name of fs.readdirSync(parent)) {
     const match = RUN.exec(name)
-    if (match && !alive(Number(match[1]))) fs.rmSync(path.join(parent, name), REMOVE)
+    if (match && !alive(Number(match[1]))) remove(path.join(parent, name))
   }
   const run = fs.mkdtempSync(path.join(parent, `${PREFIX}${process.pid}-`))
   const before = TEMP_VARIABLES.map((name) => [name, process.env[name]] as const)
@@ -40,6 +64,6 @@ export default function setup(): () => void {
       if (value === undefined) delete process.env[name]
       else process.env[name] = value
     }
-    fs.rmSync(run, REMOVE)
+    remove(run)
   }
 }
