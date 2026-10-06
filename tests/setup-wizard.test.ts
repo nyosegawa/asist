@@ -9,7 +9,7 @@ import { SetupWizard } from '../src/renderer/src/ui/SetupWizard'
 import { useSettingsStore, useStatusStore } from '../src/renderer/src/state/stores'
 import { voiceController } from '../src/renderer/src/voice/VoiceController'
 import { liveVoice } from '../src/renderer/src/voice/LiveVoice'
-import { asrDownloadGb, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
+import { asrDownloadGb, asrModelSizeGb, asrModelSpec, recommendAsrModel, type ResolvedAsrModel } from '@shared/asr-models'
 import { isLiveEngine } from '@shared/voice-engine'
 import type { ChatGptSignInResult, ChatGptStatus } from '@shared/chatgpt'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, platformCapabilities, setCapabilities } from './helpers/platform'
@@ -234,6 +234,15 @@ describe('first-run setup', () => {
     // Choosing the same language again leaves an engine picked since then as it is.
     await chooseLanguage('ja-JP')
     expect(api.saveSettings).toHaveBeenLastCalledWith({ uiLocale: 'ja-JP', conversationLocale: 'ja-JP', region: 'JP' })
+  })
+
+  it('moves a speech recognition model that does not recognize the chosen language to the automatic choice, and keeps one that does', async () => {
+    settings = { ...settings, asrModel: 'parakeet-tdt_ctc-0.6b-ja' }
+    await render()
+    await chooseLanguage('ja-JP')
+    expect(api.saveSettings).toHaveBeenLastCalledWith({ uiLocale: 'ja-JP', conversationLocale: 'ja-JP', region: 'JP' })
+    await chooseLanguage('en-US')
+    expect(api.saveSettings).toHaveBeenLastCalledWith({ uiLocale: 'en-US', conversationLocale: 'en-US', region: 'US', ttsEngine: 'qwen3tts', asrModel: 'auto' })
   })
 
   it('leaves a persona the user wrote as it is when the language changes', async () => {
@@ -702,7 +711,7 @@ describe('first-run setup on Windows with an NVIDIA GPU', () => {
   beforeEach(() => setCapabilities(WINDOWS))
   afterEach(() => setCapabilities(MACOS))
 
-  it('offers Qwen3-ASR with the reason from the GPU memory and the size of what it downloads', async () => {
+  it('offers Qwen3-ASR with the reason from the GPU memory and the size of what it downloads, and the models that recognize Japanese to choose from', async () => {
     await render()
     await toModel(ja)
     await verifyKey(ja)
@@ -717,10 +726,14 @@ describe('first-run setup on Windows with an NVIDIA GPU', () => {
     const sizeGb = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrDownloadGb(asrModelSpec('qwen3-asr-1.7b'), false))
     expect(body).toContain(ja('setup.listening.downloadNote', { sizeGb }))
     expect(container.querySelector('.su-details dt')?.textContent).toBe(ja('setup.listening.details.memory.vulkan'))
+    const option = (model: ResolvedAsrModel): string =>
+      ja('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model))) })
     expect([...container.querySelectorAll('.su-details option')].map((option) => option.textContent)).toEqual([
       ja('setup.listening.automaticModel.vulkan'),
-      label,
-      asrModelSpec('qwen3-asr-0.6b').label
+      option('qwen3-asr-1.7b'),
+      option('qwen3-asr-0.6b'),
+      option('parakeet-tdt_ctc-0.6b-ja'),
+      option('reazonspeech-nemo-v2')
     ])
   })
 })

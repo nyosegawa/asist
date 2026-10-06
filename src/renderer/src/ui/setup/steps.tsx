@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { useFormatLocale, useT } from '@/i18n'
-import { asrRecommendationReason } from '../asr-recommendation'
+import { asrChoiceLabel, asrRecommendationReason } from '../asr-recommendation'
 import { progressLabel } from '../progress-label'
 import type { ReactNode } from 'react'
 import { LLM_PROVIDERS, LLM_PROVIDER_INFO, PROVIDER_DEFAULT_MODELS, isApiKeyProvider, modelName, type LlmProvider } from '@shared/llm-catalog'
@@ -168,6 +168,7 @@ export function SpeakingStep({
 }
 
 export function ListeningStep({
+  locale,
   localSpeech,
   choice,
   onChoice,
@@ -184,6 +185,8 @@ export function ListeningStep({
   onPrepareLocal,
   onCancelLocal
 }: {
+  /** The conversation language, whose speech recognition models are the ones to choose from. */
+  locale: ConversationLocale
   /** Where this machine cannot run the model, its reason stands in place of that choice. */
   localSpeech: PlatformCapabilities['localSpeech']
   choice: ListeningChoice | null
@@ -254,9 +257,9 @@ export function ListeningStep({
             <div className="su-details">
               <select className="st-select" value={asrModel} disabled={downloadBusy} onChange={(event) => onAsrModel(event.target.value as AsrModel)}>
                 <option value="auto">{t(`setup.listening.automaticModel.${localSpeech.backend}`)}</option>
-                {asrModelChoices().map((model) => (
+                {asrModelChoices(locale).map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.label}
+                    {asrChoiceLabel(t, formatLocale, model)}
                   </option>
                 ))}
               </select>

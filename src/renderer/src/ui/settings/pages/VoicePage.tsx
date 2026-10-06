@@ -17,7 +17,7 @@ import { LIVE_ENGINE_INFO, isLiveEngine, type LiveEngine } from '@shared/voice-e
 import { displayError } from '@/display-error'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { platformCapabilities } from '@/platform'
-import { asrRecommendationReason } from '../../asr-recommendation'
+import { asrChoiceLabel, asrRecommendationReason } from '../../asr-recommendation'
 import { osMessageKey } from '@shared/i18n/os-message'
 
 /** The global hotkey, labelled as this OS writes it, with the OS's refusal in place of the hint. */
@@ -170,7 +170,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   const offeredSizes = offeredQwenTtsSizes(localSpeech)
   const qwenTtsSizes = QWEN_TTS_SIZES.filter((size) => offeredSizes.includes(size) || size === settings.qwenTtsSize)
   const asrReady = status !== null && speechEnginePrepared(status.asr)
-  const asrChoices = localSpeech.backend === null ? [] : asrModelChoices()
+  const asrChoices = localSpeech.backend === null ? [] : asrModelChoices(settings.conversationLocale)
   const asrModel = statusOf(setup)?.asr ?? null
   const vapRead = statusOf(vap)
   const classifier = statusOf(aizuchiClassifier)
@@ -236,7 +236,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
                 <option value="auto">{t(`settingsVoice.recognition.automatic.${localSpeech.backend}`)}</option>
                 {asrChoices.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.label}
+                    {asrChoiceLabel(t, formatLocale, model)}
                   </option>
                 ))}
               </select>

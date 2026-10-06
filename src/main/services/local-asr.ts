@@ -11,9 +11,10 @@ import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-model
 import { startSpeechWorker, type SpeechWorker, type WorkerMessage } from './speech-worker'
 
 /**
- * Speech recognition with Qwen3-ASR in a speech.cpp worker of its own, beside the one that reads the replies, on
- * the GPU the capabilities chose. The worker runs the model of one size and recognizes one request at a time, in
- * the order they arrive. A recording goes to it as 16-bit samples on its stdin and is never written to disk.
+ * Speech recognition in a speech.cpp worker of its own, beside the one that reads the replies, on the GPU the
+ * capabilities chose. The worker runs one model, Qwen3-ASR or a FastConformer model, and recognizes one request at a
+ * time, in the order they arrive; every model takes the same requests. A recording goes to it as 16-bit samples on
+ * its stdin and is never written to disk.
  */
 
 /**
@@ -86,7 +87,7 @@ export async function ensureWorker(model: AsrModelSpec): Promise<boolean> {
   if (!installationStatus(model).modelInstalled) return false
   // speech ships with the app, so a missing one is a broken build rather than something to prepare.
   if (!fs.existsSync(speechPath())) throw new Error(`speech is missing from ${speechPath()}`)
-  const started: SpeechWorker = startSpeechWorker(speechPath(), modelFilePath(model.model), [], 'qwen3-asr', {
+  const started: SpeechWorker = startSpeechWorker(speechPath(), modelFilePath(model.model), [], model.family, {
     task: 'recognition',
     device: localSpeech.device,
     silence: { ms: ANSWER_TIMEOUT_MS, error: timedOutError },
@@ -127,10 +128,10 @@ function encodePcm(samples: Float32Array): string {
 }
 
 /** The text of a recognition's `end`. Throws on one that breaks the protocol, which fails the worker. */
-function transcriptOf(message: WorkerMessage): string {
+function transcriptOf(model: AsrModelSpec, message: WorkerMessage): string {
   if (typeof message.text !== 'string') throw new Error(`the worker ended recognition ${String(message.id)} without a text`)
   if (!RECOGNITION_STOPS.has(message.stop)) throw new Error(`the worker ended recognition ${String(message.id)} with the stop ${JSON.stringify(message.stop)}, which a recognition does not have`)
-  if (message.stop === 'model_limit') console.warn(`qwen3-asr: recognition ${String(message.id)} stopped at the most tokens the model writes`)
+  if (message.stop === 'model_limit') console.warn(`${model.family}: recognition ${String(message.id)} stopped at the most tokens the model writes`)
   return message.text.trim()
 }
 
@@ -162,7 +163,7 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
         { type: 'chunk', id, seq: 0, pcm: encodePcm(samples) },
         { type: 'transcribe', id, sample_rate: SAMPLE_RATE, language }
       ], {
-        end: (message) => resolve(transcriptOf(message)),
+        end: (message) => resolve(transcriptOf(model, message)),
         error: (reason) => reject(new Error(reason)),
         abandoned: reject
       })

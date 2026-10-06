@@ -1,4 +1,4 @@
-import { ASR_MODEL_SPECS } from './asr-models'
+import { ASR_MODEL_SPECS, offeredAsrModels, type ResolvedAsrModel } from './asr-models'
 import type { MessageKey } from './i18n'
 import { IRODORI_TTS_MODEL, QWEN_TTS_MODELS } from './tts-models'
 
@@ -269,21 +269,33 @@ export interface ListedCredit extends Credit {
   readonly use: Extract<MessageKey, `settingsAbout.use.${string}`>
 }
 
+/** Who published each speech recognition model that ASIST's file was converted from, and its license, as its model card gives them. */
+const SPEECH_RECOGNITION_SOURCES: Readonly<Record<ResolvedAsrModel, Pick<Credit, 'provider' | 'license'>>> = {
+  'qwen3-asr-1.7b': { provider: 'Alibaba Qwen', license: 'Apache-2.0' },
+  'qwen3-asr-0.6b': { provider: 'Alibaba Qwen', license: 'Apache-2.0' },
+  'parakeet-tdt_ctc-0.6b-ja': { provider: 'NVIDIA', license: 'CC BY 4.0' },
+  'reazonspeech-nemo-v2': { provider: 'Reazon Human Interaction Lab', license: 'Apache-2.0' },
+  'parakeet-tdt-0.6b-v3': { provider: 'NVIDIA', license: 'CC BY 4.0' }
+}
+
 /**
- * The local speech recognition models, named by the label the voice page gives them, where the local
- * speech runs. Both are Alibaba's Qwen3-ASR, converted to GGUF for speech.cpp.
+ * The local speech recognition models, named by the label the voice page gives them, where the local speech runs.
+ * Each is converted to GGUF for speech.cpp, which the name says and the link leads to, as CC BY 4.0 asks a change to
+ * be indicated.
  */
 function speechRecognitionCredits(localSpeechRuns: boolean): ListedCredit[] {
   if (!localSpeechRuns) return []
-  return Object.values(ASR_MODEL_SPECS).map((spec) => ({
-    id: spec.model.repo,
-    group: 'local',
-    name: `${spec.label} (GGUF)`,
-    provider: 'Alibaba Qwen',
-    license: 'Apache-2.0',
-    url: `https://huggingface.co/${spec.model.repo}`,
-    use: 'settingsAbout.use.asr'
-  }))
+  return offeredAsrModels().map((model) => {
+    const spec = ASR_MODEL_SPECS[model]
+    return {
+      id: spec.model.repo,
+      group: 'local',
+      name: `${spec.label} (GGUF)`,
+      ...SPEECH_RECOGNITION_SOURCES[model],
+      url: `https://huggingface.co/${spec.model.repo}`,
+      use: 'settingsAbout.use.asr'
+    }
+  })
 }
 
 /** The sizes of Qwen3-TTS, each converted to GGUF in a repository of its own. */

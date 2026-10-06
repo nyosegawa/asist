@@ -59,7 +59,7 @@ import { formatLocale, translate, uiLocale } from '@/i18n'
 import { demoPanelProps, respondTo } from './sayings'
 import { DEFAULT_THEME, THEMES } from '@shared/themes'
 import { mergeSettings } from '@shared/settings'
-import { asrDownloadGb, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
+import { asrDownloadGb, asrModelSpec, recommendAsrModel, resolveAsrModel } from '@shared/asr-models'
 import { demoCapabilities } from './platform'
 import { isLiveEngine } from '@shared/voice-engine'
 
@@ -91,16 +91,17 @@ const requestedTheme = new URLSearchParams(location.search).get('theme')
 
 const capabilities = demoCapabilities(location.search)
 
-/** The local speech recognition as main reports it on a machine that has not downloaded its model yet. */
+/** The local speech recognition as main reports it on a machine that has not downloaded the model the setting names. */
 function demoAsrStatus(): SetupStatus['asr'] {
   const { localSpeech } = capabilities
   if (localSpeech.backend === null) return null
-  const { recommendedModel } = recommendAsrModel(localSpeech.backend, localSpeech.memoryGb)
-  const spec = asrModelSpec(recommendedModel)
+  const recommendation = recommendAsrModel(localSpeech.backend, localSpeech.memoryGb)
+  const resolvedModel = resolveAsrModel(settings.asrModel, recommendation)
+  const spec = asrModelSpec(resolvedModel)
   return {
-    selectedModel: 'auto',
-    resolvedModel: recommendedModel,
-    recommendedModel,
+    selectedModel: settings.asrModel,
+    resolvedModel,
+    recommendedModel: recommendation.recommendedModel,
     label: spec.label,
     totalMemoryGb: localSpeech.memoryGb,
     modelInstalled: false,

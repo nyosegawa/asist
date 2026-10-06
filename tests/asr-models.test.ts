@@ -6,11 +6,12 @@ import {
   asrDownloadGb,
   asrLanguage,
   asrModelChoices,
+  asrModelRecognizes,
   recommendAsrModel,
   resolveAsrModel,
   whisperLanguageName
 } from '../src/shared/asr-models'
-import { CONVERSATION_LOCALES } from '../src/shared/conversation-locale'
+import { CONVERSATION_LOCALES, type ConversationLocale } from '../src/shared/conversation-locale'
 import { SETTINGS_FORMAT } from '../src/shared/settings'
 import { openStoredContent } from '../src/shared/stored-format'
 
@@ -43,11 +44,44 @@ describe('resolving the setting', () => {
     expect(resolveAsrModel('qwen3-asr-1.7b', recommendAsrModel('metal', 8))).toBe('qwen3-asr-1.7b')
   })
 
-  it('lists every model to choose from, with the label of its table', () => {
-    expect(asrModelChoices()).toEqual([
-      { id: 'qwen3-asr-1.7b', label: ASR_MODEL_SPECS['qwen3-asr-1.7b'].label },
-      { id: 'qwen3-asr-0.6b', label: ASR_MODEL_SPECS['qwen3-asr-0.6b'].label }
-    ])
+})
+
+describe('the models to choose from in each conversation language', () => {
+  const offered = (locale: ConversationLocale): string[] => asrModelChoices(locale).map((choice) => choice.id)
+  const QWEN3_ASR = ['qwen3-asr-1.7b', 'qwen3-asr-0.6b']
+
+  it('offers both Japanese FastConformer models beside Qwen3-ASR for Japanese, and not the European one', () => {
+    expect(offered('ja-JP')).toEqual(expect.arrayContaining([...QWEN3_ASR, 'parakeet-tdt_ctc-0.6b-ja', 'reazonspeech-nemo-v2']))
+    expect(offered('ja-JP')).not.toContain('parakeet-tdt-0.6b-v3')
+  })
+
+  it.each(['en-US', 'fr-FR', 'de-DE', 'it-IT', 'pt-BR', 'es-419', 'es-ES'] as const)('offers parakeet-tdt-0.6b-v3 beside Qwen3-ASR for %s, and neither Japanese model', (locale) => {
+    expect(offered(locale)).toEqual(expect.arrayContaining([...QWEN3_ASR, 'parakeet-tdt-0.6b-v3']))
+    expect(offered(locale)).not.toContain('parakeet-tdt_ctc-0.6b-ja')
+    expect(offered(locale)).not.toContain('reazonspeech-nemo-v2')
+  })
+
+  it.each(['ko-KR', 'hi-IN', 'id-ID'] as const)('offers Qwen3-ASR alone for %s, which no FastConformer model recognizes', (locale) => {
+    expect(offered(locale)).toEqual(QWEN3_ASR)
+  })
+
+  it('gives each model the label of its table and the size of its file', () => {
+    for (const choice of asrModelChoices('ja-JP')) {
+      const spec = ASR_MODEL_SPECS[choice.id]
+      expect(choice.label).toBe(spec.label)
+      expect(choice.sizeGb).toBeCloseTo(spec.model.bytes / 1e9, 2)
+    }
+  })
+
+  it('lets a chosen model recognize only the languages of its file', () => {
+    expect(asrModelRecognizes('ja-JP', 'reazonspeech-nemo-v2')).toBe(true)
+    expect(asrModelRecognizes('en-US', 'reazonspeech-nemo-v2')).toBe(false)
+    expect(asrModelRecognizes('es-419', 'parakeet-tdt-0.6b-v3')).toBe(true)
+    expect(asrModelRecognizes('ja-JP', 'parakeet-tdt-0.6b-v3')).toBe(false)
+  })
+
+  it('lets the automatic choice recognize every conversation language, as both sizes of Qwen3-ASR do', () => {
+    for (const locale of CONVERSATION_LOCALES) expect(asrModelRecognizes(locale, 'auto'), locale).toBe(true)
   })
 })
 

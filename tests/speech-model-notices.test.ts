@@ -54,6 +54,14 @@ describe('telling the user once about the local speech models that need preparin
     expect(takeSpeechModelNotices()).toEqual([{ target: 'asr', label: RECOGNITION.label, downloadBytes: bytesOf(asrModelFiles(RECOGNITION)) }])
   })
 
+  it('tells about the FastConformer model the setting chose, by its own name, and not the one auto would stand for', () => {
+    const PARAKEET = asrModelSpec('parakeet-tdt_ctc-0.6b-ja')
+    mocks.settings.ttsEngine = 'system'
+    mocks.settings.asrModel = 'parakeet-tdt_ctc-0.6b-ja'
+    install(asrModelFiles(RECOGNITION))
+    expect(takeSpeechModelNotices()).toEqual([{ target: 'asr', label: PARAKEET.label, downloadBytes: bytesOf(asrModelFiles(PARAKEET)) }])
+  })
+
   it('counts only the files still missing in what preparing downloads', () => {
     install(asrModelFiles(RECOGNITION))
     install(IRODORI.files.slice(1))
