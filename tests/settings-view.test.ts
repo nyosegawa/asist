@@ -19,7 +19,7 @@ import { SettingsDialog } from '../src/renderer/src/ui/SettingsDialog'
 import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer/src/state/stores'
 import { useViewStore } from '../src/renderer/src/state/view'
 import { usePreparationStore } from '../src/renderer/src/state/preparation'
-import { asrModelSizeGb, asrModelSpec, offeredAsrModels, type AsrModel, type ResolvedAsrModel } from '@shared/asr-models'
+import { asrDownloadGb, asrModelSizeGb, asrModelSpec, offeredAsrModels, recommendAsrModel, resolveAsrModel, type AsrModel, type ResolvedAsrModel } from '@shared/asr-models'
 import { CREDITS } from '@shared/credits'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICES, QWEN_TTS_MODELS } from '@shared/tts-models'
 import { VOICE_SAMPLE_TEXT } from '@shared/voice-samples'
@@ -1184,11 +1184,17 @@ describe('settings dialog on Windows with a discrete GPU', () => {
 
   beforeEach(() => {
     setCapabilities(WINDOWS)
-    // As main reports it on an 8 GB RTX 2080 with nothing downloaded yet.
-    api.getSetupStatus.mockImplementation(async () => ({
-      ...(await macSetup()),
-      asr: { selectedModel: 'auto', resolvedModel: 'qwen3-asr-1.7b', recommendedModel: 'qwen3-asr-1.7b', label, totalMemoryGb: 8, modelInstalled: false, downloadGb: 2.52 }
-    }) as never)
+    // As main reports it on an 8 GB RTX 2080 with nothing downloaded yet, for the model the setting names.
+    api.getSetupStatus.mockImplementation(async () => {
+      const selectedModel = useSettingsStore.getState().settings!.asrModel
+      const recommendation = recommendAsrModel('vulkan', 8)
+      const resolvedModel = resolveAsrModel(selectedModel, recommendation)
+      const spec = asrModelSpec(resolvedModel)
+      return {
+        ...(await macSetup()),
+        asr: { selectedModel, resolvedModel, recommendedModel: recommendation.recommendedModel, label: spec.label, totalMemoryGb: 8, modelInstalled: false, downloadGb: asrDownloadGb(spec, false) }
+      } as never
+    })
   })
   afterEach(() => {
     setCapabilities(MACOS)
@@ -1211,6 +1217,28 @@ describe('settings dialog on Windows with a discrete GPU', () => {
     expect(hint(view, t('settingsVoice.recognition.model'))).toBe(
       t('settingsVoice.recognition.modelHint', { memoryGb: 8, model: label, reason: t('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 }) })
     )
+  })
+
+  it('explains on the voice page why the model in use is recommended only when the automatic choice would pick it, and otherwise names the one it would', async () => {
+    const view = await render()
+    await act(async () => nav(view, 'voice').click())
+    const select = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsVoice.recognition.modelLabel')}"]`)!
+    const choose = async (model: AsrModel): Promise<void> => {
+      await act(async () => {
+        select.value = model
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await act(async () => {})
+    }
+    const modelHint = (model: ResolvedAsrModel, reason: string): string =>
+      t('settingsVoice.recognition.modelHint', { memoryGb: 8, model: asrModelSpec(model).label, reason })
+    // This GPU's 8 GB recommends 1.7B, so 0.6B and the FastConformer models, which the automatic choice never picks, name 1.7B instead.
+    for (const model of ['qwen3-asr-0.6b', 'parakeet-tdt_ctc-0.6b-ja', 'reazonspeech-nemo-v2'] as const) {
+      await choose(model)
+      expect(hint(view, t('settingsVoice.recognition.model'))).toBe(modelHint(model, t('speechRecognition.recommendedForThisComputer', { model: label })))
+    }
+    await choose('qwen3-asr-1.7b')
+    expect(hint(view, t('settingsVoice.recognition.model'))).toBe(modelHint('qwen3-asr-1.7b', t('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 })))
   })
 
   it('offers to download the speech recognition on the voice page, under its model', async () => {

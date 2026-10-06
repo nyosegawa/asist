@@ -374,5 +374,18 @@ export const speechRecognition = defineMessages({
     'pt-BR': '{model} (cerca de {sizeGb} GB)',
     'es-419': '{model} (unos {sizeGb} GB)',
     'es-ES': '{model} (unos {sizeGb} GB)'
+  },
+  recommendedForThisComputer: {
+    'ja-JP': 'このコンピュータのおすすめは {model} です。',
+    'en-US': 'The recommended model for this computer is {model}.',
+    'fr-FR': 'Le modèle recommandé pour cet ordinateur est {model}.',
+    'de-DE': 'Das empfohlene Modell für diesen Computer ist {model}.',
+    'hi-IN': 'इस कंप्यूटर के लिए सुझाया हुआ मॉडल {model} है।',
+    'id-ID': 'Model yang disarankan untuk komputer ini adalah {model}.',
+    'it-IT': 'Il modello consigliato per questo computer è {model}.',
+    'ko-KR': '이 컴퓨터의 추천 모델은 {model}입니다.',
+    'pt-BR': 'O modelo recomendado para este computador é o {model}.',
+    'es-419': 'El modelo recomendado para esta computadora es {model}.',
+    'es-ES': 'El modelo recomendado para este ordenador es {model}.'
   }
 })
