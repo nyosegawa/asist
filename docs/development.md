@@ -92,7 +92,7 @@ GitHub Actions(`.github/workflows/ci.yml`)が、main への push と pull reques
 | `test-windows` | Windows で `npm test`。テストのファイルを 2 台に分けて(`--shard 1/2` と `2/2`)同時に動かします。一時フォルダ(`TEMP` と `TMP`)は、8.3 形式の名前を作らない runner の D: ドライブに置きます。型と辞書は OS に依らないので、`test` だけで確かめます |
 | `build-windows` | `npm run dist:win:dir` で Windows のアプリを作り、アプリの中の git、uv、`asist-agent-launcher.exe`、`asist-mic.exe` が動くこと、`ASIST.exe` が ASAR の検査を通って起動すること |
 | `website` | Ubuntu でサイト(`website/`)をビルドし、全ページのリンクと画像の行き先 |
-| `result` | ほかの job に、失敗したものも取り消されたものもないこと |
+| `result` | ほかの job がどれも、成功したか、自分の条件でスキップされたこと。runner が付かないまま終わった job も失敗として数えます(`scripts/ci-result.mjs`) |
 
 main の ruleset がマージの条件にしているのは `result` だけです。`website/` の中だけを変えたときは、アプリの job をスキップします。`fit` は、デモが読むファイルを変えたときだけ動きます。デモが読むのは renderer、`src/shared`、デモの設定、fit のスクリプト、依存関係などで、main プロセスやテストや文書だけを変えても、デモの表示は変わりません。`viewer-budgets` は、ファイルのカード、カードの枠、ビューアー、プレビューのページとそれらが import するファイル、計測のスクリプト、依存関係などを変えたときと、毎週火曜の朝 6 時(日本時間)に動きます。この一覧が import をたどった結果と合っていることは `tests/ci-viewers-list.test.ts` が確かめます。計測するページはアプリ全体なので、一覧の外の変更が数字を動かしたときは、週に 1 度の実行でわかります。一覧は `ci.yml` の `changes` の job にあります。スキップした job は失敗として数えないので、プルリクエストはそのままマージできます。
 
