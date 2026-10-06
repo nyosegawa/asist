@@ -2,7 +2,7 @@ import type { PanelEvent } from '@shared/ipc'
 import { catalogByType } from '@shared/panel-catalog'
 import { weatherCardKey } from '@shared/weather'
 import { matchPanels } from './matcher'
-import { DEMO_CALENDAR_CARD } from './fixtures/calendar'
+import { buildDemoCalendarCard } from './fixtures/calendar'
 import { resolveCalendarRange, type CalendarRangeInput } from '@shared/calendar'
 import { demoFx } from './fixtures/finance'
 import { DEMO_JOB } from './fixtures/jobs'
@@ -83,10 +83,11 @@ const fetched = (type: string, props: Record<string, unknown>, key?: string): Pa
 /** The calendar card of the demo. The window is resolved by the same rules as in the app, and the events reuse today's fixed data. */
 function demoCalendarCard(props: Record<string, unknown>): Record<string, unknown> {
   const window = resolveCalendarRange(props as CalendarRangeInput, new Date())
+  const today = buildDemoCalendarCard()
   // For a range that does not include today, today's events are shifted whole onto the first day of the range.
-  const shift = window.fromMs <= Date.now() && Date.now() < window.untilMs ? 0 : window.fromMs - DEMO_CALENDAR_CARD.fromMs
-  const events = DEMO_CALENDAR_CARD.events.map((event) => ({ ...event, start: event.start + shift, end: event.end + shift }))
-  return { ...DEMO_CALENDAR_CARD, events, range: window.range, fromMs: window.fromMs, untilMs: window.untilMs }
+  const shift = window.fromMs <= Date.now() && Date.now() < window.untilMs ? 0 : window.fromMs - today.fromMs
+  const events = today.events.map((event) => ({ ...event, start: event.start + shift, end: event.end + shift }))
+  return { ...today, events, range: window.range, fromMs: window.fromMs, untilMs: window.untilMs }
 }
 
 /** Turns an utterance such as "あさっての予定" ("the day after tomorrow's schedule") or "昨日の予定" ("yesterday's schedule") into a range of that single day. */

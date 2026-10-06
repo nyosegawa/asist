@@ -72,24 +72,27 @@ export function buildDemoCalendarEvents(): CalendarEvent[] {
   return list
 }
 
+const HOUR = 3_600_000
+
 /**
  * The short list for the calendar card (today's events), as opposed to the calendar screen. Around the
- * time the demo runs it holds at least one event that has ended, one in progress, one still to come and
+ * time it is built it holds at least one event that has ended, one in progress, one still to come and
  * one all-day event.
  */
-const HOUR = 3_600_000
-const nowMs = Date.now()
-const todayMs = new Date(new Date(nowMs).setHours(0, 0, 0, 0)).getTime()
-export const DEMO_CALENDAR_CARD = {
-  range: 'today',
-  fromMs: todayMs,
-  untilMs: todayMs + 24 * HOUR,
-  events: [
-    { title: '定例', start: nowMs - 2 * HOUR, end: nowMs - 1.5 * HOUR, allDay: false, location: 'Zoom', ongoing: false },
-    { title: '締め切り: 提案書', start: todayMs, end: todayMs + 24 * HOUR, allDay: true },
-    { title: '予約画面 レビュー', start: nowMs - 20 * 60_000, end: nowMs + 40 * 60_000, allDay: false, location: 'Zoom' },
-    { title: 'ランチ 田中さん', start: nowMs + HOUR, end: nowMs + 2 * HOUR, allDay: false, location: '神保町' },
-    { title: '歯医者', start: nowMs + 3 * HOUR, end: nowMs + 4 * HOUR, allDay: false, location: 'さくら歯科' },
-    { title: '買い物', start: nowMs + 5 * HOUR, end: nowMs + 5.5 * HOUR, allDay: false }
-  ]
+export function buildDemoCalendarCard() {
+  const nowMs = Date.now()
+  const todayMs = new Date(new Date(nowMs).setHours(0, 0, 0, 0)).getTime()
+  return {
+    range: 'today',
+    fromMs: todayMs,
+    untilMs: todayMs + 24 * HOUR,
+    events: [
+      { title: '定例', start: nowMs - 2 * HOUR, end: nowMs - 1.5 * HOUR, allDay: false, location: 'Zoom', ongoing: false },
+      { title: '締め切り: 提案書', start: todayMs, end: todayMs + 24 * HOUR, allDay: true },
+      { title: '予約画面 レビュー', start: nowMs - 20 * 60_000, end: nowMs + 40 * 60_000, allDay: false, location: 'Zoom' },
+      { title: 'ランチ 田中さん', start: nowMs + HOUR, end: nowMs + 2 * HOUR, allDay: false, location: '神保町' },
+      { title: '歯医者', start: nowMs + 3 * HOUR, end: nowMs + 4 * HOUR, allDay: false, location: 'さくら歯科' },
+      { title: '買い物', start: nowMs + 5 * HOUR, end: nowMs + 5.5 * HOUR, allDay: false }
+    ]
+  }
 }

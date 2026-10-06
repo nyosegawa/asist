@@ -21,7 +21,7 @@ import { diffLabel, offsetMinutes, phaseOf, zoned } from '@/panels/builtin/clock
 import { remainingText } from '@/panels/builtin/timer'
 import { elapsedLabel } from '@/panels/builtin/agent-job'
 import { clockTime, relativeDayLabel, relativeTime } from '@/panels/primitives/format'
-import { DEMO_CALENDAR_CARD } from '@/demo/fixtures/calendar'
+import { buildDemoCalendarCard } from '@/demo/fixtures/calendar'
 import { DEMO_FX } from '@/demo/fixtures/finance'
 import { DEMO_JOB, DEMO_JOB_LOG, DEMO_JOBS } from '@/demo/fixtures/jobs'
 import { DEMO_FILES_DIR, DEMO_IMAGE_PATHS, DEMO_MIXED_PATHS, DEMO_REPORT_MD, demoFileItems } from '@/demo/fixtures/files'
@@ -162,7 +162,7 @@ describe('cards with a list keep fewer rows at size s and turn the rest into a l
   it.each([
     ['news', DEMO_NEWS, 6, 4],
     ['search-results', DEMO_SEARCH, 5, 3],
-    ['calendar', DEMO_CALENDAR_CARD, 6, 4],
+    ['calendar', buildDemoCalendarCard(), 6, 4],
     ['mail', DEMO_MAIL_CARD, 8, 4]
   ] as const)('%s', async (type, props, total, shownInS) => {
     const large = await renderAt(spec(type, props as unknown as Record<string, unknown>), L)
@@ -232,16 +232,24 @@ describe('a search answered by Gemini', () => {
 
 describe('calendar card', () => {
   it('puts the next event at the top, dims the events that are over, and draws the now line before the next event', async () => {
-    const card = await renderAt(spec('calendar', DEMO_CALENDAR_CARD), L)
-    const lunch = DEMO_CALENDAR_CARD.events.find((event) => event.title === 'ランチ 田中さん')!
-    expect(card.querySelector('.card-note')?.textContent).toContain(t('calendar.card.next', { when: clockTime(lunch.start), title: lunch.title }))
-    const rows = [...card.querySelectorAll<HTMLElement>('.card-rows > li')]
-    const past = rows.filter((row) => row.dataset.past !== undefined)
-    expect(past.map((row) => row.textContent)).toEqual([expect.stringContaining('定例')])
-    const nowIndex = rows.findIndex((row) => row.classList.contains('ca-now'))
-    const lunchIndex = rows.findIndex((row) => row.textContent?.includes('ランチ'))
-    expect(nowIndex).toBe(lunchIndex - 1)
-    expect(rows.find((row) => row.textContent?.includes('レビュー'))?.dataset.current).toBe('true')
+    // The fixture places its events around now, so from 23:00 the next one falls on the following day and
+    // the note dates it.
+    vi.useFakeTimers({ now: new Date(2026, 9, 6, 10, 0), toFake: ['Date'] })
+    try {
+      const props = buildDemoCalendarCard()
+      const card = await renderAt(spec('calendar', props), L)
+      const lunch = props.events.find((event) => event.title === 'ランチ 田中さん')!
+      expect(card.querySelector('.card-note')?.textContent).toContain(t('calendar.card.next', { when: clockTime(lunch.start), title: lunch.title }))
+      const rows = [...card.querySelectorAll<HTMLElement>('.card-rows > li')]
+      const past = rows.filter((row) => row.dataset.past !== undefined)
+      expect(past.map((row) => row.textContent)).toEqual([expect.stringContaining('定例')])
+      const nowIndex = rows.findIndex((row) => row.classList.contains('ca-now'))
+      const lunchIndex = rows.findIndex((row) => row.textContent?.includes('ランチ'))
+      expect(nowIndex).toBe(lunchIndex - 1)
+      expect(rows.find((row) => row.textContent?.includes('レビュー'))?.dataset.current).toBe('true')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('leaves out the now line, the remaining count and the next-event note for a single day other than today, and shows the distance from today', async () => {
