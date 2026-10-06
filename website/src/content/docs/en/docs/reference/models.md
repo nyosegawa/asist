@@ -11,8 +11,8 @@ Everything that is downloaded is pinned to a version and a sha256.
 
 | Use | Model | Source | License |
 |---|---|---|---|
-| Speech recognition (recommended on a Mac with 16GB of memory or more, and on Windows with 6GB of GPU memory or more) | Qwen3-ASR 1.7B (GGUF, Q8_0) | `ggml-org/Qwen3-ASR-1.7B-GGUF` | Apache-2.0 |
-| Speech recognition (recommended with less memory) | Qwen3-ASR 0.6B (GGUF, Q8_0) | `ggml-org/Qwen3-ASR-0.6B-GGUF` | Apache-2.0 |
+| Speech recognition (recommended on a Mac with 16GB of memory or more, and on Windows with 6GB of GPU memory or more) | Qwen3-ASR 1.7B (GGUF, Q8_0) | `sakasegawa/Qwen3-ASR-1.7B-GGUF` (converted from the model Qwen published) | Apache-2.0 |
+| Speech recognition (recommended with less memory) | Qwen3-ASR 0.6B (GGUF, Q8_0) | `sakasegawa/Qwen3-ASR-0.6B-GGUF` (converted from the model Qwen published) | Apache-2.0 |
 | Speech recognition (in the browser, as a backup) | Whisper small (ONNX, transformers.js) | `onnx-community/whisper-small` | MIT (OpenAI Whisper) |
 | Voice activity detection | Silero VAD (ONNX, bundled) | Bundled | MIT |
 | Microphone noise suppression | DeepFilterNet3 (ONNX, bundled) | Bundled | MIT or Apache-2.0 |
@@ -22,9 +22,9 @@ Everything that is downloaded is pinned to a version and a sha256.
 | Choosing the kind of backchannel (Japanese) | sbintuitions/modernbert-ja-70m fine-tuned on synthetic data (ONNX int8) | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT |
 | Searching the memory by meaning | multilingual-e5 small (ONNX int8) | `Xenova/multilingual-e5-small` (converted from `intfloat/multilingual-e5-small`) | MIT |
 
-Speech recognition runs in llama.cpp, and Irodori-TTS and Qwen3-TTS in speech.cpp, both bundled with the app. They use the GPU through Metal on a Mac and through Vulkan on Windows. The downloads are about 2.5GB for 1.7B speech recognition, about 1.0GB for 0.6B, about 1.9GB for Irodori-TTS, about 1.2GB for Qwen3-TTS 0.6B and about 2.3GB for 1.7B. The bundled programs are listed in [What is bundled](/en/docs/reference/bundled/).
+Qwen3-ASR for speech recognition, and Irodori-TTS and Qwen3-TTS for reading aloud, run in speech.cpp, which is bundled with the app. They use the GPU through Metal on a Mac and through Vulkan on Windows. The downloads are about 2.2GB for 1.7B speech recognition, about 0.8GB for 0.6B, about 1.9GB for Irodori-TTS, about 1.2GB for Qwen3-TTS 0.6B and about 2.3GB for 1.7B. The bundled programs are listed in [What is bundled](/en/docs/reference/bundled/).
 
-Speech recognition, MaAI and the model that chooses the kind of backchannel are loaded only while the conversation's microphone is on, and stop when it is turned off. Irodori-TTS and Qwen3-TTS load when the microphone is turned on and whenever something is to be read aloud. Once the microphone is off, they stop after 5 minutes in which nothing was read aloud, and while the window is closed or minimized, as soon as the reply being read has ended. Stopping them frees memory on a Mac and GPU memory on Windows. Loading them again takes about 1 to 3 seconds while the files are still in the system's cache, and is usually done before the first reply after turning the microphone on is read aloud. With Gemini Live as the voice engine, none of them is loaded.
+Speech recognition, MaAI and the model that chooses the kind of backchannel are loaded only while the conversation's microphone is on, and stop when it is turned off. Irodori-TTS and Qwen3-TTS load when the microphone is turned on and whenever something is to be read aloud. Once the microphone is off, they stop after 5 minutes in which nothing was read aloud, and while the window is closed or minimized, as soon as the reply being read has ended. Stopping them frees memory on a Mac and GPU memory on Windows. Loading them again takes 3 seconds at most while the files are still in the system's cache, and is usually done before the first reply after turning the microphone on is read aloud. With Gemini Live as the voice engine, none of them is loaded.
 
 The model card of Irodori-TTS forbids copying or impersonating a voice without the person's consent, and making deepfakes or misinformation. The three voices of ASIST were made by giving Irodori-TTS a description of each voice, and are not the voices of real people.
 

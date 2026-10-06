@@ -255,14 +255,6 @@ export const CREDITS = [
     url: 'https://www.kernel.org/pub/software/scm/git/'
   },
   {
-    id: 'llamaCpp',
-    group: 'software',
-    name: 'llama.cpp',
-    provider: 'The ggml authors',
-    license: 'MIT',
-    url: 'https://github.com/ggml-org/llama.cpp'
-  },
-  {
     id: 'speechCpp',
     group: 'software',
     name: 'speech.cpp',
@@ -279,7 +271,7 @@ export interface ListedCredit extends Credit {
 
 /**
  * The local speech recognition models, named by the label the voice page gives them, where the local
- * speech runs. Both are Alibaba's Qwen3-ASR, converted to GGUF by the ggml project.
+ * speech runs. Both are Alibaba's Qwen3-ASR, converted to GGUF for speech.cpp.
  */
 function speechRecognitionCredits(localSpeechRuns: boolean): ListedCredit[] {
   if (!localSpeechRuns) return []

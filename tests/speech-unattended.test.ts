@@ -27,7 +27,7 @@ describe('a speech process that reads nothing from ASIST', () => {
     const watcher = fakeChild(4243)
     mocks.spawn.mockReturnValueOnce(leader).mockReturnValueOnce(watcher)
     const { spawnUnattended } = await import('../src/main/services/speech-worker')
-    spawnUnattended('/app/llama-server', ['--port', '1'], { stdio: 'ignore', env: {} }, 'Qwen3-ASR 1.7B')
+    spawnUnattended('/Applications/VOICEVOX.app/Contents/Resources/vv-engine/run', ['--port', '1'], { stdio: 'ignore', env: {} }, 'VOICEVOX')
     expect(mocks.spawn.mock.calls[0][2]).toMatchObject({ detached: true })
     const [shell, args] = mocks.spawn.mock.calls[1] as [string, string[]]
     expect(shell).toBe('/bin/sh')
@@ -42,8 +42,8 @@ describe('a speech process that reads nothing from ASIST', () => {
     const leader = fakeChild(4242)
     mocks.spawn.mockReturnValueOnce(leader).mockReturnValueOnce(fakeChild(undefined))
     const { spawnUnattended } = await import('../src/main/services/speech-worker')
-    expect(() => spawnUnattended('/app/llama-server', [], { stdio: 'ignore', env: {} }, 'Qwen3-ASR 1.7B'))
-      .toThrow(errorText('voice.speech.watcherUnavailable', { engine: 'Qwen3-ASR 1.7B' }))
+    expect(() => spawnUnattended('/Applications/VOICEVOX.app/Contents/Resources/vv-engine/run', [], { stdio: 'ignore', env: {} }, 'VOICEVOX'))
+      .toThrow(errorText('voice.speech.watcherUnavailable', { engine: 'VOICEVOX' }))
     expect(leader.kill).toHaveBeenCalledWith('SIGKILL')
   })
 
@@ -51,7 +51,7 @@ describe('a speech process that reads nothing from ASIST', () => {
     setCapabilities(WINDOWS)
     mocks.spawn.mockReturnValueOnce(fakeChild(4242))
     const { spawnUnattended } = await import('../src/main/services/speech-worker')
-    spawnUnattended('C:\\app\\llama-server.exe', [], { stdio: 'ignore', env: {} }, 'Qwen3-ASR 0.6B')
+    spawnUnattended('C:\\Program Files\\VOICEVOX\\vv-engine\\run.exe', [], { stdio: 'ignore', env: {} }, 'VOICEVOX')
     expect(mocks.spawn).toHaveBeenCalledOnce()
     expect(mocks.spawn.mock.calls[0][2]).toMatchObject({ detached: false })
   })

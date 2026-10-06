@@ -53,7 +53,7 @@ describe.runIf(process.platform === 'darwin')('a speech process that reads nothi
   const watchersOf = (pid: number): string[] => execFileSync('/bin/ps', ['-axww', '-o', 'command='], { encoding: 'utf8' })
     .split('\n').filter((line) => line.trimEnd().endsWith(`asist-speech-watcher ${pid}`))
 
-  it('ends when the process that started it is killed, as llama-server did not', async () => {
+  it('ends when the process that started it is killed, as the VOICEVOX engine did not', async () => {
     const pid = await startThroughAsist('setInterval(() => {}, 1000)')
     expect(alive(pid)).toBe(true)
     starter!.kill('SIGKILL')

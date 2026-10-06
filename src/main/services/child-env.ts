@@ -52,18 +52,6 @@ export function pythonEnv(extra: NodeJS.ProcessEnv = {}, parent: NodeJS.ProcessE
   return childEnv({ PYTHONUTF8: '1', PYTHONUNBUFFERED: '1', ...extra }, env)
 }
 
-/**
- * The environment the bundled llama-server starts with. It reads every option it is not given on its
- * command line from a LLAMA_ variable, so one the user set for their own llama.cpp would, for example,
- * move its endpoints under a prefix or serve HTTPS, and ASIST would never see it answer. The GGML_
- * variables stay: they pick the GPU for every program built on ggml, which a user may set on purpose.
- */
-export function llamaServerEnv(parent: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env = childEnv({}, parent)
-  removeVariables(env, (key) => key.startsWith('LLAMA_'))
-  return env
-}
-
 /** Deletes every variable whose name, as the OS compares it, matches. */
 export function removeVariables(env: NodeJS.ProcessEnv, matches: (key: string) => boolean): void {
   for (const name of Object.keys(env)) if (matches(envNameKey(name))) delete env[name]

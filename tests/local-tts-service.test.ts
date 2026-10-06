@@ -420,9 +420,16 @@ describe('the answers of the worker', () => {
     expect(child.kill).toHaveBeenCalled()
   })
 
+  it('stops the worker when it sends a sentence a partial text, which only a recognition has', async () => {
+    const { child, id, outcome } = await reading()
+    say(child, { type: 'partial', id, text: '', stop: 'complete' })
+    expect(readErrorText(((await outcome) as Error).message, 'ja-JP')).not.toBeNull()
+    expect(child.kill).toHaveBeenCalled()
+  })
+
   it('passes over a message of a type the protocol may add', async () => {
     const { child, id, outcome } = await reading()
-    say(child, { type: 'partial', id, text: '' })
+    say(child, { type: 'stats', id, tokens: 12 })
     say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
     say(child, { type: 'end', id, seed: 7, samples: 0, stop: 'complete' })
     expect(await outcome).toBeGreaterThan(0)

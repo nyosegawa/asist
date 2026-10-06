@@ -1,7 +1,6 @@
 /**
- * The devices the local speech binaries can run on, as `speech devices --json` lists them, and the choice
- * of the one to run on. llama-server and speech.cpp are built on the same ggml, so they list the devices
- * under the same names in the same order.
+ * The devices the local speech can run on, as `speech devices --json` lists them, and the choice of the one
+ * to run on, which every worker is then started on by its ggml name.
  */
 
 /** One device of the list. `kind` is ggml's: a discrete GPU, an integrated one, or the CPU. */

@@ -11,8 +11,8 @@ sidebar:
 
 | 用途 | モデル | 取得元 | ライセンス |
 |---|---|---|---|
-| 音声認識(メモリが 16GB 以上の Mac と、GPU のメモリが 6GB 以上の Windows で勧める) | Qwen3-ASR 1.7B(GGUF、Q8_0) | `ggml-org/Qwen3-ASR-1.7B-GGUF` | Apache-2.0 |
-| 音声認識(それより少ないときに勧める) | Qwen3-ASR 0.6B(GGUF、Q8_0) | `ggml-org/Qwen3-ASR-0.6B-GGUF` | Apache-2.0 |
+| 音声認識(メモリが 16GB 以上の Mac と、GPU のメモリが 6GB 以上の Windows で勧める) | Qwen3-ASR 1.7B(GGUF、Q8_0) | `sakasegawa/Qwen3-ASR-1.7B-GGUF`(Qwen が公開したモデルを変換したもの) | Apache-2.0 |
+| 音声認識(それより少ないときに勧める) | Qwen3-ASR 0.6B(GGUF、Q8_0) | `sakasegawa/Qwen3-ASR-0.6B-GGUF`(Qwen が公開したモデルを変換したもの) | Apache-2.0 |
 | 音声認識(ブラウザの中、予備) | Whisper small(ONNX、transformers.js) | `onnx-community/whisper-small` | MIT(OpenAI Whisper) |
 | 声の区間の検出 | Silero VAD(ONNX、同梱) | 同梱 | MIT |
 | マイクの雑音の抑制 | DeepFilterNet3(ONNX、同梱) | 同梱 | MIT か Apache-2.0 |
@@ -22,9 +22,9 @@ sidebar:
 | 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8) | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT |
 | 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(`intfloat/multilingual-e5-small` を変換したもの) | MIT |
 
-音声認識は、アプリに同梱した llama.cpp で、Irodori-TTS と Qwen3-TTS は speech.cpp で動かします。Mac では Metal で、Windows では Vulkan で GPU を使います。取得する大きさは、音声認識の 1.7B が約 2.5GB、0.6B が約 1.0GB、Irodori-TTS が約 1.9GB、Qwen3-TTS の 0.6B が約 1.2GB、1.7B が約 2.3GB です。同梱しているプログラムは[同梱しているもの](/docs/reference/bundled/)にあります。
+音声認識の Qwen3-ASR と、読み上げの Irodori-TTS と Qwen3-TTS は、アプリに同梱した speech.cpp で動かします。Mac では Metal で、Windows では Vulkan で GPU を使います。取得する大きさは、音声認識の 1.7B が約 2.2GB、0.6B が約 0.8GB、Irodori-TTS が約 1.9GB、Qwen3-TTS の 0.6B が約 1.2GB、1.7B が約 2.3GB です。同梱しているプログラムは[同梱しているもの](/docs/reference/bundled/)にあります。
 
-音声認識と MaAI と相槌の種類の判定は、会話のマイクを入れているあいだだけ読み込み、マイクを切ると止めます。Irodori-TTS と Qwen3-TTS は、マイクを入れたときと、何かを読み上げるときに読み込みます。マイクを切ったあとは、5 分のあいだ何も読み上げなければ止めます。ウィンドウを閉じているときと最小化しているときは、言いかけの返事が終われば止めます。止めると、Mac ではメモリが、Windows では GPU のメモリが空きます。読み込み直すのは、ファイルが OS のキャッシュに残っていれば 1〜3 秒ほどで、ふつうはマイクを入れてから最初の返事を読み上げるまでに終わります。声のエンジンが Gemini Live のときは、どれも読み込みません。
+音声認識と MaAI と相槌の種類の判定は、会話のマイクを入れているあいだだけ読み込み、マイクを切ると止めます。Irodori-TTS と Qwen3-TTS は、マイクを入れたときと、何かを読み上げるときに読み込みます。マイクを切ったあとは、5 分のあいだ何も読み上げなければ止めます。ウィンドウを閉じているときと最小化しているときは、言いかけの返事が終われば止めます。止めると、Mac ではメモリが、Windows では GPU のメモリが空きます。読み込み直すのは、ファイルが OS のキャッシュに残っていれば長くても 3 秒ほどで、ふつうはマイクを入れてから最初の返事を読み上げるまでに終わります。声のエンジンが Gemini Live のときは、どれも読み込みません。
 
 Irodori-TTS のモデルカードは、本人の同意なしに声を複製したりなりすましたりすることと、ディープフェイクや誤った情報を作ることを禁じています。ASIST の 3 つの声は、Irodori-TTS に声の説明を渡して作った声で、実在の人の声ではありません。
 

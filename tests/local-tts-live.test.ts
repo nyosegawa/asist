@@ -8,7 +8,7 @@ import type { TtsEngine } from '@shared/ipc'
  * scripts/prepare-resources.mjs dev), on model files laid out as the app lays them out under
  * <folder>/speech-models:
  *
- *   SPEECH_LIVE_USER_DATA=<folder> npx vitest run tests/local-tts-live.test.ts --silent=false
+ *   SPEECH_LIVE_USER_DATA=<folder> npx vitest run tests/local-tts-live.test.ts --silent=false --reporter=verbose
  *
  * It prints how long each worker took to become ready and each sentence to its first audio.
  */

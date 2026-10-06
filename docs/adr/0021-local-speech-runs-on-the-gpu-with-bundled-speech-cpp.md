@@ -1,6 +1,6 @@
-# ローカルの音声認識と読み上げは、同梱した llama.cpp と speech.cpp で GPU の上で動かす
+# ローカルの音声認識と読み上げは、同梱した speech.cpp で GPU の上で動かす
 
-macOS でも Windows でも、ローカルの音声認識は Qwen3-ASR(1.7B と 0.6B)の GGUF を llama.cpp の llama-server で動かし、読み上げの Qwen3-TTS(0.6B と 1.7B)と Irodori-TTS は自分で実装した speech.cpp のワーカーで動かす。どちらのプログラムもアプリに同梱し、Mac では Metal で、Windows では Vulkan で GPU を使う。モデルは Hugging Face から、版と sha256 を固定して取得する。Python の実行環境を作らないので、初回の準備はモデルの取得だけで済み、OS ごとに別の推論の実装を保たなくてよい。どの OS でも同じモデルの同じファイルを使うので、聞き取りと声の質が OS で変わらない。Windows では単体の GPU があるマシンでだけ提供し、それ以外のマシンでは理由を出して、ブラウザの中の Whisper と live のエンジンを使ってもらう。
+macOS でも Windows でも、ローカルの音声認識の Qwen3-ASR(1.7B と 0.6B)と、読み上げの Qwen3-TTS(0.6B と 1.7B)と Irodori-TTS は、自分で実装した speech.cpp のワーカーで GGUF のモデルを動かす。speech.cpp はアプリに同梱し、Mac では Metal で、Windows では Vulkan で GPU を使う。モデルは Hugging Face から、版と sha256 を固定して取得する。Python の実行環境を作らないので、初回の準備はモデルの取得だけで済み、OS ごとに別の推論の実装を保たなくてよい。どの OS でも同じモデルの同じファイルを使うので、聞き取りと声の質が OS で変わらない。Windows では単体の GPU があるマシンでだけ提供し、それ以外のマシンでは理由を出して、ブラウザの中の Whisper と live のエンジンを使ってもらう。
 
 ## 見送った案
 
@@ -8,12 +8,13 @@ macOS でも Windows でも、ローカルの音声認識は Qwen3-ASR(1.7B と 
 - **Qwen3-TTS を qwentts.cpp で動かす。** 文を分けて作った声を聞き比べると、震えるような雑音が乗っていた。Qwen3-TTS の codec は過去の入力だけを見るので、speech.cpp は途中の状態を持ち越して、分けて作っても一度に作った声と同じ波形を出す。
 - **llama.cpp の CUDA の版を同梱する。** CUDA 13 の版は RTX 20 の機械語を含まず、ドライバーが対応する CUDA より新しいとき起動に失敗する。CUDA 12 の版は動いたが、最初の起動で GPU のコードのコンパイルに 28 秒かかった。Vulkan はドライバーの版を問わず、下の実測のとおり速さも足りる。
 - **Windows の統合 GPU でも動かす。** 測っていない。メモリを CPU と分け合うので、音声認識と読み上げを同時に動かして間に合うかを確かめてから決める。
-- **メモリの少ない Mac のために Whisper large-v3-turbo を残す。** Qwen3-ASR 0.6B が 1.8 GB で動くので、選択肢を Qwen3-ASR だけにまとめた。
+- **メモリの少ない Mac のために Whisper large-v3-turbo を残す。** Qwen3-ASR 0.6B が 2 GB 足らずで動くので、選択肢を Qwen3-ASR だけにまとめた。
+- **音声認識を llama.cpp の llama-server で動かす。** はじめはこうしていたが、ADR 0059 で speech.cpp に置き換えた。読み上げとは別の実行環境を持つことになり、約 270 秒より長い発話は失敗し、公式の実装と違う文を書く発話があった。
 - **Windows で、sherpa-onnx の日本語のモデル(ReazonSpeech の zipformer)を CPU で動かす。** GPU が要らないが、Mac と違うモデルになり、聞き取りの質を別に調整することになる。
 
 ## 実測
 
-2026-09-29、llama.cpp b11246 と qwen3-tts-ggml v0.1.1(speech.cpp の以前の名前)、重みは Q8_0(Qwen3-TTS の codec は F16)。Mac は M5(32 GB)、Windows は RTX 2080(8 GB、ドライバー 591.86)。
+2026-09-29、音声認識は llama.cpp b11246、読み上げは qwen3-tts-ggml v0.1.1(speech.cpp の以前の名前)、重みは Q8_0(Qwen3-TTS の codec は F16)。Mac は M5(32 GB)、Windows は RTX 2080(8 GB、ドライバー 591.86)。音声認識の行は、ADR 0059 で置き換えた llama.cpp の値で、speech.cpp の値は ADR 0059 にある。
 
 | | M5、Metal | RTX 2080、Vulkan |
 |---|---|---|
@@ -33,4 +34,4 @@ macOS でも Windows でも、ローカルの音声認識は Qwen3-ASR(1.7B と 
 - 単体の GPU が無い Windows のマシンでは、ローカルの音声認識と読み上げ(Qwen3-TTS と Irodori-TTS)を使えない。
 - 新しい版のアプリや GPU のドライバーを入れたあとの最初の起動では、Mac では Metal のカーネルを、Windows では Vulkan のシェーダーを組み立てるので、その回だけ準備が長くなる。
 - 同梱した相槌の音声は Qwen3-TTS 0.6B で作ったもので、1.7B で読み上げるときも同じものを鳴らす。
-- speech.cpp は ASIST のために作ったもので、Qwen3-TTS と Irodori-TTS の新しい版には自分で追従する。
+- speech.cpp は ASIST のために作ったもので、Qwen3-ASR、Qwen3-TTS、Irodori-TTS の新しい版には自分で追従する。

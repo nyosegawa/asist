@@ -15,7 +15,7 @@ import { LOCAL_SPEECH_UNAVAILABLE_TEXT, type LocalSpeechUnavailable } from '@sha
 import { t } from './i18n'
 import { platformCapabilities } from './platform'
 import { getSettings } from './settings'
-import * as local from './llama-asr'
+import * as local from './local-asr'
 
 /** The model the setting stands for on this machine, or why this machine cannot run one. */
 type Resolution =
@@ -59,7 +59,7 @@ export async function installationStatus(selected: AsrModel = getSettings().asrM
   }
 }
 
-/** Whether the selected model is installed, so that the server can be started at all. */
+/** Whether the selected model is installed, so that its worker can be started at all. */
 export function installed(): boolean {
   const spec = startable()
   return spec !== null && local.installationStatus(spec).modelInstalled
@@ -67,7 +67,7 @@ export function installed(): boolean {
 
 export async function available(): Promise<boolean> {
   const spec = startable()
-  return spec !== null && (await local.available(spec))
+  return spec !== null && local.available(spec)
 }
 
 /** How the speech recognition stands, given whether the microphone wants it loaded. */
@@ -76,24 +76,24 @@ export function state(wanted: boolean): SpeechEngineState {
   if (spec === null) return 'down'
   return speechEngineState({
     answers: local.available(spec),
-    starting: local.starting(spec),
+    starting: local.isStarting(spec),
     wanted,
     prepared: local.installationStatus(spec).modelInstalled
   })
 }
 
-/** Stops the server, which fails the transcriptions still waiting on it. */
+/** Stops the worker, which fails the transcriptions still waiting on it. */
 export const stop = local.stop
 
-export async function ensureServer(): Promise<boolean> {
+export async function ensureWorker(): Promise<boolean> {
   const spec = startable()
-  return spec !== null && (await local.ensureServer(spec))
+  return spec !== null && (await local.ensureWorker(spec))
 }
 
 export async function revive(): Promise<boolean> {
   const spec = startable()
   if (spec === null) return false
-  return (await local.available(spec)) || local.ensureServer(spec)
+  return local.available(spec) || local.ensureWorker(spec)
 }
 
 export async function transcribe(samples: Float32Array, requestId?: string): Promise<string> {
@@ -107,12 +107,12 @@ export async function transcribePartial(samples: Float32Array): Promise<string> 
 export const cancelTranscription = local.cancelTranscription
 
 /**
- * Moves the server to the model the setting stands for now, from the one `previous` stood for. Auto and the
- * model auto stands for are the same model, whose server and the transcription under way on it go on.
+ * Moves the worker to the model the setting stands for now, from the one `previous` stood for. Auto and the
+ * model auto stands for are the same model, whose worker and the transcription under way on it go on.
  */
 export function switchModel(previous: AsrModel): Promise<boolean> {
   if (startable(previous) !== startable()) local.stop()
-  return ensureServer()
+  return ensureWorker()
 }
 
 export async function prepareModel(

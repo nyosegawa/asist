@@ -11,7 +11,7 @@ import { getSettings } from './settings'
 
 /**
  * Keeps the speech recognition and TTS engine sidecars as speech-demand.ts wants them: it tries to restart
- * one that is wanted and has died, and stops a local one that nothing needs, such as a server a preparation
+ * one that is wanted and has died, and stops a local one that nothing needs, such as a worker a preparation
  * started with the microphone off. It also restarts the aizuchi classifier, the memory embedding worker and
  * the VAP worker after a timeout or a crash while they are wanted: nothing else starts the first two again,
  * and the VAP worker would come back only when the microphone is next turned on. onChange runs only when the
@@ -25,9 +25,9 @@ const MAX_RESTART_WAIT_MS = 10 * 60_000
 const CLOCK_SLACK_MS = 1_000
 
 /**
- * The watchdog's starts of one speech engine that does not come up. Each start of llama-server or of
- * speech.cpp's worker loads 1.5 to 3.4 GB of weights, which one that keeps failing to load would repeat at
- * every check, so the wait between two starts doubles from one check up to MAX_RESTART_WAIT_MS. It is one
+ * The watchdog's starts of one speech engine that does not come up. Each start of a speech.cpp worker loads
+ * 0.8 to 2.3 GB of weights, which one that keeps failing to load would repeat at every check, so the wait
+ * between two starts doubles from one check up to MAX_RESTART_WAIT_MS. It is one
  * check again once the engine answers or the settings choose another engine or model. A start the
  * conversation asks for, to transcribe or to read a sentence, does not wait.
  */
@@ -94,7 +94,7 @@ export async function checkHealth(force = false): Promise<void> {
     forced = false
     const settings = getSettings()
     let [asrUp, ttsUp] = await Promise.all([asr.available(), tts.available()])
-    // A server or worker nothing wants is stopped once it is up, not while it loads, since a preparation
+    // A worker nothing wants is stopped once it is up, not while it loads, since a preparation
     // starts one to check that it loads and would report the stop as a failure.
     const asrWanted = demand.asrWanted()
     if (!asrWanted && asrUp) {
@@ -103,7 +103,7 @@ export async function checkHealth(force = false): Promise<void> {
     }
     if (!asrUp && asrWanted && asrRestarts.due(settings.asrModel)) {
       asrRestarts.started()
-      // A start that throws, as in a build without llama-server, leaves speech recognition down, which the
+      // A start that throws, as in a build without speech, leaves speech recognition down, which the
       // screens are told like any other outcome.
       asrUp = await asr.revive().catch((error: unknown) => {
         console.error('speech recognition failed to start:', error)
@@ -163,7 +163,7 @@ export function microphoneChanged(on: boolean): void {
   demand.setMicrophone(on)
   const settings = getSettings()
   if (on) {
-    checkAfter(asr.ensureServer().catch((error: unknown) => console.error('speech recognition failed to start:', error)))
+    checkAfter(asr.ensureWorker().catch((error: unknown) => console.error('speech recognition failed to start:', error)))
     checkAfter(tts.ensureEngine().catch((error: unknown) => console.error('TTS engine failed to start:', error)))
     if (demand.classifierWanted(settings)) void aizuchiClassifier.ensureStarted()
     return

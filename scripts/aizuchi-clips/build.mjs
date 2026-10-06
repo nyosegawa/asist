@@ -11,8 +11,8 @@ import { curate } from './curate.mjs'
  *
  *   node scripts/aizuchi-clips/build.mjs <engine> <voice> [candidates] [text ...]
  *
- * It runs the bundled speech and llama-server (node scripts/prepare-resources.mjs dev) on the files the
- * app has prepared: Qwen3-TTS 0.6B or Irodori-TTS, and Qwen3-ASR 1.7B. A clip marked reviewed in the manifest
+ * It runs the bundled speech (node scripts/prepare-resources.mjs dev) on the files the app has prepared:
+ * Qwen3-TTS 0.6B or Irodori-TTS, and Qwen3-ASR 1.7B. A clip marked reviewed in the manifest
  * is kept unless its text is given; with texts given, only those entries of the bank are rendered again. Commit
  * the clips only after reviewing them; every regeneration adds binary history.
  */

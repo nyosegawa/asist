@@ -39,7 +39,7 @@ vi.mock('../src/main/services/llm', () => ({
 }))
 vi.mock('../src/main/services/asr', () => ({
   available: mocks.asrAvailable,
-  ensureServer: mocks.asrEnsure
+  ensureWorker: mocks.asrEnsure
 }))
 vi.mock('../src/main/services/platform', async () => {
   const { MACOS, WINDOWS } = await import('./helpers/platform')

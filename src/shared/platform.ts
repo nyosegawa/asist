@@ -12,7 +12,7 @@ export type OsFamily = 'macos' | 'windows'
 
 /**
  * The GPU interface the local speech models run on: Metal on an Apple Silicon Mac, Vulkan on Windows.
- * llama-server runs the speech recognition and speech.cpp's worker the speech synthesis, both built on ggml.
+ * speech.cpp's worker runs the speech recognition and the speech synthesis on ggml.
  */
 export type SpeechBackend = 'metal' | 'vulkan'
 

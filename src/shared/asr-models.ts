@@ -3,7 +3,7 @@ import type { PinnedFile } from './pinned-file'
 import type { SpeechBackend } from './platform'
 
 /**
- * The speech recognition models the setting can name. Both run on llama.cpp from the same GGUF files on
+ * The speech recognition models the setting can name. Both run in speech.cpp's worker from the same GGUF file on
  * every machine, so a setting written on one machine means the same model on another.
  */
 export const ASR_MODELS = ['auto', 'qwen3-asr-1.7b', 'qwen3-asr-0.6b'] as const
@@ -11,37 +11,44 @@ export const ASR_MODELS = ['auto', 'qwen3-asr-1.7b', 'qwen3-asr-0.6b'] as const
 export type AsrModel = (typeof ASR_MODELS)[number]
 export type ResolvedAsrModel = Exclude<AsrModel, 'auto'>
 
-/** A Qwen3-ASR model for llama.cpp: the language model and the audio projector llama-server loads with it. */
+/** A Qwen3-ASR model for speech.cpp: its one model file, which holds the audio encoder and the decoder. */
 export interface AsrModelSpec {
   label: string
   model: PinnedFile
-  mmproj: PinnedFile
 }
 
-const ASR_1_7B = { repo: 'ggml-org/Qwen3-ASR-1.7B-GGUF', revision: '36a678687ba7d07a74ca70ccb0e36902e005fb80' }
-const ASR_0_6B = { repo: 'ggml-org/Qwen3-ASR-0.6B-GGUF', revision: '928ab958557df9aa2ef1c93e0e83c7ad0933fae2' }
-
 /**
- * The models in the order the screens list them. Measured on 2026-09-29 with llama.cpp b11246 and Q8_0, a
- * 17 s utterance of the user's: 1.7B took 1.40 s and 3.4 GB on an M5 with Metal, 0.60-0.68 s and 3.2 GB of
- * VRAM on an RTX 2080 with Vulkan; 0.6B took 0.58 s and 1.8 GB on the M5, 0.36-0.40 s and 1.9 GB on the
- * RTX 2080. 0.6B heard 「いいえ」 as 「いや」, which 1.7B did not.
+ * The models in the order the screens list them, in Q8_0. On an Apple M5 with Metal and speech.cpp 0.7.1, through
+ * ASIST's worker client with the language forced (2026-10-07), 1.7B took 0.62 to 0.74 s for a FLEURS utterance of
+ * 10.5 s and 2.1 to 2.6 s for one of 25.5 s, in 2.5 GB; 0.6B took 0.27 to 0.31 s and 0.87 to 1.01 s, in 1.1 GB. On
+ * the 4,483 clips of Common Voice 8.0 Japanese, 1.7B got 4.5% of the characters wrong and 0.6B 6.9%, accepted
+ * spellings allowed (speech.cpp 0.7.0, RTX 2080, 2026-10-07).
  */
 export const ASR_MODEL_SPECS: Readonly<Record<ResolvedAsrModel, AsrModelSpec>> = {
   'qwen3-asr-1.7b': {
     label: 'Qwen3-ASR 1.7B',
-    model: { ...ASR_1_7B, file: 'Qwen3-ASR-1.7B-Q8_0.gguf', bytes: 2_165_034_944, sha256: '58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57' },
-    mmproj: { ...ASR_1_7B, file: 'mmproj-Qwen3-ASR-1.7B-Q8_0.gguf', bytes: 355_709_344, sha256: '46c1d533af3f354ceb37ce855dbceff7da7fa7cf1e6a523df3b13440bd164c0d' }
+    model: {
+      repo: 'sakasegawa/Qwen3-ASR-1.7B-GGUF',
+      revision: '75edaf1dd34c60409d3190dbcb36dbec70cad5ea',
+      file: 'Qwen3-ASR-1.7B-Q8_0.gguf',
+      bytes: 2_176_109_216,
+      sha256: '5f219b78a1d9c3b9e97da27708b36f8a0bc1bfc1650b541c0a6dbaf87c9a62d0'
+    }
   },
   'qwen3-asr-0.6b': {
     label: 'Qwen3-ASR 0.6B',
-    model: { ...ASR_0_6B, file: 'Qwen3-ASR-0.6B-Q8_0.gguf', bytes: 804_749_248, sha256: 'bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971' },
-    mmproj: { ...ASR_0_6B, file: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf', bytes: 214_392_480, sha256: '41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d' }
+    model: {
+      repo: 'sakasegawa/Qwen3-ASR-0.6B-GGUF',
+      revision: 'f397b129caf08f201f79e67bbfafd1c6b59aeb05',
+      file: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+      bytes: 841_502_336,
+      sha256: '416e10c15b4a3d9002bd337d18fc450233fdf68502b6e10d1379d2789838afd0'
+    }
   }
 }
 
 /** The files a model needs. */
-export const asrModelFiles = (spec: AsrModelSpec): PinnedFile[] => [spec.model, spec.mmproj]
+export const asrModelFiles = (spec: AsrModelSpec): PinnedFile[] => [spec.model]
 
 /** Which of the two models is recommended, the larger one or the one that fits less memory. */
 export type AsrRecommendationSize = 'larger' | 'smaller'
@@ -97,13 +104,8 @@ export function asrModelChoices(): AsrModelChoice[] {
   return offeredAsrModels().map((id) => ({ id, label: ASR_MODEL_SPECS[id].label }))
 }
 
-/**
- * The English name of the conversation language. Qwen3-ASR is told the language by the start of its
- * answer, `language Japanese<asr_text>`, and matches the name against the `support_languages` of its
- * config, where Portuguese and Spanish stand for every region; Whisper in the browser takes the same
- * names in lower case.
- */
-const ASR_LANGUAGE_NAMES: Record<ConversationLocale, string> = {
+/** The English name of the conversation language, which Whisper in the browser takes in lower case. */
+const WHISPER_LANGUAGE_NAMES: Record<ConversationLocale, string> = {
   'ja-JP': 'Japanese',
   'en-US': 'English',
   'fr-FR': 'French',
@@ -118,7 +120,11 @@ const ASR_LANGUAGE_NAMES: Record<ConversationLocale, string> = {
 }
 
 /** Transformers.js takes the language of a Whisper transcription as the English name in lower case. */
-export const whisperLanguageName = (locale: ConversationLocale): string => ASR_LANGUAGE_NAMES[locale].toLowerCase()
+export const whisperLanguageName = (locale: ConversationLocale): string => WHISPER_LANGUAGE_NAMES[locale].toLowerCase()
 
-/** The language name Qwen3-ASR is told to transcribe in. */
-export const asrLanguage = (locale: ConversationLocale): string => ASR_LANGUAGE_NAMES[locale]
+/**
+ * The language Qwen3-ASR is told to transcribe in, as the BCP 47 tag of speech.cpp's `language` option: the
+ * language of the locale without its region, as the model's languages list it. speech.cpp turns it into the start
+ * of the model's answer, as the official implementation does, which steers the model toward that language.
+ */
+export const asrLanguage = (locale: ConversationLocale): string => new Intl.Locale(locale).language
