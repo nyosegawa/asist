@@ -10,6 +10,7 @@ import {
   resolveAsrModel,
   whisperLanguageName
 } from '../src/shared/asr-models'
+import { CONVERSATION_LOCALES } from '../src/shared/conversation-locale'
 import { SETTINGS_FORMAT } from '../src/shared/settings'
 import { openStoredContent } from '../src/shared/stored-format'
 
@@ -51,25 +52,25 @@ describe('resolving the setting', () => {
 })
 
 describe('the download of a model', () => {
-  it('is the language model and its projector together, and nothing once they are installed', () => {
-    const { model, mmproj } = ASR_MODEL_SPECS['qwen3-asr-1.7b']
-    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], false)).toBeCloseTo((model.bytes + mmproj.bytes) / 1e9, 2)
+  it('is its model file, and nothing once it is installed', () => {
+    const { model } = ASR_MODEL_SPECS['qwen3-asr-1.7b']
+    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], false)).toBeCloseTo(model.bytes / 1e9, 2)
     expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], true)).toBe(0)
-  })
-
-  it('takes the projector from the same repository and commit as the language model', () => {
-    for (const spec of Object.values(ASR_MODEL_SPECS)) {
-      expect([spec.mmproj.repo, spec.mmproj.revision]).toEqual([spec.model.repo, spec.model.revision])
-    }
   })
 })
 
+/** The languages of Qwen3-ASR's model files, as `speech info --json` lists them and the worker takes them. */
+const QWEN3_ASR_LANGUAGES = ['ar', 'cs', 'da', 'de', 'el', 'en', 'es', 'fa', 'fi', 'fil', 'fr', 'hi', 'hu', 'id', 'it', 'ja', 'ko', 'mk', 'ms', 'nl', 'pl', 'pt', 'ro', 'ru', 'sv', 'th', 'tr', 'vi', 'yue', 'zh']
+
 describe('the language of a transcription request', () => {
-  it('gives Qwen3-ASR the English name its own configuration lists', () => {
-    expect(asrLanguage('ja-JP')).toBe('Japanese')
-    expect(asrLanguage('de-DE')).toBe('German')
-    expect(asrLanguage('pt-BR')).toBe('Portuguese')
-    expect(asrLanguage('es-419')).toBe('Spanish')
+  it('gives the worker the BCP 47 tag of the language, without the region the model does not take', () => {
+    expect(asrLanguage('ja-JP')).toBe('ja')
+    expect(asrLanguage('pt-BR')).toBe('pt')
+    expect(asrLanguage('es-419')).toBe('es')
+  })
+
+  it('tells Qwen3-ASR a language it recognizes for every conversation language', () => {
+    for (const locale of CONVERSATION_LOCALES) expect(QWEN3_ASR_LANGUAGES, locale).toContain(asrLanguage(locale))
   })
 
   it('gives transformers.js the English name in lower case', () => {
@@ -96,7 +97,7 @@ describe('the speech recognition model of an older settings file', () => {
     ['auto', 'auto'],
     ['qwen3-asr-1.7b', 'qwen3-asr-1.7b'],
     ['qwen3-asr-0.6b', 'qwen3-asr-0.6b'],
-    // Whisper does not run on llama.cpp; the recommendation for the machine's memory takes its place.
+    // Whisper is not among the local models; the recommendation for the machine's memory takes its place.
     ['whisper-large-v3-turbo', 'auto']
   ] as const)('upgrades %s of version 4 to %s, with the 0.6B Qwen3-TTS version 4 always spoke with', (stored, upgraded) => {
     const opened = open(4, stored)

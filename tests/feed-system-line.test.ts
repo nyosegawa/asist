@@ -43,7 +43,7 @@ describe('a system line of the feed', () => {
   it('words an error the line holds in the language the interface has when it is drawn', async () => {
     const en = createTranslator('en-US')
     withLocale('ja-JP')
-    const message = errorText('speechRecognition.errors.serverTranscribeFailed', { detail: errorText('speechRecognition.errors.transcribeTimeout') })
+    const message = errorText('speechRecognition.errors.onComputerTranscribeFailed', { detail: errorText('speechRecognition.errors.transcribeTimeout') })
     useFeedStore.getState().append({ role: 'sys', text: '', message: { key: 'conversation.error', values: { message } } })
     const container = document.body.appendChild(document.createElement('div'))
     root = createRoot(container)

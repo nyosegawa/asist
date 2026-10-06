@@ -91,7 +91,7 @@ export async function runSelfTest(): Promise<number> {
       if (!(await tts.available())) throw new Error('TTS engine not available')
       const synth = await tts.synthesize('こんにちは、音声のテストです')
       if (!synth.audio) throw new Error('TTS returned no audio')
-      await asr.ensureServer()
+      await asr.ensureWorker()
       if (!(await asr.available())) throw new Error('ASR not available')
       const samples = wavToFloat16k(Buffer.from(synth.audio, 'base64'))
       const text = await asr.transcribe(samples)

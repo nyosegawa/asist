@@ -19,10 +19,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('electron', () => ({ app: { getPath: vi.fn(), on: vi.fn() } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
-vi.mock('../src/main/services/llama-asr', () => ({
+vi.mock('../src/main/services/local-asr', () => ({
   available: mocks.localAvailable,
-  starting: mocks.localStarting,
-  ensureServer: mocks.localEnsure,
+  isStarting: mocks.localStarting,
+  ensureWorker: mocks.localEnsure,
   transcribe: mocks.localTranscribe,
   transcribePartial: mocks.localPartial,
   cancelTranscription: vi.fn(() => false),
@@ -48,14 +48,14 @@ describe('ASR service routing', () => {
     mocks.localEnsure.mockResolvedValue(true)
     mocks.localTranscribe.mockResolvedValue('音声認識のテストです。')
 
-    await expect(asr.ensureServer()).resolves.toBe(true)
+    await expect(asr.ensureWorker()).resolves.toBe(true)
     await expect(asr.transcribe(samples, 'request-1')).resolves.toBe('音声認識のテストです。')
 
     expect(mocks.localEnsure).toHaveBeenCalledWith(LARGE)
     expect(mocks.localTranscribe).toHaveBeenCalledWith(LARGE, samples, 'request-1')
   })
 
-  it('stops the running server before starting the newly selected model', async () => {
+  it('stops the running worker before starting the newly selected model', async () => {
     const asr = await import('../src/main/services/asr')
     mocks.settings.asrModel = 'qwen3-asr-0.6b'
     mocks.localEnsure.mockResolvedValue(true)
@@ -122,7 +122,7 @@ describe('Windows with a discrete GPU', () => {
     mocks.localPrepare.mockResolvedValue({ ok: true, message: '' })
     mocks.localEnsure.mockResolvedValue(true)
     await asr.prepareModel('auto', vi.fn())
-    await asr.ensureServer()
+    await asr.ensureWorker()
     expect(mocks.localPrepare.mock.calls[0][0]).toBe(LARGE)
     expect(mocks.localEnsure).toHaveBeenCalledWith(LARGE)
   })
@@ -144,10 +144,10 @@ describe('a machine without a GPU for the local speech recognition', () => {
   beforeEach(() => setCapabilities(WINDOWS_WITHOUT_GPU))
   afterEach(() => setCapabilities(MACOS))
 
-  it('reports no model and never starts a server', async () => {
+  it('reports no model and never starts a worker', async () => {
     const asr = await import('../src/main/services/asr')
     await expect(asr.installationStatus()).resolves.toBeNull()
-    await expect(asr.ensureServer()).resolves.toBe(false)
+    await expect(asr.ensureWorker()).resolves.toBe(false)
     await expect(asr.available()).resolves.toBe(false)
     expect(mocks.localEnsure).not.toHaveBeenCalled()
   })

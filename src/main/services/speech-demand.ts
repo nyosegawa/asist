@@ -15,8 +15,8 @@ import { windowAway } from './window-presence'
  * kept only until the reply under way has ended.
  *
  * Loading a model again is short: from spawn to ready with the files in the OS cache, Qwen3-ASR 1.7B took
- * 0.8 to 0.9 s and Qwen3-TTS 0.6B 2.2 to 2.5 s on an Apple M5, and Qwen3-ASR 0.6B 1.7 s and Qwen3-TTS 0.6B
- * 2.1 s on an RTX 2080; read from disk, up to 5.3 s on the RTX 2080 (2026-10-05).
+ * 0.56 to 0.67 s and 0.6B 0.37 to 0.42 s in speech.cpp 0.7.1 on an Apple M5 (2026-10-07), and Qwen3-TTS 0.6B
+ * 2.2 to 2.5 s there and 2.1 s on an RTX 2080; read from disk, up to 5.3 s on the RTX 2080 (2026-10-05).
  */
 
 /**

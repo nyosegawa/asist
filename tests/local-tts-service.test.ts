@@ -311,6 +311,29 @@ describe('a sentence the worker fails after its first piece', () => {
     }
   })
 
+  it('stops a worker that never answers a sentence the consumer stopped reading, so that the next sentence starts a new one', async () => {
+    vi.useFakeTimers()
+    try {
+      const stream = local.stream('qwen3tts', REQUEST)
+      const first = stream.next()
+      await vi.advanceTimersByTimeAsync(10)
+      const child = children[0]
+      const id = child.input.find((message) => message.text)!.id
+      say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
+      await first
+      await stream.return(undefined)
+      expect(child.input).toContainEqual({ type: 'cancel', id })
+      // The worker hangs and never answers the cancel.
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(child.kill).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(child.kill).toHaveBeenCalled()
+      expect(local.available('qwen3tts')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('ends it as stopped, which is no failure, when the worker is stopped for another engine', async () => {
     const error = await failedAfterFirstPiece(() => local.stop())
     expect(error.name).toBe('AbortError')
@@ -420,9 +443,16 @@ describe('the answers of the worker', () => {
     expect(child.kill).toHaveBeenCalled()
   })
 
+  it('stops the worker when it sends a sentence a partial text, which only a recognition has', async () => {
+    const { child, id, outcome } = await reading()
+    say(child, { type: 'partial', id, text: '', stop: 'complete' })
+    expect(readErrorText(((await outcome) as Error).message, 'ja-JP')).not.toBeNull()
+    expect(child.kill).toHaveBeenCalled()
+  })
+
   it('passes over a message of a type the protocol may add', async () => {
     const { child, id, outcome } = await reading()
-    say(child, { type: 'partial', id, text: '' })
+    say(child, { type: 'stats', id, tokens: 12 })
     say(child, { type: 'chunk', id, seq: 0, pcm: voiced() })
     say(child, { type: 'end', id, seed: 7, samples: 0, stop: 'complete' })
     expect(await outcome).toBeGreaterThan(0)

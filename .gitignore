@@ -18,10 +18,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-# The uv, git, llama-server and speech that scripts/prepare-resources.mjs puts in the app.
+# The uv, git and speech that scripts/prepare-resources.mjs puts in the app.
 resources/uv/
 resources/git/
-resources/llama.cpp/
 resources/speech/
 # The permission texts that scripts/macos/permission-texts.mjs generates.
 build/lproj/

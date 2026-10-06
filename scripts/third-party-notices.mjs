@@ -97,7 +97,6 @@ const BUNDLED_PROGRAMS = {
     'Git (GPL-2.0): see git/COPYING in this folder. The source code of the same version is attached to',
     '  each release at https://github.com/nyosegawa/asist/releases.',
     'uv (MIT or Apache-2.0): see uv/LICENSE-MIT and uv/LICENSE-APACHE in this folder.',
-    'llama.cpp (MIT): see llama.cpp/LICENSE in this folder.',
     'speech.cpp (MIT): see speech/LICENSE in this folder.'
   ],
   win32: [
@@ -107,8 +106,6 @@ const BUNDLED_PROGRAMS = {
     '  git/mingw64/share/licenses and git/usr/share/licenses. The source code of the same version is',
     '  attached to each release at https://github.com/nyosegawa/asist/releases.',
     'uv (MIT or Apache-2.0): see uv/LICENSE-MIT and uv/LICENSE-APACHE in this folder.',
-    'llama.cpp (MIT): see llama.cpp/LICENSE in this folder, and llama.cpp/LICENSE-LLVM-OpenMP for the',
-    '  OpenMP runtime it runs with.',
     'speech.cpp (MIT): see speech/LICENSE in this folder.'
   ]
 }

@@ -1,7 +1,5 @@
 import { spawn } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import net from 'node:net'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -10,8 +8,8 @@ import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS } from '../..
 import { RATE } from './cut.mjs'
 
 /**
- * The bundled speech and llama-server, run on the model files the app has prepared, so that the clips are read
- * by the same program and model as the rest of a reply.
+ * The bundled speech, run on the model files the app has prepared, so that the clips are read by the same program
+ * and model as the rest of a reply and heard by the same speech recognition as the user's speech.
  */
 
 const root = path.resolve(import.meta.dirname, '../..')
@@ -87,28 +85,45 @@ function halve(samples) {
   return out
 }
 
+/** Encodes samples as base64 of 16-bit little-endian PCM, which the worker reads as x / 32768. */
+function encodePcm(samples) {
+  const data = Buffer.alloc(samples.length * 2)
+  for (let i = 0; i < samples.length; i++) data.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
+  return data.toString('base64')
+}
+
 /**
- * Starts the worker on the engine's model and resolves to a function that reads a text and resolves to its samples
- * at RATE. Every line of the worker's stdout is one JSON object, and anything else on it, or an answer to no request
- * in flight, stops the script. A request carries no speed, so a clip is read at the model's own speed as in the app.
+ * Starts `speech worker` with the arguments and resolves, once the model is loaded, to its model information and a
+ * function that sends a request's lines and resolves to its `end` and the chunks before it. Every line of the
+ * worker's stdout is one JSON object, and anything else on it, or an answer to no request in flight, stops the script.
+ * A worker that exits or whose pipes fail rejects its start and every request in flight or sent later, so that the
+ * script reaches its cleanup instead of waiting for an answer that cannot come.
  */
-export async function startSynthesizer(engine) {
-  const child = spawn(speechProgram(), workerArgs(engine), { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
+async function startWorker(args) {
+  const child = spawn(speechProgram(), args, { stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true })
   const pending = new Map()
   let ready
-  let rate = RATE
+  let failure = null
   const started = new Promise((resolve, reject) => {
     ready = resolve
-    child.once('exit', (code) => reject(new Error(`speech worker exited (${code})`)))
+    const fail = (error) => {
+      if (failure) return
+      failure = error
+      reject(error)
+      for (const request of pending.values()) request.reject(error)
+      pending.clear()
+    }
+    child.once('exit', (code) => fail(new Error(`speech worker exited (${code})`)))
+    child.once('error', fail)
+    child.stdin.on('error', fail)
+    child.stdout.on('error', fail)
   })
   readline.createInterface({ input: child.stdout }).on('line', (line) => {
     const message = JSON.parse(line)
     if (typeof message !== 'object' || message === null || Array.isArray(message)) throw new Error(`speech worker wrote a line that is not a JSON object: ${line}`)
     if (message.type === 'ready') {
       if (message.protocol !== WORKER_PROTOCOL) throw new Error(`speech worker speaks protocol ${message.protocol}, and the script speaks ${WORKER_PROTOCOL}`)
-      rate = message.model.sample_rate
-      if (rate !== RATE && rate !== 2 * RATE) throw new Error(`speech worker speaks at ${rate} Hz, which the clips cannot be made from`)
-      return ready()
+      return ready(message.model)
     }
     if (message.type === 'fatal') throw new Error(`speech worker: ${describeError(message.error)}`)
     if (!['chunk', 'progress', 'end', 'error', 'cancelled'].includes(message.type)) return
@@ -118,107 +133,59 @@ export async function startSynthesizer(engine) {
     if (message.type === 'chunk') request.chunks.push(Buffer.from(message.pcm, 'base64'))
     else if (message.type !== 'progress') {
       pending.delete(message.id)
-      if (message.type === 'end') request.resolve(Buffer.concat(request.chunks))
+      if (message.type === 'end') request.resolve({ end: message, pcm: Buffer.concat(request.chunks) })
       else if (message.type === 'error') request.reject(new Error(describeError(message.error)))
       else throw new Error(`speech worker cancelled ${message.id}, which the script did not cancel`)
     }
   })
-  await started
+  const model = await started
   let next = 0
   return {
-    speak(text, voice, language) {
+    model,
+    request(lines) {
+      if (failure) return Promise.reject(failure)
       const id = String(next++)
-      const bytes = new Promise((resolve, reject) => pending.set(id, { chunks: [], resolve, reject }))
-      child.stdin.write(JSON.stringify({ type: 'synthesize', id, text, voice, language }) + '\n')
-      return bytes.then((pcm) => {
-        const samples = new Float32Array(pcm.length / 2)
-        for (let i = 0; i < samples.length; i++) samples[i] = pcm.readInt16LE(i * 2) / 32768
-        return rate === RATE ? samples : halve(samples)
-      })
+      const answer = new Promise((resolve, reject) => pending.set(id, { chunks: [], resolve, reject }))
+      for (const line of lines(id)) child.stdin.write(JSON.stringify(line) + '\n')
+      return answer
     },
     stop: () => child.kill()
   }
-}
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer()
-    probe.once('error', reject)
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address()
-      probe.close(() => resolve(port))
-    })
-  })
-}
-
-function wav16k(samples) {
-  const length = Math.floor((samples.length * 16_000) / RATE)
-  const data = Buffer.alloc(length * 2)
-  for (let i = 0; i < length; i++) {
-    const at = (i * (samples.length - 1)) / Math.max(1, length - 1)
-    const low = Math.floor(at)
-    const value = samples[low] + (samples[Math.min(low + 1, samples.length - 1)] - samples[low]) * (at - low)
-    data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, value)) * 32767), i * 2)
-  }
-  const header = Buffer.alloc(44)
-  header.write('RIFF', 0)
-  header.writeUInt32LE(36 + data.length, 4)
-  header.write('WAVEfmt ', 8)
-  header.writeUInt32LE(16, 16)
-  header.writeUInt16LE(1, 20)
-  header.writeUInt16LE(1, 22)
-  header.writeUInt32LE(16_000, 24)
-  header.writeUInt32LE(32_000, 28)
-  header.writeUInt16LE(2, 32)
-  header.writeUInt16LE(16, 34)
-  header.write('data', 36)
-  header.writeUInt32LE(data.length, 40)
-  return Buffer.concat([header, data])
 }
 
 /**
- * Starts llama-server on Qwen3-ASR 1.7B and resolves to a function that transcribes samples at RATE, in the
- * language named by its English name.
+ * Starts the worker on the engine's model and resolves to a function that reads a text and resolves to its samples
+ * at RATE. A request carries no speed, so a clip is read at the model's own speed as in the app.
+ */
+export async function startSynthesizer(engine) {
+  const worker = await startWorker(workerArgs(engine))
+  const rate = worker.model.sample_rate
+  if (rate !== RATE && rate !== 2 * RATE) throw new Error(`speech worker speaks at ${rate} Hz, which the clips cannot be made from`)
+  return {
+    async speak(text, voice, language) {
+      const { pcm } = await worker.request((id) => [{ type: 'synthesize', id, text, voice, language }])
+      const samples = new Float32Array(pcm.length / 2)
+      for (let i = 0; i < samples.length; i++) samples[i] = pcm.readInt16LE(i * 2) / 32768
+      return rate === RATE ? samples : halve(samples)
+    },
+    stop: worker.stop
+  }
+}
+
+/**
+ * Starts the worker on Qwen3-ASR 1.7B and resolves to a function that transcribes samples at RATE, in the language
+ * named by its BCP 47 tag, which the worker resamples to the model's rate.
  */
 export async function startRecognizer() {
-  const spec = ASR_MODEL_SPECS['qwen3-asr-1.7b']
-  const port = await freePort()
-  const key = randomBytes(24).toString('hex')
-  // The key goes in the environment, not on the command line, because a Mac's ps shows every user the
-  // arguments of all processes. llama-server reads every option it is not given on its command line from a
-  // LLAMA_ variable, so the developer's own are left out, as the app leaves them out.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.toUpperCase().startsWith('LLAMA_')))
-  const child = spawn(program('llama.cpp', 'llama-server'), [
-    '--model', modelPath(spec.model), '--mmproj', modelPath(spec.mmproj), '--n-gpu-layers', '99', '--ctx-size', '4096',
-    '--parallel', '1', '--host', '127.0.0.1', '--port', String(port), '--no-webui', '--offline', '--log-verbosity', '1'
-  ], { stdio: ['ignore', 'ignore', 'inherit'], env: { ...env, LLAMA_API_KEY: key }, windowsHide: true })
-  const exited = new Promise((_, reject) => child.once('exit', (code) => reject(new Error(`llama-server exited (${code})`))))
-  const healthy = (async () => {
-    for (;;) {
-      const answer = await fetch(`http://127.0.0.1:${port}/health`).catch(() => null)
-      if (answer?.ok) return
-      await new Promise((resolve) => setTimeout(resolve, 250))
-    }
-  })()
-  await Promise.race([healthy, exited])
+  const worker = await startWorker(['worker', modelPath(ASR_MODEL_SPECS['qwen3-asr-1.7b'].model)])
   return {
-    async recognize(samples, language = 'Japanese') {
-      const response = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-        body: JSON.stringify({
-          messages: [
-            { role: 'user', content: [{ type: 'input_audio', input_audio: { data: wav16k(samples).toString('base64'), format: 'wav' } }] },
-            { role: 'assistant', content: `language ${language}<asr_text>` }
-          ],
-          temperature: 0,
-          max_tokens: 256
-        })
-      })
-      if (!response.ok) throw new Error(`llama-server answered ${response.status}: ${await response.text()}`)
-      const content = (await response.json()).choices[0].message.content
-      return content.replace(/^language\s+\S+?<asr_text>/, '').trim()
+    async recognize(samples, language = 'ja') {
+      const { end } = await worker.request((id) => [
+        { type: 'chunk', id, seq: 0, pcm: encodePcm(samples) },
+        { type: 'transcribe', id, sample_rate: RATE, language }
+      ])
+      return end.text.trim()
     },
-    stop: () => child.kill()
+    stop: worker.stop
   }
 }

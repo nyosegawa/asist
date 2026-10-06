@@ -563,31 +563,18 @@ export const settingsAbout = defineMessages({
       'es-419': 'Reconocimiento de voz',
       'es-ES': 'Reconocimiento de voz'
     },
-    llamaCpp: {
-      'ja-JP': '音声認識のモデルを GPU で動かす',
-      'en-US': 'Running the speech recognition models on the GPU',
-      'fr-FR': 'Exécution des modèles de reconnaissance vocale sur le GPU',
-      'de-DE': 'Ausführung der Spracherkennungsmodelle auf der GPU',
-      'hi-IN': 'वाक् पहचान के मॉडल GPU पर चलाना',
-      'id-ID': 'Menjalankan model pengenalan suara di GPU',
-      'it-IT': 'Esecuzione dei modelli di riconoscimento vocale sulla GPU',
-      'ko-KR': '음성 인식 모델을 GPU에서 실행',
-      'pt-BR': 'Execução dos modelos de reconhecimento de fala na GPU',
-      'es-419': 'Ejecución de los modelos de reconocimiento de voz en la GPU',
-      'es-ES': 'Ejecución de los modelos de reconocimiento de voz en la GPU'
-    },
     speechCpp: {
-      'ja-JP': '読み上げのモデルを GPU で動かす',
-      'en-US': 'Running the speech synthesis models on the GPU',
-      'fr-FR': 'Exécution des modèles de synthèse vocale sur le GPU',
-      'de-DE': 'Ausführung der Sprachsynthesemodelle auf der GPU',
-      'hi-IN': 'वाक् संश्लेषण के मॉडल GPU पर चलाना',
-      'id-ID': 'Menjalankan model sintesis suara di GPU',
-      'it-IT': 'Esecuzione dei modelli di sintesi vocale sulla GPU',
-      'ko-KR': '음성 합성 모델을 GPU에서 실행',
-      'pt-BR': 'Execução dos modelos de síntese de fala na GPU',
-      'es-419': 'Ejecución de los modelos de síntesis de voz en la GPU',
-      'es-ES': 'Ejecución de los modelos de síntesis de voz en la GPU'
+      'ja-JP': '音声認識と読み上げのモデルを GPU で動かす',
+      'en-US': 'Running the speech recognition and speech synthesis models on the GPU',
+      'fr-FR': 'Exécution des modèles de reconnaissance et de synthèse vocales sur le GPU',
+      'de-DE': 'Ausführung der Spracherkennungs- und Sprachsynthesemodelle auf der GPU',
+      'hi-IN': 'वाक् पहचान और वाक् संश्लेषण के मॉडल GPU पर चलाना',
+      'id-ID': 'Menjalankan model pengenalan dan sintesis suara di GPU',
+      'it-IT': 'Esecuzione dei modelli di riconoscimento e sintesi vocale sulla GPU',
+      'ko-KR': '음성 인식과 음성 합성 모델을 GPU에서 실행',
+      'pt-BR': 'Execução dos modelos de reconhecimento e síntese de fala na GPU',
+      'es-419': 'Ejecución de los modelos de reconocimiento y síntesis de voz en la GPU',
+      'es-ES': 'Ejecución de los modelos de reconocimiento y síntesis de voz en la GPU'
     },
     ttsIrodori: {
       'ja-JP': '返事の読み上げ。モデルカードは、本人の同意なしに声を複製したりなりすましたりすることと、ディープフェイクや誤った情報を作ることを禁じています。',

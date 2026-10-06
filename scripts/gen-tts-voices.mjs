@@ -31,7 +31,6 @@ const ENGINES = {
   irodori: { voices: IRODORI_TTS_VOICE_IDS, languages: ['ja'] },
   qwen3tts: { voices: QWEN_TTS_VOICE_IDS, languages: Object.keys(VOICE_SAMPLE_TEXT) }
 }
-const ENGLISH_NAME = new Intl.DisplayNames('en', { type: 'language' })
 
 /** The words of a reading, without the punctuation, spacing and case the recognizer writes as it likes. */
 const words = (text, language) => (language === 'ja' ? plain(text) : text.normalize('NFKC').toLowerCase().replace(/[\p{P}\s]/gu, ''))
@@ -55,7 +54,7 @@ try {
         const text = VOICE_SAMPLE_TEXT[language]
         let chosen = null
         for (let attempt = 0; attempt < ATTEMPTS && !chosen; attempt++) {
-          const reading = await trimAizuchi(await synthesizer.speak(text, voice, language), text, (samples) => recognizer.recognize(samples, ENGLISH_NAME.of(language)))
+          const reading = await trimAizuchi(await synthesizer.speak(text, voice, language), text, (samples) => recognizer.recognize(samples, language))
           if (typeof reading !== 'string' && words(reading.heard, language) === words(text, language)) chosen = reading
           else console.error(`${engine} ${language} ${voice}: ${typeof reading === 'string' ? reading : `heard "${reading.heard}"`}`)
         }

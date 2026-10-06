@@ -9,9 +9,11 @@ import { platformCapabilities } from './platform'
 /**
  * The processes the local speech runs in, and the client of speech.cpp's worker protocol 2: one JSON object per
  * line on stdin and on stdout, and nothing else on stdout; the first message is `ready`, with the model's
- * information, or `fatal`; stderr goes to the app log under the worker's name. Quitting the app stops every one
- * of them. A worker reads its requests from stdin and ends by itself once ASIST is gone and the pipe closes,
- * however ASIST ended; a process that reads nothing from ASIST is started through spawnUnattended.
+ * information, or `fatal`; then each request gets the answers that name it by its id and exactly one terminal
+ * message, `end`, `error` or `cancelled`, and nothing after it; stderr goes to the app log under the worker's name.
+ * The speech synthesis and the speech recognition each run a worker of their own on this client. Quitting the app
+ * stops every one of them. A worker reads its requests from stdin and ends by itself once ASIST is gone and the pipe
+ * closes, however ASIST ended; a process that reads nothing from ASIST is started through spawnUnattended.
  */
 
 /** The version of speech.cpp's worker protocol this client speaks, which a worker raises when its callers must change. */
@@ -61,25 +63,63 @@ export function describeWorkerError(error: unknown): string {
   return `${code}${typeof option === 'string' ? ` (${option})` : ''}: ${message}`
 }
 
+/** What a model does, as its information names it: a worker serves the requests of its model's task alone. */
+export type WorkerTask = 'synthesis' | 'recognition'
+
 export interface WorkerOptions {
-  /** What the model must do, as its information names it. */
-  task: 'synthesis'
+  task: WorkerTask
   /** The device the model is loaded on, which the worker is given and its `ready` must name. */
   device: string
-  /** Every message after `ready` except an `error` that names no request, which fails the worker. */
-  onMessage: (message: WorkerMessage) => void
-  /** The worker failed to load, broke the protocol, crashed or exited on its own. It is not called after `stop()`. */
+  /**
+   * How long the worker may send nothing while it has a request in flight, a cancelled one included, before it is
+   * taken to be hung. A hung worker is stopped, its requests in flight fail with `error()`, and `onFailure` is called
+   * with that error. A request whose caller stopped waiting is still awaited, so that a worker that never answers it
+   * is found out and started again rather than left holding every later request back.
+   */
+  silence: { ms: number; error: () => Error }
+  /**
+   * The worker failed to load, broke the protocol, crashed, exited on its own or went silent. The owner may stop it
+   * here with the error its requests in flight are to fail with; it stops itself with `error` otherwise. A worker that
+   * went silent has stopped already, its requests failed with the error of `silence`. It is not called after
+   * `stop()`.
+   */
   onFailure: (error: Error) => void
 }
+
+/**
+ * What a request makes of the answers to it. A handler that throws on an answer the request cannot have fails the
+ * worker, as that answer is the worker's defect, and the request with it.
+ */
+export interface WorkerRequest {
+  /** Each `chunk` or `partial` before the terminal message. A request without it takes neither. */
+  partway?: (message: WorkerMessage) => void
+  /** The request's `end`. */
+  end: (message: WorkerMessage) => void
+  /** The worker's `error` for the request, as speech's command line writes a failure. */
+  error: (reason: string) => void
+  /** The worker stopped or failed before it answered the request, for `reason`. */
+  abandoned: (reason: Error) => void
+}
+
+/** A request the worker has not answered yet. A cancelled one stays until its terminal message, and its answers are dropped. */
+interface InFlight {
+  answers: WorkerRequest
+  cancelled: boolean
+}
+
+/** The messages that answer a request. Protocol 2 may gain messages without being raised, so any other is passed over. */
+const ANSWERS: ReadonlySet<string> = new Set(['chunk', 'partial', 'progress', 'end', 'error', 'cancelled'])
 
 /** One running worker. `ready` settles once: true on the worker's `ready` message, false when it fails or is stopped first. */
 export class SpeechWorker {
   readonly ready: Promise<boolean>
-  /** The rate of the audio the model makes, from the model information of `ready`; 0 until then. */
+  /** The rate of the audio the model makes or recognizes, from the model information of `ready`; 0 until then. */
   sampleRate = 0
   private stopped = false
   private settleReady!: (ready: boolean) => void
   private isReady = false
+  private readonly inFlight = new Map<string, InFlight>()
+  private silenceTimer: NodeJS.Timeout | null = null
 
   constructor(
     readonly child: ChildProcessWithoutNullStreams,
@@ -107,39 +147,83 @@ export class SpeechWorker {
     return !this.stopped && this.child.exitCode === null && !this.child.killed
   }
 
-  send(message: Record<string, unknown>): void {
-    this.child.stdin.write(`${JSON.stringify(message)}\n`)
+  /** The requests the worker has not answered yet, cancelled ones included. */
+  get pending(): number {
+    return this.inFlight.size
   }
 
-  stop(): void {
+  /** Writes the lines of a request, the last of which makes it complete, and hands every answer under `id` to `answers`. */
+  request(id: string, lines: ReadonlyArray<Record<string, unknown>>, answers: WorkerRequest): void {
+    if (this.stopped) throw new Error(`${this.logName} worker has stopped and takes no request`)
+    // The worker answers a request under an id already in flight with an error that names no request.
+    if (this.inFlight.has(id)) throw new Error(`${this.logName} worker has a request ${id} in flight already`)
+    this.inFlight.set(id, { answers, cancelled: false })
+    for (const line of lines) this.send(line)
+    this.armSilence()
+  }
+
+  /** Cancels a request in flight. One that has had its terminal message, or was cancelled already, is left alone. */
+  cancel(id: string): void {
+    const request = this.inFlight.get(id)
+    if (!request || request.cancelled || this.stopped) return
+    request.cancelled = true
+    this.send({ type: 'cancel', id })
+    this.armSilence()
+  }
+
+  /** Stops the worker and ends every request in flight that was not cancelled with `reason`. */
+  stop(reason: Error): void {
     if (this.stopped) return
     this.stopped = true
     this.settleReady(false)
     if (this.child.exitCode === null && !this.child.killed) this.child.kill('SIGTERM')
+    const abandoned = [...this.inFlight.values()]
+    this.inFlight.clear()
+    this.armSilence()
+    for (const request of abandoned) if (!request.cancelled) request.answers.abandoned(reason)
+  }
+
+  /** Starts the wait for the worker's next message over, while a request is in flight; with none, nothing is awaited. */
+  private armSilence(): void {
+    if (this.silenceTimer) clearTimeout(this.silenceTimer)
+    this.silenceTimer = this.inFlight.size === 0 ? null : setTimeout(() => this.wentSilent(), this.options.silence.ms)
+  }
+
+  private wentSilent(): void {
+    if (this.stopped) return
+    const error = this.options.silence.error()
+    console.error(`${this.logName}: sent nothing for ${this.options.silence.ms / 1000} s with ${this.inFlight.size} requests in flight`)
+    this.stop(error)
+    this.options.onFailure(error)
+  }
+
+  private send(message: Record<string, unknown>): void {
+    this.child.stdin.write(`${JSON.stringify(message)}\n`)
   }
 
   private fail(error: Error): void {
     if (this.stopped) return
     console.error(`${this.logName}: ${error.message}`)
-    this.stop()
     this.options.onFailure(error)
+    this.stop(error)
   }
 
   private handleLine(line: string): void {
     if (this.stopped) return
-    let message: WorkerMessage
     try {
-      message = this.read(line)
+      const message = this.read(line)
+      if (message.type === 'ready') {
+        this.isReady = true
+        this.settleReady(true)
+        return
+      }
+      if (!ANSWERS.has(message.type)) return
+      this.answer(message)
     } catch (error) {
       this.fail(error as Error)
       return
     }
-    if (message.type === 'ready') {
-      this.isReady = true
-      this.settleReady(true)
-    } else {
-      this.options.onMessage(message)
-    }
+    this.armSilence()
   }
 
   /** The message of a line, after the checks of the protocol that concern no request. Throws on a line that breaks it. */
@@ -159,13 +243,33 @@ export class SpeechWorker {
       if (this.isReady) throw new Error(`${this.logName} worker reported ready a second time`)
       this.sampleRate = this.checkReady(read)
     }
-    if (read.type === 'error') {
-      const reason = describeWorkerError(read.error)
-      // The worker answers a line it cannot place with an error without an id. ASIST writes every line it
-      // sends, so this is ASIST's own defect.
-      if (typeof read.id !== 'string') throw new Error(`${this.logName} worker could not take a line ASIST sent: ${reason}`)
-    }
+    // The worker answers a line it cannot place with an error without an id. ASIST writes every line it
+    // sends, so this is ASIST's own defect.
+    if (read.type === 'error' && typeof read.id !== 'string') throw new Error(`${this.logName} worker could not take a line ASIST sent: ${describeWorkerError(read.error)}`)
     return read
+  }
+
+  /**
+   * Hands a message to the request it answers. An answer for no request in flight, a `cancelled` ASIST did not ask
+   * for, or a `chunk` or `partial` for a request that takes neither is the worker's defect, and throws.
+   */
+  private answer(message: WorkerMessage): void {
+    const id = typeof message.id === 'string' ? message.id : null
+    const request = id === null ? undefined : this.inFlight.get(id)
+    if (id === null || !request) throw new Error(`${this.logName} worker sent ${message.type} for ${String(message.id)}, which no request in flight has`)
+    if (message.type === 'progress') return
+    if (message.type === 'chunk' || message.type === 'partial') {
+      if (request.cancelled) return
+      if (!request.answers.partway) throw new Error(`${this.logName} worker sent ${message.type} for ${id}, which is answered with its end alone`)
+      request.answers.partway(message)
+      return
+    }
+    if (message.type === 'cancelled' && !request.cancelled) throw new Error(`${this.logName} worker cancelled ${id}, which ASIST did not cancel`)
+    // The request stays in flight until it has taken its terminal message, so that one it cannot have fails it
+    // with the others.
+    if (!request.cancelled && message.type === 'end') request.answers.end(message)
+    else if (!request.cancelled && message.type === 'error') request.answers.error(describeWorkerError(message.error))
+    this.inFlight.delete(id)
   }
 
   /** Checks that `ready` comes from a worker this client can speak to, running the model as asked, and returns the model's sample rate. */
@@ -182,11 +286,11 @@ export class SpeechWorker {
 }
 
 /**
- * Starts a process of the local speech that reads nothing from ASIST, such as llama-server or the engine of
- * another app, so that it ends with ASIST however ASIST ends. Killed with ASIST on an Apple M5, llama-server ran
- * on for more than two days with launchd as its parent, while the workers that read stdin ended (2026-10-05).
+ * Starts a speech process that reads nothing from ASIST, the engine of another app such as VOICEVOX, so that it
+ * ends with ASIST however ASIST ends. The VOICEVOX and AivisSpeech engines, started by a Node process that was then
+ * killed, ran on with launchd as their parent on an Apple M5, while the workers that read stdin ended (2026-10-05).
  * On macOS it leads a process group of its own that a watcher stops when ASIST ends, and it is not started when
- * the watcher cannot be, with `engine` named in the error. On Windows it ended with a killed ASIST already, in
+ * the watcher cannot be, with `engine` named in the error. On Windows a child ended with a killed ASIST already, in
  * the job object libuv puts it into (RTX 2080, 2026-10-05).
  */
 export function spawnUnattended(command: string, args: string[], options: SpawnOptions & { env: NodeJS.ProcessEnv }, engine: string): ChildProcess {

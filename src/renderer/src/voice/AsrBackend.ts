@@ -59,7 +59,7 @@ export class AsrBackend {
     if (!isCurrent()) return false
     const server = status.asr === 'ready' || status.asr === 'starting'
     if (!server && !this.localFallbackEnabled) {
-      throw new Error(errorText(status.asrInstalled ? 'speechRecognition.errors.serverUnavailable' : 'speechRecognition.errors.notPrepared'))
+      throw new Error(errorText(status.asrInstalled ? 'speechRecognition.errors.onComputerUnavailable' : 'speechRecognition.errors.notPrepared'))
     }
     this.backend = server ? 'server' : 'local'
     console.log(`ASR backend: ${this.backend}`)
@@ -97,7 +97,7 @@ export class AsrBackend {
     if (state === 'down' && this.backend === 'server') {
       this.backend = 'local'
       this.hooks.onServerLost()
-      console.warn('ASR server unavailable; next utterance will use configured recovery path')
+      console.warn('speech recognition on this computer is unavailable; the next utterance takes the configured recovery path')
     }
   }
 
@@ -120,7 +120,7 @@ export class AsrBackend {
     ensureCurrent()
     if (this.backend === 'local') {
       if (!this.localFallbackEnabled) {
-        throw new Error(errorText('speechRecognition.errors.serverStopped'))
+        throw new Error(errorText('speechRecognition.errors.onComputerStopped'))
       }
       return this.transcribeLocalWithRetry(audio, isCurrent)
     }
@@ -138,7 +138,7 @@ export class AsrBackend {
     } catch (serverError) {
       ensureCurrent()
       if (!this.localFallbackEnabled) {
-        throw new Error(errorText('speechRecognition.errors.serverTranscribeFailed', { detail: errorMessageOf(serverError) }))
+        throw new Error(errorText('speechRecognition.errors.onComputerTranscribeFailed', { detail: errorMessageOf(serverError) }))
       }
 
       // A server that dies after accepting the utterance hands the same audio to local, once.

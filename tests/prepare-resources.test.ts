@@ -127,9 +127,11 @@ describe('the Swift helpers', () => {
 })
 
 describe('speech.cpp', () => {
-  it('removes the speech-worker prepared before speech replaced it, which Git no longer ignores, and keeps the current speech', async () => {
+  it('removes the speech-worker and the llama-server prepared before speech replaced them, which Git no longer ignores, and keeps the current speech', async () => {
     fs.mkdirSync(path.join(dir, 'speech-worker'))
     fs.writeFileSync(path.join(dir, 'speech-worker', 'speech-worker'), 'old')
+    fs.mkdirSync(path.join(dir, 'llama.cpp'))
+    fs.writeFileSync(path.join(dir, 'llama.cpp', 'llama-server'), 'old')
     fs.mkdirSync(path.join(dir, 'speech'))
     fs.writeFileSync(path.join(dir, 'speech', 'speech'), 'current')
     writeStamp(path.join(dir, 'speech', 'VERSION'), SPEECH_VERSION, path.resolve('scripts/resources/speech.mjs'))

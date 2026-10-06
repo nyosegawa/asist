@@ -50,8 +50,8 @@ export async function completeSetup(request: unknown): Promise<AppSettings> {
   }
 
   if (voiceMode === 'server') {
-    const serverReady = (await asr.available()) || (await asr.ensureServer())
-    if (!serverReady) throw new Error(errorText('setup.completion.asrUnavailable'))
+    const workerReady = (await asr.available()) || (await asr.ensureWorker())
+    if (!workerReady) throw new Error(errorText('setup.completion.asrUnavailable'))
   }
 
   if (speaks && settings.ttsEngine !== 'none') {

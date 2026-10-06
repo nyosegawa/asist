@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   asrAvailable: async (): Promise<boolean> => mocks.asrUp,
   asrRevive: async (): Promise<boolean> => true,
   asrStop: vi.fn(() => { mocks.asrUp = false }),
-  ensureServer: vi.fn(async () => true),
+  ensureWorker: vi.fn(async () => true),
   ensureEngine: vi.fn(async () => {}),
   releaseLocal: vi.fn(() => { mocks.ttsUp = false })
 }))
@@ -32,7 +32,7 @@ vi.mock('../src/main/services/asr', () => ({
   available: () => mocks.asrAvailable(),
   revive: () => mocks.asrRevive(),
   stop: mocks.asrStop,
-  ensureServer: mocks.ensureServer,
+  ensureWorker: mocks.ensureWorker,
   state: (wanted: boolean) => (mocks.asrUp ? 'ready' : wanted ? 'down' : 'idle')
 }))
 vi.mock('../src/main/services/tts', () => ({
@@ -81,7 +81,7 @@ beforeEach(async () => {
   mocks.asrAvailable = async () => mocks.asrUp
   mocks.asrRevive = async () => true
   mocks.asrStop.mockClear()
-  mocks.ensureServer.mockClear()
+  mocks.ensureWorker.mockClear()
   mocks.releaseLocal.mockClear()
   mocks.ensureEngine.mockReset().mockResolvedValue(undefined)
   Object.assign(mocks.settings, { asrModel: 'qwen3-asr-1.7b', ttsEngine: 'qwen3tts', qwenTtsSize: '0.6b' })
@@ -189,9 +189,9 @@ describe('the watchdog', () => {
     expect(onChange).toHaveBeenLastCalledWith({ asr: 'ready', tts: 'ready' })
   })
 
-  it('reports speech recognition as down when starting it again fails, as in a build without llama-server, and logs why', async () => {
+  it('reports speech recognition as down when starting it again fails, as in a build without speech, and logs why', async () => {
     const failed = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const missing = new Error('llama-server is missing from /Applications/ASIST.app/Contents/Resources/llama.cpp/llama-server')
+    const missing = new Error('speech is missing from /Applications/ASIST.app/Contents/Resources/speech/speech')
     mocks.asrUp = false
     mocks.asrRevive = async () => { throw missing }
     const onChange = vi.fn()
@@ -406,7 +406,7 @@ describe('the watchdog with the microphone off', () => {
     mocks.settings.vapEnabled = false
   })
 
-  it('never starts speech recognition again, and stops a server something else loaded once it is up, not while it loads', async () => {
+  it('never starts speech recognition again, and stops a worker something else loaded once it is up, not while it loads', async () => {
     demand.setMicrophone(false)
     const revive = vi.fn(async () => true)
     mocks.asrRevive = revive
@@ -418,7 +418,7 @@ describe('the watchdog with the microphone off', () => {
     expect(mocks.asrStop).not.toHaveBeenCalled()
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ asr: 'idle' }))
 
-    // A preparation started the server to check that it loads, and it has come up.
+    // A preparation started the worker to check that it loads, and it has come up.
     mocks.asrUp = true
     await vi.advanceTimersByTimeAsync(30_000)
     expect(mocks.asrStop).toHaveBeenCalledOnce()
@@ -500,7 +500,7 @@ describe('the watchdog with the microphone off', () => {
     mocks.ensureEngine.mockClear()
 
     watchdog.microphoneChanged(true)
-    expect(mocks.ensureServer).toHaveBeenCalledOnce()
+    expect(mocks.ensureWorker).toHaveBeenCalledOnce()
     expect(mocks.ensureEngine).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(10)
     await classifierReady(classifierChildren()[0])

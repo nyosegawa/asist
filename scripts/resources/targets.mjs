@@ -2,7 +2,6 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { prepareGitMacos } from './git-macos.mjs'
 import { prepareGitWindows } from './git-windows.mjs'
-import { prepareLlamaCpp } from './llama-cpp.mjs'
 import { prepareNativeMacos } from './native-macos.mjs'
 import { prepareNativeWindows } from './native-windows.mjs'
 import { run } from './shared.mjs'
@@ -27,15 +26,15 @@ function preparePermissionTexts({ root }) {
 export const TARGETS = {
   'darwin-arm64': {
     test: [prepareGitMacos, prepareUv, prepareElectron],
-    dev: [prepareGitMacos, prepareUv, prepareLlamaCpp, prepareSpeech, prepareNativeMacos, prepareElectron],
-    build: [prepareGitMacos, prepareUv, prepareLlamaCpp, prepareSpeech, prepareNativeMacos, preparePermissionTexts],
-    check: [prepareUv, prepareLlamaCpp, prepareSpeech]
+    dev: [prepareGitMacos, prepareUv, prepareSpeech, prepareNativeMacos, prepareElectron],
+    build: [prepareGitMacos, prepareUv, prepareSpeech, prepareNativeMacos, preparePermissionTexts],
+    check: [prepareUv, prepareSpeech]
   },
   'win32-x64': {
     test: [prepareGitWindows, prepareUv, prepareNativeWindows, prepareElectron],
-    dev: [prepareGitWindows, prepareUv, prepareLlamaCpp, prepareSpeech, prepareNativeWindows, prepareElectron],
-    build: [prepareGitWindows, prepareUv, prepareLlamaCpp, prepareSpeech, prepareNativeWindows],
-    check: [prepareGitWindows, prepareUv, prepareLlamaCpp, prepareSpeech]
+    dev: [prepareGitWindows, prepareUv, prepareSpeech, prepareNativeWindows, prepareElectron],
+    build: [prepareGitWindows, prepareUv, prepareSpeech, prepareNativeWindows],
+    check: [prepareGitWindows, prepareUv, prepareSpeech]
   }
 }
 
