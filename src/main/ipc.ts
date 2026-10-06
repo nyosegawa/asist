@@ -60,6 +60,7 @@ import { LIVE_ENGINE_INFO, isLiveEngine, liveTextInput } from '@shared/voice-eng
 import { stopsLiveEngine } from '@shared/live-session-policy'
 import { appendJsonl } from './services/store'
 import * as speechDemand from './services/speech-demand'
+import { takeSpeechModelNotices } from './services/speech-model-notices'
 import * as watchdog from './services/watchdog'
 import * as nativeMic from './services/native-mic'
 import * as vap from './services/vap'
@@ -441,6 +442,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
     return result
   })
   handle(IpcChannel.TtsPrepareCancel, () => localTts.cancelPreparation())
+  handle(IpcChannel.SpeechModelNotices, () => takeSpeechModelNotices())
 
   handle(IpcChannel.JobCancel, (_e, id: string) => agent.cancel(id))
   handle(IpcChannel.JobMerge, (_e, id: string, reviewed: ReviewedMerge) => {

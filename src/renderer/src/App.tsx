@@ -18,6 +18,7 @@ import { JobsView } from '@/ui/JobsView'
 import { FocusOverlay } from '@/ui/FocusOverlay'
 import { SetupWizard } from '@/ui/SetupWizard'
 import { SafetyNotice } from '@/ui/setup/safety'
+import { SpeechModelNotices } from '@/ui/SpeechModelNotices'
 import { CalendarView } from '@/ui/calendar/CalendarView'
 import { TasksView } from '@/ui/tasks/TasksView'
 import { MailView } from '@/ui/mail/MailView'
@@ -246,6 +247,7 @@ export default function App(): React.JSX.Element {
       {boot.state === 'ready' && (
         <div className="app-shell is-intro">
           <TimerRestorer />
+          <SpeechModelNotices />
           <div className="landscape" aria-hidden />
           <Starfield />
           <TopBar />

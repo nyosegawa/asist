@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
+import { useT } from '@/i18n'
 import { useToastStore } from '@/state/stores'
 import { Btn } from './settings/primitives'
 
@@ -13,7 +14,8 @@ const KIND_STYLE: Record<string, string> = {
  * The toasts at the top right. A body shows two lines, and the toast the pointer or the keyboard rests on
  * shows the whole of it and stays up until it is left, so that a long error can be read to the end.
  * A click on its text dismisses it, and so does its action, after running. The action is a button beside the
- * text rather than inside it, since a button cannot hold another. Each toast carries its kind in data-toast,
+ * text rather than inside it, since a button cannot hold another. A persistent toast never goes by itself, so it
+ * has a close button beside its action, where it is seen. Each toast carries its kind in data-toast,
  * which the scripts that drive the app over CDP read to report an error the app showed.
  *
  * A heading is a sentence, not a label. With the HUD labels' letter spacing (0.16em) in a 320 px column, 85
@@ -21,6 +23,7 @@ const KIND_STYLE: Record<string, string> = {
  * (measured in the demo on 2026-09-26).
  */
 export function Toasts(): React.JSX.Element {
+  const t = useT()
   const toasts = useToastStore((s) => s.toasts)
   const { remove, hold, release } = useToastStore.getState()
   // The pointer and the keyboard each hold a toast; it goes on showing the whole and staying up until neither does.
@@ -69,17 +72,24 @@ export function Toasts(): React.JSX.Element {
                 </div>
               )}
             </button>
-            {toast.action && (
-              <div className="mt-2 flex">
-                <Btn
-                  tone="primary"
-                  onClick={() => {
-                    toast.action!.run()
-                    remove(toast.id)
-                  }}
-                >
-                  {toast.action.label}
-                </Btn>
+            {(toast.action || toast.persistent) && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {toast.action && (
+                  <Btn
+                    tone="primary"
+                    onClick={() => {
+                      toast.action!.run()
+                      remove(toast.id)
+                    }}
+                  >
+                    {toast.action.label}
+                  </Btn>
+                )}
+                {toast.persistent && (
+                  <Btn tone="quiet" onClick={() => remove(toast.id)}>
+                    {t('common.close')}
+                  </Btn>
+                )}
               </div>
             )}
           </motion.div>

@@ -525,5 +525,87 @@ export const settingsModels = defineMessages({
     'pt-BR': 'Não foi possível verificar',
     'es-419': 'No se pudo verificar',
     'es-ES': 'No se ha podido comprobar'
+  },
+  notice: {
+    title: {
+      'ja-JP': '{model} の準備が要ります',
+      'en-US': '{model} needs preparing',
+      'fr-FR': '{model} doit être préparé',
+      'de-DE': '{model} muss vorbereitet werden',
+      'hi-IN': '{model} को तैयार करना होगा',
+      'id-ID': '{model} perlu disiapkan',
+      'it-IT': '{model} va preparato',
+      'ko-KR': '{model}을(를) 준비해야 합니다',
+      'pt-BR': '{model} precisa ser preparado',
+      'es-419': 'Hay que preparar {model}',
+      'es-ES': 'Hay que preparar {model}'
+    },
+    speech: {
+      macos: {
+        'ja-JP': '準備するまで、返事は macOS の音声合成で読み上げます。',
+        'en-US': 'Until it is prepared, replies are read with the macOS voice.',
+        'fr-FR': "Tant qu'il n'est pas prêt, les réponses sont lues avec la voix de macOS.",
+        'de-DE': 'Bis es vorbereitet ist, werden Antworten mit der macOS-Stimme vorgelesen.',
+        'hi-IN': 'तैयार होने तक जवाब macOS की आवाज़ में पढ़े जाते हैं।',
+        'id-ID': 'Sampai model ini siap, jawaban dibacakan dengan suara macOS.',
+        'it-IT': 'Finché non è pronto, le risposte vengono lette con la sintesi vocale di macOS.',
+        'ko-KR': '준비할 때까지는 macOS 음성 합성으로 답변을 읽어줍니다.',
+        'pt-BR': 'Até ele ficar pronto, as respostas são lidas com a voz do macOS.',
+        'es-419': 'Hasta prepararlo, las respuestas se leen con la voz de macOS.',
+        'es-ES': 'Hasta prepararlo, las respuestas se leen con la voz de macOS.'
+      },
+      windows: {
+        'ja-JP': '準備するまで、返事は Windows の音声合成で読み上げます。',
+        'en-US': 'Until it is prepared, replies are read with the Windows voice.',
+        'fr-FR': "Tant qu'il n'est pas prêt, les réponses sont lues avec la voix de Windows.",
+        'de-DE': 'Bis es vorbereitet ist, werden Antworten mit der Windows-Stimme vorgelesen.',
+        'hi-IN': 'तैयार होने तक जवाब Windows की आवाज़ में पढ़े जाते हैं।',
+        'id-ID': 'Sampai model ini siap, jawaban dibacakan dengan suara Windows.',
+        'it-IT': 'Finché non è pronto, le risposte vengono lette con la sintesi vocale di Windows.',
+        'ko-KR': '준비할 때까지는 Windows 음성 합성으로 답변을 읽어줍니다.',
+        'pt-BR': 'Até ele ficar pronto, as respostas são lidas com a voz do Windows.',
+        'es-419': 'Hasta prepararlo, las respuestas se leen con la voz de Windows.',
+        'es-ES': 'Hasta prepararlo, las respuestas se leen con la voz de Windows.'
+      }
+    },
+    recognition: {
+      'ja-JP': '準備するまで、マイクは使えません。',
+      'en-US': 'The microphone cannot be used until it is prepared.',
+      'fr-FR': "Le micro reste inutilisable tant qu'il n'est pas prêt.",
+      'de-DE': 'Bis es vorbereitet ist, lässt sich das Mikrofon nicht verwenden.',
+      'hi-IN': 'तैयार होने तक माइक्रोफ़ोन इस्तेमाल नहीं हो सकता।',
+      'id-ID': 'Mikrofon tidak bisa dipakai sampai model ini siap.',
+      'it-IT': 'Finché non è pronto il microfono non si può usare.',
+      'ko-KR': '준비할 때까지 마이크를 쓸 수 없습니다.',
+      'pt-BR': 'O microfone não pode ser usado até ele ficar pronto.',
+      'es-419': 'El micrófono no se puede usar hasta prepararlo.',
+      'es-ES': 'El micrófono no se puede usar hasta prepararlo.'
+    },
+    recognitionWhisper: {
+      'ja-JP': '準備するまでは、ブラウザ内 Whisper で聞き取ります。',
+      'en-US': 'Until it is prepared, in-browser Whisper does the listening.',
+      'fr-FR': "Tant qu'il n'est pas prêt, Whisper dans le navigateur assure l'écoute.",
+      'de-DE': 'Bis es vorbereitet ist, hört Whisper im Browser zu.',
+      'hi-IN': 'तैयार होने तक ब्राउज़र वाला Whisper सुनता है।',
+      'id-ID': 'Sampai model ini siap, Whisper dalam browser yang mendengarkan.',
+      'it-IT': 'Finché non è pronto, ascolta Whisper nel browser.',
+      'ko-KR': '준비할 때까지는 브라우저 내 Whisper가 알아듣습니다.',
+      'pt-BR': 'Até ele ficar pronto, o Whisper no navegador faz a escuta.',
+      'es-419': 'Hasta prepararlo, Whisper en el navegador se encarga de escuchar.',
+      'es-ES': 'Hasta prepararlo, Whisper en el navegador se encarga de escuchar.'
+    },
+    prepare: {
+      'ja-JP': '準備する(約 {sizeGb}GB)',
+      'en-US': 'Prepare (about {sizeGb} GB)',
+      'fr-FR': 'Préparer (environ {sizeGb} Go)',
+      'de-DE': 'Vorbereiten (rund {sizeGb} GB)',
+      'hi-IN': 'तैयार करें (करीब {sizeGb} GB)',
+      'id-ID': 'Siapkan (sekitar {sizeGb} GB)',
+      'it-IT': 'Prepara (circa {sizeGb} GB)',
+      'ko-KR': '준비하기(약 {sizeGb}GB)',
+      'pt-BR': 'Preparar (cerca de {sizeGb} GB)',
+      'es-419': 'Preparar (unos {sizeGb} GB)',
+      'es-ES': 'Preparar (unos {sizeGb} GB)'
+    }
   }
 })

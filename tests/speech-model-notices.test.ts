@@ -1,0 +1,91 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { asrModelFiles, asrModelSpec, recommendAsrModel } from '@shared/asr-models'
+import type { AppSettings } from '@shared/ipc'
+import type { PinnedFile } from '@shared/pinned-file'
+import { localTtsModel } from '@shared/tts-models'
+import { MACOS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
+
+const mocks = vi.hoisted(() => ({
+  directory: '',
+  settings: {} as Pick<AppSettings, 'uiLocale' | 'voiceEngine' | 'ttsEngine' | 'qwenTtsSize' | 'asrModel'>
+}))
+vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
+vi.mock('electron', () => ({ app: { getPath: () => mocks.directory, getVersion: () => '0.0.0', on: vi.fn() } }))
+vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
+
+import { SPEECH_MODEL_NOTICES_FORMAT, takeSpeechModelNotices } from '../src/main/services/speech-model-notices'
+import { modelFilePath } from '../src/main/services/speech-models'
+
+const IRODORI = localTtsModel('irodori', '0.6b')
+/** The model the automatic choice stands for on the 32 GB Mac of the fixture. */
+const RECOGNITION = asrModelSpec(recommendAsrModel('metal', 32).recommendedModel)
+const bytesOf = (files: readonly PinnedFile[]): number => files.reduce((sum, file) => sum + file.bytes, 0)
+
+const install = (files: readonly PinnedFile[]): void => {
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(modelFilePath(file)), { recursive: true })
+    fs.writeFileSync(modelFilePath(file), 'gguf')
+  }
+}
+const record = (): string => path.join(mocks.directory, SPEECH_MODEL_NOTICES_FORMAT.name)
+const told = (): unknown => JSON.parse(fs.readFileSync(record(), 'utf8'))
+
+beforeEach(() => {
+  mocks.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-speech-model-notices-'))
+  mocks.settings = { uiLocale: 'en-US', voiceEngine: 'cascade', ttsEngine: 'irodori', qwenTtsSize: '0.6b', asrModel: 'auto' }
+  setCapabilities(MACOS)
+})
+afterEach(() => {
+  fs.rmSync(mocks.directory, { recursive: true, force: true })
+})
+
+describe('telling the user once about the local speech models that need preparing', () => {
+  it('tells about the reading model whose files are missing, with what preparing it downloads, and not a second time', () => {
+    install(asrModelFiles(RECOGNITION))
+    expect(takeSpeechModelNotices()).toEqual([{ target: 'tts', label: IRODORI.label, downloadBytes: bytesOf(IRODORI.files) }])
+    expect(takeSpeechModelNotices()).toEqual([])
+  })
+
+  it('tells about the recognition model the automatic choice stands for', () => {
+    mocks.settings.ttsEngine = 'system'
+    expect(takeSpeechModelNotices()).toEqual([{ target: 'asr', label: RECOGNITION.label, downloadBytes: bytesOf(asrModelFiles(RECOGNITION)) }])
+  })
+
+  it('counts only the files still missing in what preparing downloads', () => {
+    install(asrModelFiles(RECOGNITION))
+    install(IRODORI.files.slice(1))
+    expect(takeSpeechModelNotices()).toEqual([{ target: 'tts', label: IRODORI.label, downloadBytes: IRODORI.files[0].bytes }])
+  })
+
+  it('tells again once an update pins other files of a model it told about, and forgets the pins no model uses', () => {
+    install(asrModelFiles(RECOGNITION))
+    const earlier = IRODORI.files.map(({ repo, file }) => ({ repo, revision: '0000000000000000000000000000000000000000', file }))
+    fs.writeFileSync(record(), JSON.stringify({ version: 1, told: earlier }))
+    expect(takeSpeechModelNotices()).toEqual([{ target: 'tts', label: IRODORI.label, downloadBytes: bytesOf(IRODORI.files) }])
+    expect(told()).toEqual({ version: 1, told: IRODORI.files.map(({ repo, revision, file }) => ({ repo, revision, file })) })
+  })
+
+  it('tells nothing about models whose files are there', () => {
+    install([...asrModelFiles(RECOGNITION), ...IRODORI.files])
+    expect(takeSpeechModelNotices()).toEqual([])
+  })
+
+  it('tells nothing while a live engine listens and speaks by itself', () => {
+    mocks.settings.voiceEngine = 'gemini-live'
+    expect(takeSpeechModelNotices()).toEqual([])
+  })
+
+  it('tells nothing on a machine that cannot run the local speech models', () => {
+    setCapabilities(WINDOWS_WITHOUT_GPU)
+    expect(takeSpeechModelNotices()).toEqual([])
+  })
+
+  it('refuses a record it cannot read rather than telling everything again', () => {
+    fs.writeFileSync(record(), '{"version": 1, "told": [')
+    expect(() => takeSpeechModelNotices()).toThrow()
+    expect(fs.readFileSync(record(), 'utf8')).toBe('{"version": 1, "told": [')
+  })
+})

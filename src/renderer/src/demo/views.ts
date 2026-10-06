@@ -1,7 +1,9 @@
 import { describeCalendarEvent, type CalendarEventInput, type CalendarStatus } from '@shared/calendar'
 import type { PreparationProgress, RendererApi } from '@shared/ipc'
 import type { SettingsPage } from '@shared/mini-apps'
-import type { LocalTtsEngine } from '@shared/tts-models'
+import { localTtsModel, type LocalTtsEngine } from '@shared/tts-models'
+import { ASR_MODEL_SPECS, asrModelFiles } from '@shared/asr-models'
+import type { PinnedFile } from '@shared/pinned-file'
 import { dayKey } from '@shared/calendar-layout'
 import { errorText } from '@shared/i18n/error-text'
 import { displayError } from '@/display-error'
@@ -103,6 +105,38 @@ function showUsageToast(): void {
   push()
   usageToastTimer = setInterval(push, 5000)
 }
+
+/**
+ * The notices at launch of a Mac on which an update pinned other files of Irodori-TTS and of the speech
+ * recognition model. Pressing the notice of Irodori-TTS starts a preparation that stops at 40% and never
+ * finishes, so the voice page it opens keeps showing the progress.
+ */
+const speechModelNotices = (press: boolean): DemoView => ({
+  prepare: (api) => {
+    void api.saveSettings({ ttsEngine: 'irodori' })
+    const getStatus = api.getStatus
+    api.getStatus = async () => ({ ...(await getStatus()), tts: 'down', ttsEngine: 'irodori' })
+    const reading = localTtsModel('irodori', '0.6b')
+    const recognition = ASR_MODEL_SPECS['qwen3-asr-1.7b']
+    const bytes = (files: readonly PinnedFile[]): number => files.reduce((sum, file) => sum + file.bytes, 0)
+    api.speechModelNotices = async () => [
+      { target: 'tts', label: reading.label, downloadBytes: bytes(reading.files) },
+      { target: 'asr', label: recognition.label, downloadBytes: bytes(asrModelFiles(recognition)) }
+    ]
+    let listener: ((progress: PreparationProgress) => void) | null = null
+    api.onSetupProgress = (callback) => {
+      listener = callback
+      return () => {
+        listener = null
+      }
+    }
+    api.prepareTtsModel = () => {
+      setTimeout(() => listener?.({ target: 'tts', status: 'downloading', pct: 40, downloadedMb: 754.1, totalMb: 1885 }), 100)
+      return new Promise(() => {})
+    }
+  },
+  ...(press ? { open: () => clickWhenReady('[data-toast] [data-tone="primary"]') } : {})
+})
 
 /**
  * Semantic search on the memory page while its model downloads. The download stops at 40% and never
@@ -321,7 +355,9 @@ export const DEMO_VIEWS: Record<ScreenName, DemoView> = {
     notes: ''
   }),
   toasts: { open: showToasts },
-  'toasts/chatgpt-usage': { open: showUsageToast }
+  'toasts/chatgpt-usage': { open: showUsageToast },
+  'toasts/speech-models': speechModelNotices(false),
+  'toasts/speech-models/preparing': speechModelNotices(true)
 }
 
 /** Waits until the element is rendered and then presses it, to reach a state inside a screen such as one page of the settings. */

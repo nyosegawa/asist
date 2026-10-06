@@ -59,7 +59,9 @@ export const SCREENS = {
   'confirm/calendar': { label: '承認の確認(ほかのタイムゾーンの予定の変更)', group: '起動と確認' },
   'confirm/calendar-all-day': { label: '承認の確認(数日にわたる終日の予定)', group: '起動と確認' },
   toasts: { label: '通知', group: '起動と確認' },
-  'toasts/chatgpt-usage': { label: '通知(ChatGPT の使用量の上限)', group: '起動と確認' }
+  'toasts/chatgpt-usage': { label: '通知(ChatGPT の使用量の上限)', group: '起動と確認' },
+  'toasts/speech-models': { label: '通知(更新で音声のモデルの準備が要る)', group: '起動と確認' },
+  'toasts/speech-models/preparing': { label: '通知(音声のモデルの準備を通知から始めた)', group: '起動と確認' }
 } as const satisfies Record<string, { label: string; group: ScreenGroup }>
 
 export type ScreenName = keyof typeof SCREENS

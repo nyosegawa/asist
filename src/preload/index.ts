@@ -113,6 +113,7 @@ const api: RendererApi = {
   cancelAsrPreparation: () => ipcRenderer.invoke(IpcChannel.AsrPrepareCancel),
   prepareTtsModel: () => ipcRenderer.invoke(IpcChannel.TtsPrepare),
   cancelTtsPreparation: () => ipcRenderer.invoke(IpcChannel.TtsPrepareCancel),
+  speechModelNotices: () => ipcRenderer.invoke(IpcChannel.SpeechModelNotices),
   onSetupProgress: subscribe(IpcChannel.SetupProgress),
 
   jobCancel: (id) => ipcRenderer.invoke(IpcChannel.JobCancel, id),

@@ -834,6 +834,18 @@ export interface PreparationProgress extends SetupProgress {
   target: PreparationTarget
 }
 
+/**
+ * A local speech model the settings use whose files, as this version of ASIST pins them, are not all on this
+ * computer, as after an update that pinned other files. The user is told about it once, at launch.
+ */
+export interface SpeechModelNotice {
+  target: Extract<PreparationTarget, 'asr' | 'tts'>
+  /** The model's name, such as Irodori-TTS or Qwen3-ASR 1.7B. */
+  label: string
+  /** What preparing it downloads, in bytes. */
+  downloadBytes: number
+}
+
 /** The colours of the window buttons the OS draws over the page, taken from the theme. */
 export interface WindowControlColors {
   /** A CSS colour for the symbols on the buttons. */
@@ -947,6 +959,7 @@ export const IpcChannel = {
   AsrPrepareCancel: 'asr-prepare-cancel',
   TtsPrepare: 'tts-prepare',
   TtsPrepareCancel: 'tts-prepare-cancel',
+  SpeechModelNotices: 'speech-model-notices',
   SetupProgress: 'setup-progress',
   CalendarStatus: 'calendar-status',
   CalendarRequestAccess: 'calendar-request-access',
@@ -1184,6 +1197,11 @@ export interface RendererApi {
   /** Downloads the files of the Qwen3-TTS size the settings name and starts it. Progress arrives through onSetupProgress. */
   prepareTtsModel(): Promise<{ ok: boolean; message: string }>
   cancelTtsPreparation(): Promise<boolean>
+  /**
+   * The local speech models in use that need preparing and that the user has not been told about for the
+   * files they need now. Main records them as told before it answers, so each is told once.
+   */
+  speechModelNotices(): Promise<SpeechModelNotice[]>
   onSetupProgress(callback: (p: PreparationProgress) => void): () => void
 
   jobCancel(id: string): Promise<void>

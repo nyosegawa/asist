@@ -87,6 +87,7 @@ export const rendererApiMethods = [
   'cancelAsrPreparation',
   'prepareTtsModel',
   'cancelTtsPreparation',
+  'speechModelNotices',
   'onSetupProgress',
   'jobCancel',
   'jobMerge',
