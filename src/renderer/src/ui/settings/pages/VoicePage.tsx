@@ -17,6 +17,7 @@ import { LIVE_ENGINE_INFO, isLiveEngine, type LiveEngine } from '@shared/voice-e
 import { displayError } from '@/display-error'
 import { useFormatLocale, useT, useUiLocale } from '@/i18n'
 import { platformCapabilities } from '@/platform'
+import { speechCatalog } from '@/speech-catalog'
 import { asrChoiceLabel, asrChoiceReason } from '../../asr-recommendation'
 import { osMessageKey } from '@shared/i18n/os-message'
 
@@ -170,7 +171,7 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   const offeredSizes = offeredQwenTtsSizes(localSpeech)
   const qwenTtsSizes = QWEN_TTS_SIZES.filter((size) => offeredSizes.includes(size) || size === settings.qwenTtsSize)
   const asrReady = status !== null && speechEnginePrepared(status.asr)
-  const asrChoices = localSpeech.backend === null ? [] : asrModelChoices(settings.conversationLocale)
+  const asrChoices = localSpeech.backend === null ? [] : asrModelChoices(settings.conversationLocale, speechCatalog())
   const asrModel = statusOf(setup)?.asr ?? null
   const vapRead = statusOf(vap)
   const classifier = statusOf(aizuchiClassifier)
@@ -280,8 +281,8 @@ export function VoicePage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
         {ttsMissing && isLocalTtsEngine(engine) && (
           <PrepLine
             text={t(!recommendLocalTts(localSpeech) ? osMessageKey('settingsModels.speech.localModelTooLittleMemory', capabilities.os) : 'settingsModels.speech.localModel', {
-              model: localTtsModel(engine, settings.qwenTtsSize).label,
-              sizeGb: new Intl.NumberFormat(formatLocale, { maximumFractionDigits: 1 }).format(localTtsSizeGb(localTtsModel(engine, settings.qwenTtsSize)))
+              model: localTtsModel(engine, settings.qwenTtsSize, speechCatalog()).label,
+              sizeGb: new Intl.NumberFormat(formatLocale, { maximumFractionDigits: 1 }).format(localTtsSizeGb(localTtsModel(engine, settings.qwenTtsSize, speechCatalog())))
             })}
             progress={<PrepProgress ctx={ctx} target="tts" />}
           >

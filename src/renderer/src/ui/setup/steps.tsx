@@ -17,6 +17,7 @@ import { useSystemVoice } from './system-voice'
 import { ApiKeyField } from './api-key-field'
 import { osMessageKey } from '@shared/i18n/os-message'
 import { platformCapabilities } from '@/platform'
+import { speechCatalog } from '@/speech-catalog'
 
 /**
  * The contents of each first-run setup screen. State and saving belong to SetupWizard, so this file
@@ -257,7 +258,7 @@ export function ListeningStep({
             <div className="su-details">
               <select className="st-select" value={asrModel} disabled={downloadBusy} onChange={(event) => onAsrModel(event.target.value as AsrModel)}>
                 <option value="auto">{t(`setup.listening.automaticModel.${localSpeech.backend}`)}</option>
-                {asrModelChoices(locale).map((model) => (
+                {asrModelChoices(locale, speechCatalog()).map((model) => (
                   <option key={model.id} value={model.id}>
                     {asrChoiceLabel(t, formatLocale, model)}
                   </option>
@@ -376,7 +377,7 @@ export function TtsStep({
               detail={
                 isLocalTtsEngine(engine.id)
                   ? t(`setup.tts.engines.${engine.id}.detail`, {
-                      sizeGb: new Intl.NumberFormat(formatLocale, { maximumFractionDigits: 1 }).format(localTtsSizeGb(localTtsModel(engine.id, qwenTtsSize)))
+                      sizeGb: new Intl.NumberFormat(formatLocale, { maximumFractionDigits: 1 }).format(localTtsSizeGb(localTtsModel(engine.id, qwenTtsSize, speechCatalog())))
                     })
                   : t(osMessageKey(`setup.tts.engines.${engine.id}.detail`, os))
               }

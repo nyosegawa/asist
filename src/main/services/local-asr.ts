@@ -7,7 +7,7 @@ import { conversationLocale } from './conversation-locale'
 import { t } from './i18n'
 import { platformCapabilities } from './platform'
 import { speechPath } from './speech-binaries'
-import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-models'
+import { filesInstalled, modelFilePath, prepareModelFiles, speechCatalog } from './speech-models'
 import { startSpeechWorker, type SpeechWorker, type WorkerMessage } from './speech-worker'
 
 /**
@@ -48,7 +48,7 @@ let preparation: { model: AsrModelSpec; controller: AbortController; operation: 
 
 /** Whether the files of the model are there. */
 export function installationStatus(model: AsrModelSpec): { modelInstalled: boolean } {
-  return { modelInstalled: filesInstalled(asrModelFiles(model)) }
+  return { modelInstalled: filesInstalled(asrModelFiles(model, speechCatalog())) }
 }
 
 export function available(model: AsrModelSpec): boolean {
@@ -87,7 +87,7 @@ export async function ensureWorker(model: AsrModelSpec): Promise<boolean> {
   if (!installationStatus(model).modelInstalled) return false
   // speech ships with the app, so a missing one is a broken build rather than something to prepare.
   if (!fs.existsSync(speechPath())) throw new Error(`speech is missing from ${speechPath()}`)
-  const started: SpeechWorker = startSpeechWorker(speechPath(), modelFilePath(model.model), [], model.family, {
+  const started: SpeechWorker = startSpeechWorker(speechPath(), modelFilePath(speechCatalog()[model.model]), [], model.family, {
     task: 'recognition',
     device: localSpeech.device,
     silence: { ms: ANSWER_TIMEOUT_MS, error: timedOutError },
@@ -228,7 +228,7 @@ export function prepare(
   if (preparation) return preparation.operation
   const controller = new AbortController()
   const operation = prepareModelFiles({
-    files: asrModelFiles(model),
+    files: asrModelFiles(model, speechCatalog()),
     label: model.label,
     feature: t('settingsModels.features.speechRecognition'),
     signal: controller.signal,

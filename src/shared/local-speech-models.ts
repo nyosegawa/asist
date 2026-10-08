@@ -2,6 +2,7 @@ import { asrModelFiles, asrModelSpec, recommendAsrModel, resolveAsrModel } from 
 import type { PinnedFile } from './pinned-file'
 import type { PlatformCapabilities } from './platform'
 import type { AppSettings } from './settings'
+import type { SpeechCatalog } from './speech-catalog'
 import { isLocalTtsEngine, localTtsModel } from './tts-models'
 import { isLiveEngine } from './voice-engine'
 
@@ -21,13 +22,14 @@ export interface LocalSpeechModelInUse {
  */
 export function localSpeechModelsInUse(
   settings: Pick<AppSettings, 'voiceEngine' | 'ttsEngine' | 'qwenTtsSize' | 'asrModel'>,
-  localSpeech: PlatformCapabilities['localSpeech']
+  localSpeech: PlatformCapabilities['localSpeech'],
+  catalog: SpeechCatalog
 ): LocalSpeechModelInUse[] {
   if (isLiveEngine(settings.voiceEngine) || localSpeech.backend === null) return []
   const recognition = asrModelSpec(resolveAsrModel(settings.asrModel, recommendAsrModel(localSpeech.backend, localSpeech.memoryGb)))
-  const used: LocalSpeechModelInUse[] = [{ target: 'asr', label: recognition.label, files: asrModelFiles(recognition) }]
+  const used: LocalSpeechModelInUse[] = [{ target: 'asr', label: recognition.label, files: asrModelFiles(recognition, catalog) }]
   if (isLocalTtsEngine(settings.ttsEngine)) {
-    const { label, files } = localTtsModel(settings.ttsEngine, settings.qwenTtsSize)
+    const { label, files } = localTtsModel(settings.ttsEngine, settings.qwenTtsSize, catalog)
     used.push({ target: 'tts', label, files })
   }
   return used

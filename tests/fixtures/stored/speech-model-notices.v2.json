@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "told": [
+    {
+      "repo": "sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF",
+      "file": "Irodori-TTS-866M-MF-v4.1-F16.gguf",
+      "sha256": "e237dc3eefe469b8bba87872beacf12fb7fe00dbdf85767edca8ec04ab910d13"
+    }
+  ]
+}

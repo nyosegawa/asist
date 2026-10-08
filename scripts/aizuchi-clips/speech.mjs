@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { ASR_MODEL_SPECS } from '../../src/shared/asr-models.ts'
+import { parseSpeechCatalog } from '../../src/shared/speech-catalog.ts'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS } from '../../src/shared/tts-models.ts'
 import { RATE } from './cut.mjs'
 
@@ -22,9 +23,15 @@ function modelsDir() {
   return path.join(userData, 'speech-models')
 }
 
-/** The path of a pinned model file the app has prepared. */
-export function modelPath(file) {
-  const found = path.join(modelsDir(), file.repo.replace('/', '--'), file.revision, file.file)
+/** The files of the speech models, as the catalog of the bundled speech pins them. */
+export function speechCatalog() {
+  return parseSpeechCatalog(execFileSync(speechProgram(), ['models', '--json'], { encoding: 'utf8', env: { ...process.env, SPEECH_MODEL_DIR: modelsDir() } }))
+}
+
+/** The path of the file of a model of the catalog, by its name, where the app keeps it once prepared. */
+export function modelPath(name) {
+  const file = speechCatalog()[name]
+  const found = path.join(modelsDir(), file.repo.replace('/', '--'), file.sha256, file.file)
   if (!existsSync(found)) throw new Error(`${file.file} is not in ${modelsDir()}; prepare the model in the app first`)
   return found
 }

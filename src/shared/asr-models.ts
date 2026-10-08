@@ -1,6 +1,7 @@
 import type { ConversationLocale } from './conversation-locale'
 import type { PinnedFile } from './pinned-file'
 import type { SpeechBackend } from './platform'
+import type { SpeechCatalog, SpeechModelName } from './speech-catalog'
 
 /**
  * The speech recognition models the setting can name. Each runs in speech.cpp's worker from the same GGUF file on
@@ -11,12 +12,13 @@ export const ASR_MODELS = ['auto', 'qwen3-asr-1.7b', 'qwen3-asr-0.6b', 'parakeet
 export type AsrModel = (typeof ASR_MODELS)[number]
 export type ResolvedAsrModel = Exclude<AsrModel, 'auto'>
 
-/** A speech recognition model for speech.cpp: its one model file, which holds the whole model. */
+/** A speech recognition model for speech.cpp, whose one file holds the whole model. */
 export interface AsrModelSpec {
   label: string
   /** The family of speech.cpp that runs the file, the `architecture` of its model information, under which its worker logs. */
   family: 'qwen3-asr' | 'fastconformer'
-  model: PinnedFile
+  /** The model's name in speech.cpp's catalog, which pins its file. */
+  model: SpeechModelName
   /**
    * The languages the model recognizes, as the BCP 47 tags of the `languages` of the file's model information. The
    * worker refuses a request in any other language.
@@ -42,67 +44,37 @@ export const ASR_MODEL_SPECS: Readonly<Record<ResolvedAsrModel, AsrModelSpec>> =
   'qwen3-asr-1.7b': {
     label: 'Qwen3-ASR 1.7B',
     family: 'qwen3-asr',
-    model: {
-      repo: 'sakasegawa/Qwen3-ASR-1.7B-GGUF',
-      revision: '75edaf1dd34c60409d3190dbcb36dbec70cad5ea',
-      file: 'Qwen3-ASR-1.7B-Q8_0.gguf',
-      bytes: 2_176_109_216,
-      sha256: '5f219b78a1d9c3b9e97da27708b36f8a0bc1bfc1650b541c0a6dbaf87c9a62d0'
-    },
+    model: 'qwen3-asr-1.7b',
     languages: QWEN3_ASR_LANGUAGES
   },
   'qwen3-asr-0.6b': {
     label: 'Qwen3-ASR 0.6B',
     family: 'qwen3-asr',
-    model: {
-      repo: 'sakasegawa/Qwen3-ASR-0.6B-GGUF',
-      revision: 'f397b129caf08f201f79e67bbfafd1c6b59aeb05',
-      file: 'Qwen3-ASR-0.6B-Q8_0.gguf',
-      bytes: 841_502_336,
-      sha256: '416e10c15b4a3d9002bd337d18fc450233fdf68502b6e10d1379d2789838afd0'
-    },
+    model: 'qwen3-asr-0.6b',
     languages: QWEN3_ASR_LANGUAGES
   },
   'parakeet-tdt_ctc-0.6b-ja': {
     label: 'parakeet-tdt_ctc-0.6b-ja',
     family: 'fastconformer',
-    model: {
-      repo: 'sakasegawa/parakeet-tdt_ctc-0.6b-ja-GGUF',
-      revision: '48060c6e292b01c84edac8988db0163fd41d3fe2',
-      file: 'parakeet-tdt_ctc-0.6B-ja-F16.gguf',
-      bytes: 1_240_656_832,
-      sha256: '71ddc10381a9d3b59e18fbc51422059293f1268676b1ca62adb45b791df05497'
-    },
+    model: 'parakeet-tdt_ctc-0.6b-ja',
     languages: ['ja']
   },
   'reazonspeech-nemo-v2': {
     label: 'ReazonSpeech NeMo v2',
     family: 'fastconformer',
-    model: {
-      repo: 'sakasegawa/reazonspeech-nemo-v2-GGUF',
-      revision: 'cb9e436cf3f9d9563c610cb5318adcfc5c0fe098',
-      file: 'reazonspeech-nemo-619M-v2-F16.gguf',
-      bytes: 1_240_465_696,
-      sha256: '1492147d7d18fbb0503db2cbbb05df4932cb3451e391524c6a2411632e4823bf'
-    },
+    model: 'reazonspeech-v2',
     languages: ['ja']
   },
   'parakeet-tdt-0.6b-v3': {
     label: 'parakeet-tdt-0.6b-v3',
     family: 'fastconformer',
-    model: {
-      repo: 'sakasegawa/parakeet-tdt-0.6b-v3-GGUF',
-      revision: '304eaf83fc16e3087425b61b6652c4eafe003dc4',
-      file: 'parakeet-tdt-0.6B-v3-F16.gguf',
-      bytes: 1_255_370_688,
-      sha256: '7b74de31ac48427934104f0d074613f8d759d7d108777c114476346789d94426'
-    },
+    model: 'parakeet-tdt-0.6b-v3',
     languages: ['bg', 'cs', 'da', 'de', 'el', 'en', 'es', 'et', 'fi', 'fr', 'hr', 'hu', 'it', 'lt', 'lv', 'mt', 'nl', 'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'sv', 'uk']
   }
 }
 
-/** The files a model needs. */
-export const asrModelFiles = (spec: AsrModelSpec): PinnedFile[] => [spec.model]
+/** The files a model needs, as the catalog pins them. */
+export const asrModelFiles = (spec: AsrModelSpec, catalog: SpeechCatalog): PinnedFile[] => [catalog[spec.model]]
 
 /** Which of the two models is recommended, the larger one or the one that fits less memory. */
 export type AsrRecommendationSize = 'larger' | 'smaller'
@@ -118,12 +90,12 @@ const AUTOMATIC_MODELS: Readonly<Record<AsrRecommendationSize, ResolvedAsrModel>
 const LARGER_FROM_GB: Readonly<Record<SpeechBackend, number>> = { metal: 16, vulkan: 6 }
 
 /** The model's files together, in GB of 10^9 bytes. */
-export const asrModelSizeGb = (spec: AsrModelSpec): number =>
-  Math.round(asrModelFiles(spec).reduce((sum, file) => sum + file.bytes, 0) / 1e7) / 100
+export const asrModelSizeGb = (spec: AsrModelSpec, catalog: SpeechCatalog): number =>
+  Math.round(asrModelFiles(spec, catalog).reduce((sum, file) => sum + file.bytes, 0) / 1e7) / 100
 
 /** What preparing a model downloads, in GB of 10^9 bytes: nothing once it is installed. */
-export function asrDownloadGb(spec: AsrModelSpec, modelInstalled: boolean): number {
-  return modelInstalled ? 0 : asrModelSizeGb(spec)
+export function asrDownloadGb(spec: AsrModelSpec, catalog: SpeechCatalog, modelInstalled: boolean): number {
+  return modelInstalled ? 0 : asrModelSizeGb(spec, catalog)
 }
 
 export interface AsrHardwareRecommendation {
@@ -171,10 +143,10 @@ export interface AsrModelChoice {
 }
 
 /** The models to choose from for a conversation language: those that recognize it. */
-export function asrModelChoices(locale: ConversationLocale): AsrModelChoice[] {
+export function asrModelChoices(locale: ConversationLocale, catalog: SpeechCatalog): AsrModelChoice[] {
   return offeredAsrModels()
     .filter((id) => asrModelRecognizes(locale, id))
-    .map((id) => ({ id, label: ASR_MODEL_SPECS[id].label, sizeGb: asrModelSizeGb(ASR_MODEL_SPECS[id]) }))
+    .map((id) => ({ id, label: ASR_MODEL_SPECS[id].label, sizeGb: asrModelSizeGb(ASR_MODEL_SPECS[id], catalog) }))
 }
 
 /** The English name of the conversation language, which Whisper in the browser takes in lower case. */

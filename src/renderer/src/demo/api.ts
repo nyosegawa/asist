@@ -26,6 +26,7 @@ import { describeCalendarEvent, type CalendarChange, type CalendarChangeResult, 
 import { addDays, overlaps, parseDayKey } from '@shared/calendar-layout'
 import { demoUsageDays } from './fixtures/usage'
 import { demoChatGptApi, demoChatGptKey, onDemoChatGptChange } from './chatgpt-demo'
+import { DEMO_SPEECH_CATALOG } from './speech-catalog'
 import { DEFAULT_DOCK_ORDER } from '@shared/dock'
 import {
   DEFAULT_MAIL_SETTINGS,
@@ -105,7 +106,7 @@ function demoAsrStatus(): SetupStatus['asr'] {
     label: spec.label,
     totalMemoryGb: localSpeech.memoryGb,
     modelInstalled: false,
-    downloadGb: asrDownloadGb(spec, false)
+    downloadGb: asrDownloadGb(spec, DEMO_SPEECH_CATALOG, false)
   }
 }
 
@@ -754,6 +755,7 @@ export const mockApi: RendererApi = {
   onAppUpdateChanged: () => () => {},
   appUpdateInstall: async () => {},
   getPlatformCapabilities: async () => capabilities,
+  getSpeechCatalog: async () => DEMO_SPEECH_CATALOG,
   isLaunchPage: async () => true,
   isWindowAway: async () => false,
   hotkeyStatus: async () => (!settings.globalHotkey ? 'off' : hotkeyRefused ? 'failed' : 'registered'),

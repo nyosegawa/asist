@@ -6,6 +6,7 @@ import { safetyNoticePending } from '@shared/settings'
 import { displayError } from '@/display-error'
 import { formatLocale, translate } from '@/i18n'
 import { platformCapabilities } from '@/platform'
+import { speechCatalog } from '@/speech-catalog'
 import { prepareAsrModel, prepareTtsModel, usePreparationStore } from '@/state/preparation'
 import { useSettingsStore, useToastStore, type Toast } from '@/state/stores'
 import { useViewStore } from '@/state/view'
@@ -77,7 +78,7 @@ function noticeToast(notice: SpeechModelNotice): Omit<Toast, 'id'> {
 
 const stillInUse = (notice: SpeechModelNotice, settings: AppSettings | null): boolean =>
   settings !== null &&
-  localSpeechModelsInUse(settings, platformCapabilities().localSpeech).some((model) => model.target === notice.target && model.label === notice.label)
+  localSpeechModelsInUse(settings, platformCapabilities().localSpeech, speechCatalog()).some((model) => model.target === notice.target && model.label === notice.label)
 
 /** Brings each toast in line with the state, and returns the notices still shown. */
 function followState(shown: Array<{ toast: number; notice: SpeechModelNotice }>): Array<{ toast: number; notice: SpeechModelNotice }> {

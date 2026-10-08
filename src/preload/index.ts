@@ -171,6 +171,7 @@ const api: RendererApi = {
   revealPath: (path) => ipcRenderer.invoke(IpcChannel.RevealPath, path),
   appVersion: () => ipcRenderer.invoke(IpcChannel.AppVersion),
   getPlatformCapabilities: () => ipcRenderer.invoke(IpcChannel.GetPlatformCapabilities),
+  getSpeechCatalog: () => ipcRenderer.invoke(IpcChannel.GetSpeechCatalog),
   isLaunchPage: () => ipcRenderer.invoke(IpcChannel.IsLaunchPage),
   isWindowAway: () => ipcRenderer.invoke(IpcChannel.IsWindowAway),
   hotkeyStatus: () => ipcRenderer.invoke(IpcChannel.HotkeyStatus),

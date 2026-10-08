@@ -1,5 +1,6 @@
 import { ASR_MODEL_SPECS, offeredAsrModels, type ResolvedAsrModel } from './asr-models'
 import type { MessageKey } from './i18n'
+import type { SpeechCatalog } from './speech-catalog'
 import { IRODORI_TTS_MODEL, QWEN_TTS_MODELS } from './tts-models'
 
 /** The groups of the credits, in the order the about page shows them. */
@@ -52,22 +53,6 @@ export const CREDITS = [
     provider: 'Rikorose',
     license: 'MIT, Apache-2.0',
     url: 'https://github.com/Rikorose/DeepFilterNet'
-  },
-  {
-    id: 'ttsIrodori',
-    group: 'local',
-    name: 'Irodori-TTS v4.1-Small-MF (GGUF)',
-    provider: 'Aratako',
-    license: 'MIT',
-    url: `https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`
-  },
-  {
-    id: 'ttsIrodoriCodec',
-    group: 'local',
-    name: 'Semantic-DACVAE-Japanese-32dim (GGUF)',
-    provider: 'Aratako',
-    license: 'MIT',
-    url: `https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`
   },
   {
     id: 'dacvae',
@@ -283,45 +268,67 @@ const SPEECH_RECOGNITION_SOURCES: Readonly<Record<ResolvedAsrModel, Pick<Credit,
  * Each is converted to GGUF for speech.cpp, which the name says and the link leads to, as CC BY 4.0 asks a change to
  * be indicated.
  */
-function speechRecognitionCredits(localSpeechRuns: boolean): ListedCredit[] {
+function speechRecognitionCredits(localSpeechRuns: boolean, catalog: SpeechCatalog): ListedCredit[] {
   if (!localSpeechRuns) return []
   return offeredAsrModels().map((model) => {
     const spec = ASR_MODEL_SPECS[model]
+    const { repo } = catalog[spec.model]
     return {
-      id: spec.model.repo,
+      id: repo,
       group: 'local',
       name: `${spec.label} (GGUF)`,
       ...SPEECH_RECOGNITION_SOURCES[model],
-      url: `https://huggingface.co/${spec.model.repo}`,
+      url: `https://huggingface.co/${repo}`,
       use: 'settingsAbout.use.asr'
     }
   })
 }
 
 /** The sizes of Qwen3-TTS, each converted to GGUF in a repository of its own. */
-function qwenTtsCredits(): ListedCredit[] {
-  return Object.values(QWEN_TTS_MODELS).map((spec) => ({
-    id: spec.model.repo,
-    group: 'local',
-    name: `${spec.label} CustomVoice (GGUF)`,
-    provider: 'Alibaba Qwen',
-    license: 'Apache-2.0',
-    url: `https://huggingface.co/${spec.model.repo}`,
-    use: 'settingsAbout.use.ttsQwen'
-  }))
+function qwenTtsCredits(catalog: SpeechCatalog): ListedCredit[] {
+  return Object.values(QWEN_TTS_MODELS).map((spec) => {
+    const { repo } = catalog[spec.model]
+    return {
+      id: repo,
+      group: 'local',
+      name: `${spec.label} CustomVoice (GGUF)`,
+      provider: 'Alibaba Qwen',
+      license: 'Apache-2.0',
+      url: `https://huggingface.co/${repo}`,
+      use: 'settingsAbout.use.ttsQwen'
+    }
+  })
+}
+
+/** Irodori-TTS and the codec it speaks through, converted to GGUF together in one file of one repository. */
+function irodoriTtsCredits(catalog: SpeechCatalog): ListedCredit[] {
+  const url = `https://huggingface.co/${catalog[IRODORI_TTS_MODEL.model].repo}`
+  return [
+    { id: 'ttsIrodori', group: 'local', name: 'Irodori-TTS v4.1-Small-MF (GGUF)', provider: 'Aratako', license: 'MIT', url, use: 'settingsAbout.use.ttsIrodori' },
+    { id: 'ttsIrodoriCodec', group: 'local', name: 'Semantic-DACVAE-Japanese-32dim (GGUF)', provider: 'Aratako', license: 'MIT', url, use: 'settingsAbout.use.ttsIrodoriCodec' }
+  ]
 }
 
 /** The license ASIST itself is published under, as the LICENSE file at the root of the repository states it. */
 export const ASIST_LICENSE = { name: 'MIT', url: 'https://opensource.org/license/mit' } as const
 
-/** The credits of a group on a machine where the local speech models run or do not. */
-export function creditsOf(group: CreditGroup, localSpeechRuns: boolean): ListedCredit[] {
+/**
+ * The credits of a group on a machine where the local speech models run or do not, the local models' repositories as
+ * the bundled speech's catalog pins them.
+ */
+export function creditsOf(group: CreditGroup, localSpeechRuns: boolean, catalog: SpeechCatalog): ListedCredit[] {
   const listed = CREDITS.filter((credit) => credit.group === group).map((credit) => ({
     ...credit,
     use: `settingsAbout.use.${credit.id}` as const
   }))
   if (group !== 'local') return listed
-  // Qwen3-TTS goes beside Irodori-TTS, the other local speech synthesis.
-  const irodori = listed.findIndex((credit) => credit.id === 'ttsIrodori')
-  return [...speechRecognitionCredits(localSpeechRuns), ...listed.slice(0, irodori), ...qwenTtsCredits(), ...listed.slice(irodori)]
+  // The local speech synthesis, Qwen3-TTS beside Irodori-TTS, goes before DACVAE.
+  const dacvae = listed.findIndex((credit) => credit.id === 'dacvae')
+  return [
+    ...speechRecognitionCredits(localSpeechRuns, catalog),
+    ...listed.slice(0, dacvae),
+    ...qwenTtsCredits(catalog),
+    ...irodoriTtsCredits(catalog),
+    ...listed.slice(dacvae)
+  ]
 }

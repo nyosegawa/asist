@@ -2,6 +2,7 @@ import type { TtsEngine } from './ipc'
 import type { MessageKey } from './i18n'
 import type { PinnedFile } from './pinned-file'
 import type { PlatformCapabilities, SpeechBackend } from './platform'
+import type { SpeechCatalog, SpeechModelName } from './speech-catalog'
 
 /** The engines whose model ASIST downloads and runs itself, in speech.cpp's worker on the GPU. */
 export type LocalTtsEngine = Extract<TtsEngine, 'irodori' | 'qwen3tts'>
@@ -13,10 +14,11 @@ export const QWEN_TTS_SIZES = ['0.6b', '1.7b'] as const
 
 export type QwenTtsSize = (typeof QWEN_TTS_SIZES)[number]
 
-/** One size of Qwen3-TTS for speech.cpp: its model file, which holds the codec it speaks through. */
+/** One size of Qwen3-TTS for speech.cpp, whose one file holds the codec it speaks through. */
 export interface QwenTtsModelSpec {
   label: string
-  model: PinnedFile
+  /** The model's name in speech.cpp's catalog, which pins its file. */
+  model: SpeechModelName
 }
 
 /**
@@ -29,23 +31,11 @@ export interface QwenTtsModelSpec {
 export const QWEN_TTS_MODELS: Readonly<Record<QwenTtsSize, QwenTtsModelSpec>> = {
   '0.6b': {
     label: 'Qwen3-TTS 0.6B',
-    model: {
-      repo: 'sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF',
-      revision: '28707fd399be0ae418681eec1e065804527eac6c',
-      file: 'Qwen3-TTS-12Hz-0.6B-CustomVoice-Q8_0.gguf',
-      bytes: 1_213_534_464,
-      sha256: 'f606ea3981aa42762b16db9a94826d2d560eb60f0b102001618f40d5a2f78cc6'
-    }
+    model: 'qwen3-tts-0.6b'
   },
   '1.7b': {
     label: 'Qwen3-TTS 1.7B',
-    model: {
-      repo: 'sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF',
-      revision: '0c0dc3861a19d0b98085b6f9973b6a5933b382a3',
-      file: 'Qwen3-TTS-12Hz-1.7B-CustomVoice-Q8_0.gguf',
-      bytes: 2_287_780_352,
-      sha256: '1bc0ef69547c003507b6536639a6080c8856382f4d0963b15d4475528330592d'
-    }
+    model: 'qwen3-tts-1.7b'
   }
 }
 
@@ -57,14 +47,8 @@ export const QWEN_TTS_MODELS: Readonly<Record<QwenTtsSize, QwenTtsModelSpec>> = 
  */
 export const IRODORI_TTS_MODEL = {
   label: 'Irodori-TTS',
-  model: {
-    repo: 'sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF',
-    revision: '99e5d77f6d92a70d4b9bff52829ac118fa1bf7d3',
-    file: 'Irodori-TTS-848M-MF-v4.1-F16.gguf',
-    bytes: 1_885_438_016,
-    sha256: 'd59b2fca0b0884f80d02562a58b2f6c344871a92e4cf3607971d78affcc11987'
-  }
-} as const satisfies { label: string; model: PinnedFile }
+  model: 'irodori-tts-mf'
+} as const satisfies { label: string; model: SpeechModelName }
 
 /**
  * The voices ASIST ships for Irodori-TTS, each a voice file under resources/irodori-voices made from a
@@ -89,9 +73,9 @@ export interface LocalTtsModel {
   files: readonly PinnedFile[]
 }
 
-export function localTtsModel(engine: LocalTtsEngine, qwenTtsSize: QwenTtsSize): LocalTtsModel {
-  if (engine === 'irodori') return { label: IRODORI_TTS_MODEL.label, files: [IRODORI_TTS_MODEL.model] }
-  return { label: QWEN_TTS_MODELS[qwenTtsSize].label, files: [QWEN_TTS_MODELS[qwenTtsSize].model] }
+export function localTtsModel(engine: LocalTtsEngine, qwenTtsSize: QwenTtsSize, catalog: SpeechCatalog): LocalTtsModel {
+  if (engine === 'irodori') return { label: IRODORI_TTS_MODEL.label, files: [catalog[IRODORI_TTS_MODEL.model]] }
+  return { label: QWEN_TTS_MODELS[qwenTtsSize].label, files: [catalog[QWEN_TTS_MODELS[qwenTtsSize].model]] }
 }
 
 /** The files of a model together, in GB of 10^9 bytes. */

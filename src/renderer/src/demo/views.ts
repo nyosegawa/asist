@@ -5,6 +5,7 @@ import { localTtsModel, type LocalTtsEngine } from '@shared/tts-models'
 import { ASR_MODEL_SPECS, asrModelFiles } from '@shared/asr-models'
 import type { PinnedFile } from '@shared/pinned-file'
 import { dayKey } from '@shared/calendar-layout'
+import { DEMO_SPEECH_CATALOG } from './speech-catalog'
 import { errorText } from '@shared/i18n/error-text'
 import { displayError } from '@/display-error'
 import { formatLocale, tConversation, translate } from '@/i18n'
@@ -118,12 +119,12 @@ const speechModelNotices = ({ press = false, whisper = false }: { press?: boolea
     void api.saveSettings({ ttsEngine: 'irodori', localAsrEnabled: whisper })
     const getStatus = api.getStatus
     api.getStatus = async () => ({ ...(await getStatus()), tts: 'down', ttsEngine: 'irodori' })
-    const reading = localTtsModel('irodori', '0.6b')
+    const reading = localTtsModel('irodori', '0.6b', DEMO_SPEECH_CATALOG)
     const recognition = ASR_MODEL_SPECS['qwen3-asr-1.7b']
     const bytes = (files: readonly PinnedFile[]): number => files.reduce((sum, file) => sum + file.bytes, 0)
     api.speechModelNotices = async () => [
       { target: 'tts', label: reading.label, downloadBytes: bytes(reading.files) },
-      { target: 'asr', label: recognition.label, downloadBytes: bytes(asrModelFiles(recognition)) }
+      { target: 'asr', label: recognition.label, downloadBytes: bytes(asrModelFiles(recognition, DEMO_SPEECH_CATALOG)) }
     ]
     let listener: ((progress: PreparationProgress) => void) | null = null
     api.onSetupProgress = (callback) => {
