@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { app } from 'electron'
@@ -9,11 +8,10 @@ import type { PinnedFile } from '@shared/pinned-file'
 import { appSettingsSchema } from '@shared/settings'
 import { parseSpeechCatalog, type SpeechCatalog } from '@shared/speech-catalog'
 import { QWEN_TTS_SIZES, isLocalTtsEngine, localTtsModel } from '@shared/tts-models'
-import { childEnv } from './child-env'
 import { errorMessage, t } from './i18n'
 import { platformCapabilities } from './platform'
 import { downloadMissing } from './pinned-download'
-import { speechPath } from './speech-binaries'
+import { resourcePath } from './resource-path'
 
 /**
  * The GGUF files of the local speech models, under userData/speech-models, one folder per repository and
@@ -27,26 +25,14 @@ function modelsDir(): string {
   return path.join(app.getPath('userData'), 'speech-models')
 }
 
-/** Listing the catalog reads only `speech` itself and the folder it is given. */
-const CATALOG_TIMEOUT_MS = 30_000
-
 let catalog: SpeechCatalog | null = null
 
 /**
- * The files of the local speech models, as the catalog of the bundled `speech` pins them, read once from
- * `speech models --json`. speech is pointed at this folder, so that listing the catalog never reads speech.cpp's
- * own cache, which ASIST does not use. A `speech` that cannot list it is a broken build, and throws.
+ * The model pins from the catalog shipped with the same release as speech. Reading the file does not need
+ * the executable's GPU runtime, so Windows without Vulkan can still start the app and use cloud speech.
  */
 export function speechCatalog(): SpeechCatalog {
-  catalog ??= parseSpeechCatalog(
-    execFileSync(speechPath(), ['models', '--json'], {
-      encoding: 'utf8',
-      env: { ...childEnv(), SPEECH_MODEL_DIR: modelsDir() },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: CATALOG_TIMEOUT_MS,
-      windowsHide: true
-    })
-  )
+  catalog ??= parseSpeechCatalog(fs.readFileSync(resourcePath('speech/catalog.json'), 'utf8'))
   return catalog
 }
 

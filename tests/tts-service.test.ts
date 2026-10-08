@@ -5,6 +5,7 @@ import path from 'node:path'
 import type { AppSettings, TtsEngine } from '@shared/ipc'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SPEECH_MODELS_OUTPUT } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   windows: false,
@@ -13,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   quitHooks: [] as Array<() => void>,
   settings: { ttsEngine: 'voicevox' as TtsEngine, voicevoxSpeaker: 3, aivisSpeaker: null as number | null, conversationLocale: 'ja-JP' as ConversationLocale }
 }))
-vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data',
   on: (event: string, listener: () => void) => { if (event === 'will-quit') mocks.quitHooks.push(listener) }
@@ -37,6 +38,9 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 beforeEach(() => {
+  const readFile = fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file, options) =>
+    String(file) === path.join('/app', 'resources', 'speech', 'catalog.json') ? SPEECH_MODELS_OUTPUT : readFile(file, options))
   vi.resetModules()
   mocks.settings = { ttsEngine: 'voicevox', voicevoxSpeaker: 3, aivisSpeaker: null, conversationLocale: 'ja-JP' }
   mocks.windows = false

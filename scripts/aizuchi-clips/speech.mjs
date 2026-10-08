@@ -1,5 +1,5 @@
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
@@ -25,7 +25,7 @@ function modelsDir() {
 
 /** The files of the speech models, as the catalog of the bundled speech pins them. */
 export function speechCatalog() {
-  return parseSpeechCatalog(execFileSync(speechProgram(), ['models', '--json'], { encoding: 'utf8', env: { ...process.env, SPEECH_MODEL_DIR: modelsDir() } }))
+  return parseSpeechCatalog(readFileSync(path.join(root, 'resources', 'speech', 'catalog.json'), 'utf8'))
 }
 
 /** The path of the file of a model of the catalog, by its name, where the app keeps it once prepared. */

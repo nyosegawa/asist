@@ -2,11 +2,16 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRecognizer } from '../scripts/aizuchi-clips/speech.mjs'
+import { SPEECH_MODELS_OUTPUT } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }))
-vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 // The script runs the bundled speech and the model files a developer has prepared, which a test machine lacks.
-vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()), existsSync: () => true }))
+vi.mock('node:fs', async (original) => ({
+  ...(await original<typeof import('node:fs')>()),
+  existsSync: () => true,
+  readFileSync: () => SPEECH_MODELS_OUTPUT
+}))
 
 function fakeWorker() {
   const input: Array<Record<string, unknown>> = []

@@ -7,7 +7,7 @@ import { ASR_MODEL_SPECS, type AsrModel, type AsrModelSpec } from '@shared/asr-m
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
-import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
+import { SPEECH_MODELS_OUTPUT, TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/pinned-download', () => ({ downloadMissing: mocks.downloadMissing }))
-vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data', on: vi.fn() } }))
 
 const LARGE = ASR_MODEL_SPECS['qwen3-asr-1.7b']
@@ -62,6 +62,9 @@ let loads = true
 let asr: typeof import('../src/main/services/local-asr')
 
 beforeEach(async () => {
+  const readFile = fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file, options) =>
+    String(file) === path.join('/app', 'resources', 'speech', 'catalog.json') ? SPEECH_MODELS_OUTPUT : readFile(file, options))
   vi.resetModules()
   mocks.settings.asrModel = 'auto'
   mocks.settings.conversationLocale = 'ja-JP'

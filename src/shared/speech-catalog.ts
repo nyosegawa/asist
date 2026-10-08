@@ -3,7 +3,7 @@ import type { PinnedFile } from './pinned-file'
 /**
  * The models of speech.cpp's catalog that ASIST runs, by the name the catalog gives each. The bundled `speech` pins
  * the file of every model, by repository, commit, size and SHA-256, so that a speech.cpp release brings the files it
- * was checked with; ASIST reads them from `speech models --json` and decides only which models it offers.
+ * was checked with; ASIST reads the catalog shipped with that release and decides which models it offers.
  */
 export const SPEECH_MODEL_NAMES = [
   'qwen3-tts-0.6b',
@@ -22,12 +22,11 @@ export type SpeechModelName = (typeof SPEECH_MODEL_NAMES)[number]
 export type SpeechCatalog = Readonly<Record<SpeechModelName, PinnedFile>>
 
 /**
- * The catalog in the output of `speech models --json`, one JSON object on stdout alone. Throws when the output does
- * not read or lacks a model ASIST runs, which a bundled `speech` that does not match the app would give.
+ * Reads the model pins from speech.cpp's catalog file. A missing model or file is a broken build and throws.
  */
 export function parseSpeechCatalog(output: string): SpeechCatalog {
   const models = (JSON.parse(output) as { models?: unknown } | null)?.models
-  if (!Array.isArray(models)) throw new Error('speech models --json printed no list of models')
+  if (!Array.isArray(models)) throw new Error('the bundled speech catalog has no list of models')
   const files = {} as Record<SpeechModelName, PinnedFile>
   for (const name of SPEECH_MODEL_NAMES) {
     const model = (models as Array<Record<string, unknown>>).find((one) => one.name === name)

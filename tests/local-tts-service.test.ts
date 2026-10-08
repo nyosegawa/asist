@@ -7,7 +7,7 @@ import type { TtsEngine } from '@shared/ipc'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS, localTtsModel, qwenTtsLanguage } from '@shared/tts-models'
 import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
-import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
+import { SPEECH_MODELS_OUTPUT, TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/pinned-download', () => ({ downloadMissing: mocks.downloadMissing }))
-vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
+vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data', on: vi.fn() } }))
 
 const RATE = 24_000
@@ -57,6 +57,9 @@ function voiced(seconds = 0.48): string {
 const REQUEST = { text: 'こんにちは。', voice: 'ono_anna', language: 'ja' } as const
 
 beforeEach(async () => {
+  const readFile = fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file, options) =>
+    String(file) === path.join('/app', 'resources', 'speech', 'catalog.json') ? SPEECH_MODELS_OUTPUT : readFile(file, options))
   vi.resetModules()
   mocks.settings.ttsEngine = 'qwen3tts'
   mocks.settings.qwenTtsSize = '0.6b'

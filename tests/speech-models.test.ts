@@ -7,16 +7,16 @@ import { ASR_MODEL_SPECS, asrModelFiles } from '@shared/asr-models'
 import type { SetupProgress } from '@shared/ipc'
 import type { PinnedFile } from '@shared/pinned-file'
 import { QWEN_TTS_SIZES, localTtsModel } from '@shared/tts-models'
-import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
+import { SPEECH_MODELS_OUTPUT, TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({ directory: '' }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => mocks.directory, getVersion: () => '0.0.0' } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'en-US' }) }))
-vi.mock('node:child_process', async () => ({ execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
+vi.mock('node:child_process', () => ({ execFileSync: () => { throw new Error('Vulkan runtime is unavailable') } }))
 
 import { t } from '../src/main/services/i18n'
-import { modelFilePath, pinnedSpeechModelFiles, prepareModelFiles, removeUnpinnedFiles } from '../src/main/services/speech-models'
+import { speechCatalog, modelFilePath, pinnedSpeechModelFiles, prepareModelFiles, removeUnpinnedFiles } from '../src/main/services/speech-models'
 
 const sha256 = (content: string): string => crypto.createHash('sha256').update(content).digest('hex')
 
@@ -30,6 +30,9 @@ const FILE = pin('owner/model-GGUF', 'model.gguf')
 
 beforeEach(() => {
   mocks.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-speech-models-'))
+  const readFile = fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file, options) =>
+    String(file) === path.join('/app', 'resources', 'speech', 'catalog.json') ? SPEECH_MODELS_OUTPUT : readFile(file, options))
 })
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -56,6 +59,10 @@ const tree = (): string[] =>
 
 /** The folder of a pinned file's content and the file in it, as paths relative to speech-models. */
 const placeOf = (file: PinnedFile): string[] => [path.relative(root(), path.dirname(modelFilePath(file))), path.relative(root(), modelFilePath(file))]
+
+it('reads the bundled model pins even when the speech executable cannot start', () => {
+  expect(speechCatalog()).toEqual(TEST_SPEECH_CATALOG)
+})
 
 describe('preparing the files of a local speech model', () => {
   it('starts the service on files that are already there without fetching anything', async () => {

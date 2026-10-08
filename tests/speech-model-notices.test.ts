@@ -7,7 +7,7 @@ import type { AppSettings } from '@shared/ipc'
 import type { PinnedFile } from '@shared/pinned-file'
 import { localTtsModel } from '@shared/tts-models'
 import { MACOS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
-import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
+import { SPEECH_MODELS_OUTPUT, TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   directory: '',
@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => mocks.directory, getVersion: () => '0.0.0', on: vi.fn() } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
-vi.mock('node:child_process', async () => ({ execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 
 import { SPEECH_MODEL_NOTICES_FORMAT, takeSpeechModelNotices } from '../src/main/services/speech-model-notices'
 import { modelFilePath } from '../src/main/services/speech-models'
@@ -36,11 +35,15 @@ const record = (): string => path.join(mocks.directory, SPEECH_MODEL_NOTICES_FOR
 const told = (): unknown => JSON.parse(fs.readFileSync(record(), 'utf8'))
 
 beforeEach(() => {
+  const readFile = fs.readFileSync
+  vi.spyOn(fs, 'readFileSync').mockImplementation((file, options) =>
+    String(file) === path.join('/app', 'resources', 'speech', 'catalog.json') ? SPEECH_MODELS_OUTPUT : readFile(file, options))
   mocks.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-speech-model-notices-'))
   mocks.settings = { uiLocale: 'en-US', voiceEngine: 'cascade', ttsEngine: 'irodori', qwenTtsSize: '0.6b', asrModel: 'auto' }
   setCapabilities(MACOS)
 })
 afterEach(() => {
+  vi.restoreAllMocks()
   fs.rmSync(mocks.directory, { recursive: true, force: true })
 })
 
