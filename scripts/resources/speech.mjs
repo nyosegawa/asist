@@ -10,18 +10,18 @@ import { download, extract, stampCurrent, withTemporaryDir, writeStamp } from '.
  * the header the archive also holds are left out.
  */
 
-export const VERSION = '0.7.1'
+export const VERSION = '0.8.1'
 const MODULE = fileURLToPath(import.meta.url)
 
 const ASSETS = {
   'darwin-arm64': {
-    name: 'speech-0.7.1-macos-arm64-metal.zip',
-    sha256: 'dde536e384557f905fb3f8919b24d0675c2677d6911230e67f42757ff4d4d258',
+    name: 'speech-0.8.1-macos-arm64-metal.zip',
+    sha256: 'af582549e02cc91e019befa3955c1c3d9a042b3812cb2e2961a4f2088e2c3963',
     program: 'speech'
   },
   'win32-x64': {
-    name: 'speech-0.7.1-windows-x64-vulkan.zip',
-    sha256: 'debfea296a5be3feb5ae00451de84cf3bab4ea3b98b77add30d52d13f86a67dc',
+    name: 'speech-0.8.1-windows-x64-vulkan.zip',
+    sha256: '1ff4713bd14fbbd4ac906975b9ff2de57fd2e533422501b3d55f183521e65a0a',
     program: 'speech.exe'
   }
 }
