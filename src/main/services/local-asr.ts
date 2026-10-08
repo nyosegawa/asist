@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import { asrLanguage, asrModelFiles, type AsrModelSpec } from '@shared/asr-models'
 import type { SetupProgress } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
+import { appendTranscript, splitRecognitionAudio } from './asr-utterance'
 import { conversationLocale } from './conversation-locale'
 import { t } from './i18n'
 import { platformCapabilities } from './platform'
@@ -154,11 +155,33 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
       if (worker === target) stopWorker(timedOut)
     }, ANSWER_TIMEOUT_MS)
     timer.unref?.()
+    let text = ''
+    let partId = id
+    for (const part of splitRecognitionAudio(samples, SAMPLE_RATE)) {
+      controller.signal.throwIfAborted()
+      text = appendTranscript(text, await recognizePart(target, model, part, partId, language, controller.signal))
+      partId = randomUUID()
+    }
+    return text
+  } catch (error) {
+    // A stop or a cancel while the worker started is the error the caller should see.
+    throw controller.signal.aborted && controller.signal.reason instanceof Error ? controller.signal.reason : error
+  } finally {
+    clearTimeout(timer)
+    transcriptions.delete(id)
+  }
+}
+
+/** Recognizes one part on the utterance's worker and removes its abort listener when that part settles. */
+async function recognizePart(target: SpeechWorker, model: AsrModelSpec, samples: Float32Array, id: string, language: string, signal: AbortSignal): Promise<string> {
+  let aborted: () => void = () => {}
+  try {
     return await new Promise<string>((resolve, reject) => {
-      controller.signal.addEventListener('abort', () => {
+      aborted = () => {
         target.cancel(id)
-        reject(controller.signal.reason)
-      }, { once: true })
+        reject(signal.reason)
+      }
+      signal.addEventListener('abort', aborted, { once: true })
       target.request(id, [
         { type: 'chunk', id, seq: 0, pcm: encodePcm(samples) },
         { type: 'transcribe', id, sample_rate: SAMPLE_RATE, language }
@@ -168,12 +191,8 @@ async function request(model: AsrModelSpec, samples: Float32Array, id: string): 
         abandoned: reject
       })
     })
-  } catch (error) {
-    // A stop or a cancel while the worker started is the error the caller should see.
-    throw controller.signal.aborted && controller.signal.reason instanceof Error ? controller.signal.reason : error
   } finally {
-    clearTimeout(timer)
-    transcriptions.delete(id)
+    signal.removeEventListener('abort', aborted)
   }
 }
 

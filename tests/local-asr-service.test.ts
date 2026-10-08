@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ASR_MODEL_SPECS, type AsrModel, type AsrModelSpec } from '@shared/asr-models'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
+import { MAX_RECOGNITION_SECONDS } from '../src/main/services/asr-utterance'
 import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
 import { SPEECH_MODELS_OUTPUT, TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
@@ -95,6 +96,14 @@ async function underWay(id = 'final'): Promise<{ child: Child; id: string; outco
   return { child: children.at(-1)!, id, outcome }
 }
 
+/** Audio longer than one recognition, with an internal pause at each of its intended boundaries. */
+function longUtterance(parts = 2): Float32Array {
+  const unit = MAX_RECOGNITION_SECONDS * 16_000
+  const samples = new Float32Array(Math.round(parts * 0.8 * unit)).fill(0.2)
+  for (let i = 1; i < parts; i++) samples.fill(0, Math.round((i * 0.8 - 0.1) * unit), Math.round(i * 0.8 * unit))
+  return samples
+}
+
 describe('the speech recognition worker', () => {
   it('runs speech worker on the model file of the size, on the GPU the capabilities chose', async () => {
     await expect(asr.ensureWorker(LARGE)).resolves.toBe(true)
@@ -116,6 +125,75 @@ describe('the speech recognition worker', () => {
     expect(transcribe).toEqual({ type: 'transcribe', id: 'r1', sample_rate: 16_000, language: 'ja' })
     answer(children[0], 'r1', ' こんにちは。 ')
     await expect(outcome).resolves.toBe('こんにちは。')
+  })
+
+  it('recognizes a long utterance in order and joins its texts without losing samples', async () => {
+    const samples = longUtterance()
+    const outcome = asr.transcribe(LARGE, samples, 'long').catch((error: Error) => error)
+    await vi.waitFor(() => expect(children[0]?.input).toHaveLength(2))
+    const child = children[0]
+    const first = child.input[0]
+    expect(Buffer.from(first.pcm as string, 'base64').length / 2).toBeLessThan(samples.length)
+    answer(child, first.id as string, '前の文。')
+    await vi.waitFor(() => expect(transcribed(child)).toHaveLength(2))
+    const second = child.input[2]
+    answer(child, second.id as string, '次の文。')
+    await expect(outcome).resolves.toBe('前の文。次の文。')
+    const sent = Buffer.concat(child.input.filter((row) => row.type === 'chunk').map((row) => Buffer.from(row.pcm as string, 'base64')))
+    expect(Array.from(new Int16Array(sent.buffer, sent.byteOffset, sent.length / 2))).toEqual(Array.from(samples, (value) => Math.round(value * 32_768)))
+  })
+
+  it('cancels a later part through the original utterance id and never starts the rest', async () => {
+    const samples = longUtterance(3)
+    const outcome = asr.transcribe(LARGE, samples, 'long').catch((error: Error) => error)
+    await vi.waitFor(() => expect(children[0]?.input).toHaveLength(2))
+    const child = children[0]
+    answer(child, 'long', '前の文。')
+    await vi.waitFor(() => expect(transcribed(child)).toHaveLength(2))
+    const secondId = transcribed(child)[1]
+    expect(asr.cancelTranscription('long')).toBe(true)
+    expect(await outcome).toMatchObject({ name: 'AbortError' })
+    expect(child.input.at(-1)).toEqual({ type: 'cancel', id: secondId })
+    say(child, { type: 'cancelled', id: secondId })
+    await settle()
+    expect(transcribed(child)).toHaveLength(2)
+    expect(asr.cancelTranscription('long')).toBe(false)
+  })
+
+  it('keeps the utterance language for later parts and fails the whole utterance when one fails', async () => {
+    const samples = longUtterance()
+    const outcome = asr.transcribe(LARGE, samples, 'long').catch((error: Error) => error)
+    await vi.waitFor(() => expect(children[0]?.input).toHaveLength(2))
+    const child = children[0]
+    mocks.settings.conversationLocale = 'en-US'
+    answer(child, 'long', '前の文。')
+    await vi.waitFor(() => expect(transcribed(child)).toHaveLength(2))
+    expect(child.input.at(-1)).toMatchObject({ language: 'ja' })
+    say(child, { type: 'error', id: transcribed(child)[1], error: { code: 'internal', option: null, message: 'failed' } })
+    expect(await outcome).toBeInstanceOf(Error)
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('does not start another part after the microphone stops between replies', async () => {
+    const outcome = asr.transcribe(LARGE, longUtterance(), 'long').catch((error: Error) => error)
+    await vi.waitFor(() => expect(children[0]?.input).toHaveLength(2))
+    answer(children[0], 'long', '前の文。')
+    asr.stop()
+    expect(await outcome).toMatchObject({ name: 'AbortError' })
+    expect(transcribed(children[0])).toHaveLength(1)
+  })
+
+  it('applies the request deadline to the whole utterance rather than restarting it for each part', async () => {
+    vi.useFakeTimers()
+    const outcome = asr.transcribe(LARGE, longUtterance(), 'long').catch((error: Error) => error)
+    await vi.advanceTimersByTimeAsync(10)
+    await vi.advanceTimersByTimeAsync(40_000)
+    answer(children[0], 'long', '前の文。')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(transcribed(children[0])).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(await outcome).toMatchObject({ name: 'TimeoutError' })
+    expect(children[0].kill).toHaveBeenCalled()
   })
 
   it('runs a FastConformer model on its own file and sends it the same request, with nothing it does not take', async () => {
