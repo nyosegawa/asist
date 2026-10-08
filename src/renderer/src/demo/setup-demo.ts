@@ -9,6 +9,7 @@ import { isLocalTtsEngine, localTtsModel, localTtsSizeGb } from '@shared/tts-mod
 import { platformCapabilities } from '@/platform'
 import { voiceController } from '@/voice/VoiceController'
 import { DEMO_CHATGPT_ACCOUNT, demoChatGptKey, setDemoChatGpt } from './chatgpt-demo'
+import { DEMO_SPEECH_CATALOG } from './speech-catalog'
 
 /**
  * The first-run setup of the demo. It starts from a Mac where nothing is prepared and advances the mock
@@ -112,7 +113,7 @@ export function prepareSetupDemo(api: RendererApi, variant: SetupDemoVariant): v
   api.prepareTtsModel = async () => {
     const settings = await base.getSettings()
     if (!isLocalTtsEngine(settings.ttsEngine)) throw new Error(`${settings.ttsEngine} has no model to prepare`)
-    const model = localTtsModel(settings.ttsEngine, settings.qwenTtsSize)
+    const model = localTtsModel(settings.ttsEngine, settings.qwenTtsSize, DEMO_SPEECH_CATALOG)
     const totalMb = Math.round(localTtsSizeGb(model) * 1000)
     const message = translate('settingsModels.preparation.downloading', { model: model.label })
     for (let pct = 0; pct <= 100; pct += 4) {

@@ -143,6 +143,7 @@ export const rendererApiMethods = [
   'revealPath',
   'appVersion',
   'getPlatformCapabilities',
+  'getSpeechCatalog',
   'isLaunchPage',
   'isWindowAway',
   'hotkeyStatus',

@@ -14,6 +14,7 @@ import {
 import { CONVERSATION_LOCALES, type ConversationLocale } from '../src/shared/conversation-locale'
 import { SETTINGS_FORMAT } from '../src/shared/settings'
 import { openStoredContent } from '../src/shared/stored-format'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 describe('the recommended model on a Mac', () => {
   it('recommends Qwen3-ASR 0.6B on 8 GB, where free memory matters more', () => {
@@ -47,7 +48,7 @@ describe('resolving the setting', () => {
 })
 
 describe('the models to choose from in each conversation language', () => {
-  const offered = (locale: ConversationLocale): string[] => asrModelChoices(locale).map((choice) => choice.id)
+  const offered = (locale: ConversationLocale): string[] => asrModelChoices(locale, TEST_SPEECH_CATALOG).map((choice) => choice.id)
   const QWEN3_ASR = ['qwen3-asr-1.7b', 'qwen3-asr-0.6b']
 
   it('offers both Japanese FastConformer models beside Qwen3-ASR for Japanese, and not the European one', () => {
@@ -66,10 +67,10 @@ describe('the models to choose from in each conversation language', () => {
   })
 
   it('gives each model the label of its table and the size of its file', () => {
-    for (const choice of asrModelChoices('ja-JP')) {
+    for (const choice of asrModelChoices('ja-JP', TEST_SPEECH_CATALOG)) {
       const spec = ASR_MODEL_SPECS[choice.id]
       expect(choice.label).toBe(spec.label)
-      expect(choice.sizeGb).toBeCloseTo(spec.model.bytes / 1e9, 2)
+      expect(choice.sizeGb).toBeCloseTo(TEST_SPEECH_CATALOG[spec.model].bytes / 1e9, 2)
     }
   })
 
@@ -87,9 +88,9 @@ describe('the models to choose from in each conversation language', () => {
 
 describe('the download of a model', () => {
   it('is its model file, and nothing once it is installed', () => {
-    const { model } = ASR_MODEL_SPECS['qwen3-asr-1.7b']
-    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], false)).toBeCloseTo(model.bytes / 1e9, 2)
-    expect(asrDownloadGb(ASR_MODEL_SPECS['qwen3-asr-1.7b'], true)).toBe(0)
+    const spec = ASR_MODEL_SPECS['qwen3-asr-1.7b']
+    expect(asrDownloadGb(spec, TEST_SPEECH_CATALOG, false)).toBeCloseTo(TEST_SPEECH_CATALOG[spec.model].bytes / 1e9, 2)
+    expect(asrDownloadGb(spec, TEST_SPEECH_CATALOG, true)).toBe(0)
   })
 })
 

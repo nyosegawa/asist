@@ -12,6 +12,7 @@ import { download, extract, stampCurrent, withTemporaryDir, writeStamp } from '.
 
 export const VERSION = '0.8.1'
 const MODULE = fileURLToPath(import.meta.url)
+const CATALOG_SHA256 = 'faacf0ef5c55c723215637bf178efe48d01d809d227c3aa543e36d1dd33a116e'
 
 const ASSETS = {
   'darwin-arm64': {
@@ -44,11 +45,13 @@ export async function prepareSpeech({ resources, platform, arch }) {
     await download(`${base}/releases/download/v${VERSION}/${asset.name}`, archive, asset.sha256)
     extract(archive, path.join(work, 'unpacked'))
     await download(`${base}/raw/v${VERSION}/LICENSE`, path.join(work, 'LICENSE'))
+    await download(`${base}/raw/v${VERSION}/tools/catalog/catalog.json`, path.join(work, 'catalog.json'), CATALOG_SHA256)
     fs.rmSync(out, { recursive: true, force: true })
     fs.mkdirSync(out, { recursive: true })
     fs.copyFileSync(path.join(work, 'unpacked', asset.program), path.join(out, asset.program))
     fs.chmodSync(path.join(out, asset.program), 0o755)
     fs.copyFileSync(path.join(work, 'LICENSE'), path.join(out, 'LICENSE'))
+    fs.copyFileSync(path.join(work, 'catalog.json'), path.join(out, 'catalog.json'))
     writeStamp(stamp, VERSION, MODULE)
   })
 }

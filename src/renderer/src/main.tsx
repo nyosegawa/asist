@@ -6,6 +6,7 @@ import { rendererApiContractError } from './bridge-contract'
 import { displayError } from '@/display-error'
 import { translate } from '@/i18n'
 import { loadPlatformCapabilities } from '@/platform'
+import { loadSpeechCatalog } from '@/speech-catalog'
 
 // The demo is allowed on the development server only. A packaged build whose preload is broken must
 // not fail open into fake responses and a fake connection state.
@@ -37,7 +38,7 @@ async function bootstrap(): Promise<void> {
     renderFatal(bridgeError)
     return
   }
-  await loadPlatformCapabilities()
+  await Promise.all([loadPlatformCapabilities(), loadSpeechCatalog()])
 
   root.render(
     <React.StrictMode>

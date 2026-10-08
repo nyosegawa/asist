@@ -7,6 +7,7 @@ import { osMessageKey, type OsMessageKey } from '@shared/i18n/os-message'
 import { catalogByType } from '@shared/panel-catalog'
 import { translate } from '@/i18n'
 import { loadPlatformCapabilities, platformCapabilities } from '@/platform'
+import { loadSpeechCatalog } from '@/speech-catalog'
 import { usePanelStore, useSettingsStore } from '@/state/stores'
 import { applyTheme, DEFAULT_THEME, isThemeName, THEMES, type ThemeName } from '@/themes'
 import { PREVIEW_PAGE } from '@shared/preview-page'
@@ -31,7 +32,7 @@ export async function bootDemo(root: Root): Promise<boolean> {
   // before they are read. The shell, the card samples and the dictionary page are drawn here without the
   // app, and read the capabilities all the same.
   screen?.prepare?.(mockApi)
-  await loadPlatformCapabilities()
+  await Promise.all([loadPlatformCapabilities(), loadSpeechCatalog()])
   // The capture scripts change the interface language of a page that is already open, which spares them from
   // loading every screen again for every language.
   Object.assign(window, {

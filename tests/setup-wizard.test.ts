@@ -13,9 +13,11 @@ import { asrDownloadGb, asrModelSizeGb, asrModelSpec, recommendAsrModel, resolve
 import { isLiveEngine } from '@shared/voice-engine'
 import type { ChatGptSignInResult, ChatGptStatus } from '@shared/chatgpt'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, platformCapabilities, setCapabilities } from './helpers/platform'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
 vi.mock('@/platform', () => import('./helpers/platform'))
+vi.mock('@/speech-catalog', () => import('./helpers/speech-catalog'))
 vi.mock('@/voice/VoiceController', () => ({
   voiceController: { prepareLocalAsr: vi.fn(async () => 'ok'), cancelLocalAsrPreparation: vi.fn(), enable: vi.fn() }
 }))
@@ -48,7 +50,7 @@ const asrStatus = (): SetupStatus['asr'] => {
     label: spec.label,
     totalMemoryGb: localSpeech.memoryGb,
     modelInstalled: false,
-    downloadGb: asrDownloadGb(spec, false),
+    downloadGb: asrDownloadGb(spec, TEST_SPEECH_CATALOG, false),
     ready: false
   }
 }
@@ -724,11 +726,11 @@ describe('first-run setup on Windows with an NVIDIA GPU', () => {
     await press(ja('setup.listening.recommended', { model: label }))
     const body = container.querySelector('.su-body')!.textContent
     expect(body).toContain(ja('speechRecognition.recommendation.vulkan.larger', { memoryGb: 8 }))
-    const sizeGb = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrDownloadGb(asrModelSpec('qwen3-asr-1.7b'), false))
+    const sizeGb = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrDownloadGb(asrModelSpec('qwen3-asr-1.7b'), TEST_SPEECH_CATALOG, false))
     expect(body).toContain(ja('setup.listening.downloadNote', { sizeGb }))
     expect(container.querySelector('.su-details dt')?.textContent).toBe(ja('setup.listening.details.memory.vulkan'))
     const option = (model: ResolvedAsrModel): string =>
-      ja('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model))) })
+      ja('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model), TEST_SPEECH_CATALOG)) })
     expect([...container.querySelectorAll('.su-details option')].map((option) => option.textContent)).toEqual([
       ja('setup.listening.automaticModel.vulkan'),
       option('qwen3-asr-1.7b'),

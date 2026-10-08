@@ -7,7 +7,7 @@ import type { PinnedFile } from '@shared/pinned-file'
 import { storedContent, type StoredFormat } from '@shared/stored-format'
 import { platformCapabilities } from './platform'
 import { getSettings } from './settings'
-import { fileInstalled, pinnedSpeechModelFiles } from './speech-models'
+import { fileInstalled, pinnedSpeechModelFiles, speechCatalog } from './speech-models'
 import { dataPath, writeJson } from './store'
 import { openStoredFileSync } from './stored-file'
 
@@ -21,20 +21,27 @@ import { openStoredFileSync } from './stored-file'
 
 const FILE = 'speech-model-notices.json'
 
-/** A pinned file as the record names it, without what only the download needs. */
-type PinName = Pick<PinnedFile, 'repo' | 'revision' | 'file'>
+/**
+ * A pinned file as the record names it: by its content, so that a pin moved to a later commit of the same file is
+ * not told about again.
+ */
+type PinName = Pick<PinnedFile, 'repo' | 'file' | 'sha256'>
 
-const pinNameSchema = z.strictObject({ repo: z.string(), revision: z.string(), file: z.string() })
+const pinNameSchema = z.strictObject({ repo: z.string(), file: z.string(), sha256: z.string() })
 
 export const SPEECH_MODEL_NOTICES_FORMAT: StoredFormat<PinName[]> = {
   name: FILE,
-  version: 1,
-  upgrades: {},
+  version: 2,
+  upgrades: {
+    // Version 1 named a file by the commit of its pin, which does not tell its content, so a file it named that is
+    // still missing is told about once more.
+    1: () => ({ told: [] })
+  },
   parse: (content) => z.array(pinNameSchema).parse((content as { told?: unknown } | null)?.told),
   serialize: (told) => ({ told })
 }
 
-const samePin = (a: PinName, b: PinName): boolean => a.repo === b.repo && a.revision === b.revision && a.file === b.file
+const samePin = (a: PinName, b: PinName): boolean => a.repo === b.repo && a.file === b.file && a.sha256 === b.sha256
 
 /** Only a missing file counts as nothing told yet, so that an unreadable one is never replaced by an empty record. */
 function readTold(): PinName[] {
@@ -62,12 +69,12 @@ function readTold(): PinName[] {
  */
 export function takeSpeechModelNotices(): SpeechModelNotice[] {
   const told = readTold()
-  const due = localSpeechModelsInUse(getSettings(), platformCapabilities().localSpeech).filter(({ files }) => !files.every(fileInstalled) && !files.every((file) => told.some((pin) => samePin(pin, file))))
+  const due = localSpeechModelsInUse(getSettings(), platformCapabilities().localSpeech, speechCatalog()).filter(({ files }) => !files.every(fileInstalled) && !files.every((file) => told.some((pin) => samePin(pin, file))))
   if (due.length === 0) return []
   const pinned = pinnedSpeechModelFiles()
   const record = told.filter((pin) => pinned.some((file) => samePin(file, pin)))
-  for (const { repo, revision, file } of due.flatMap((model) => model.files)) {
-    if (!record.some((pin) => samePin(pin, { repo, revision, file }))) record.push({ repo, revision, file })
+  for (const { repo, file, sha256 } of due.flatMap((model) => model.files)) {
+    if (!record.some((pin) => samePin(pin, { repo, file, sha256 }))) record.push({ repo, file, sha256 })
   }
   writeJson(FILE, storedContent(SPEECH_MODEL_NOTICES_FORMAT, record))
   return due.map(({ target, label, files }) => ({

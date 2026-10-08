@@ -73,6 +73,7 @@ import { events as taskEvents, getTaskService } from './services/user-tasks'
 import { hotkeyStatus, notifyFromRenderer, quitAfterAgentsStop, refreshHotkey, refreshTrayMenu } from './os-integration'
 import { microphonePermission } from './services/microphone-permission'
 import { platformCapabilities } from './services/platform'
+import { speechCatalog } from './services/speech-models'
 import { completeSetup } from './services/setup-completion'
 import { revealablePath } from './services/file-preview'
 import { errorText } from '@shared/i18n/error-text'
@@ -237,6 +238,7 @@ export function registerIpc(window: BrowserWindow, appPage: string): void {
   handle(IpcChannel.MicOpenPrivacy, () => shell.openExternal(microphone.settingsUrl))
   handle(IpcChannel.AppVersion, () => app.getVersion())
   handle(IpcChannel.GetPlatformCapabilities, () => platformCapabilities())
+  handle(IpcChannel.GetSpeechCatalog, () => speechCatalog())
   handle(IpcChannel.IsLaunchPage, () => isLaunchPage())
   handle(IpcChannel.IsWindowAway, () => windowAway())
   handle(IpcChannel.HotkeyStatus, () => hotkeyStatus())

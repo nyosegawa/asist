@@ -107,11 +107,11 @@ describe.skipIf(!userData || !clips)('the local speech recognition on the real s
   describe.each(MODELS)('%s', (id, name) => {
     const spec = ASR_MODEL_SPECS[id]
     const rows = (): Request[] => requests().filter((request) => request.model === name)
-    const present = (): boolean => fs.existsSync(models.modelFilePath(spec.model)) && rows().length > 0
+    const present = (): boolean => fs.existsSync(models.modelFilePath(models.speechCatalog()[spec.model])) && rows().length > 0
 
     it('recognizes the languages its file lists', ({ skip }) => {
       if (!present()) skip()
-      const info = JSON.parse(execFileSync(speech, ['info', '--json', models.modelFilePath(spec.model)], { encoding: 'utf8', windowsHide: true })) as { languages: string[] }
+      const info = JSON.parse(execFileSync(speech, ['info', '--json', models.modelFilePath(models.speechCatalog()[spec.model])], { encoding: 'utf8', windowsHide: true })) as { languages: string[] }
       expect([...info.languages].sort()).toEqual([...spec.languages].sort())
     })
 
@@ -136,7 +136,7 @@ describe.skipIf(!userData || !clips)('the local speech recognition on the real s
       console.log(`${spec.label} first ${seconds(samples)} s of ${longest.request.input}: ${((performance.now() - started) / 1000).toFixed(3)} s\n  ${text}`)
       expect(text).not.toBe('')
       if (process.platform === 'darwin') {
-        const pid = execFileSync('pgrep', ['-f', models.modelFilePath(spec.model)], { encoding: 'utf8', windowsHide: true }).trim()
+        const pid = execFileSync('pgrep', ['-f', models.modelFilePath(models.speechCatalog()[spec.model])], { encoding: 'utf8', windowsHide: true }).trim()
         console.log(`${spec.label} worker ${pid} after it: ${footprint(pid)}`)
       }
     }, 240_000)

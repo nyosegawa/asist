@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
-import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS, isLocalTtsEngine, localTtsModel, type LocalTtsEngine, type LocalTtsModel } from '@shared/tts-models'
+import { IRODORI_TTS_VOICE_IDS, isLocalTtsEngine, localTtsModel, type LocalTtsEngine, type LocalTtsModel } from '@shared/tts-models'
 import type { SetupProgress } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import { platformCapabilities } from './platform'
 import { resourcePath } from './resource-path'
 import { getSettings } from './settings'
 import { speechPath } from './speech-binaries'
-import { filesInstalled, modelFilePath, prepareModelFiles } from './speech-models'
+import { filesInstalled, modelFilePath, prepareModelFiles, speechCatalog } from './speech-models'
 import { SpeechShaper, encodeWav } from './speech-shaper'
 import { startSpeechWorker, type SpeechWorker, type WorkerMessage } from './speech-worker'
 
@@ -81,17 +81,19 @@ const irodoriVoicePath = (voice: string): string => resourcePath(`irodori-voices
 
 function workerSpec(engine: LocalTtsEngine): WorkerSpec {
   const size = getSettings().qwenTtsSize
-  const model = localTtsModel(engine, size)
+  const model = localTtsModel(engine, size, speechCatalog())
+  // Each model is one file, which holds its codec too.
+  const file = modelFilePath(model.files[0])
   if (engine === 'irodori') {
     return {
       key: 'irodori',
       model,
       logName: 'irodori-tts',
-      file: modelFilePath(IRODORI_TTS_MODEL.model),
+      file,
       args: IRODORI_TTS_VOICE_IDS.flatMap((voice) => ['--add-voice', `${voice}=${irodoriVoicePath(voice)}`])
     }
   }
-  return { key: `qwen3tts:${size}`, model, logName: 'qwen3-tts', file: modelFilePath(QWEN_TTS_MODELS[size].model), args: [] }
+  return { key: `qwen3tts:${size}`, model, logName: 'qwen3-tts', file, args: [] }
 }
 
 let worker: SpeechWorker | null = null
@@ -105,7 +107,7 @@ let lastUsedAt = -Infinity
 
 /** Whether the files of the engine's model, as the settings name it, are there. */
 export function installationStatus(engine: LocalTtsEngine): { modelInstalled: boolean } {
-  return { modelInstalled: filesInstalled(localTtsModel(engine, getSettings().qwenTtsSize).files) }
+  return { modelInstalled: filesInstalled(localTtsModel(engine, getSettings().qwenTtsSize, speechCatalog()).files) }
 }
 
 export function available(engine: LocalTtsEngine): boolean {
@@ -227,7 +229,7 @@ const CLIP_ATTEMPTS = 6
  * the request in the worker.
  */
 export async function* stream(engine: LocalTtsEngine, speech: LocalSpeechRequest, signal?: AbortSignal): AsyncGenerator<Float32Array> {
-  if (!(await ensureWorker(engine)) || !worker) throw new Error(`${localTtsModel(engine, getSettings().qwenTtsSize).label} is not installed or failed to start`)
+  if (!(await ensureWorker(engine)) || !worker) throw new Error(`${localTtsModel(engine, getSettings().qwenTtsSize, speechCatalog()).label} is not installed or failed to start`)
   signal?.throwIfAborted()
   const active = worker
   const id = randomUUID()

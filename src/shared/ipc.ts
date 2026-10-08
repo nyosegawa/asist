@@ -8,6 +8,7 @@ import type { ConfirmEvent, ConfirmRequest } from './confirm'
 import type { MiniAppTarget, MiniAppView } from './mini-apps'
 import type { NoteChange, NoteSummary } from './notes'
 import type { PlatformCapabilities } from './platform'
+import type { SpeechCatalog } from './speech-catalog'
 import type {
   MailAccount,
   MailAccountInput,
@@ -971,6 +972,7 @@ export const IpcChannel = {
   MicOpenPrivacy: 'mic-open-privacy',
   AppVersion: 'app-version',
   GetPlatformCapabilities: 'get-platform-capabilities',
+  GetSpeechCatalog: 'get-speech-catalog',
   IsLaunchPage: 'is-launch-page',
   IsWindowAway: 'is-window-away',
   HotkeyStatus: 'hotkey-status',
@@ -1320,6 +1322,8 @@ export interface RendererApi {
   appVersion(): Promise<string>
   /** What this OS and machine can run, decided once by the main process and the same for the whole run. */
   getPlatformCapabilities(): Promise<PlatformCapabilities>
+  /** The files of the local speech models, as the catalog of the bundled speech pins them, the same for the whole run. */
+  getSpeechCatalog(): Promise<SpeechCatalog>
   /**
    * Whether this page is the first one the window has shown since the app started, which main alone knows.
    * A page loaded again after a reload or a crash is not a launch.

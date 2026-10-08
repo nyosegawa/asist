@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { CARRIER, FRAME, RATE, VOICED_FRAME_RMS, cutAizuchi, frameRms, plain, trimAizuchi } from './cut.mjs'
-import { TTS_MODELS, startRecognizer, startSynthesizer } from './speech.mjs'
+import { TTS_MODELS, speechCatalog, startRecognizer, startSynthesizer } from './speech.mjs'
 
 /**
  * Pre-renders the aizuchi clips of one voice of a local engine, which the app ships instead of synthesizing
@@ -77,7 +77,8 @@ export async function curate({ engine, voice, language, outDir, candidatesDir, c
   try {
     mkdirSync(outDir, { recursive: true })
     const manifestPath = path.join(outDir, 'manifest.json')
-    const model = `${TTS_MODELS[engine].repo}@${TTS_MODELS[engine].revision}/${TTS_MODELS[engine].file}`
+    const pinned = speechCatalog()[TTS_MODELS[engine]]
+    const model = `${pinned.repo}@${pinned.revision}/${pinned.file}`
     // The manifest is read again for every clip, so that a verdict the review page wrote meanwhile is kept.
     const save = (entry) => {
       const previous = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : { clips: [] }

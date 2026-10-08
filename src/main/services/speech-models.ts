@@ -6,23 +6,38 @@ import type { SetupProgress } from '@shared/ipc'
 import { errorText } from '@shared/i18n/error-text'
 import type { PinnedFile } from '@shared/pinned-file'
 import { appSettingsSchema } from '@shared/settings'
+import { parseSpeechCatalog, type SpeechCatalog } from '@shared/speech-catalog'
 import { QWEN_TTS_SIZES, isLocalTtsEngine, localTtsModel } from '@shared/tts-models'
 import { errorMessage, t } from './i18n'
 import { platformCapabilities } from './platform'
 import { downloadMissing } from './pinned-download'
+import { resourcePath } from './resource-path'
 
 /**
  * The GGUF files of the local speech models, under userData/speech-models, one folder per repository and
- * revision. A file is fetched to a temporary name and renamed into place once its sha256 matches, so a file
- * at its path is whole, and a set of files counts as installed when every one of them is there.
+ * SHA-256 of a file's content, as speech.cpp keeps its own cache: a commit that changes only a model card moves
+ * the catalog's pin and leaves the file where it is. A file is fetched to a temporary name and renamed into place
+ * once its sha256 matches, so a file at its path is whole, and a set of files counts as installed when every one of
+ * them is there.
  */
 
 function modelsDir(): string {
   return path.join(app.getPath('userData'), 'speech-models')
 }
 
+let catalog: SpeechCatalog | null = null
+
+/**
+ * The model pins from the catalog shipped with the same release as speech. Reading the file does not need
+ * the executable's GPU runtime, so Windows without Vulkan can still start the app and use cloud speech.
+ */
+export function speechCatalog(): SpeechCatalog {
+  catalog ??= parseSpeechCatalog(fs.readFileSync(resourcePath('speech/catalog.json'), 'utf8'))
+  return catalog
+}
+
 export function modelFilePath(file: PinnedFile): string {
-  return path.join(modelsDir(), file.repo.replace('/', '--'), file.revision, file.file)
+  return path.join(modelsDir(), file.repo.replace('/', '--'), file.sha256, file.file)
 }
 
 export function fileInstalled(file: PinnedFile): boolean {
@@ -40,8 +55,8 @@ export function filesInstalled(files: readonly PinnedFile[]): boolean {
 export function pinnedSpeechModelFiles(): PinnedFile[] {
   const engines = appSettingsSchema.shape.ttsEngine.options.filter(isLocalTtsEngine)
   return [
-    ...engines.flatMap((engine) => QWEN_TTS_SIZES.flatMap((size) => localTtsModel(engine, size).files)),
-    ...offeredAsrModels().flatMap((model) => asrModelFiles(asrModelSpec(model)))
+    ...engines.flatMap((engine) => QWEN_TTS_SIZES.flatMap((size) => localTtsModel(engine, size, speechCatalog()).files)),
+    ...offeredAsrModels().flatMap((model) => asrModelFiles(asrModelSpec(model), speechCatalog()))
   ]
 }
 
@@ -57,12 +72,13 @@ async function entriesOf(folder: string, name: string): Promise<fs.Dirent[]> {
 
 /**
  * Removes from the folder whatever no file of `pinned` needs, so that the gigabytes of a model an update
- * pinned to other files do not stay for good: the folder of a repository no file names, a revision folder
- * of a named repository that no file names, and any other file in a named revision, such as one an earlier
- * pin named or the temporary file of a download that never finished. Only the folders at the top named
- * <owner>--<name>, the form the folder of every repository has, are looked into; anything else there is not
- * of this layout and is left alone. It runs before anything can start a download, so no temporary file it
- * finds is still being written. A path that cannot be removed is logged and left for the next start.
+ * pinned to other files do not stay for good: the folder of a repository no file names, a folder of a named
+ * repository that no file names, such as one of another content or one of a commit, where an earlier version kept
+ * its files, and any other file in a named folder, such as the temporary file of a download that never finished.
+ * Only the folders at the top named <owner>--<name>, the form the folder of every repository has, are looked into;
+ * anything else there is not of this layout and is left alone. It runs before anything can start a download, so no
+ * temporary file it finds is still being written. A path that cannot be removed is logged and left for the next
+ * start.
  */
 export async function removeUnpinnedFiles(pinned: readonly PinnedFile[]): Promise<void> {
   const root = modelsDir()

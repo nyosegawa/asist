@@ -15,6 +15,7 @@ import { LOCAL_SPEECH_UNAVAILABLE_TEXT, type LocalSpeechUnavailable } from '@sha
 import { t } from './i18n'
 import { platformCapabilities } from './platform'
 import { getSettings } from './settings'
+import { speechCatalog } from './speech-models'
 import * as local from './local-asr'
 
 /** The model the setting stands for on this machine, or why this machine cannot run one. */
@@ -55,7 +56,7 @@ export async function installationStatus(selected: AsrModel = getSettings().asrM
     label: spec.label,
     totalMemoryGb: recommendation.totalMemoryGb,
     ...installed,
-    downloadGb: asrDownloadGb(spec, installed.modelInstalled)
+    downloadGb: asrDownloadGb(spec, speechCatalog(), installed.modelInstalled)
   }
 }
 

@@ -8,6 +8,7 @@ import { readFailure, readStatus, statusOf, type StatusRead } from '../context'
 import { UnreadChip } from '../preparation'
 import { useT } from '@/i18n'
 import { platformCapabilities } from '@/platform'
+import { speechCatalog } from '@/speech-catalog'
 import { displayError } from '@/display-error'
 import type { Translate } from '@shared/i18n'
 
@@ -117,7 +118,7 @@ function Update({ t }: { t: Translate }): React.JSX.Element | null {
 function Credits({ group, t }: { group: CreditGroup; t: Translate }): React.JSX.Element {
   return (
     <Group title={t(`settingsAbout.${group}.title`)} description={t(`settingsAbout.${group}.description`)}>
-      {creditsOf(group, platformCapabilities().localSpeech.backend !== null).map((credit) => (
+      {creditsOf(group, platformCapabilities().localSpeech.backend !== null, speechCatalog()).map((credit) => (
         <Row key={credit.id} label={credit.name} hint={t(credit.use)}>
           <Chip tone="dim">{credit.license ?? t('settingsAbout.providerTerms')}</Chip>
           <Source credit={credit} />
