@@ -7,7 +7,7 @@ import { childEnv } from './child-env'
 import { platformCapabilities } from './platform'
 
 /**
- * The processes the local speech runs in, and the client of speech.cpp's worker protocol 2: one JSON object per
+ * The processes the local speech runs in, and the client of speech.cpp's worker protocol 3: one JSON object per
  * line on stdin and on stdout, and nothing else on stdout; the first message is `ready`, with the model's
  * information, or `fatal`; then each request gets the answers that name it by its id and exactly one terminal
  * message, `end`, `error` or `cancelled`, and nothing after it; stderr goes to the app log under the worker's name.
@@ -17,14 +17,14 @@ import { platformCapabilities } from './platform'
  */
 
 /** The version of speech.cpp's worker protocol this client speaks, which a worker raises when its callers must change. */
-export const WORKER_PROTOCOL = 2
+export const WORKER_PROTOCOL = 3
 
 /**
  * The series of speech.cpp releases this client is written for, its major and minor version. While speech.cpp is
  * 0.x, a release that a caller must adapt to raises the minor version, so a worker of another series is refused
  * rather than misread.
  */
-export const SPEECH_CPP_SERIES = '0.7'
+export const SPEECH_CPP_SERIES = '0.8'
 
 /** The series of a release version such as `0.7.0`, or null for anything else. */
 const seriesOf = (version: unknown): string | null =>
@@ -91,7 +91,7 @@ export interface WorkerOptions {
  * worker, as that answer is the worker's defect, and the request with it.
  */
 export interface WorkerRequest {
-  /** Each `chunk` or `partial` before the terminal message. A request without it takes neither. */
+  /** Each `chunk` before the terminal message. A request without it takes none. */
   partway?: (message: WorkerMessage) => void
   /** The request's `end`. */
   end: (message: WorkerMessage) => void
@@ -107,8 +107,8 @@ interface InFlight {
   cancelled: boolean
 }
 
-/** The messages that answer a request. Protocol 2 may gain messages without being raised, so any other is passed over. */
-const ANSWERS: ReadonlySet<string> = new Set(['chunk', 'partial', 'progress', 'end', 'error', 'cancelled'])
+/** The messages that answer a request. The protocol may gain messages without being raised, so any other is passed over. */
+const ANSWERS: ReadonlySet<string> = new Set(['chunk', 'progress', 'end', 'error', 'cancelled'])
 
 /** One running worker. `ready` settles once: true on the worker's `ready` message, false when it fails or is stopped first. */
 export class SpeechWorker {
@@ -130,7 +130,7 @@ export class SpeechWorker {
     const timeout = setTimeout(() => this.fail(new Error(`${logName} worker did not become ready`)), WORKER_READY_TIMEOUT_MS)
     void this.ready.then(() => clearTimeout(timeout))
     readline.createInterface({ input: child.stdout }).on('line', (line) => this.handleLine(line))
-    // Protocol 2 carries every failure as a message on stdout, which fail() logs as an error. stderr is the
+    // The protocol carries every failure as a message on stdout, which fail() logs as an error. stderr is the
     // worker's own log, such as the device the model loaded on and its `ready`, so it goes to the app log as
     // information.
     readline.createInterface({ input: child.stderr }).on('line', (line) => {
@@ -251,14 +251,14 @@ export class SpeechWorker {
 
   /**
    * Hands a message to the request it answers. An answer for no request in flight, a `cancelled` ASIST did not ask
-   * for, or a `chunk` or `partial` for a request that takes neither is the worker's defect, and throws.
+   * for, or a `chunk` for a request that takes none is the worker's defect, and throws.
    */
   private answer(message: WorkerMessage): void {
     const id = typeof message.id === 'string' ? message.id : null
     const request = id === null ? undefined : this.inFlight.get(id)
     if (id === null || !request) throw new Error(`${this.logName} worker sent ${message.type} for ${String(message.id)}, which no request in flight has`)
     if (message.type === 'progress') return
-    if (message.type === 'chunk' || message.type === 'partial') {
+    if (message.type === 'chunk') {
       if (request.cancelled) return
       if (!request.answers.partway) throw new Error(`${this.logName} worker sent ${message.type} for ${id}, which is answered with its end alone`)
       request.answers.partway(message)

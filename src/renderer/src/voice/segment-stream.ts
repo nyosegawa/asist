@@ -2,11 +2,16 @@ import { estimateSpeechMs } from '@shared/speech-rate'
 import { PcmScheduler } from './pcm-scheduler'
 
 /**
- * Playback starts once this much audio has arrived, or the segment is complete. The first piece can
- * be as short as 0.1 s after its leading silence is cut, while the next one takes about 0.2 s to
- * generate (0.3 s on an M2), so starting on the first piece alone would stutter right at the onset.
+ * Playback of an incomplete segment starts this long after its first audio, less the audio that has arrived
+ * by then, so that the pieces made while the first plays arrive before it runs out. Replayed from the worker's
+ * chunks of speech.cpp 0.8.0 through the shaper, 60 Japanese sentences each (2026-10-09): Qwen3-TTS 0.6B on an
+ * Apple M2 ran dry in 30 sentences with 0.15 s and in none with 0.2 s; on an Apple M5, 0.6B and 1.7B ran dry in
+ * none with 0.2 s, their voice heard 0.35 s and 0.26 s after the request in the median. Waiting instead for 0.3 s
+ * of audio to arrive, the silence before the voice cut, heard it after 0.33 s and 0.30 s on the M5 and 0.56 s on
+ * the M2, which ran dry in 6. A segment whose turn comes while an earlier one plays has gathered that much
+ * already and starts at once.
  */
-const START_BUFFER_S = 0.3
+const START_LEAD_S = 0.2
 /**
  * A segment that is neither playing nor receiving for this long is closed, so that neither a lost
  * `last` nor an `onended` swallowed by sleep or a device change can stall the queue.
@@ -33,6 +38,8 @@ export class SegmentStream {
   private callbacks: SegmentStreamCallbacks | null = null
   private audible = false
   private stallTimer: ReturnType<typeof setTimeout> | null = null
+  /** Reports the start once the first audio, scheduled ahead, sounds. */
+  private startTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly sampleRate: number, private readonly text: string) {}
 
@@ -54,6 +61,8 @@ export class SegmentStream {
 
   stop(): void {
     this.clearStallTimer()
+    if (this.startTimer) clearTimeout(this.startTimer)
+    this.startTimer = null
     this.scheduler?.stop()
     this.scheduler = null
     this.callbacks = null
@@ -69,15 +78,17 @@ export class SegmentStream {
   private advance(): void {
     const scheduler = this.scheduler
     if (!scheduler) return
-    const buffered = this.pending.reduce((sum, piece) => sum + piece.length, 0) / this.sampleRate
-    if (this.audible || this.complete || buffered >= START_BUFFER_S) {
+    if (!this.audible && this.pending.length > 0) {
+      const buffered = this.pending.reduce((sum, piece) => sum + piece.length, 0) / this.sampleRate
+      const lead = this.complete ? 0 : Math.max(0, START_LEAD_S - buffered)
+      this.pending.forEach((piece, i) => scheduler.schedule(piece, this.sampleRate, i === 0 ? lead : 0))
+      this.audible = true
+      if (lead === 0) this.callbacks?.onStarted()
+      else this.startTimer = setTimeout(() => this.callbacks?.onStarted(), lead * 1000)
+    } else {
       for (const piece of this.pending) scheduler.schedule(piece, this.sampleRate)
-      if (this.pending.length > 0 && !this.audible) {
-        this.audible = true
-        this.callbacks?.onStarted()
-      }
-      this.pending = []
     }
+    this.pending = []
     this.clearStallTimer()
     if (this.complete && scheduler.drained) this.finish()
     else this.stallTimer = setTimeout(() => this.finish(), scheduler.remainingSeconds * 1000 + STALL_MS)

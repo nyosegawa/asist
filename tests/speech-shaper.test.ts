@@ -54,6 +54,26 @@ describe('SpeechShaper', () => {
     expect(seconds(out.length)).toBeGreaterThanOrEqual(0.02 + 0.08 + 0.5 + 0.1 - 0.001)
   })
 
+  it('keeps a sound that is not voice long before the voice, and the pause after it', () => {
+    // Qwen3-TTS 0.6B began "暗証番号は…" with 0.8 s of such a sound at an RMS of 0.002 to 0.004 (2026-10-09).
+    const { out } = shape(concat(silence(0.3), tone(0.5, 0.0035, 1800), silence(0.3), tone(0.5, 0.2), silence(0.6)))
+    expect(seconds(out.length)).toBeGreaterThanOrEqual(0.02 + 0.5 + 0.3 + 0.5 + 0.1 - 0.001)
+  })
+
+  it('passes the sound before the voice on as it comes, without waiting for the voice', () => {
+    const shaper = new SpeechShaper(RATE)
+    expect(shaper.push(silence(0.24))).toHaveLength(0)
+    expect(seconds(shaper.push(tone(0.24, 0.0035, 1800)).length)).toBeCloseTo(0.02 + 0.24, 2)
+  })
+
+  it('plays the sound before the voice at the model\'s own level, and brings only the voice to the target', () => {
+    const breath = tone(0.24, 0.0035, 1800)
+    const shaper = new SpeechShaper(RATE)
+    const out = shaper.push(concat(breath, tone(0.48, 0.02)))
+    for (let i = 0; i < breath.length; i++) expect(out[i]).toBeCloseTo(breath[i] / 32768, 6)
+    expect(rms(out.subarray(Math.round(0.4 * RATE)))).toBeGreaterThan(0.05)
+  })
+
   it('leaves out the noise floor before the voice, so that the first word is not delayed', () => {
     const { out } = shape(concat(tone(0.4, 0.0003, 900), tone(0.5, 0.2), silence(0.6)))
     expect(seconds(out.length)).toBeCloseTo(0.02 + 0.5 + 0.1, 2)
