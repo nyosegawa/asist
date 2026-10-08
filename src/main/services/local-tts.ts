@@ -15,8 +15,8 @@ import { startSpeechWorker, type SpeechWorker, type WorkerMessage } from './spee
  * Speech synthesis on the GPU the capabilities chose, in speech.cpp's worker, which runs one model per
  * process: Irodori-TTS, or Qwen3-TTS at the size the setting names. Choosing the other engine or size starts
  * the worker again. The worker serves one request at a time in arrival order and returns the audio in pieces:
- * Qwen3-TTS while the sentence is still being generated, its first frame alone and then four frames at a
- * time, and Irodori-TTS once the whole sentence is made, as its codec decodes it. Every request is read at the
+ * Qwen3-TTS while the sentence is still being generated, in pieces of one, one, two and then four frames, and
+ * Irodori-TTS once the whole sentence is made, as its codec decodes it. Every request is read at the
  * model's own speed: a request carries no speed, which Qwen3-TTS refuses and Irodori-TTS would apply.
  */
 

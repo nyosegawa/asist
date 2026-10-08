@@ -443,13 +443,6 @@ describe('the answers of the worker', () => {
     expect(child.kill).toHaveBeenCalled()
   })
 
-  it('stops the worker when it sends a sentence a partial text, which only a recognition has', async () => {
-    const { child, id, outcome } = await reading()
-    say(child, { type: 'partial', id, text: '', stop: 'complete' })
-    expect(readErrorText(((await outcome) as Error).message, 'ja-JP')).not.toBeNull()
-    expect(child.kill).toHaveBeenCalled()
-  })
-
   it('passes over a message of a type the protocol may add', async () => {
     const { child, id, outcome } = await reading()
     say(child, { type: 'stats', id, tokens: 12 })

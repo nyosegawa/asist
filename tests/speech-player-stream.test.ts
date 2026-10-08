@@ -172,26 +172,36 @@ describe('SpeechPlayer with a streamed segment', () => {
     }
   }
 
-  it('waits for enough audio before it starts, so a short first piece does not run dry before the second arrives', async () => {
+  it('starts a short first piece a little ahead, so that it does not run dry before the next arrives, and reports the start when it sounds', async () => {
     const { player, context, started } = await harness()
     player.enqueue(streamed(1, 0))
-    player.pushSegmentAudio(1, 0, piece(0.1), false)
+    player.pushSegmentAudio(1, 0, piece(0.05), false)
     await vi.advanceTimersByTimeAsync(0)
-    expect(context.sources).toHaveLength(0)
+    expect(context.sources).toHaveLength(1)
+    expect(context.sources[0].startedAt).toBeCloseTo(0.15)
     expect(started).toEqual([])
     player.pushSegmentAudio(1, 0, piece(0.4), false)
-    expect(context.sources.map((s) => s.startedAt)).toEqual([0, 0.1])
+    expect(context.sources[1].startedAt).toBeCloseTo(0.2)
+    await vi.advanceTimersByTimeAsync(150)
     expect(started).toEqual(['こんにちは。'])
   })
 
-  it('starts a segment shorter than the start buffer once it is complete', async () => {
+  it('starts at once a first piece long enough to cover the next, and a short segment that completed while it waited', async () => {
     const { player, context, started } = await harness()
-    player.enqueue(streamed(1, 0, 'はい。'))
-    player.pushSegmentAudio(1, 0, piece(0.2), false)
-    player.pushSegmentAudio(1, 0, piece(0), true)
+    player.enqueue(streamed(1, 0, '一文目。'))
+    player.pushSegmentAudio(1, 0, piece(0.3), false)
     await vi.advanceTimersByTimeAsync(0)
-    expect(context.sources).toHaveLength(1)
-    expect(started).toEqual(['はい。'])
+    expect(context.sources.map((s) => s.startedAt)).toEqual([0])
+    expect(started).toEqual(['一文目。'])
+
+    player.enqueue(streamed(1, 1, 'はい。'))
+    player.pushSegmentAudio(1, 1, piece(0.05), false)
+    player.pushSegmentAudio(1, 1, piece(0), true)
+    player.pushSegmentAudio(1, 0, piece(0), true)
+    playOut(context)
+    await vi.advanceTimersByTimeAsync(pauseAfter('一文目。'))
+    expect(context.sources.at(-1)!.startedAt).toBe(0)
+    expect(started).toEqual(['一文目。', 'はい。'])
   })
 
   it('collects the audio of the next sentence while the current one plays, and plays it when its turn comes', async () => {

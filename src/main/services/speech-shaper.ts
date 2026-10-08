@@ -5,24 +5,24 @@
  * sentences; and the level of one voice varies between generations by 15 dB (voiced RMS 0.011 to
  * 0.056 for `ono_anna`). A 20 ms frame counts as voiced from an RMS of 0.004.
  *
- * The shaper drops the leading silence, holds silence back until voiced audio follows it so that
- * the trailing silence can be cut to a short tail, and brings the voiced level to a common target.
+ * The shaper drops the silence before the first sound and passes everything from there on as it comes, holds
+ * silence after the voice back until voiced audio follows it so that the trailing silence can be cut to a short
+ * tail, and brings the voiced level to a common target.
  */
 
 const FRAME_SECONDS = 0.02
 const VOICED_FRAME_RMS = 0.004
 /**
- * The level that still belongs to the voice around its voiced frames: the breath before a word and the decay
- * after the last one. Measured on 2026-10-01 in 20 raw readings of Qwen3-TTS 0.6B with two voices, the noise
- * floor before the voice had a median RMS of 0.00024 (0.001 at the 90th percentile), while frames from 0.001
- * up ran 40 ms before the first voiced frame in the median, 80 ms at the 90th percentile and 120 ms at most,
- * and 50 ms after the last one, 180 ms at the 90th percentile and 460 ms at most. Keeping one frame before the
- * voice and 100 ms after it took the breathy start off "はい" and cut the decay of a sentence's end.
- * Irodori-TTS, with a noise floor of 0.00014, has 40 ms of either at most.
+ * The level from which a frame is sound rather than the silence a generation starts and ends with: a sound that
+ * is not voice before a word, such as a breath or a sigh, and the decay after the last one. Measured on
+ * 2026-10-01 in 20 raw readings of Qwen3-TTS 0.6B with two voices, the noise floor before the voice had a median
+ * RMS of 0.00024 (0.001 at the 90th percentile), and frames from 0.001 up ran 50 ms after the last voiced one in
+ * the median, 180 ms at the 90th percentile and 460 ms at most. On 2026-10-09, 0.6B began some of speech-bench's
+ * 20 sentences with such a sound up to 0.8 s before the voice ("暗証番号は…"), and the pause after it belongs to
+ * the reading as much as the sound, so everything from the first frame at this level plays. Irodori-TTS, with a
+ * noise floor of 0.00014, has 40 ms of sound before the voice at most.
  */
-const TRAILING_RMS = 0.001
-/** How far the start of the voice is followed back through quieter frames. */
-const MAX_LEAD_FRAMES = 6
+const SOUND_RMS = 0.001
 /** Frames kept after the last voiced frame: at least the shortest tail, and its decay up to the longest. */
 const TAIL_FRAMES = 5
 const MAX_TAIL_FRAMES = 15
@@ -42,9 +42,12 @@ interface Frame {
 export class SpeechShaper {
   private readonly frameSize: number
   private carry = new Float32Array(0)
+  /** A frame of SOUND_RMS or more has come. */
+  private sounded = false
+  /** A voiced frame has come. */
   private started = false
-  /** The silent frames just before the voice starts, the most recent last. */
-  private before: Frame[] = []
+  /** The last frame of the silence before the first sound, which plays with it so that its onset is not clipped. */
+  private lastSilent: Float32Array | null = null
   private held: Frame[] = []
   private voicedSquares = 0
   private voicedSamples = 0
@@ -63,6 +66,8 @@ export class SpeechShaper {
     const frameCount = Math.floor(samples.length / this.frameSize)
     this.carry = samples.slice(frameCount * this.frameSize)
 
+    // The sound before the voice plays at the model's own level, since no voiced level is known yet to bring to the target.
+    const beforeVoice: Float32Array[] = []
     const released: Float32Array[] = []
     for (let f = 0; f < frameCount; f++) {
       const frame = samples.subarray(f * this.frameSize, (f + 1) * this.frameSize)
@@ -73,40 +78,38 @@ export class SpeechShaper {
         peak = Math.max(peak, Math.abs(value))
       }
       const rms = Math.sqrt(squares / frame.length)
+      if (!this.sounded && rms < SOUND_RMS) {
+        this.lastSilent = frame
+        continue
+      }
+      if (!this.sounded) {
+        this.sounded = true
+        if (this.lastSilent) beforeVoice.push(this.lastSilent)
+        this.lastSilent = null
+      }
       if (rms < VOICED_FRAME_RMS) {
         if (this.started) this.held.push({ samples: frame, rms })
-        else this.before = [...this.before, { samples: frame, rms }].slice(-(MAX_LEAD_FRAMES + 1))
+        else beforeVoice.push(frame)
         continue
       }
       this.voicedSquares += squares
       this.voicedSamples += frame.length
       this.peak = Math.max(this.peak, peak)
-      if (!this.started) {
-        this.started = true
-        released.push(...this.lead().map((one) => one.samples))
-        this.before = []
-      }
+      this.started = true
       released.push(...this.held.map((one) => one.samples), frame)
       this.held = []
     }
-    return this.level(released)
+    return joined([...beforeVoice, this.level(released)])
   }
 
   /** Returns the tail that ends the sentence: the decay of its last word and a short silence. */
   flush(): Float32Array {
     let decay = 0
-    while (decay < this.held.length && decay < MAX_TAIL_FRAMES && this.held[decay].rms >= TRAILING_RMS) decay++
+    while (decay < this.held.length && decay < MAX_TAIL_FRAMES && this.held[decay].rms >= SOUND_RMS) decay++
     const tail = this.started ? this.held.slice(0, Math.min(MAX_TAIL_FRAMES, Math.max(TAIL_FRAMES, decay + 1))) : []
     this.held = []
     this.carry = new Float32Array(0)
     return this.level(tail.map((one) => one.samples))
-  }
-
-  /** The frames before the first voiced one that belong to the voice, and one more, so that an onset is not clipped. */
-  private lead(): Frame[] {
-    let quiet = this.before.length
-    while (quiet > 0 && this.before.length - quiet < MAX_LEAD_FRAMES && this.before[quiet - 1].rms >= TRAILING_RMS) quiet--
-    return this.before.slice(Math.max(0, quiet - 1))
   }
 
   /** The whole piece is measured before any of it is released, so its own level already counts towards its gain. */
@@ -132,6 +135,16 @@ export class SpeechShaper {
     this.gain = target
     return output
   }
+}
+
+function joined(pieces: Float32Array[]): Float32Array {
+  const output = new Float32Array(pieces.reduce((sum, piece) => sum + piece.length, 0))
+  let offset = 0
+  for (const piece of pieces) {
+    output.set(piece, offset)
+    offset += piece.length
+  }
+  return output
 }
 
 /** Encodes mono samples as a 16-bit PCM WAV file. */

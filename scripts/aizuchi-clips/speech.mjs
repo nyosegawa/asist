@@ -55,7 +55,7 @@ function workerArgs(engine) {
 }
 
 /** The version of speech.cpp's worker protocol the scripts speak, as the app's client does. */
-const WORKER_PROTOCOL = 2
+const WORKER_PROTOCOL = 3
 
 /** The `error` member of `error` and `fatal`, written as speech's command line writes a failure. */
 const describeError = ({ code, option, message }) => `${code}${typeof option === 'string' ? ` (${option})` : ''}: ${message}`
