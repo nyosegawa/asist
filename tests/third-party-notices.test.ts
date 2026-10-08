@@ -3,7 +3,7 @@ import path from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 // @ts-expect-error The build script is plain JavaScript without type declarations.
-import { declaredLicense, packageSections, productionPackageDirs, renderNotices } from '../scripts/third-party-notices.mjs'
+import { bundledDependencyDirs, declaredLicense, packageSections, productionPackageDirs, renderNotices } from '../scripts/third-party-notices.mjs'
 // @ts-expect-error The build script is plain JavaScript without type declarations.
 import { UNUSED, matchesUnused } from '../scripts/resources/git-windows.mjs'
 
@@ -29,6 +29,23 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }))
 
 describe('third-party notices', () => {
+  it('retains the licenses of a prebuilt bundle through nested dependencies and cycles', () => {
+    const bundle = writePackage('node_modules/bundle', { name: 'bundle', version: '1', license: 'MIT', dependencies: { child: '*' } })
+    writePackage('node_modules/child', { name: 'child', version: '2', license: 'MIT' }, { LICENSE: 'other version' })
+    writePackage('node_modules/bundle/node_modules/child', { name: 'child', version: '1', license: 'MIT', dependencies: { bundle: '*', shared: '*' } }, { LICENSE: 'embedded version' })
+    writePackage('node_modules/shared', { name: 'shared', version: '1', license: 'MIT' }, { LICENSE: 'shared license' })
+    expect(packageSections(bundledDependencyDirs(bundle))).toEqual([
+      { id: 'bundle@1', license: 'MIT', files: [] },
+      { id: 'child@1', license: 'MIT', files: ['embedded version'] },
+      { id: 'shared@1', license: 'MIT', files: ['shared license'] }
+    ])
+  })
+
+  it('stops when a prebuilt bundle dependency cannot be resolved for its license', () => {
+    const bundle = writePackage('node_modules/bundle', { name: 'bundle', dependencies: { 'missing-notice-fixture': '*' } })
+    expect(() => bundledDependencyDirs(bundle)).toThrow(/missing-notice-fixture/)
+  })
+
   it('reads the license in each form package.json has used', () => {
     expect(declaredLicense({ license: 'MIT' })).toBe('MIT')
     expect(declaredLicense({ license: { type: 'BSD-3-Clause' } })).toBe('BSD-3-Clause')

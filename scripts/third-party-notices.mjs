@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 /*
@@ -37,6 +38,23 @@ export function productionPackageDirs(lock, root) {
     .filter(([key, entry]) => key.startsWith('node_modules/') && !entry.dev && !entry.devOptional)
     .map(([key]) => path.join(root, key))
     .filter((dir) => fs.existsSync(path.join(dir, 'package.json')))
+}
+
+/** The installed dependency tree of a prebuilt bundle, whose embedded modules Vite cannot identify. */
+export function bundledDependencyDirs(dir) {
+  const seen = new Set()
+  function visit(folder) {
+    if (seen.has(folder)) return
+    seen.add(folder)
+    const manifestPath = path.join(folder, 'package.json')
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+    const require = createRequire(manifestPath)
+    for (const name of Object.keys(manifest.dependencies ?? {})) {
+      visit(path.dirname(require.resolve(`${name}/package.json`)))
+    }
+  }
+  visit(dir)
+  return [...seen]
 }
 
 /** The package a folder lies in: the nearest folder above it, itself included, whose package.json names one. */
@@ -146,7 +164,10 @@ function main() {
     .flatMap((name) => JSON.parse(fs.readFileSync(path.join(root, 'out', name), 'utf8')))
   if (bundled.length === 0) throw new Error('out/ lists no bundled packages; run electron-vite build first')
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'))
-  const sections = packageSections([...bundled, ...productionPackageDirs(lock, root)])
+  // Mammoth's browser bundle embeds dependencies that Vite sees only as one module. Keep their notices
+  // even though the Node package and its CLI dependencies are not shipped separately.
+  const mammoth = bundledDependencyDirs(path.join(root, 'node_modules', 'mammoth'))
+  const sections = packageSections([...bundled, ...mammoth, ...productionPackageDirs(lock, root)])
   // The bundled programs are prepared for the machine that builds, and scripts/before-pack.mjs lets
   // electron-builder package the app only for that machine's platform.
   const text = renderNotices(fs.readFileSync(path.join(root, 'LICENSE'), 'utf8'), sections, process.platform)
