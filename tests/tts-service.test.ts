@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   quitHooks: [] as Array<() => void>,
   settings: { ttsEngine: 'voicevox' as TtsEngine, voicevoxSpeaker: 3, aivisSpeaker: null as number | null, conversationLocale: 'ja-JP' as ConversationLocale }
 }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 vi.mock('electron', () => ({ app: {
   isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data',
   on: (event: string, listener: () => void) => { if (event === 'will-quit') mocks.quitHooks.push(listener) }

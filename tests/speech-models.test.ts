@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -6,16 +7,26 @@ import { ASR_MODEL_SPECS, asrModelFiles } from '@shared/asr-models'
 import type { SetupProgress } from '@shared/ipc'
 import type { PinnedFile } from '@shared/pinned-file'
 import { QWEN_TTS_SIZES, localTtsModel } from '@shared/tts-models'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({ directory: '' }))
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
-vi.mock('electron', () => ({ app: { getPath: () => mocks.directory, getVersion: () => '0.0.0' } }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => mocks.directory, getVersion: () => '0.0.0' } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => ({ uiLocale: 'en-US' }) }))
+vi.mock('node:child_process', async () => ({ execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 
 import { t } from '../src/main/services/i18n'
 import { modelFilePath, pinnedSpeechModelFiles, prepareModelFiles, removeUnpinnedFiles } from '../src/main/services/speech-models'
 
-const FILE: PinnedFile = { repo: 'owner/model-GGUF', revision: 'abc123', file: 'model.gguf', sha256: '0', bytes: 4 }
+const sha256 = (content: string): string => crypto.createHash('sha256').update(content).digest('hex')
+
+/** The commit of the pins, under which ASIST before 0.8 kept their files. */
+const REVISION = '0123456789abcdef0123456789abcdef01234567'
+
+/** The pin of a file whose content is its own name, as install writes it. */
+const pin = (repo: string, file: string): PinnedFile => ({ repo, revision: REVISION, file, sha256: sha256(file), bytes: file.length })
+
+const FILE = pin('owner/model-GGUF', 'model.gguf')
 
 beforeEach(() => {
   mocks.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'asist-speech-models-'))
@@ -28,8 +39,23 @@ afterEach(() => {
 
 const install = (file: PinnedFile): void => {
   fs.mkdirSync(path.dirname(modelFilePath(file)), { recursive: true })
-  fs.writeFileSync(modelFilePath(file), 'gguf')
+  fs.writeFileSync(modelFilePath(file), file.file)
 }
+
+const root = (): string => path.join(mocks.directory, 'speech-models')
+
+const put = (parts: string[], content = 'gguf'): void => {
+  const target = path.join(root(), ...parts)
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  fs.writeFileSync(target, content)
+}
+
+/** Every file and folder under speech-models, as paths relative to it. */
+const tree = (): string[] =>
+  fs.readdirSync(root(), { recursive: true, withFileTypes: true }).map((entry) => path.relative(root(), path.join(entry.parentPath, entry.name))).sort()
+
+/** The folder of a pinned file's content and the file in it, as paths relative to speech-models. */
+const placeOf = (file: PinnedFile): string[] => [path.relative(root(), path.dirname(modelFilePath(file))), path.relative(root(), modelFilePath(file))]
 
 describe('preparing the files of a local speech model', () => {
   it('starts the service on files that are already there without fetching anything', async () => {
@@ -99,46 +125,29 @@ describe('preparing the files of a local speech model', () => {
 })
 
 describe('removing the files no pin names at start', () => {
-  const MMPROJ: PinnedFile = { ...FILE, file: 'mmproj.gguf' }
-  const CODEC: PinnedFile = { repo: 'owner/voice-GGUF', revision: 'def456', file: 'codec.gguf', sha256: '0', bytes: 4 }
-  const root = (): string => path.join(mocks.directory, 'speech-models')
-  const put = (...parts: string[]): void => {
-    const target = path.join(root(), ...parts)
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    fs.writeFileSync(target, 'gguf')
-  }
-  /** Every file and folder under speech-models, as paths relative to it. */
-  const tree = (): string[] =>
-    fs.readdirSync(root(), { recursive: true, withFileTypes: true }).map((entry) => path.relative(root(), path.join(entry.parentPath, entry.name))).sort()
+  const MMPROJ = pin('owner/model-GGUF', 'mmproj.gguf')
+  const CODEC = pin('owner/voice-GGUF', 'codec.gguf')
 
-  /** The pins of a model and their leftovers: an older revision, an older file and a download that never finished, an older repository, and things of another form. */
+  /**
+   * The pins of a model and their leftovers: a download that never finished, an older file, the same file in the
+   * folder of its commit where an earlier version kept it, an older repository, and things of another form.
+   */
   const fillWithLeftovers = (): void => {
     for (const file of [FILE, MMPROJ, CODEC]) install(file)
-    put('owner--model-GGUF', 'abc123', 'model.gguf.0123456789ab.tmp')
-    put('owner--model-GGUF', 'abc123', 'model-q4_0.gguf')
-    put('owner--model-GGUF', 'old789', 'model.gguf')
-    put('owner--voice-GGUF', 'old789', 'codec.gguf.ba9876543210.tmp')
-    put('former--model-GGUF', 'abc123', 'model.gguf')
-    put('notes.txt')
-    put('mine', 'model.gguf')
+    put([placeOf(FILE)[0], 'model.gguf.0123456789ab.tmp'])
+    put(['owner--model-GGUF', sha256('older'), 'model.gguf'])
+    put(['owner--model-GGUF', REVISION, FILE.file], FILE.file)
+    put(['owner--voice-GGUF', sha256('older'), 'codec.gguf.ba9876543210.tmp'])
+    put(['former--model-GGUF', sha256('former'), 'model.gguf'])
+    put(['notes.txt'])
+    put(['mine', 'model.gguf'])
   }
 
-  it('keeps the pinned files and what is not a repository folder, and removes every other revision, repository and file', async () => {
+  it('keeps the pinned files and what is not a repository folder, and removes every other content, commit, repository and file', async () => {
     fillWithLeftovers()
     await removeUnpinnedFiles([FILE, MMPROJ, CODEC])
     expect(tree()).toEqual(
-      [
-        'mine',
-        path.join('mine', 'model.gguf'),
-        'notes.txt',
-        'owner--model-GGUF',
-        path.join('owner--model-GGUF', 'abc123'),
-        path.join('owner--model-GGUF', 'abc123', 'mmproj.gguf'),
-        path.join('owner--model-GGUF', 'abc123', 'model.gguf'),
-        'owner--voice-GGUF',
-        path.join('owner--voice-GGUF', 'def456'),
-        path.join('owner--voice-GGUF', 'def456', 'codec.gguf')
-      ].sort()
+      ['mine', path.join('mine', 'model.gguf'), 'notes.txt', 'owner--model-GGUF', 'owner--voice-GGUF', ...[FILE, MMPROJ, CODEC].flatMap(placeOf)].sort()
     )
   })
 
@@ -150,8 +159,8 @@ describe('removing the files no pin names at start', () => {
 
   it('keeps every file that preparing a model the settings can name fetches', async () => {
     const needed = [
-      ...(['irodori', 'qwen3tts'] as const).flatMap((engine) => QWEN_TTS_SIZES.flatMap((size) => localTtsModel(engine, size).files)),
-      ...Object.values(ASR_MODEL_SPECS).flatMap(asrModelFiles)
+      ...(['irodori', 'qwen3tts'] as const).flatMap((engine) => QWEN_TTS_SIZES.flatMap((size) => localTtsModel(engine, size, TEST_SPEECH_CATALOG).files)),
+      ...Object.values(ASR_MODEL_SPECS).flatMap((spec) => asrModelFiles(spec, TEST_SPEECH_CATALOG))
     ]
     for (const file of needed) install(file)
     const before = tree()
@@ -169,8 +178,8 @@ describe('removing the files no pin names at start', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await removeUnpinnedFiles([FILE, MMPROJ, CODEC])
     expect(fs.existsSync(path.join(root(), 'former--model-GGUF'))).toBe(true)
-    expect(fs.existsSync(path.join(root(), 'owner--model-GGUF', 'old789'))).toBe(false)
-    expect(fs.existsSync(path.join(root(), 'owner--voice-GGUF', 'old789'))).toBe(false)
+    expect(fs.existsSync(path.join(root(), 'owner--model-GGUF', REVISION))).toBe(false)
+    expect(fs.existsSync(path.join(root(), 'owner--voice-GGUF', sha256('older')))).toBe(false)
     expect(logged).toHaveBeenCalledWith(expect.stringContaining('former--model-GGUF'), expect.any(Error))
   })
 })

@@ -7,6 +7,7 @@ import type { TtsEngine } from '@shared/ipc'
 import { errorText, readErrorText } from '@shared/i18n/error-text'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICE_IDS, QWEN_TTS_MODELS, localTtsModel, qwenTtsLanguage } from '@shared/tts-models'
 import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/pinned-download', () => ({ downloadMissing: mocks.downloadMissing }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data', on: vi.fn() } }))
 
 const RATE = 24_000
@@ -214,7 +215,7 @@ describe('Qwen3-TTS service', () => {
   })
 
   it('does not start a worker while a file of the model is missing', async () => {
-    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(QWEN_TTS_MODELS['0.6b'].model.file))
+    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(TEST_SPEECH_CATALOG[QWEN_TTS_MODELS['0.6b'].model].file))
     await expect(collect(local.stream('qwen3tts', REQUEST))).rejects.toThrow('not installed')
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
@@ -224,7 +225,7 @@ describe('Qwen3-TTS service', () => {
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     expect(path.basename(command)).toMatch(/^speech(\.exe)?$/)
     expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual([
-      'worker', QWEN_TTS_MODELS['0.6b'].model.file, '--device', 'MTL0'
+      'worker', TEST_SPEECH_CATALOG[QWEN_TTS_MODELS['0.6b'].model].file, '--device', 'MTL0'
     ])
   })
 
@@ -234,7 +235,7 @@ describe('Qwen3-TTS service', () => {
     expect(local.available('qwen3tts')).toBe(false)
     await expect(local.ensureWorker('qwen3tts')).resolves.toBe(true)
     expect(children[0].kill).toHaveBeenCalled()
-    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][1])).toBe(QWEN_TTS_MODELS['1.7b'].model.file)
+    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][1])).toBe(TEST_SPEECH_CATALOG[QWEN_TTS_MODELS['1.7b'].model].file)
   })
 })
 
@@ -279,7 +280,7 @@ describe('a sentence the worker fails after its first piece', () => {
     await fail(child, id)
     return stream.next().then(() => { throw new Error('the sentence went on') }, (error: Error) => error)
   }
-  const engine = localTtsModel('qwen3tts', '0.6b').label
+  const engine = localTtsModel('qwen3tts', '0.6b', TEST_SPEECH_CATALOG).label
 
   // The conversation shows this error on its error line, in the language of the interface.
   it.each([
@@ -457,7 +458,7 @@ describe('Irodori-TTS service', () => {
     await expect(local.ensureWorker('irodori')).resolves.toBe(true)
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     expect(path.basename(command)).toMatch(/^speech(\.exe)?$/)
-    expect([args[0], path.basename(args[1])]).toEqual(['worker', IRODORI_TTS_MODEL.model.file])
+    expect([args[0], path.basename(args[1])]).toEqual(['worker', TEST_SPEECH_CATALOG[IRODORI_TTS_MODEL.model].file])
     const voices = args.flatMap((arg, index) => (args[index - 1] === '--add-voice' ? [arg] : []))
     expect(voices.map((voice) => voice.split('=')[0])).toEqual([...IRODORI_TTS_VOICE_IDS])
     for (const voice of voices) {
@@ -522,7 +523,7 @@ describe('preparing a local model', () => {
   })
 
   it('leaves the worker of the engine chosen while the files downloaded running, and starts none of its own', async () => {
-    install(localTtsModel('irodori', '0.6b').files)
+    install(localTtsModel('irodori', '0.6b', TEST_SPEECH_CATALOG).files)
     const preparation = local.prepare('qwen3tts', () => {})
     await settle()
     // The user picks Irodori-TTS on the voice page, and the change of the setting starts it.
@@ -553,7 +554,7 @@ describe('preparing a local model', () => {
   })
 
   it('keeps the worker of the engine chosen while the files downloaded when the preparation is cancelled', async () => {
-    install(localTtsModel('irodori', '0.6b').files)
+    install(localTtsModel('irodori', '0.6b', TEST_SPEECH_CATALOG).files)
     const preparation = local.prepare('qwen3tts', () => {})
     await settle()
     mocks.settings.ttsEngine = 'irodori'

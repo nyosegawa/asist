@@ -13,8 +13,10 @@ import { useSettingsStore, useToastStore } from '@/state/stores'
 import { usePreparationStore } from '@/state/preparation'
 import { useViewStore } from '@/state/view'
 import { MACOS, setCapabilities } from './helpers/platform'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 vi.mock('@/platform', () => import('./helpers/platform'))
+vi.mock('@/speech-catalog', () => import('./helpers/speech-catalog'))
 // motion's animations do not run in happy-dom, and a cancelled one surfaces as an unhandled AbortError.
 vi.mock('motion/react', async () => {
   const { createElement, Fragment, forwardRef } = await import('react')
@@ -31,7 +33,7 @@ const t = createTranslator('en-US')
 const RECOMMENDED = recommendAsrModel('metal', 32).recommendedModel
 const OTHER = offeredAsrModels().find((model) => model !== RECOMMENDED)!
 const RECOGNITION = asrModelSpec(RECOMMENDED)
-const READING: SpeechModelNotice = { target: 'tts', label: localTtsModel('irodori', '0.6b').label, downloadBytes: 1_885_435_968 }
+const READING: SpeechModelNotice = { target: 'tts', label: localTtsModel('irodori', '0.6b', TEST_SPEECH_CATALOG).label, downloadBytes: 1_885_435_968 }
 const LISTENING: SpeechModelNotice = { target: 'asr', label: RECOGNITION.label, downloadBytes: 2_520_744_288 }
 
 type Result = { ok: boolean; message: string }

@@ -1,8 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { pipeline } from 'node:stream/promises'
 import { app } from 'electron'
 import { asrModelFiles, asrModelSpec, offeredAsrModels } from '@shared/asr-models'
 import type { SetupProgress } from '@shared/ipc'
@@ -86,52 +84,15 @@ async function entriesOf(folder: string, name: string): Promise<fs.Dirent[]> {
   }
 }
 
-/** The SHA-256 of a file's bytes, read in a stream. */
-async function sha256Of(file: string): Promise<string> {
-  const hash = crypto.createHash('sha256')
-  await pipeline(fs.createReadStream(file), hash)
-  return hash.digest('hex')
-}
-
-/**
- * Moves into place each pinned file that ASIST before 0.8.0 kept at <owner>--<name>/<revision>/<file>, the commit
- * its own pin named, so that a file whose catalog pin moved to a later commit is not fetched again: the catalog of
- * speech.cpp 0.8 pins Qwen3-ASR and Qwen3-TTS at the commits that added speeds to their model cards, 6.5 GB of the
- * same bytes. A file of a pinned file's name and size in a folder named by 40 hexadecimal digits is checked against
- * its SHA-256 and renamed into place; anything else there is left for removeUnpinnedFiles. It runs before anything
- * can start a download. A file that cannot be read or moved is logged and left.
- */
-export async function moveFilesOfEarlierLayout(pinned: readonly PinnedFile[]): Promise<void> {
-  const root = modelsDir()
-  for (const file of pinned) {
-    const target = modelFilePath(file)
-    const repository = path.dirname(path.dirname(target))
-    if (fs.existsSync(target) || !fs.existsSync(repository)) continue
-    for (const entry of await entriesOf(repository, path.relative(root, repository))) {
-      const earlier = path.join(repository, entry.name, file.file)
-      if (!entry.isDirectory() || !/^[0-9a-f]{40}$/.test(entry.name) || fs.statSync(earlier, { throwIfNoEntry: false })?.size !== file.bytes) continue
-      const name = path.relative(root, earlier)
-      try {
-        if ((await sha256Of(earlier)) !== file.sha256) continue
-        await fs.promises.mkdir(path.dirname(target), { recursive: true })
-        await fs.promises.rename(earlier, target)
-        console.log(`speech models: moved ${name} to ${path.relative(root, target)}, where the pinned file goes`)
-        break
-      } catch (error) {
-        console.error(`speech models: ${name} could not be moved to where the pinned file goes:`, error)
-      }
-    }
-  }
-}
-
 /**
  * Removes from the folder whatever no file of `pinned` needs, so that the gigabytes of a model an update
  * pinned to other files do not stay for good: the folder of a repository no file names, a folder of a named
- * repository that no file names, such as one of another content or an earlier version's folder of a commit, and
- * any other file in a named folder, such as the temporary file of a download that never finished. Only the folders at the top named
- * <owner>--<name>, the form the folder of every repository has, are looked into; anything else there is not
- * of this layout and is left alone. It runs before anything can start a download, so no temporary file it
- * finds is still being written. A path that cannot be removed is logged and left for the next start.
+ * repository that no file names, such as one of another content or one of a commit, where an earlier version kept
+ * its files, and any other file in a named folder, such as the temporary file of a download that never finished.
+ * Only the folders at the top named <owner>--<name>, the form the folder of every repository has, are looked into;
+ * anything else there is not of this layout and is left alone. It runs before anything can start a download, so no
+ * temporary file it finds is still being written. A path that cannot be removed is logged and left for the next
+ * start.
  */
 export async function removeUnpinnedFiles(pinned: readonly PinnedFile[]): Promise<void> {
   const root = modelsDir()

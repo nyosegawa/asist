@@ -3,10 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ASR_MODEL_SPECS, type AsrModel } from '@shared/asr-models'
+import { ASR_MODEL_SPECS, type AsrModel, type AsrModelSpec } from '@shared/asr-models'
 import type { ConversationLocale } from '@shared/conversation-locale'
 import { errorText } from '@shared/i18n/error-text'
 import { SPEECH_CPP_SERIES, WORKER_PROTOCOL } from '../src/main/services/speech-worker'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -16,11 +17,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
 vi.mock('../src/main/services/pinned-download', () => ({ downloadMissing: mocks.downloadMissing }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data', on: vi.fn() } }))
 
 const LARGE = ASR_MODEL_SPECS['qwen3-asr-1.7b']
 const SMALL = ASR_MODEL_SPECS['qwen3-asr-0.6b']
+const fileOf = (spec: AsrModelSpec): string => TEST_SPEECH_CATALOG[spec.model].file
 
 function fakeChild() {
   const input: Array<Record<string, unknown>> = []
@@ -95,7 +97,7 @@ describe('the speech recognition worker', () => {
     await expect(asr.ensureWorker(LARGE)).resolves.toBe(true)
     const [command, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     expect(path.basename(command)).toMatch(/^speech(\.exe)?$/)
-    expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual(['worker', LARGE.model.file, '--device', 'MTL0'])
+    expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual(['worker', fileOf(LARGE), '--device', 'MTL0'])
     expect(asr.available(LARGE)).toBe(true)
   })
 
@@ -119,7 +121,7 @@ describe('the speech recognition worker', () => {
     const outcome = asr.transcribe(PARAKEET, new Float32Array(1600), 'r1')
     await vi.waitFor(() => expect(transcribed(children[0])).toEqual(['r1']))
     const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
-    expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual(['worker', PARAKEET.model.file, '--device', 'MTL0'])
+    expect(args.map((arg) => (arg.endsWith('.gguf') ? path.basename(arg) : arg))).toEqual(['worker', fileOf(PARAKEET), '--device', 'MTL0'])
     // The model checks the language against its own and refuses a prompt, which it has no input for.
     expect(children[0].input.at(-1)).toEqual({ type: 'transcribe', id: 'r1', sample_rate: 16_000, language: 'de' })
     answer(children[0], 'r1', 'Er griff auch alles an. ')
@@ -264,7 +266,7 @@ describe('the speech recognition worker', () => {
     expect(children[0].kill).toHaveBeenCalled()
     say(children[1], ready({ name: 'Qwen3-ASR-0.6B' }))
     await expect(second).resolves.toBe(true)
-    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][1])).toBe(SMALL.model.file)
+    expect(path.basename((mocks.spawn.mock.calls[1] as [string, string[]])[1][1])).toBe(fileOf(SMALL))
     expect(asr.available(SMALL)).toBe(true)
   })
 
@@ -285,7 +287,7 @@ describe('the speech recognition worker', () => {
   })
 
   it('starts nothing while the file of the model is missing', async () => {
-    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(LARGE.model.file))
+    vi.mocked(fs.existsSync).mockImplementation((file) => !String(file).endsWith(fileOf(LARGE)))
     await expect(asr.ensureWorker(LARGE)).resolves.toBe(false)
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
@@ -379,7 +381,7 @@ describe('the model the setting stands for', () => {
     service = await import('../src/main/services/asr')
     // Qwen3-ASR 0.6B is installed and 1.7B is not, until its download ends.
     let largeInstalled = false
-    vi.mocked(fs.existsSync).mockImplementation((file) => largeInstalled || path.basename(String(file)) !== LARGE.model.file)
+    vi.mocked(fs.existsSync).mockImplementation((file) => largeInstalled || path.basename(String(file)) !== fileOf(LARGE))
     mocks.downloadMissing.mockReset().mockImplementation((_files: unknown, signal: AbortSignal) =>
       new Promise<void>((resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true })
@@ -417,7 +419,7 @@ describe('the model the setting stands for', () => {
 
     expect(((await transcription) as Error).message).toBe(errorText('speechRecognition.errors.stopped'))
     expect(children[0].kill).toHaveBeenCalled()
-    expect(mocks.spawn.mock.calls.map(modelOf)).toEqual([LARGE.model.file, SMALL.model.file])
+    expect(mocks.spawn.mock.calls.map(modelOf)).toEqual([fileOf(LARGE), fileOf(SMALL)])
   })
 
   it('keeps the worker of the model the setting names when a preparation of another model ends after the user turned back', async () => {
@@ -435,7 +437,7 @@ describe('the model the setting stands for', () => {
     finishDownload()
 
     expect((await preparation).ok).toBe(true)
-    expect(mocks.spawn.mock.calls.map(modelOf)).toEqual([SMALL.model.file, SMALL.model.file])
+    expect(mocks.spawn.mock.calls.map(modelOf)).toEqual([fileOf(SMALL), fileOf(SMALL)])
     expect(selected.kill).not.toHaveBeenCalled()
     await expect(service.available()).resolves.toBe(true)
   })

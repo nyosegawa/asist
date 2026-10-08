@@ -20,16 +20,18 @@ import { useSettingsStore, useStatusStore, useToastStore } from '../src/renderer
 import { useViewStore } from '../src/renderer/src/state/view'
 import { usePreparationStore } from '../src/renderer/src/state/preparation'
 import { asrDownloadGb, asrModelSizeGb, asrModelSpec, offeredAsrModels, recommendAsrModel, resolveAsrModel, type AsrModel, type ResolvedAsrModel } from '@shared/asr-models'
-import { CREDITS } from '@shared/credits'
+import { CREDITS, creditsOf } from '@shared/credits'
 import { IRODORI_TTS_MODEL, IRODORI_TTS_VOICES, QWEN_TTS_MODELS } from '@shared/tts-models'
 import { VOICE_SAMPLE_TEXT } from '@shared/voice-samples'
 import { speechPlayer } from '../src/renderer/src/voice/SpeechPlayer'
 import type { PlatformCapabilities } from '@shared/platform'
 import type { AppUpdateState } from '@shared/app-update'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 // The voice modules build an AudioContext at import time, so they are replaced for a test that only renders the UI.
 vi.mock('@/platform', () => import('./helpers/platform'))
+vi.mock('@/speech-catalog', () => import('./helpers/speech-catalog'))
 vi.mock('@/voice/VoiceController', () => ({
   voiceController: { prepareLocalAsr: vi.fn(async () => {}), cancelLocalAsrPreparation: vi.fn() }
 }))
@@ -1192,7 +1194,7 @@ describe('settings dialog on Windows with a discrete GPU', () => {
       const spec = asrModelSpec(resolvedModel)
       return {
         ...(await macSetup()),
-        asr: { selectedModel, resolvedModel, recommendedModel: recommendation.recommendedModel, label: spec.label, totalMemoryGb: 8, modelInstalled: false, downloadGb: asrDownloadGb(spec, false) }
+        asr: { selectedModel, resolvedModel, recommendedModel: recommendation.recommendedModel, label: spec.label, totalMemoryGb: 8, modelInstalled: false, downloadGb: asrDownloadGb(spec, TEST_SPEECH_CATALOG, false) }
       } as never
     })
   })
@@ -1206,7 +1208,7 @@ describe('settings dialog on Windows with a discrete GPU', () => {
     await act(async () => nav(view, 'voice').click())
     const select = view.querySelector<HTMLSelectElement>(`[aria-label="${t('settingsVoice.recognition.modelLabel')}"]`)!
     const option = (model: ResolvedAsrModel): string =>
-      t('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model))) })
+      t('speechRecognition.modelOption', { model: asrModelSpec(model).label, sizeGb: new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 1 }).format(asrModelSizeGb(asrModelSpec(model), TEST_SPEECH_CATALOG)) })
     expect([...select.options].map((option) => option.textContent)).toEqual([
       t('settingsVoice.recognition.automatic.vulkan'),
       option('qwen3-asr-1.7b'),
@@ -1595,7 +1597,7 @@ describe('the models the about page credits', () => {
       const spec = asrModelSpec(id)
       const credit = row(view, `${spec.label} (GGUF)`)
       expect(credit?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.asr'))
-      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${spec.model.repo}`)
+      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${TEST_SPEECH_CATALOG[spec.model].repo}`)
     }
   })
 
@@ -1623,10 +1625,10 @@ describe('the models the about page credits', () => {
     for (const spec of Object.values(QWEN_TTS_MODELS)) {
       const credit = row(view, `${spec.label} CustomVoice (GGUF)`)
       expect(credit?.querySelector('.st-row-hint')?.textContent).toBe(t('settingsAbout.use.ttsQwen'))
-      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${spec.model.repo}`)
+      expect(credit?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${TEST_SPEECH_CATALOG[spec.model].repo}`)
     }
-    const irodori = CREDITS.find((credit) => credit.id === 'ttsIrodori')!
-    expect(row(view, irodori.name)?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${IRODORI_TTS_MODEL.model.repo}`)
+    const irodori = creditsOf('local', true, TEST_SPEECH_CATALOG).find((credit) => credit.id === 'ttsIrodori')!
+    expect(row(view, irodori.name)?.querySelector('a')?.getAttribute('href')).toBe(`https://huggingface.co/${TEST_SPEECH_CATALOG[IRODORI_TTS_MODEL.model].repo}`)
   })
 })
 

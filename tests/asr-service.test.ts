@@ -3,6 +3,7 @@ import { errorText } from '@shared/i18n/error-text'
 import { ASR_MODEL_SPECS, asrDownloadGb } from '@shared/asr-models'
 import { deriveCapabilities } from '@shared/platform'
 import { MACOS, WINDOWS, WINDOWS_WITHOUT_GPU, setCapabilities } from './helpers/platform'
+import { TEST_SPEECH_CATALOG } from './helpers/speech-catalog'
 
 const mocks = vi.hoisted(() => ({
   settings: { asrModel: 'qwen3-asr-1.7b', uiLocale: 'ja-JP' },
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../src/main/services/platform', () => import('./helpers/platform'))
 vi.mock('electron', () => ({ app: { getPath: vi.fn(), on: vi.fn() } }))
 vi.mock('../src/main/services/settings', () => ({ getSettings: () => mocks.settings }))
+vi.mock('../src/main/services/speech-models', async () => ({ speechCatalog: (await import('./helpers/speech-catalog')).speechCatalog }))
 vi.mock('../src/main/services/local-asr', () => ({
   available: mocks.localAvailable,
   isStarting: mocks.localStarting,
@@ -66,7 +68,7 @@ describe('ASR service routing', () => {
       resolvedModel: 'reazonspeech-nemo-v2',
       recommendedModel: 'qwen3-asr-1.7b',
       label: REAZONSPEECH.label,
-      downloadGb: asrDownloadGb(REAZONSPEECH, false)
+      downloadGb: asrDownloadGb(REAZONSPEECH, TEST_SPEECH_CATALOG, false)
     })
     const samples = new Float32Array([0.1])
     await expect(asr.ensureWorker()).resolves.toBe(true)
@@ -131,7 +133,7 @@ describe('Windows with a discrete GPU', () => {
       recommendedModel: 'qwen3-asr-1.7b',
       label: LARGE.label,
       totalMemoryGb: 8,
-      downloadGb: asrDownloadGb(LARGE, false)
+      downloadGb: asrDownloadGb(LARGE, TEST_SPEECH_CATALOG, false)
     })
     mocks.installed = { modelInstalled: true }
     expect((await asr.installationStatus())!.downloadGb).toBe(0)

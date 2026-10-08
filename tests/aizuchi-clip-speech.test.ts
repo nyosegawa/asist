@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRecognizer } from '../scripts/aizuchi-clips/speech.mjs'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }))
-vi.mock('node:child_process', () => ({ spawn: mocks.spawn }))
+vi.mock('node:child_process', async () => ({ spawn: mocks.spawn, execFileSync: (await import('./helpers/speech-catalog')).listSpeechModels }))
 // The script runs the bundled speech and the model files a developer has prepared, which a test machine lacks.
 vi.mock('node:fs', async (original) => ({ ...(await original<typeof import('node:fs')>()), existsSync: () => true }))
 
