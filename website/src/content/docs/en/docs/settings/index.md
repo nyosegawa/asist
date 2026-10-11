@@ -23,7 +23,7 @@ You can also download a model in the row of the item that uses it: speech recogn
 
 ## API costs
 
-"API costs" shows, day by day, what the conversation model, Gemini Live and Claude Code jobs cost. It is an estimate that ASIST calculates from your usage and each provider's published prices (as of 2026-09-23), and it may not match what you are actually billed. Codex doesn't report amounts, so it isn't included. Claude Code jobs that ran on a Claude plan aren't charged per token, so they aren't included either. Speech recognition and reading aloud run on this computer, so they cost nothing.
+"API costs" shows, day by day, what the conversation model, Gemini Live and Claude Code jobs cost. It is an estimate that ASIST calculates from your usage and each provider's published prices (as of 2026-09-23), and it may not match what you are actually billed. Codex doesn't report amounts, so it isn't included. Claude Code jobs are counted only when they ran on an API key; a job on a Claude plan isn't charged per token. Speech recognition and reading aloud run on this computer, so they cost nothing.
 
 ## About
 

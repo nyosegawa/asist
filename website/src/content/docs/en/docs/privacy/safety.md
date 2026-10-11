@@ -64,7 +64,7 @@ Costs tend to grow when:
 - you give an agent long jobs, or many jobs.
 - the conversation model searches the web many times.
 
-"API costs" in Settings shows what ASIST counted, day by day. It is an estimate, it may not match what you are actually billed, and it doesn't include Codex jobs or Claude Code jobs that ran on a Claude plan ([The settings screen](/en/docs/settings/#api-costs)). Check the actual charges in each provider's console, and set a spending limit or a budget alert there.
+"API costs" in Settings shows what ASIST counted, day by day. It is an estimate, it may not match what you are actually billed, and it includes Claude Code jobs only when they ran on an API key and doesn't include Codex jobs ([The settings screen](/en/docs/settings/#api-costs)). Check the actual charges in each provider's console, and set a spending limit or a budget alert there.
 
 ## The conversation goes to the providers you chose
 
