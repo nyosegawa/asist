@@ -5,7 +5,7 @@ sidebar:
   order: 7
 ---
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components'
+import { Tabs, TabItem } from '@astrojs/starlight/components'
 
 Agent のジョブと、毎日の記憶の整理は、このコンピュータに入れた `codex` か `claude` の CLI を ASIST が子プロセスとして起動して行います。使うほうをインストールして、認証を済ませておきます。どちらを使うかは、設定の「Agent」で選びます。既定は codex です。
 
@@ -22,11 +22,13 @@ ASIST は CLI の認証情報に触れません。ASIST に保存した API キ�
     OpenAI の[非対話モードの文書](https://learn.chatgpt.com/docs/non-interactive-mode)は、保存したログインをスクリプトから使うことを前提にしています(2026-09-16 時点)。
   </TabItem>
   <TabItem label="claude">
-    `ANTHROPIC_API_KEY` で動かします。インストールは Anthropic の [Claude Code の文書](https://code.claude.com/docs)に従い、CLI に API キーを設定します。
+    Claude のプラン(Pro、Max、Team、Enterprise)でのサインインでも、API キーでも使えます。インストールと認証は、Anthropic の [Claude Code の文書](https://code.claude.com/docs)に従います。
 
-    <Aside type="caution">
-    Claude.ai のサブスクリプション(Free、Pro、Max)でのサインインは、ASIST からは使えません。Anthropic の [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) は、ほかのアプリが Claude.ai のログインで利用者の代わりに要求を送ることを認めていないからです(2026-09-22 時点)。
-    </Aside>
+    ```bash
+    claude auth login
+    ```
+
+    Anthropic の [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) は、ほかのアプリが Claude Code を動かすときも、利用者が自分のプランでサインインすることを認めています(2026-10-11 時点)。
   </TabItem>
 </Tabs>
 

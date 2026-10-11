@@ -19,6 +19,7 @@ export type AgentStreamEvent =
   | { kind: 'command'; id: string; command: string; phase: 'done'; ok: boolean; exitCode?: number }
   /** A file was created or edited. It is emitted once the change is complete. */
   | { kind: 'file-change'; paths: string[] }
+  /** `costUsd` is present only when the run was billed per token, never for one a subscription plan covered. */
   | { kind: 'result'; ok: boolean; summary: string; numTurns?: number; costUsd?: number }
   /** A line that is not a JSON object, or an informational message from the engine. */
   | { kind: 'raw'; text: string }
@@ -53,11 +54,20 @@ const asString = (value: unknown, otherwise = ''): string => (typeof value === '
 const CLAUDE_FILE_WRITING_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'])
 
 /**
+ * The values of the init message's `apiKeySource` that mean a Claude subscription pays for the run. The
+ * result's `total_cost_usd` is then what the tokens would cost on the API, not a charge: measured with
+ * claude 2.1.276 on 2026-10-11, signed in to a subscription with no API key, init said "none" and a
+ * one-word reply still reported 0.043. 'oauth' is the other sign-in the Agent SDK's type names.
+ */
+const CLAUDE_PLAN_KEY_SOURCES = new Set(['none', 'oauth'])
+
+/**
  * The parser keeps each `tool_use` by id and resolves the command's success and the file change when
  * the matching `tool_result` arrives, so one parser belongs to one job, that is one process.
  */
 export function createClaudeStreamParser(): AgentStreamParser {
   const pending = new Map<string, { name: string; input: Json }>()
+  let paidByPlan = false
 
   return (raw) => {
     const msg = parseObject(raw)
@@ -65,6 +75,7 @@ export function createClaudeStreamParser(): AgentStreamParser {
     const type = msg.type
 
     if (type === 'system' && msg.subtype === 'init') {
+      paidByPlan = CLAUDE_PLAN_KEY_SOURCES.has(asString(msg.apiKeySource))
       return [
         {
           kind: 'init',
@@ -95,7 +106,7 @@ export function createClaudeStreamParser(): AgentStreamParser {
           ok: !msg.is_error,
           summary: typeof msg.result === 'string' ? msg.result : '',
           numTurns: typeof msg.num_turns === 'number' ? msg.num_turns : undefined,
-          costUsd: typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : undefined
+          costUsd: typeof msg.total_cost_usd === 'number' && !paidByPlan ? msg.total_cost_usd : undefined
         }
       ]
     }

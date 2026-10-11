@@ -19,7 +19,7 @@ const runAll = (parse: (raw: string) => AgentStreamEvent[], lines: string[]): Ag
   lines.flatMap((line) => parse(line))
 
 describe('claude -p --output-format stream-json (real output)', () => {
-  it('emits Write, a successful Bash, a failed Bash, Read, the reply and result in that order', () => {
+  it('emits Write, a successful Bash, a failed Bash, Read, the reply and result in that order, with no cost for a subscription run', () => {
     const events = runAll(createClaudeStreamParser(), fixture('claude.jsonl'))
     expect(events).toEqual([
       { kind: 'init', model: 'claude-sonnet-5', sessionId: '6221a88e-f1d4-431e-92cc-7e76b1e50ce8' },
@@ -31,7 +31,7 @@ describe('claude -p --output-format stream-json (real output)', () => {
       { kind: 'command', id: 'toolu_013C8pBsqsrsV7qexS8QVXYQ', command: 'cat missing.txt', phase: 'done', ok: false, exitCode: 1 },
       { kind: 'tool-use', name: 'Read', input: JSON.stringify({ file_path: '/w/hello.txt' }) },
       { kind: 'assistant-text', text: 'done' },
-      { kind: 'result', ok: true, summary: 'done', numTurns: 5, costUsd: 0.21962980000000001 }
+      { kind: 'result', ok: true, summary: 'done', numTurns: 5, costUsd: undefined }
     ])
   })
 })
@@ -95,6 +95,19 @@ describe('individual line shapes of the claude parser', () => {
     expect(
       parse(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'b1', is_error: true, content: [{ type: 'text', text: 'timeout' }] }] } }))
     ).toEqual([{ kind: 'command', id: 'b1', command: 'x', phase: 'done', ok: false }])
+  })
+
+  it('reports no cost for a run a subscription paid for, and the cost for one billed to an API key', () => {
+    const result = JSON.stringify({ type: 'result', is_error: false, result: 'ok', num_turns: 1, total_cost_usd: 0.0434275 })
+    const costOf = (apiKeySource: string): AgentStreamEvent | undefined => {
+      const parse = createClaudeStreamParser()
+      parse(JSON.stringify({ type: 'system', subtype: 'init', model: 'claude-opus-5', apiKeySource }))
+      return parse(result)[0]
+    }
+    expect(costOf('none')).toEqual({ kind: 'result', ok: true, summary: 'ok', numTurns: 1, costUsd: undefined })
+    expect(costOf('oauth')).toMatchObject({ costUsd: undefined })
+    expect(costOf('/login managed key')).toMatchObject({ costUsd: 0.0434275 })
+    expect(costOf('apiKeyHelper')).toMatchObject({ costUsd: 0.0434275 })
   })
 
   it('reports ok=false for a result with is_error', () => {

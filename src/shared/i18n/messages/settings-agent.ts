@@ -80,20 +80,6 @@ export const settingsAgent = defineMessages({
       'es-419': 'No se encontró el CLI de {engine}. Instálalo o elige otro motor.',
       'es-ES': 'No se encuentra la CLI de {engine}. Instálala o elige otro motor.'
     },
-    /** Anthropic's terms let a third-party app send requests through Claude Code only with an API key, not with a Claude.ai subscription. */
-    claudeKeyHint: {
-      'ja-JP': 'Claude Code は API キーで動かす前提です。ASIST の API キーは渡さないので、claude の側で設定してください。Claude.ai のサブスクリプションのサインインは、ASIST からの利用には使えません。',
-      'en-US': 'Claude Code is meant to run with an API key. ASIST does not pass on its own API keys, so set one up in claude itself. A Claude.ai subscription sign-in cannot be used from ASIST.',
-      'fr-FR': "Claude Code est prévu pour fonctionner avec une clé d'API. ASIST ne transmet pas ses propres clés d'API : configurez-en une dans claude. Une connexion par abonnement Claude.ai ne peut pas être utilisée depuis ASIST.",
-      'de-DE': 'Claude Code ist für den Betrieb mit einem API-Schlüssel vorgesehen. ASIST gibt seine eigenen API-Schlüssel nicht weiter, richten Sie deshalb einen in claude selbst ein. Eine Anmeldung mit einem Claude.ai-Abonnement kann aus ASIST heraus nicht verwendet werden.',
-      'hi-IN': 'Claude Code को API कुंजी से चलाना तय है। ASIST अपनी API कुंजियाँ आगे नहीं देता, इसलिए claude में ही कुंजी सेट करें। Claude.ai की सदस्यता वाला साइन-इन ASIST से इस्तेमाल नहीं किया जा सकता।',
-      'id-ID': 'Claude Code dimaksudkan untuk berjalan dengan kunci API. ASIST tidak meneruskan kunci API-nya sendiri, jadi atur kunci di claude itu sendiri. Masuk dengan langganan Claude.ai tidak dapat dipakai dari ASIST.',
-      'it-IT': "Claude Code è pensato per funzionare con una chiave API. ASIST non passa le proprie chiavi API, quindi configurane una direttamente in claude. L'accesso con un abbonamento Claude.ai non può essere usato da ASIST.",
-      'ko-KR': 'Claude Code는 API 키로 실행하는 것을 전제로 합니다. ASIST의 API 키는 넘기지 않으므로 claude에서 직접 설정하세요. Claude.ai 구독 로그인은 ASIST에서 사용할 수 없습니다.',
-      'pt-BR': 'O Claude Code foi pensado para rodar com uma chave de API. O ASIST não repassa as próprias chaves de API, então configure uma no próprio claude. O login com uma assinatura do Claude.ai não pode ser usado a partir do ASIST.',
-      'es-419': 'Claude Code está pensado para funcionar con una clave de API. ASIST no pasa sus propias claves de API, así que configura una en claude. El inicio de sesión con una suscripción de Claude.ai no puede usarse desde ASIST.',
-      'es-ES': 'Claude Code está pensado para funcionar con una clave de API. ASIST no pasa sus propias claves de API, así que configura una en claude. El inicio de sesión con una suscripción de Claude.ai no puede usarse desde ASIST.'
-    },
     permissions: {
       'ja-JP': '権限',
       'en-US': 'Permissions',

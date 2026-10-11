@@ -56,7 +56,7 @@ This is one of the reasons ASIST always asks for your approval before a change. 
 
 ## You pay the providers directly
 
-ASIST calls the conversation model and the voice engine with the API keys you registered. Anthropic, OpenAI, Google, Cerebras and the other providers bill your account directly. Agent jobs and the daily memory curation are billed to the account you signed in to the CLI with. Memory curation runs every day without you asking for it.
+ASIST calls the conversation model and the voice engine with the API keys you registered. Anthropic, OpenAI, Google, Cerebras and the other providers bill your account directly. Agent jobs and the daily memory curation count against the plan of the account you signed in to the CLI with, or are billed to its API key. Memory curation runs every day without you asking for it.
 
 Costs tend to grow when:
 
@@ -64,7 +64,7 @@ Costs tend to grow when:
 - you give an agent long jobs, or many jobs.
 - the conversation model searches the web many times.
 
-"API costs" in Settings shows what ASIST counted, day by day. It is an estimate, it may not match what you are actually billed, and it doesn't include Codex jobs ([The settings screen](/en/docs/settings/#api-costs)). Check the actual charges in each provider's console, and set a spending limit or a budget alert there.
+"API costs" in Settings shows what ASIST counted, day by day. It is an estimate, it may not match what you are actually billed, and it doesn't include Codex jobs or Claude Code jobs that ran on a Claude plan ([The settings screen](/en/docs/settings/#api-costs)). Check the actual charges in each provider's console, and set a spending limit or a budget alert there.
 
 ## The conversation goes to the providers you chose
 

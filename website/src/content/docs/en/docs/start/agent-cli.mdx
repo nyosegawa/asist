@@ -5,7 +5,7 @@ sidebar:
   order: 7
 ---
 
-import { Tabs, TabItem, Aside } from '@astrojs/starlight/components'
+import { Tabs, TabItem } from '@astrojs/starlight/components'
 
 For Agent jobs and the daily memory curation, ASIST starts the `codex` or `claude` CLI installed on your computer as a child process. Install the one you want to use and sign in to it first. You choose which one to use under "Agent" in the settings. The default is codex.
 
@@ -22,11 +22,13 @@ ASIST does not touch the CLI's credentials. It does not pass any API key saved i
     OpenAI's [non-interactive mode documentation](https://learn.chatgpt.com/docs/non-interactive-mode) assumes that scripts use a saved login (as of 2026-09-16).
   </TabItem>
   <TabItem label="claude">
-    It runs with `ANTHROPIC_API_KEY`. For installation, follow Anthropic's [Claude Code documentation](https://code.claude.com/docs), and set an API key in the CLI.
+    It works with a sign-in to a Claude plan (Pro, Max, Team or Enterprise) or with an API key. For installation and authentication, follow Anthropic's [Claude Code documentation](https://code.claude.com/docs).
 
-    <Aside type="caution">
-    ASIST cannot use a sign-in with a Claude.ai subscription (Free, Pro or Max). Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page does not allow other apps to send requests on a user's behalf through a Claude.ai login (as of 2026-09-22).
-    </Aside>
+    ```bash
+    claude auth login
+    ```
+
+    Anthropic's [Legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page allows you to sign in to Claude Code with your own plan, also when another app runs it (as of 2026-10-11).
   </TabItem>
 </Tabs>
 

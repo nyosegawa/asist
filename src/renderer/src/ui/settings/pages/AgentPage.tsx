@@ -28,7 +28,7 @@ export function AgentPage({ ctx }: { ctx: SettingsContext }): React.JSX.Element 
   return (
     <Page title="Agent" lead={t('settingsAgent.lead')}>
       <Group title={t('settingsAgent.run.title')} description={t('settingsAgent.run.description')}>
-        <Row label={t('settingsAgent.run.engine')} hint={settings.agentEngine === 'claude' ? t('settingsAgent.run.claudeKeyHint') : undefined}>
+        <Row label={t('settingsAgent.run.engine')}>
           {unavailable && <Chip tone="warn">{t(unavailable.state === 'missing' ? 'common.notFound' : 'common.notReady')}</Chip>}
           <select
             className="st-select"
