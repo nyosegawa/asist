@@ -89,10 +89,10 @@ export const CREDITS = [
   {
     id: 'aizuchi',
     group: 'local',
-    name: 'asist-aizuchi-ja (ModernBERT-Ja 70m)',
+    name: 'modernbert-ja-70m-aizuchi',
     provider: 'Sakasegawa, SB Intuitions',
     license: 'MIT',
-    url: 'https://huggingface.co/sakasegawa/asist-aizuchi-ja'
+    url: 'https://huggingface.co/sakasegawa/modernbert-ja-70m-aizuchi'
   },
   {
     id: 'embedding',

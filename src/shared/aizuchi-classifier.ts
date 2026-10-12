@@ -37,7 +37,7 @@ export const AIZUCHI_CLASSES = [
 
 export type AizuchiClass = (typeof AIZUCHI_CLASSES)[number]
 
-const REPO = 'sakasegawa/asist-aizuchi-ja'
+const REPO = 'sakasegawa/modernbert-ja-70m-aizuchi'
 const REVISION = 'ff35d53a8224a4937e34e606299091c79b2d432e'
 
 export const AIZUCHI_MODEL = {

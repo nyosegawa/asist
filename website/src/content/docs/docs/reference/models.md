@@ -22,7 +22,7 @@ sidebar:
 | 読み上げ(日本語の既定) | Irodori-TTS v4.1-Small-MF(GGUF、F16)。音声に戻すデコーダの Semantic-DACVAE-Japanese-32dim も同じファイルに入っています。3 つの声 | `sakasegawa/Irodori-TTS-v4.1-Small-MF-GGUF`(Aratako が公開したモデルを変換したもの) | MIT(デコーダの元の facebook/dacvae-watermarked は Apache-2.0) |
 | 読み上げ | Qwen3-TTS 12Hz CustomVoice の 0.6B と 1.7B(GGUF、Q8_0)。サイズごとに 1 つのファイルで、音声のデコーダも入っています。9 つの声 | `sakasegawa/Qwen3-TTS-12Hz-0.6B-CustomVoice-GGUF` と `sakasegawa/Qwen3-TTS-12Hz-1.7B-CustomVoice-GGUF`(Qwen が公開したモデルを変換したもの) | Apache-2.0 |
 | 話し終わりと相槌の間合い(MaAI、日本語) | 京都大学 MaAI team の `vap_jp_kyoto`、`bc_det_jp`、`vap_bc_2type_jp`、`vap_nod_jp`。エンコーダは kyutai の Mimi、CPC の事前学習の重みは facebookresearch/CPC_audio | Hugging Face の `maai-kyoto`、`dl.fbaipublicfiles.com` | MIT(Mimi は CC BY 4.0) |
-| 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8) | [sakasegawa/asist-aizuchi-ja](https://huggingface.co/sakasegawa/asist-aizuchi-ja) | MIT |
+| 相槌の種類の判定(日本語) | sbintuitions/modernbert-ja-70m を合成データで fine-tune したもの(ONNX int8) | [sakasegawa/modernbert-ja-70m-aizuchi](https://huggingface.co/sakasegawa/modernbert-ja-70m-aizuchi) | MIT |
 | 記憶の意味検索 | multilingual-e5 small(ONNX int8) | `Xenova/multilingual-e5-small`(`intfloat/multilingual-e5-small` を変換したもの) | MIT |
 
 音声認識の Qwen3-ASR と FastConformer の 3 つのモデル(parakeet-tdt_ctc-0.6b-ja、ReazonSpeech NeMo v2、parakeet-tdt-0.6b-v3)と、読み上げの Irodori-TTS と Qwen3-TTS は、アプリに同梱した speech.cpp で動かします。Mac では Metal で、Windows では Vulkan で GPU を使います。取得する大きさは、音声認識の Qwen3-ASR 1.7B が約 2.2GB、0.6B が約 0.8GB、parakeet-tdt_ctc-0.6b-ja と ReazonSpeech NeMo v2 がそれぞれ約 1.2GB、parakeet-tdt-0.6b-v3 が約 1.3GB、Irodori-TTS が約 1.9GB、Qwen3-TTS の 0.6B が約 1.2GB、1.7B が約 2.3GB です。同梱しているプログラムは[同梱しているもの](/docs/reference/bundled/)にあります。

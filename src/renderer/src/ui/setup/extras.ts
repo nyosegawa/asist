@@ -29,7 +29,7 @@ const CATALOG: Array<Pick<ExtraModel, 'id' | 'link' | 'sizeMb'> & { voiceOnly: b
   },
   {
     id: 'modernbert',
-    link: 'https://huggingface.co/sakasegawa/asist-aizuchi-ja',
+    link: 'https://huggingface.co/sakasegawa/modernbert-ja-70m-aizuchi',
     sizeMb: 77,
     voiceOnly: true,
     feature: 'aizuchi'
